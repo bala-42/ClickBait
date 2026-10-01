@@ -18,9 +18,8 @@ struct ProviderSettingsSection: View {
 
     var body: some View {
         Picker("Answer with", selection: $settings.provider) {
-            ForEach(ProviderKind.allCases) { kind in
-                Text(kind.displayName).tag(kind)
-            }
+            // Row builder is nonisolated: see the note in SettingsWindowController.swift.
+            ForEach(ProviderKind.allCases, content: Self.providerRow)
         }
         .onChange(of: settings.provider) { testResult = nil }
 
@@ -55,6 +54,10 @@ struct ProviderSettingsSection: View {
                 EmptyView()
             }
         }
+    }
+
+    private nonisolated static func providerRow(_ kind: ProviderKind) -> some View {
+        Text(kind.displayName).tag(kind)
     }
 
     @ViewBuilder private var apiKeyRow: some View {

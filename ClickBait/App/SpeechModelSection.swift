@@ -10,9 +10,8 @@ struct SpeechModelSection: View {
         VStack(alignment: .leading, spacing: 8) {
             if showsPicker {
                 Picker("Model", selection: $settings.speechModel) {
-                    ForEach(SpeechModel.allCases) { model in
-                        Text(model.displayName).tag(model)
-                    }
+                    // Row builder is nonisolated: see the note in SettingsWindowController.swift.
+                    ForEach(SpeechModel.allCases, content: Self.modelRow)
                 }
                 .onChange(of: settings.speechModel) { speech.loadIfInstalled() }
                 .disabled(isDownloading)
@@ -31,6 +30,10 @@ struct SpeechModelSection: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private nonisolated static func modelRow(_ model: SpeechModel) -> some View {
+        Text(model.displayName).tag(model)
     }
 
     @ViewBuilder private var status: some View {

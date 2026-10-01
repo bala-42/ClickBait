@@ -80,8 +80,14 @@ struct SettingsView: View {
     }
 }
 
+// SwiftUI on macOS 27 can build picker/menu rows on a background thread. A row
+// closure written inside a view body is main-actor isolated, and Swift 6 traps when
+// it runs elsewhere (this crashed the Voice picker). So list rows are built by
+// `nonisolated` functions, passed by reference.
+
 private struct BlocklistEditor: View {
     @Binding var blocklist: AppBlocklist
+    @State private var appToAdd: String?
 
     var body: some View {
         ForEach(blocklist.apps) { app in
@@ -102,15 +108,24 @@ private struct BlocklistEditor: View {
         }
 
         HStack {
-            Menu("Add Running App") {
-                ForEach(addableApps, id: \.bundleID) { app in
-                    Button(app.name) { blocklist.add(app) }
-                }
+            Picker("Add Running App", selection: $appToAdd) {
+                Text("Add Running App…").tag(String?.none)
+                ForEach(addableApps, id: \.bundleID, content: Self.appRow)
             }
+            .labelsHidden()
             .fixedSize()
+            .onChange(of: appToAdd) { _, bundleID in
+                guard let bundleID, let app = addableApps.first(where: { $0.bundleID == bundleID }) else { return }
+                blocklist.add(app)
+                appToAdd = nil
+            }
             Spacer()
             Button("Restore Defaults") { blocklist = .defaults }
         }
+    }
+
+    private nonisolated static func appRow(_ app: BlockedApp) -> some View {
+        Text(app.name).tag(Optional(app.bundleID))
     }
 
     private var addableApps: [BlockedApp] {
@@ -125,17 +140,28 @@ private struct BlocklistEditor: View {
     }
 }
 
+private struct VoiceOption: Identifiable, Sendable {
+    let id: String
+    let title: String
+}
+
 private struct VoiceSettingsSection: View {
     @Bindable var settings: AppSettings
     let speaker: Speaker
+
+    private let voices = Speaker.availableVoices.map {
+        VoiceOption(id: $0.identifier, title: "\($0.name) — \($0.language), \($0.quality.label)")
+    }
+
+    private nonisolated static func voiceRow(_ voice: VoiceOption) -> some View {
+        Text(voice.title).tag(Optional(voice.id))
+    }
 
     var body: some View {
         Toggle("Read answers aloud", isOn: $settings.speakAnswers)
         Picker("Voice", selection: $settings.voiceIdentifier) {
             Text("Automatic (best for your language)").tag(String?.none)
-            ForEach(Speaker.availableVoices, id: \.identifier) { voice in
-                Text("\(voice.name) — \(voice.language), \(voice.quality.label)").tag(Optional(voice.identifier))
-            }
+            ForEach(voices, content: Self.voiceRow)
         }
         .disabled(!settings.speakAnswers)
         HStack {
