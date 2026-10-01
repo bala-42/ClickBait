@@ -97,3 +97,50 @@ struct CommandParserTests {
         #expect(parse(text) == nil)
     }
 }
+
+struct SystemAndFileCommandTests {
+    private func parse(_ text: String) -> ActionRequest? {
+        CommandParser.parse(text, allowedShortcuts: [])
+    }
+
+    @Test(arguments: [
+        ("Turn on Wi-Fi.", "wifi_on"), ("Turn the wifi off", "wifi_off"), ("WiFi off", "wifi_off"), ("Disable Wi-Fi", "wifi_off"),
+        ("Lock the screen", "lock_screen"), ("Lock my Mac.", "lock_screen"), ("Turn off the display", "sleep_display"),
+    ])
+    func systemOrders(_ text: String, _ name: String) {
+        #expect(parse(text) == ActionRequest(name: name))
+    }
+
+    @Test(arguments: [
+        ("Compress these files.", "compress", nil), ("Zip them", "compress", nil), ("Zip this folder", "compress", nil),
+        ("Merge these PDFs.", "merge", nil), ("Merge.", "merge", nil), ("Zip", "compress", nil), ("Combine the selected images", "merge", nil),
+        ("Convert these to JPEG", "convert_images", "jpeg"), ("Make them PNGs", "convert_images", "png"),
+        ("Put these in a new folder", "new_folder", nil), ("Move them into a folder", "new_folder", nil),
+        ("Delete these files", "trash", nil), ("Move these to the Trash", "trash", nil), ("Trash them", "trash", nil),
+    ] as [(String, String, String?)])
+    func fileOrders(_ text: String, _ name: String, _ argument: String?) {
+        #expect(parse(text) == ActionRequest(name: name, argument: argument))
+    }
+
+    @Test(arguments: [
+        "Delete", "Make it bigger", "Turn the page", "How do I compress these files?", "What does wifi do?",
+        "Delete the last word", "Remove the background",
+    ])
+    func notFileOrSystemOrders(_ text: String) {
+        #expect(parse(text) == nil)
+    }
+
+    @Test func resolution() {
+        #expect(ActionCatalog.resolve(ActionRequest(name: "convert_images", argument: "jpg"), allowedShortcuts: [])
+            == .success(.file(.convertImages(to: .jpeg))))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "convert_images", argument: "gif"), allowedShortcuts: [])
+            == .failure(.invalidArgument("I can convert images to JPEG or PNG")))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "trash"), allowedShortcuts: []) == .success(.file(.moveToTrash)))
+    }
+
+    @Test func outputNamesNeverOverwrite() {
+        #expect(OutputName.unique(base: "Merged", extension: "pdf", existing: []) == "Merged.pdf")
+        #expect(OutputName.unique(base: "Merged", extension: "pdf", existing: ["Merged.pdf", "Merged 2.pdf"]) == "Merged 3.pdf")
+        #expect(OutputName.unique(base: "New Folder", extension: "", existing: ["New Folder"]) == "New Folder 2")
+    }
+}

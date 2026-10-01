@@ -80,6 +80,7 @@ Microphone, Screen Recording, Accessibility. On first launch show an onboarding 
 ## Privacy rules (non-negotiable)
 - No network calls except: Ollama on localhost, the user's chosen cloud provider when BYOK is enabled, and the one-time WhisperKit model download from Hugging Face — which must be started explicitly by the user (onboarding/Settings), never in the background.
 - No analytics, no crash reporting services.
+- No web lookups for answers or ⌥⌘ explanations (decided 2026-10-01): they use only the screen and the model's own knowledge.
 - Never write screenshots or audio to disk except to a temp dir that is deleted after the request (debug mode may keep them, off by default).
 - Settings include an app blocklist: if the frontmost app is blocked (default: password managers, Keychain Access), refuse to capture.
 

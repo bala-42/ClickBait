@@ -25,7 +25,8 @@ public enum CommandParser {
         if words.last == "please" { words.removeLast() }
         let text = words.joined(separator: " ")
 
-        if let action = volume(words) ?? appearance(text) ?? mute(text) { return action }
+        if let action = volume(words) ?? appearance(text) ?? mute(text) ?? wifi(words) ?? system(text) { return action }
+        if let action = file(words) { return action }
         if let action = shortcut(words, allowedShortcuts: allowedShortcuts) { return action }
         if let action = app(words) { return action }
         return nil
@@ -61,6 +62,58 @@ public enum CommandParser {
         if text == "turn the sound off" || text == "sound off" { return ActionRequest(name: "mute") }
         if text == "turn the sound on" || text == "sound on" { return ActionRequest(name: "unmute") }
         return nil
+    }
+
+    /// "turn on wifi", "wi-fi off", "disable wifi" (Whisper writes "Wi-Fi", "WiFi" or "wifi").
+    private static func wifi(_ words: [String]) -> ActionRequest? {
+        var joined = words.joined(separator: " ").replacingOccurrences(of: "wi fi", with: "wifi")
+        joined = joined.replacingOccurrences(of: "the ", with: "")
+        guard joined.contains("wifi") else { return nil }
+        let on = ["turn on wifi", "turn wifi on", "wifi on", "enable wifi", "switch on wifi", "switch wifi on", "connect to wifi"]
+        let off = ["turn off wifi", "turn wifi off", "wifi off", "disable wifi", "switch off wifi", "switch wifi off", "disconnect wifi"]
+        if on.contains(joined) { return ActionRequest(name: "wifi_on") }
+        if off.contains(joined) { return ActionRequest(name: "wifi_off") }
+        return nil
+    }
+
+    private static func system(_ text: String) -> ActionRequest? {
+        let lock = ["lock", "lock screen", "lock the screen", "lock my screen", "lock my mac", "lock the mac", "lock the computer",
+                    "lock my computer"]
+        let sleep = ["sleep display", "sleep the display", "turn off the display", "turn off the screen", "turn the screen off",
+                     "turn the display off", "put the display to sleep", "put the screen to sleep", "screen off", "display off"]
+        if lock.contains(text) { return ActionRequest(name: "lock_screen") }
+        if sleep.contains(text) { return ActionRequest(name: "sleep_display") }
+        return nil
+    }
+
+    /// Orders about "these/this/the selected files". The app only runs them while
+    /// Finder is frontmost (see `FileAction.requiredFrontmostApp`).
+    private static func file(_ words: [String]) -> ActionRequest? {
+        let references: Set<String> = ["these", "this", "them", "it", "selected", "selection", "files", "file", "items",
+                                       "pdfs", "pdf", "images", "photos", "pictures", "screenshots", "documents", "folder", "folders"]
+        guard let verb = words.first, words.contains(where: references.contains) || words.count == 1 else { return nil }
+        let rest = Set(words.dropFirst())
+
+        switch verb {
+        case "compress", "zip":
+            return ActionRequest(name: "compress")
+        case "merge", "combine", "join":
+            return ActionRequest(name: "merge")
+        case "convert", "make", "turn", "save", "export":
+            if rest.contains("jpeg") || rest.contains("jpg") || rest.contains("jpegs") || rest.contains("jpgs") {
+                return ActionRequest(name: "convert_images", argument: "jpeg")
+            }
+            if rest.contains("png") || rest.contains("pngs") { return ActionRequest(name: "convert_images", argument: "png") }
+            return nil
+        case "put", "move", "group":
+            if rest.contains("trash") || rest.contains("bin") { return ActionRequest(name: "trash") }
+            if rest.contains("folder") { return ActionRequest(name: "new_folder") }
+            return nil
+        case "delete", "trash", "remove", "bin":
+            return words.count == 1 ? nil : ActionRequest(name: "trash")
+        default:
+            return nil
+        }
     }
 
     /// "run Focus Time", "run my Focus Time shortcut", or just an allowed shortcut's name.

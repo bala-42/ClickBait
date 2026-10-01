@@ -1,7 +1,9 @@
 import AppKit
 import ClickBaitCore
 import AudioToolbox
+import Carbon.HIToolbox
 import CoreAudio
+import CoreWLAN
 
 enum ActionExecutionError: LocalizedError {
     case appNotFound(String)
@@ -9,6 +11,7 @@ enum ActionExecutionError: LocalizedError {
     case audio(String)
     case script(String)
     case shortcutFailed(String, String)
+    case wifi(String)
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +20,7 @@ enum ActionExecutionError: LocalizedError {
         case .audio(let detail): "I couldn't change the sound: \(detail)."
         case .script(let detail): "macOS didn't let me do that: \(detail)"
         case .shortcutFailed(let name, let detail): "The shortcut “\(name)” didn't finish: \(detail)"
+        case .wifi(let detail): "I couldn't change Wi-Fi: \(detail)"
         }
     }
 }
@@ -62,6 +66,35 @@ enum ActionExecutor {
         case .runShortcut(let name):
             try await ShortcutsCLI.run(name)
             return "Ran “\(name)”"
+
+        case .setWiFi(let on):
+            guard let interface = CWWiFiClient.shared().interface() else { throw ActionExecutionError.wifi("no Wi-Fi hardware") }
+            do {
+                try interface.setPower(on)
+            } catch {
+                throw ActionExecutionError.wifi(error.localizedDescription)
+            }
+            return on ? "Wi-Fi on" : "Wi-Fi off"
+
+        case .lockScreen:
+            // The standard ⌃⌘Q "Lock Screen" shortcut.
+            let source = CGEventSource(stateID: .hidSystemState)
+            for isDown in [true, false] {
+                let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_Q), keyDown: isDown)
+                event?.flags = [.maskCommand, .maskControl]
+                event?.post(tap: .cghidEventTap)
+            }
+            return "Locked"
+
+        case .sleepDisplay:
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            process.arguments = ["displaysleepnow"]
+            try process.run()
+            return "Display asleep"
+
+        case .file(let action):
+            return try await FileActions.run(action)
         }
     }
 }

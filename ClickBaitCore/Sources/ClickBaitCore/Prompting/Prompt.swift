@@ -19,7 +19,9 @@ public enum Prompt {
         - If the user highlighted text, explain it: a concise summary in 2–4 short sentences \
         that says what it means in plain words and why it matters here. Use the rest of the \
         screen (the app, document, surrounding text) for context, and briefly define any \
-        jargon. Don't repeat the text back. Always use an empty "pointers" list.
+        jargon. Start straight with the explanation: never begin with or mention "the \
+        highlighted text", "the selected text" or "this text", and don't repeat it back. \
+        Always use an empty "pointers" list.
         """
 
     /// Highlighted text beyond this is cut off; the screenshot still gives context.

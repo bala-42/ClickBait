@@ -54,6 +54,7 @@ final class AskCoordinator {
     @ObservationIgnored private var pressedAt: ContinuousClock.Instant?
     @ObservationIgnored private var context = ScreenContext()
     @ObservationIgnored private var frontmostPID: pid_t?
+    @ObservationIgnored private var frontmostBundleID: String?
     @ObservationIgnored private var snapshotTask: Task<AXSnapshot, Never>?
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
@@ -158,6 +159,7 @@ final class AskCoordinator {
         context = ScreenContext(appName: frontmost?.localizedName)
         let pid = frontmost?.processIdentifier
         frontmostPID = pid
+        frontmostBundleID = frontmost?.bundleIdentifier
         snapshotTask = Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }
         // Load a cold local model while the user is still talking. Sends no user content.
         let provider = settings.makeProvider()
@@ -358,21 +360,25 @@ final class AskCoordinator {
             var extractor = StreamingSpeechExtractor()
             var sentences = SentenceSplitter()
             var spokenSoFar = ""
+            var isFirstSentence = true
+            // Explanations shouldn't open with "The highlighted text refers to…".
+            let tidy: (String) -> String = { selectedText == nil ? $0 : ExplanationCleaner.clean($0) }
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
                 let newSpeech = extractor.feed(chunk)
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
-                    onPartialAnswer?(spokenSoFar)
+                    onPartialAnswer?(tidy(spokenSoFar))
                     for sentence in sentences.feed(newSpeech) {
-                        speaker.speak(sentence)
+                        speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
+                        isFirstSentence = false
                         spokeAnything = true
                     }
                 }
             }
             if !Task.isCancelled, let rest = sentences.flush() {
-                speaker.speak(rest)
+                speaker.speak(isFirstSentence ? tidy(rest) : rest)
                 spokeAnything = true
             }
             // A cancelled stream just ends; don't treat it as an (empty) answer.
@@ -397,6 +403,7 @@ final class AskCoordinator {
         }
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
+        if selectedText != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
         // An ⌥⌘ explanation is about the text, never about where to click.
         if selectedText != nil, !parsed.response.pointers.isEmpty {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
@@ -434,9 +441,15 @@ final class AskCoordinator {
         onAnswer?(parsed.response, pointers)
     }
 
-    /// "Open the File menu" isn't an app: let the model answer it instead.
+    /// Orders that should go to the model as a normal question instead:
+    /// "open the File menu" (not an app), or a file order while Finder isn't in front
+    /// ("delete this" in a text editor must never touch files).
     private func isUnknownApp(_ command: ActionRequest) -> Bool {
-        command.name == "open_app" && AppLocator.url(forAppNamed: command.argument ?? "") == nil
+        if command.name == "open_app" { return AppLocator.url(forAppNamed: command.argument ?? "") == nil }
+        if case .success(.file) = ActionCatalog.resolve(command, allowedShortcuts: []) {
+            return frontmostBundleID != FileAction.requiredFrontmostApp
+        }
+        return false
     }
 
     /// A direct order: validate it, run it, confirm out loud. Nothing runs unless it

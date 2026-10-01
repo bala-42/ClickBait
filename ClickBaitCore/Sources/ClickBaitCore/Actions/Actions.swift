@@ -17,6 +17,32 @@ public enum ResolvedAction: Equatable, Sendable {
     case setMuted(Bool)
     case setDarkMode(Bool)
     case runShortcut(String)
+    case setWiFi(Bool)
+    case lockScreen
+    case sleepDisplay
+    /// Acts on the files selected in Finder.
+    case file(FileAction)
+}
+
+/// Things ClickBait can do with the files selected in Finder. Every action except
+/// `moveToTrash` leaves the originals untouched and creates something new.
+public enum FileAction: Equatable, Sendable {
+    case compress
+    /// PDFs and images become one PDF; text files become one text file.
+    case merge
+    case convertImages(to: ImageFormat)
+    case moveIntoNewFolder
+    /// Recoverable: Finder's Trash, never a permanent delete.
+    case moveToTrash
+
+    /// File orders only act while Finder is frontmost, so "delete this" in a text
+    /// editor can never touch files.
+    public static let requiredFrontmostApp = "com.apple.finder"
+}
+
+public enum ImageFormat: String, Equatable, Sendable {
+    case jpeg
+    case png
 }
 
 public enum ActionError: Error, Equatable, Sendable {
@@ -29,7 +55,7 @@ public enum ActionError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .unknown:
-            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode, and run the shortcuts you've allowed in Settings."
+            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode or Wi-Fi, lock the screen, work with files selected in Finder, and run the shortcuts you've allowed in Settings."
         case .missingArgument(let action):
             "I didn't catch what to \(action)."
         case .invalidArgument(let detail):
@@ -64,6 +90,27 @@ public enum ActionCatalog {
             return .success(.setDarkMode(true))
         case "light_mode":
             return .success(.setDarkMode(false))
+        case "wifi_on":
+            return .success(.setWiFi(true))
+        case "wifi_off":
+            return .success(.setWiFi(false))
+        case "lock_screen":
+            return .success(.lockScreen)
+        case "sleep_display":
+            return .success(.sleepDisplay)
+        case "compress":
+            return .success(.file(.compress))
+        case "merge":
+            return .success(.file(.merge))
+        case "convert_images":
+            guard let format = ImageFormat(rawValue: argument.lowercased() == "jpg" ? "jpeg" : argument.lowercased()) else {
+                return .failure(.invalidArgument("I can convert images to JPEG or PNG"))
+            }
+            return .success(.file(.convertImages(to: format)))
+        case "new_folder":
+            return .success(.file(.moveIntoNewFolder))
+        case "trash":
+            return .success(.file(.moveToTrash))
         case "run_shortcut":
             guard !argument.isEmpty else { return .failure(.missingArgument("run")) }
             guard let match = bestMatch(for: argument, in: allowedShortcuts) else {
@@ -82,5 +129,20 @@ public enum ActionCatalog {
             .filter { $0.1 >= threshold }
             .max { $0.1 < $1.1 }?
             .0
+    }
+}
+
+/// Names for files ClickBait creates, never overwriting anything.
+public enum OutputName {
+    /// "Merged.pdf", then "Merged 2.pdf", "Merged 3.pdf"… — like Finder.
+    public static func unique(base: String, extension ext: String, existing: Set<String>) -> String {
+        let suffix = ext.isEmpty ? "" : "." + ext
+        var candidate = base + suffix
+        var number = 2
+        while existing.contains(candidate) {
+            candidate = "\(base) \(number)\(suffix)"
+            number += 1
+        }
+        return candidate
     }
 }
