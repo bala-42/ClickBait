@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
+    private let chat = ChatController()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -39,6 +40,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.start()
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         overlay.onCancel = { [weak self] in self?.coordinator.cancelInFlight() }
+        overlay.onEscape = { [weak self] in
+            guard let self, chat.isOpen else { return false }
+            closeChat()
+            return true
+        }
+        chat.model.onSend = { [weak self] text in self?.coordinator.sendTyped(text) }
+        chat.model.onClose = { [weak self] in self?.closeChat() }
+        coordinator.onChatOpen = { [weak self] firstMessage in
+            guard let self else { return }
+            overlay.hidePointers()
+            chat.open(at: overlay.companionTopLeft)
+            chat.model.addUser(firstMessage)
+            chat.model.isBusy = true
+        }
+        coordinator.onChatUserMessage = { [weak self] message in
+            self?.overlay.hidePointers()
+            self?.chat.model.addUser(message)
+            self?.chat.model.isBusy = true
+        }
+        coordinator.onChatError = { [weak self] message in
+            self?.chat.model.addError(message)
+            self?.chat.model.isBusy = false
+        }
+        coordinator.onChatClose = { [weak self] in
+            self?.overlay.hidePointers()
+            self?.chat.close()
+        }
         coordinator.onStateChange = { [weak self, weak statusBar] state in
             statusBar?.update(for: state)
             self?.overlay.show(state)
@@ -48,13 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.overlay.show(.thinking, heard: text)
         }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
-        coordinator.onPartialAnswer = { [weak self] partial in self?.overlay.showPartialAnswer(partial) }
-        coordinator.onSpeechFinished = { [weak self] in self?.overlay.speechFinished() }
+        coordinator.onPartialAnswer = { [weak self] partial in self?.chat.model.setAssistant(partial) }
         coordinator.onActionDone = { [weak self] message in self?.overlay.showDone(message) }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             guard let self else { return }
-            overlay.showAnswer(response.speech, pointers: pointers, waitForSpeech: coordinator.willSpeak && coordinator.speaker.isSpeaking)
+            chat.model.setAssistant(response.speech)  // final text (streaming may have been partial)
+            chat.model.isBusy = false
+            overlay.showPointers(pointers)
         }
         hotkey.start()
         speech.loadIfInstalled()
@@ -80,5 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for kind in PermissionKind.allCases {
             Log.app.notice("Permission \(kind.title, privacy: .public): \(String(describing: self.permissions.status(of: kind)), privacy: .public)")
         }
+    }
+
+    /// ✕ or Escape on the chat bubble: close it and forget the conversation.
+    private func closeChat() {
+        coordinator.closeChat()
+        overlay.hidePointers()
+        chat.close()
     }
 }

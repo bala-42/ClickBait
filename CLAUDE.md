@@ -69,6 +69,9 @@ Highlight text, then press and release **Option+Command** alone (no other key in
 ### Commands (added after M1, step 10)
 Direct orders spoken with ⌃⌥ are recognised from the transcript by `CommandParser` (Core) — plain rules, never the vision model (qwen2.5vl:7b missed real orders and acted on questions). Questions never act. Built-ins: open/quit app, volume, mute, Dark/Light Mode; plus Shortcuts the user ticked in Settings (the tick is the permission — they run without a prompt). Everything goes through `ActionCatalog.resolve` before `ActionExecutor` runs it. Unknown app names fall through to a normal answer.
 
+### Chat bubbles (added after M1)
+Every answer or ⌥⌘ explanation opens a chat bubble (`ChatController`: borderless non-activating panel that can become key, so typing never activates ClickBait and the user's app stays frontmost). Pinned where it appeared, draggable, sized to its card, open until ✕/Escape. Memory (`Conversation` in Core) is scoped to the bubble, text only, first exchange + last 9 kept; each message gets a fresh screenshot; gone on close, never written to disk. Typed follow-ups get text replies; ⌃⌥ voice follow-ups go into the open chat and are spoken; ⌥⌘ explanations are text and replace the open bubble.
+
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.
 - Companion follows the cursor (global `mouseMoved` monitor): idle it's a small translucent stealth arrowhead aimed at the cursor; for listening / thinking / explaining / answers / errors the arrowhead itself morphs into a Liquid Glass card (material fallback before macOS 26).

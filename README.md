@@ -84,6 +84,13 @@ On first launch ClickBait asks for:
 2. Ask your question out loud, e.g. *"How do I share this document?"*
 3. Let go. ClickBait answers out loud and points at what to click.
 
+**Keep the conversation going**
+
+Every answer opens as a small chat bubble pinned where it appeared. Type a follow-up and press
+Return (the reply is text), or hold ⌃⌥ and ask out loud (the reply is spoken too). The bubble
+remembers the conversation and sees your screen fresh each time; close it with ✕ or Esc and the
+conversation is forgotten.
+
 **Explain highlighted text**
 
 1. Highlight some text in any app.

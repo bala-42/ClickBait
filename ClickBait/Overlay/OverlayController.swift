@@ -6,15 +6,13 @@ import SwiftUI
 /// follows the cursor. Click-through everywhere; never takes focus.
 @MainActor
 final class OverlayController {
-    /// Answers stay up at least this long, longer for longer text (reading time).
-    static let minimumAnswerLifetime = 6.0
-    static let maximumAnswerLifetime = 25.0
-
     let model = OverlayModel()
     /// Called when the user dismisses an answer (click, Escape, or timeout).
     var onDismiss: (() -> Void)?
     /// Called when Escape is pressed while ClickBait is listening or thinking.
     var onCancel: (() -> Void)?
+    /// Escape otherwise: returns true if it closed something (the chat bubble).
+    var onEscape: (() -> Bool)?
 
     private var screenPanels: [NSPanel] = []
     private var bubblePanel: NSPanel?
@@ -41,7 +39,6 @@ final class OverlayController {
     func show(_ state: AskState, heard: String? = nil) {
         switch state {
         case .idle:
-            if case .answer = model.bubble { return }  // the answer stays until dismissed
             model.bubble = .idle
         case .listening:
             setCompanionHidden(false)
@@ -64,39 +61,38 @@ final class OverlayController {
         model.bubble = .explaining(excerpt: selectedText)
     }
 
-    /// About 2.5 words a second, plus a moment to look at the pointer.
-    static func answerLifetime(for text: String) -> Duration {
-        let words = Double(text.split(whereSeparator: \.isWhitespace).count)
-        return .seconds(min(max(words / 2.5 + 3, minimumAnswerLifetime), maximumAnswerLifetime))
-    }
-
-    /// The answer so far, while it's still streaming in. No pointers or timeout yet.
-    func showPartialAnswer(_ speech: String) {
-        dismissTask?.cancel()
-        model.bubble = .answer(speech)
-    }
-
-    /// Shows the final answer. When it's being read aloud, it stays until speech ends
-    /// (`speechFinished()`), with a long safety timeout; otherwise for its reading time.
-    func showAnswer(_ speech: String, pointers: [ScreenPointer], waitForSpeech: Bool) {
-        setCompanionHidden(false)
-        model.bubble = .answer(speech)
+    /// Points at things on screen for a chat answer. They fade after a while, or when
+    /// the next message is sent or the chat closes.
+    func showPointers(_ pointers: [ScreenPointer]) {
         model.pointers = pointers
         model.pointerGeneration += 1
         updateScreenPanels()
-        scheduleDismiss(after: waitForSpeech ? .seconds(60) : Self.answerLifetime(for: speech))
+        pointerTimeout?.cancel()
+        guard !pointers.isEmpty else { return }
+        pointerTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled else { return }
+            self?.clearPointers()
+        }
+    }
+
+    func hidePointers() {
+        pointerTimeout?.cancel()
+        clearPointers()
+    }
+
+    private var pointerTimeout: Task<Void, Never>?
+
+    /// Where a chat bubble should open: where the companion's card sits now.
+    var companionTopLeft: CGPoint {
+        let mouse = anchor ?? NSEvent.mouseLocation
+        return CGPoint(x: mouse.x + Self.cursorClearance.width + 4, y: mouse.y - Self.cursorClearance.height - 4)
     }
 
     /// A command was carried out: brief confirmation, then fade.
     func showDone(_ message: String) {
         clearPointers()
         model.bubble = .done(message)
-        scheduleDismiss(after: .seconds(3))
-    }
-
-    /// Speech ended: leave the answer up a little longer, then fade it.
-    func speechFinished() {
-        guard model.bubble.isAnswer else { return }
         scheduleDismiss(after: .seconds(3))
     }
 
@@ -305,7 +301,7 @@ final class OverlayController {
             guard event.keyCode == 53, let self else { return }
             switch self.model.bubble {
             case .listening, .thinking, .explaining: self.onCancel?()
-            default: self.dismissAnswer()
+            default: if self.onEscape?() != true { self.dismissAnswer() }
             }
         }
         add(global: .keyDown, handler: escape)

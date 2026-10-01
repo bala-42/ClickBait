@@ -184,3 +184,39 @@ struct RequestBuilderTests {
         #expect(OllamaProvider.error(status: 404, body: Data(#"{"error":"model not found"}"#.utf8), model: "m") == .modelNotFound("m"))
     }
 }
+
+struct ConversationTests {
+    @Test func historyKeepsTheFirstExchangeAndTheMostRecent() {
+        var conversation = Conversation()
+        for i in 1...15 { conversation.append(user: "q\(i)", assistantSpeech: "a\(i)") }
+        let history = conversation.history
+        #expect(history.count == Conversation.maxExchanges * 2)
+        #expect(history.first == ChatTurn(role: .user, content: "q1"))
+        #expect(history[2] == ChatTurn(role: .user, content: "q7"))
+        #expect(history.last == .assistant(speech: "a15"))
+    }
+
+    @Test func assistantTurnsAreEscapedJSON() {
+        let turn = ChatTurn.assistant(speech: "Click \"Share\".\nThen \\ done")
+        #expect(turn.content == #"{"speech": "Click \"Share\".\nThen \\ done", "pointers": []}"#)
+        #expect(ResponseParser.parse(turn.content, imageWidth: 10, imageHeight: 10).response.speech == "Click \"Share\".\nThen \\ done")
+    }
+
+    @Test func followUpPromptAndProviderMessages() throws {
+        var conversation = Conversation()
+        conversation.append(user: "How do I share this?", assistantSpeech: "Click Share.")
+        let followUp = AskRequest(question: "And then?", screenshotJPEG: Data([1]), screenshotWidth: 10, screenshotHeight: 10,
+                                  context: ScreenContext(), history: conversation.history)
+        #expect(Prompt.userText(for: followUp).contains("Follow-up in the same conversation"))
+        #expect(Prompt.userText(for: followUp).hasSuffix("The user said: And then?"))
+
+        let ollama = try #require(OllamaProvider.chatBody(for: followUp, model: "m")["messages"] as? [[String: Any]])
+        #expect(ollama.map { $0["role"] as? String } == ["system", "user", "assistant", "user"])
+        #expect(ollama[1]["images"] == nil)       // old turns carry no screenshot
+        #expect(ollama[3]["images"] != nil)       // the new message does
+
+        let anthropic = try #require(AnthropicProvider.messagesBody(for: followUp, model: "claude-opus-5-5")["messages"] as? [[String: Any]])
+        #expect(anthropic.map { $0["role"] as? String } == ["user", "assistant", "user"])
+        #expect(anthropic[0]["content"] as? String == "How do I share this?")
+    }
+}

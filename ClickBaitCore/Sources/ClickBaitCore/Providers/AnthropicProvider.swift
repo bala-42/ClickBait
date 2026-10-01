@@ -100,7 +100,8 @@ public struct AnthropicProvider: LLMProvider {
             "max_tokens": 4096,
             "stream": true,
             "system": Prompt.system,
-            "messages": [[
+            // Earlier turns as text; only the newest message carries a screenshot.
+            "messages": ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] } + [[
                 "role": "user",
                 "content": [
                     [

@@ -83,14 +83,13 @@ public struct OllamaProvider: LLMProvider {
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
             "options": ["temperature": 0.1],
-            "messages": [
-                ["role": "system", "content": Prompt.system],
-                [
+            "messages": [["role": "system", "content": Prompt.system]]
+                + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
+                + [[
                     "role": "user",
                     "content": Prompt.userText(for: ask),
                     "images": [ask.screenshotJPEG.base64EncodedString()],
-                ],
-            ],
+                ]],
         ]
     }
 

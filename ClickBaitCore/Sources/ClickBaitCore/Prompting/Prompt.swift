@@ -22,6 +22,9 @@ public enum Prompt {
         jargon. Start straight with the explanation: never begin with or mention "the \
         highlighted text", "the selected text" or "this text", and don't repeat it back. \
         Always use an empty "pointers" list.
+        - The conversation can continue with follow-ups. Use what was said before for \
+        context, and the newest screenshot for what's on screen now. Typed follow-ups are \
+        read, not heard, so "speech" may run to 4 sentences when the question needs it.
         """
 
     /// Highlighted text beyond this is cut off; the screenshot still gives context.
@@ -35,6 +38,11 @@ public enum Prompt {
         if let title = context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
         if let focused = context.focusedElement, !focused.isEmpty { lines.append("Focused element: \(focused)") }
         lines.append("")
+        if !request.history.isEmpty {
+            lines.append("Follow-up in the same conversation (the screenshot shows the screen now).")
+            lines.append("The user said: \(request.question)")
+            return lines.joined(separator: "\n")
+        }
         if let selected = request.selectedText, !selected.isEmpty {
             lines.append("The user highlighted this text:")
             lines.append("<<<")

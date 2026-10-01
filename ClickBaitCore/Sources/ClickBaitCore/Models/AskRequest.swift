@@ -25,6 +25,8 @@ public struct AskRequest: Sendable {
     public var context: ScreenContext
     /// Text the user highlighted and asked to have explained (⌥⌘). Nil for voice asks.
     public var selectedText: String?
+    /// Earlier turns of this bubble's chat (empty for the first message).
+    public var history: [ChatTurn]
 
     public init(
         question: String,
@@ -32,7 +34,8 @@ public struct AskRequest: Sendable {
         screenshotWidth: Int,
         screenshotHeight: Int,
         context: ScreenContext,
-        selectedText: String? = nil
+        selectedText: String? = nil,
+        history: [ChatTurn] = []
     ) {
         self.question = question
         self.screenshotJPEG = screenshotJPEG
@@ -40,5 +43,6 @@ public struct AskRequest: Sendable {
         self.screenshotHeight = screenshotHeight
         self.context = context
         self.selectedText = selectedText
+        self.history = history
     }
 }

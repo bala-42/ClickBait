@@ -37,8 +37,14 @@ final class AskCoordinator {
     @ObservationIgnored var onTranscript: ((String) -> Void)?
     /// Called with the start of the highlighted text being explained (⌥⌘).
     @ObservationIgnored var onExplaining: ((String) -> Void)?
-    /// Called when everything has been spoken, so the answer can start fading.
-    @ObservationIgnored var onSpeechFinished: (() -> Void)?
+    /// A new chat bubble opens, showing the user's first message.
+    @ObservationIgnored var onChatOpen: ((String) -> Void)?
+    /// A follow-up was sent in the open chat (typed or spoken).
+    @ObservationIgnored var onChatUserMessage: ((String) -> Void)?
+    /// Something went wrong answering in the chat.
+    @ObservationIgnored var onChatError: ((String) -> Void)?
+    /// The chat closed from this side (a new ⌥⌘ explanation replaces it).
+    @ObservationIgnored var onChatClose: (() -> Void)?
     /// Called with the spoken answer so far while it streams in.
     @ObservationIgnored var onPartialAnswer: ((String) -> Void)?
     /// Called after a spoken command ran, with a short confirmation.
@@ -59,6 +65,10 @@ final class AskCoordinator {
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
     @ObservationIgnored private var askTask: Task<Void, Never>?
+    /// The open chat bubble's memory. Nil when no bubble is open; dropped on close.
+    @ObservationIgnored private(set) var conversation: Conversation?
+    /// A reply is being fetched for the chat (blocks a second send).
+    @ObservationIgnored private(set) var isAnswering = false
     @ObservationIgnored let speaker: Speaker
     /// When the user let go (or pressed ⌥⌘), for the time-to-first-audio log.
     @ObservationIgnored private var answerStartedAt: ContinuousClock.Instant?
@@ -73,11 +83,8 @@ final class AskCoordinator {
             answerStartedAt = nil  // log once per answer; Preview in Settings isn't an answer
             Log.ask.notice("First audio \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
         }
-        speaker.onFinish = { [weak self] in self?.onSpeechFinished?() }
     }
 
-    /// Whether the overlay should wait for speech to end before fading the answer.
-    var willSpeak: Bool { settings.speakAnswers }
 
     func handle(_ event: ChordDetector.Event) {
         switch event {
@@ -98,9 +105,65 @@ final class AskCoordinator {
         if state == .speaking || state == .thinking { state = .idle }
     }
 
+    // MARK: - Chat
+
+    /// The chat bubble was closed (✕ or Escape): its memory goes with it.
+    func closeChat() {
+        guard conversation != nil else { return }
+        speaker.stop()
+        askTask?.cancel()
+        askTask = nil
+        conversation = nil
+        isAnswering = false
+        if state == .thinking || state == .speaking { state = .idle }
+        Log.ask.notice("Chat closed")
+    }
+
+    /// A message typed into the open chat bubble. Replies to typed messages are text only.
+    func sendTyped(_ text: String) {
+        guard conversation != nil, !isAnswering, state != .listening else { return }
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
+            onChatError?("ClickBait doesn't look at \(frontmost?.localizedName ?? "this app") — it's on your blocklist.")
+            return
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            onChatError?("Screen Recording is off. Open Permissions… from the menu bar icon.")
+            return
+        }
+        let pid = frontmost?.processIdentifier
+        frontmostPID = pid
+        frontmostBundleID = frontmost?.bundleIdentifier
+        context = ScreenContext(appName: frontmost?.localizedName)
+        let provider = settings.makeProvider()
+        self.provider = provider
+        let blocklist = settings.blocklist
+        askTask = Task {
+            let startedAt = ContinuousClock.now
+            let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
+            context.windowTitle = snapshot.windowTitle
+            context.focusedElement = snapshot.focusedElement
+            let capture: ScreenCapture
+            do {
+                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist)
+            } catch {
+                onChatError?("Couldn't capture the screen: \(error.localizedDescription)")
+                return
+            }
+            let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
+            await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
+                          speak: false, display: text)
+        }
+    }
+
     /// Escape while listening or thinking abandons the question.
     func cancelInFlight() {
         speaker.stop()
+        if isAnswering {
+            askTask?.cancel()
+            askTask = nil
+            isAnswering = false
+        }
         switch state {
         case .listening:
             cancel(reason: "Escape pressed")
@@ -117,7 +180,7 @@ final class AskCoordinator {
     }
 
     private func begin() {
-        guard state != .listening, state != .thinking else { return }
+        guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()  // never record ClickBait talking
         errorResetTask?.cancel()
 
@@ -269,14 +332,20 @@ final class AskCoordinator {
             return
         }
 
-        await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt)
+        // With a chat open, a spoken question is a follow-up in it.
+        await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt,
+                      speak: true, display: transcript)
     }
 
     // MARK: - Explain highlighted text (⌥⌘)
 
     private func explain() {
-        guard state != .listening, state != .thinking else { return }
+        guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
+        if conversation != nil {
+            closeChat()
+            onChatClose?()
+        }
         errorResetTask?.cancel()
 
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -322,34 +391,52 @@ final class AskCoordinator {
             return
         }
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
-        await respond(question: "", selectedText: selected, capture: capture, encoding: encoding, startedAt: startedAt)
+        let excerpt = selected.count > 120 ? selected.prefix(119) + "…" : Substring(selected)
+        // Explanations are read, not heard: you didn't use your voice.
+        await respond(question: "", selectedText: selected, capture: capture, encoding: encoding, startedAt: startedAt,
+                      speak: false, display: "Explain: “\(excerpt)”")
     }
 
     // MARK: - Answering
 
-    /// Shared by ask and explain: send to the model, parse, map, snap, show.
+    /// Shared by ask, explain and chat follow-ups: send to the model (with the open
+    /// bubble's memory), stream into the bubble, parse, map, snap, show. A first
+    /// message opens a new bubble; anything sent while one is open continues it.
     private func respond(
         question: String,
         selectedText: String?,
         capture: ScreenCapture,
         encoding: Task<EncodedScreenshot, Error>,
-        startedAt: ContinuousClock.Instant
+        startedAt: ContinuousClock.Instant,
+        speak: Bool,
+        display: String
     ) async {
         let releasedAt = startedAt
         answerStartedAt = startedAt
         var spokeAnything = false
         guard let provider else { return }
+        let history = conversation?.history ?? []
+        if conversation == nil {
+            conversation = Conversation()
+            onChatOpen?(display)
+        } else {
+            onChatUserMessage?(display)
+        }
+        isAnswering = true
+        defer { isAnswering = false }
         let reply: String
         let screenshot: EncodedScreenshot
+        let request: AskRequest
         do {
             screenshot = try await encoding.value
-            let request = AskRequest(
+            request = AskRequest(
                 question: question,
                 screenshotJPEG: screenshot.jpeg,
                 screenshotWidth: screenshot.width,
                 screenshotHeight: screenshot.height,
                 context: context,
-                selectedText: selectedText
+                selectedText: selectedText,
+                history: history
             )
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
@@ -370,14 +457,14 @@ final class AskCoordinator {
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
                     onPartialAnswer?(tidy(spokenSoFar))
-                    for sentence in sentences.feed(newSpeech) {
+                    for sentence in sentences.feed(newSpeech) where speak {
                         speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
                         isFirstSentence = false
                         spokeAnything = true
                     }
                 }
             }
-            if !Task.isCancelled, let rest = sentences.flush() {
+            if speak, !Task.isCancelled, let rest = sentences.flush() {
                 speaker.speak(isFirstSentence ? tidy(rest) : rest)
                 spokeAnything = true
             }
@@ -394,7 +481,8 @@ final class AskCoordinator {
         } catch {
             guard !Task.isCancelled else { return }
             Log.ask.error("Provider failed: \(error.localizedDescription, privacy: .public)")
-            show(error: error.localizedDescription)
+            if state == .thinking { state = .idle }
+            onChatError?(error.localizedDescription)
             return
         }
 
@@ -432,12 +520,14 @@ final class AskCoordinator {
         }
         guard !Task.isCancelled else { return }
         // No streamed "speech" field (e.g. plain-text fallback): speak the parsed answer.
-        if !spokeAnything {
+        if speak, !spokeAnything {
             var sentences = SentenceSplitter()
             sentences.feed(parsed.response.speech).forEach(speaker.speak)
             sentences.flush().map(speaker.speak)
         }
-        state = .speaking
+        conversation?.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech)
+        // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
+        if state == .thinking || state == .speaking { state = .idle }
         onAnswer?(parsed.response, pointers)
     }
 

@@ -7,8 +7,6 @@ import Observation
 final class Speaker: NSObject {
     /// Called when the first sentence of an answer starts playing.
     var onStart: (() -> Void)?
-    /// Called when everything queued has been spoken (not when stopped).
-    var onFinish: (() -> Void)?
 
     private let synthesizer = AVSpeechSynthesizer()
     private let settings: AppSettings
@@ -79,10 +77,7 @@ final class Speaker: NSObject {
     fileprivate func utteranceFinished() {
         guard pending > 0 else { return }
         pending -= 1
-        if pending == 0 {
-            hasStarted = false
-            onFinish?()
-        }
+        if pending == 0 { hasStarted = false }
     }
 }
 

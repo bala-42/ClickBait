@@ -263,7 +263,7 @@ private struct BubbleCard: View {
     }
 }
 
-private struct GlassBackground<S: Shape>: ViewModifier {
+struct GlassBackground<S: Shape>: ViewModifier {
     let shape: S
 
     func body(content: Content) -> some View {
