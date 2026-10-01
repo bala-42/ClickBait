@@ -84,7 +84,7 @@ final class OverlayController {
         model.bubble = .answer(speech)
         model.pointers = pointers
         model.pointerGeneration += 1
-        screenPanels.forEach { $0.orderFrontRegardless() }
+        updateScreenPanels()
         scheduleDismiss(after: waitForSpeech ? .seconds(60) : Self.answerLifetime(for: speech))
     }
 
@@ -121,6 +121,21 @@ final class OverlayController {
 
     private func clearPointers() {
         model.pointers = []
+        updateScreenPanels()
+    }
+
+    private var screenPanelsVisible = false
+
+    /// The full-screen overlay windows exist only while they draw something (a pointer
+    /// or the speed trail). Kept off-screen otherwise, so no full-screen ClickBait
+    /// window sits on every Space — a suspected cause of black Mission Control previews.
+    private func updateScreenPanels() {
+        let needed = !model.pointers.isEmpty || !model.trail.isEmpty
+        guard needed != screenPanelsVisible else { return }
+        screenPanelsVisible = needed
+        for panel in screenPanels {
+            if needed { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
+        }
     }
 
     // MARK: - Panels
@@ -149,9 +164,10 @@ final class OverlayController {
             let panel = Self.makePanel(frame: screen.frame)
             panel.contentView = NSHostingView(rootView: ScreenOverlayView(model: model, screenFrame: screen.frame))
             panel.setFrame(screen.frame, display: false)
-            panel.orderFrontRegardless()
             return panel
         }
+        screenPanelsVisible = false
+        updateScreenPanels()
     }
 
     private func makeBubblePanel() {
@@ -226,6 +242,7 @@ final class OverlayController {
             ghosts.append(TrailPoint(position: Self.arrowCenter(for: point), time: last.time + elapsed * fraction, index: trailIndex))
         }
         model.trail = Array(ghosts.suffix(OverlayModel.trailMaximum))
+        updateScreenPanels()
 
         // Empty the trail once it has faded, so the animation clock pauses.
         trailCleanup?.cancel()
@@ -233,6 +250,7 @@ final class OverlayController {
             try? await Task.sleep(for: .seconds(OverlayModel.trailLifetime + 0.05))
             guard !Task.isCancelled else { return }
             self?.model.trail.removeAll()
+            self?.updateScreenPanels()
         }
     }
 
