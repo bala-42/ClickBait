@@ -170,10 +170,11 @@ final class OverlayController {
 
     // MARK: - Speed trail
 
-    /// Below this speed (points per second) there's no trail: it's for fast flicks.
-    private static let trailSpeedThreshold: CGFloat = 900
-    /// Ghosts are dropped at most this often, so the trail reads as discrete afterimages.
-    private static let trailSpacing: TimeInterval = 1.0 / 45
+    /// Below this speed (points per second) there's no trail: it's for quick moves.
+    private static let trailSpeedThreshold: CGFloat = 500
+    /// Distance between ghosts along the path; fast flicks are filled in so the trail
+    /// reads as a dense stream of afterimages rather than a few scattered copies.
+    private static let trailSpacing: CGFloat = 9
     private var lastMouse: (point: CGPoint, time: TimeInterval)?
     private var trailIndex = 0
     private var trailCleanup: Task<Void, Never>?
@@ -184,6 +185,14 @@ final class OverlayController {
         recordTrail(at: mouse)
     }
 
+    /// Where the arrowhead is drawn for a cursor position: below-right of the cursor.
+    private static func arrowCenter(for mouse: CGPoint) -> CGPoint {
+        CGPoint(
+            x: mouse.x + cursorClearance.width + 4 + CompanionArrow.size * 0.8,
+            y: mouse.y - cursorClearance.height - 4 - CompanionArrow.size * 0.8
+        )
+    }
+
     private func recordTrail(at mouse: CGPoint) {
         let now = Date.timeIntervalSinceReferenceDate
         defer { lastMouse = (mouse, now) }
@@ -191,20 +200,21 @@ final class OverlayController {
               model.bubble == .idle, let last = lastMouse
         else { return }
         let elapsed = now - last.time
-        guard elapsed > 0 else { return }
-        let speed = hypot(mouse.x - last.point.x, mouse.y - last.point.y) / elapsed
-        guard speed >= Self.trailSpeedThreshold,
-              now - (model.trail.last?.time ?? 0) >= Self.trailSpacing
-        else { return }
+        let distance = hypot(mouse.x - last.point.x, mouse.y - last.point.y)
+        guard elapsed > 0, distance / elapsed >= Self.trailSpeedThreshold else { return }
 
-        // Ghosts sit where the arrowhead was drawn: below-right of the cursor.
-        let arrowCenter = CGPoint(
-            x: mouse.x + Self.cursorClearance.width + 4 + CompanionArrow.size * 0.8,
-            y: mouse.y - Self.cursorClearance.height - 4 - CompanionArrow.size * 0.8
-        )
-        trailIndex += 1
-        model.trail.removeAll { now - $0.time > OverlayModel.trailLifetime }
-        model.trail.append(TrailPoint(position: arrowCenter, time: now, index: trailIndex))
+        // Ghosts every `trailSpacing` points from the last move to this one, with times
+        // spread across the interval so older ones fade first.
+        let steps = max(1, Int(distance / Self.trailSpacing))
+        var ghosts = model.trail.filter { now - $0.time <= OverlayModel.trailLifetime }
+        for step in 1...steps {
+            let fraction = Double(step) / Double(steps)
+            let point = CGPoint(x: last.point.x + (mouse.x - last.point.x) * fraction,
+                                y: last.point.y + (mouse.y - last.point.y) * fraction)
+            trailIndex += 1
+            ghosts.append(TrailPoint(position: Self.arrowCenter(for: point), time: last.time + elapsed * fraction, index: trailIndex))
+        }
+        model.trail = Array(ghosts.suffix(OverlayModel.trailMaximum))
 
         // Empty the trail once it has faded, so the animation clock pauses.
         trailCleanup?.cancel()
@@ -213,25 +223,6 @@ final class OverlayController {
             guard !Task.isCancelled else { return }
             self?.model.trail.removeAll()
         }
-    }
-
-    /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed
-    /// canvas with the companion drawn at its top-left, so placement uses the
-    /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
-    private func moveBubble(to mouse: NSPoint) {
-        guard let panel = bubblePanel else { return }
-        let content = model.bubbleSize
-        let gap = Self.cursorClearance
-        // Top-left corner of the companion, in AppKit coordinates (y up).
-        var topLeft = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height)
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
-            let bounds = screen.visibleFrame
-            if topLeft.x + content.width > bounds.maxX { topLeft.x = mouse.x - gap.width - content.width }
-            if topLeft.y - content.height < bounds.minY { topLeft.y = mouse.y + gap.height + content.height }
-            topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
-            topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
-        }
-        panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
     }
 
     // MARK: - Input

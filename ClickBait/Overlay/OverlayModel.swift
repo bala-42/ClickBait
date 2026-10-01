@@ -39,7 +39,9 @@ final class OverlayModel {
     /// the Sandevistan speed trail. Empty when the cursor is still or slow.
     var trail: [TrailPoint] = []
     /// Seconds a ghost stays visible.
-    static let trailLifetime: TimeInterval = 0.32
+    static let trailLifetime: TimeInterval = 0.5
+    /// Most ghosts on screen at once.
+    static let trailMaximum = 60
 }
 
 struct TrailPoint: Equatable {
