@@ -35,16 +35,24 @@ struct ScreenOverlayView: View {
 }
 
 /// Sandevistan-style speed trail: neon afterimages of the companion arrowhead along its
-/// recent fast path, with a split-colour glitch, fading out in a third of a second.
+/// recent fast path, coloured green → magenta by age, with a split-colour glitch.
 struct SpeedTrailView: View {
     let model: OverlayModel
     let screenFrame: CGRect
 
-    /// Edgerunners palette: acid green, cyan, magenta, yellow.
-    static let palette: [Color] = [
-        Color(red: 0.22, green: 1.0, blue: 0.29), Color(red: 0.0, green: 0.94, blue: 1.0),
-        Color(red: 1.0, green: 0.17, blue: 0.84), Color(red: 0.96, green: 1.0, blue: 0.23),
+    /// Edgerunners gradient, newest ghost to oldest: acid green, cyan, blue, violet, magenta.
+    static let gradient: [(red: Double, green: Double, blue: Double)] = [
+        (0.22, 1.0, 0.29), (0.0, 0.94, 1.0), (0.16, 0.45, 1.0), (0.58, 0.25, 1.0), (1.0, 0.17, 0.84),
     ]
+
+    /// Colour at `position` along the gradient (0 = newest, 1 = oldest).
+    static func color(at position: Double) -> Color {
+        let scaled = min(max(position, 0), 1) * Double(gradient.count - 1)
+        let lower = Int(scaled.rounded(.down)), upper = min(lower + 1, gradient.count - 1)
+        let t = scaled - Double(lower)
+        let a = gradient[lower], b = gradient[upper]
+        return Color(red: a.red + (b.red - a.red) * t, green: a.green + (b.green - a.green) * t, blue: a.blue + (b.blue - a.blue) * t)
+    }
 
     var body: some View {
         TimelineView(.animation(paused: model.trail.isEmpty)) { timeline in
@@ -57,7 +65,7 @@ struct SpeedTrailView: View {
                     let local = CGPoint(x: point.position.x - screenFrame.minX, y: screenFrame.maxY - point.position.y)
                     guard local.x > -40, local.y > -40, local.x < screenFrame.width + 40, local.y < screenFrame.height + 40
                     else { continue }
-                    Self.drawGhost(in: &context, at: local, color: Self.palette[point.index % Self.palette.count], opacity: fade)
+                    Self.drawGhost(in: &context, at: local, color: Self.color(at: age / OverlayModel.trailLifetime), opacity: fade)
                 }
             }
         }
@@ -76,8 +84,8 @@ struct SpeedTrailView: View {
             layer.rotate(by: .degrees(-45))
             layer.opacity = opacity
             let split = 2.0 * opacity
-            layer.fill(arrow.offsetBy(dx: -split, dy: 0), with: .color(palette[1].opacity(0.45)))
-            layer.fill(arrow.offsetBy(dx: split, dy: 0), with: .color(palette[2].opacity(0.45)))
+            layer.fill(arrow.offsetBy(dx: -split, dy: 0), with: .color(Self.color(at: 0.25).opacity(0.45)))
+            layer.fill(arrow.offsetBy(dx: split, dy: 0), with: .color(Self.color(at: 1).opacity(0.45)))
             layer.fill(arrow, with: .color(color.opacity(0.85)))
             layer.stroke(arrow, with: .color(.white.opacity(0.6 * opacity)), lineWidth: 1)
         }
