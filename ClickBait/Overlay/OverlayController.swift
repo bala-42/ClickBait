@@ -55,13 +55,11 @@ final class OverlayController {
             clearPointers()
             model.bubble = .error(message)
         }
-        resizeBubble()
     }
 
     func showExplaining(_ selectedText: String) {
         clearPointers()
         model.bubble = .explaining(excerpt: selectedText)
-        resizeBubble()
     }
 
     /// About 2.5 words a second, plus a moment to look at the pointer.
@@ -70,12 +68,17 @@ final class OverlayController {
         return .seconds(min(max(words / 2.5 + 3, minimumAnswerLifetime), maximumAnswerLifetime))
     }
 
+    /// The answer so far, while it's still streaming in. No pointers or timeout yet.
+    func showPartialAnswer(_ speech: String) {
+        dismissTask?.cancel()
+        model.bubble = .answer(speech)
+    }
+
     func showAnswer(_ speech: String, pointers: [ScreenPointer]) {
         model.bubble = .answer(speech)
         model.pointers = pointers
         model.pointerGeneration += 1
         screenPanels.forEach { $0.orderFrontRegardless() }
-        resizeBubble()
 
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
@@ -91,7 +94,6 @@ final class OverlayController {
         let wasShowing = !model.pointers.isEmpty || model.bubble.isAnswer
         clearPointers()
         if model.bubble.isAnswer { model.bubble = .idle }
-        resizeBubble()
         if wasShowing { onDismiss?() }
     }
 
@@ -132,8 +134,9 @@ final class OverlayController {
 
     private func makeBubblePanel() {
         let host = NSHostingView(rootView: CompanionBubbleView(model: model))
-        let panel = Self.makePanel(frame: CGRect(origin: .zero, size: host.fittingSize))
+        let panel = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.bubbleCanvas))
         panel.contentView = host
+        model.onBubbleSizeChange = { [weak self] in self?.moveBubble(to: NSEvent.mouseLocation) }
         panel.orderFrontRegardless()
         bubblePanel = panel
         bubbleHost = host
@@ -145,52 +148,23 @@ final class OverlayController {
     /// extends about 12 pt right and 20 pt down from its hotspot, so this clears it.
     private static let cursorClearance = CGSize(width: 18, height: 24)
 
-    /// Bottom-right of the cursor, kept on the cursor's screen.
+    /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed
+    /// canvas with the companion drawn at its top-left, so placement uses the
+    /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
     private func moveBubble(to mouse: NSPoint) {
         guard let panel = bubblePanel else { return }
-        let size = panel.frame.size
+        let content = model.bubbleSize
         let gap = Self.cursorClearance
-        var origin = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height - size.height)
+        // Top-left corner of the companion, in AppKit coordinates (y up).
+        var topLeft = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height)
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
             let bounds = screen.visibleFrame
-            if origin.x + size.width > bounds.maxX { origin.x = mouse.x - gap.width - size.width }
-            if origin.y < bounds.minY { origin.y = mouse.y + gap.height }
-            origin.x = max(bounds.minX, min(origin.x, bounds.maxX - size.width))
-            origin.y = max(bounds.minY, min(origin.y, bounds.maxY - size.height))
+            if topLeft.x + content.width > bounds.maxX { topLeft.x = mouse.x - gap.width - content.width }
+            if topLeft.y - content.height < bounds.minY { topLeft.y = mouse.y + gap.height + content.height }
+            topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
+            topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
         }
-        panel.setFrameOrigin(origin)
-    }
-
-    private var pendingShrink: Task<Void, Never>?
-
-    /// Grows the panel right away; shrinks it only after the morph back to the
-    /// arrowhead has played, so the animation isn't clipped. `moveBubble` keeps the
-    /// panel's top-left (where the arrowhead sits) fixed relative to the cursor.
-    private func resizeBubble() {
-        pendingShrink?.cancel()
-        // Let SwiftUI lay out the new content before measuring it.
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let panel = bubblePanel, let host = bubbleHost else { return }
-            host.layoutSubtreeIfNeeded()
-            let target = host.fittingSize
-            if target.width < panel.frame.width || target.height < panel.frame.height {
-                pendingShrink = Task { [weak self] in
-                    try? await Task.sleep(for: .milliseconds(450))
-                    guard !Task.isCancelled else { return }
-                    self?.applyBubbleSize()
-                }
-            } else {
-                applyBubbleSize()
-            }
-        }
-    }
-
-    private func applyBubbleSize() {
-        guard let panel = bubblePanel, let host = bubbleHost else { return }
-        host.layoutSubtreeIfNeeded()
-        panel.setContentSize(host.fittingSize)
-        moveBubble(to: NSEvent.mouseLocation)
-        panel.orderFrontRegardless()
+        panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
     }
 
     // MARK: - Input

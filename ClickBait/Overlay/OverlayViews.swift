@@ -33,54 +33,35 @@ struct ScreenOverlayView: View {
     }
 }
 
-/// A pulsing ring on the target, an arrow aimed at it, and a label pill.
+/// A stealth arrowhead whose tip sits exactly on the target, with a small glass label
+/// above its tail. Same look as the companion: translucent dark with a white edge.
 struct PointerView: View {
     let label: String
     let number: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
-    @State private var pulse = false
 
-    private static let ringSize: CGFloat = 46
-    private let accent = Color(red: 1.0, green: 0.27, blue: 0.42)
+    private static let arrowSize: CGFloat = 30
 
     var body: some View {
-        ZStack {
-            // Soft halo so the ring reads on light and dark backgrounds.
-            Circle()
-                .fill(accent.opacity(0.18))
-                .frame(width: Self.ringSize, height: Self.ringSize)
-                .scaleEffect(pulse ? 1.35 : 1.0)
-                .opacity(pulse ? 0 : 1)
-
-            Circle()
-                .strokeBorder(accent, lineWidth: 4)
-                .background(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 6).padding(-2))
-                .frame(width: Self.ringSize, height: Self.ringSize)
-
-            StealthArrow()
-                .fill(accent)
-                .overlay(StealthArrow().stroke(.white, lineWidth: 1.5))
-                .frame(width: 28, height: 28)
-                .rotationEffect(.degrees(135))  // up-pointing shape → aims down-right at the ring
-                .offset(x: -Self.ringSize / 2 - 14, y: -Self.ringSize / 2 - 14)
-                .offset(x: appeared || reduceMotion ? 0 : -40, y: appeared || reduceMotion ? 0 : -40)
-
+        VStack(alignment: .trailing, spacing: 3) {
             labelPill
-                .fixedSize()
-                .offset(y: Self.ringSize / 2 + 18)
+                .padding(.trailing, Self.arrowSize * 0.55)  // sit over the arrow's tail, not its tip
+            AimedStealthArrow()
+                .fill(.black.opacity(0.5))
+                .overlay(AimedStealthArrow().stroke(.white, style: StrokeStyle(lineWidth: 2, lineJoin: .round)))
+                .frame(width: Self.arrowSize, height: Self.arrowSize)
+                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
         }
-        .frame(width: 1, height: 1)  // position() centers the ring on the target point
-        .scaleEffect(appeared || reduceMotion ? 1 : 0.4)
+        .fixedSize()
+        // The stack's bottom-right corner is the arrow's tip: pin it to the target.
+        .frame(width: 1, height: 1, alignment: .bottomTrailing)
+        .offset(x: appeared || reduceMotion ? 0 : -22, y: appeared || reduceMotion ? 0 : -22)
         .opacity(appeared ? 1 : 0)
         .onAppear {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.6)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.75)) {
                 appeared = true
-            }
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false).delay(0.3)) {
-                pulse = true
             }
         }
         .accessibilityElement()
@@ -89,25 +70,44 @@ struct PointerView: View {
 
     @ViewBuilder private var labelPill: some View {
         if !label.isEmpty || number != nil {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 if let number {
                     Text("\(number)")
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
-                        .frame(width: 16, height: 16)
-                        .background(.white, in: Circle())
-                        .foregroundStyle(accent)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .frame(width: 15, height: 15)
+                        .background(.primary.opacity(0.12), in: Circle())
                 }
                 if !label.isEmpty {
-                    Text(label).font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text(label).font(.system(size: 12, weight: .semibold))
                 }
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(accent, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .modifier(GlassBackground(shape: Capsule()))
         }
+    }
+}
+
+/// A stealth arrowhead aimed down-right, with its tip at the bottom-right corner of the
+/// rect so it can be pinned to a point.
+struct AimedStealthArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        let size = min(rect.width, rect.height)
+        let tip = CGPoint(x: rect.minX + size, y: rect.minY + size)
+        // Unit vectors: back along the diagonal toward the tail, and across it.
+        let back = CGVector(dx: -1 / 2.squareRoot(), dy: -1 / 2.squareRoot())
+        let across = CGVector(dx: 1 / 2.squareRoot(), dy: -1 / 2.squareRoot())
+        let length = size * 0.97, halfWidth = length * 0.4
+        func point(along: CGFloat, side: CGFloat) -> CGPoint {
+            CGPoint(x: tip.x + back.dx * along + across.dx * side, y: tip.y + back.dy * along + across.dy * side)
+        }
+        var path = Path()
+        path.move(to: tip)
+        path.addLine(to: point(along: length, side: halfWidth))
+        path.addQuadCurve(to: point(along: length * 0.68, side: 0), control: point(along: length * 0.8, side: halfWidth * 0.3))
+        path.addQuadCurve(to: point(along: length, side: -halfWidth), control: point(along: length * 0.8, side: -halfWidth * 0.3))
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -172,6 +172,10 @@ struct CompanionBubbleView: View {
         .padding(4)
         .padding([.trailing, .bottom], 10)  // room for the shadow inside the panel
         .fixedSize()
+        // The panel is a fixed, invisible canvas; tell the controller how big the
+        // companion really is so it can keep it on screen.
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { model.bubbleSize = $0 }
+        .frame(width: OverlayModel.bubbleCanvas.width, height: OverlayModel.bubbleCanvas.height, alignment: .topLeading)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.78), value: model.bubble)
         .onAppear {
             guard !reduceMotion else { return }
@@ -251,23 +255,22 @@ private struct BubbleCard: View {
         .padding(.leading, 9)
         .padding(.trailing, 14)
         .padding(.vertical, 9)
-        .modifier(GlassBackground(cornerRadius: Self.corner))
+        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: Self.corner, style: .continuous)))
         // While the arrowhead grows into the card, keep the text inside the shape.
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
     }
 }
 
-private struct GlassBackground: ViewModifier {
-    let cornerRadius: CGFloat
+private struct GlassBackground<S: Shape>: ViewModifier {
+    let shape: S
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26.0, *) {
             content.glassEffect(.regular, in: shape)
         } else {
             content
                 .background(.regularMaterial, in: shape)
-                .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
+                .overlay(shape.stroke(.white.opacity(0.25), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
         }
     }

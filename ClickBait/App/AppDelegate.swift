@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.overlay.show(.thinking, heard: text)
         }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
+        coordinator.onPartialAnswer = { [weak self] partial in self?.overlay.showPartialAnswer(partial) }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             self?.overlay.showAnswer(response.speech, pointers: pointers)

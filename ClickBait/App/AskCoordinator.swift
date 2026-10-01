@@ -37,6 +37,8 @@ final class AskCoordinator {
     @ObservationIgnored var onTranscript: ((String) -> Void)?
     /// Called with the start of the highlighted text being explained (⌥⌘).
     @ObservationIgnored var onExplaining: ((String) -> Void)?
+    /// Called with the spoken answer so far while it streams in.
+    @ObservationIgnored var onPartialAnswer: ((String) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -69,9 +71,12 @@ final class AskCoordinator {
         }
     }
 
-    /// The overlay dismissed the answer (click, Escape or timeout).
+    /// The overlay dismissed the answer (click, Escape or timeout). If it was still
+    /// streaming in, stop the request too so it doesn't pop back up.
     func answerDismissed() {
-        if state == .speaking { state = .idle }
+        askTask?.cancel()
+        askTask = nil
+        if state == .speaking || state == .thinking { state = .idle }
     }
 
     /// Escape while listening or thinking abandons the question.
@@ -316,9 +321,16 @@ final class AskCoordinator {
                 """)
             var text = ""
             var firstChunkAt: ContinuousClock.Instant?
+            var extractor = StreamingSpeechExtractor()
+            var spokenSoFar = ""
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
+                let newSpeech = extractor.feed(chunk)
+                if !newSpeech.isEmpty, !Task.isCancelled {
+                    spokenSoFar += newSpeech
+                    onPartialAnswer?(spokenSoFar)
+                }
             }
             reply = text
             let firstChunk = firstChunkAt.map { String(describing: $0 - releasedAt) } ?? "none"
