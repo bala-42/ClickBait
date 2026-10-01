@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateOtherInstances()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        Log.app.notice("ClickBait \(version, privacy: .public) launched")
 
         let statusBar = StatusBarController(
             settings: settings,
