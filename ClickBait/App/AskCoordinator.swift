@@ -262,14 +262,16 @@ final class AskCoordinator {
         let startedAt = ContinuousClock.now
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         guard !Task.isCancelled else { return }
-        guard let selected = snapshot.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty else {
-            Log.ask.notice("Explain: no selected text exposed by the frontmost app")
-            show(error: "Highlight some text first, then press ⌥⌘. (A few apps don't share their selection.)")
+        guard let (selected, method) = await SelectionReader.read(frontmostPID: pid, accessibilitySelection: snapshot.selectedText)
+        else {
+            Log.ask.notice("Explain: no selection found (accessibility and copy both empty)")
+            show(error: "Highlight some text first, then press ⌥⌘.")
             return
         }
+        guard !Task.isCancelled else { return }
         context.windowTitle = snapshot.windowTitle
         context.focusedElement = snapshot.focusedElement
-        Log.ask.notice("Explain: \(selected.count, privacy: .public) characters selected")
+        Log.ask.notice("Explain: \(selected.count, privacy: .public) characters selected via \(method.rawValue, privacy: .public)")
         onExplaining?(selected)
 
         let capture: ScreenCapture

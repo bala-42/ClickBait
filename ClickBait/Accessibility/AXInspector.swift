@@ -34,15 +34,30 @@ enum AXInspector {
         }
 
         let systemWide = element(AXUIElementCreateSystemWide())
-        if let focused = systemWide.element(kAXFocusedUIElementAttribute) {
+        // Some apps only answer "what's focused" when asked directly.
+        let focused = systemWide.element(kAXFocusedUIElementAttribute)
+            ?? frontmostPID.flatMap { element(AXUIElementCreateApplication($0)).element(kAXFocusedUIElementAttribute) }
+        if let focused {
             let role = focused.string(kAXRoleAttribute) ?? "element"
             let name = focused.name
             result.focusedElement = name.isEmpty ? role : "\(role) “\(name)”"
-            if let selected = focused.string(kAXSelectedTextAttribute), !selected.isEmpty {
-                result.selectedText = selected
-            }
+            result.selectedText = selectedText(around: focused)
         }
         return result
+    }
+
+    /// The highlighted text, looked up on the focused element and its ancestors: plain
+    /// `AXSelectedText` (native text views), then WebKit/Chromium text markers (web
+    /// content, where the focused element is often a container of the selection).
+    private static func selectedText(around focused: AXElement) -> String? {
+        var current: AXElement? = focused
+        for _ in 0..<6 {
+            guard let element = current else { break }
+            if let text = element.string(kAXSelectedTextAttribute), !text.isEmpty { return text }
+            if let text = element.selectedTextViaMarkers(), !text.isEmpty { return text }
+            current = element.element(kAXParentAttribute)
+        }
+        return nil
     }
 
     // MARK: - Snapping
@@ -132,6 +147,16 @@ private struct AXElement {
               AXValueGetValue(unsafeDowncast(sizeValue, to: AXValue.self), .cgSize, &size)
         else { return nil }
         return Rect(x: position.x, y: position.y, width: size.width, height: size.height)
+    }
+
+    /// Web content exposes its selection as a text-marker range, readable through the
+    /// parameterized `AXStringForTextMarkerRange` attribute.
+    func selectedTextViaMarkers() -> String? {
+        guard let range = attribute("AXSelectedTextMarkerRange") else { return nil }
+        var value: AnyObject?
+        guard AXUIElementCopyParameterizedAttributeValue(ref, "AXStringForTextMarkerRange" as CFString, range, &value) == .success
+        else { return nil }
+        return (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func hitTest(_ point: Point) -> AXElement? {
