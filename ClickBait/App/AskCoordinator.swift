@@ -45,6 +45,8 @@ final class AskCoordinator {
     @ObservationIgnored private var captureTask: Task<ScreenCapture, Error>?
     @ObservationIgnored private var pressedAt: ContinuousClock.Instant?
     @ObservationIgnored private var context = ScreenContext()
+    @ObservationIgnored private var frontmostPID: pid_t?
+    @ObservationIgnored private var snapshotTask: Task<AXSnapshot, Never>?
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
     @ObservationIgnored private var askTask: Task<Void, Never>?
@@ -140,6 +142,9 @@ final class AskCoordinator {
         let blocklist = settings.blocklist
         captureTask = Task { [capturer] in try await capturer.captureDisplayUnderCursor(excluding: blocklist) }
         context = ScreenContext(appName: frontmost?.localizedName)
+        let pid = frontmost?.processIdentifier
+        frontmostPID = pid
+        snapshotTask = Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }
         // Load a cold local model while the user is still talking. Sends no user content.
         let provider = settings.makeProvider()
         self.provider = provider
@@ -178,6 +183,11 @@ final class AskCoordinator {
             screenshot \(capture.image.width, privacy: .public)x\(capture.image.height, privacy: .public)px \
             of display \(capture.displayID, privacy: .public) at \(capture.backingScale, privacy: .public)x
             """)
+
+        if let snapshot = await snapshotTask?.value {
+            context.windowTitle = snapshot.windowTitle
+            context.focusedElement = snapshot.focusedElement
+        }
 
         // Downscale while Whisper runs.
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
@@ -256,7 +266,7 @@ final class AskCoordinator {
 
         let parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
         let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
-        let pointers = parsed.response.pointers.map { pointer in
+        let modelPointers = parsed.response.pointers.map { pointer in
             let pixel = Point(x: pointer.x, y: pointer.y)
             return ScreenPointer(
                 label: pointer.label,
@@ -264,11 +274,12 @@ final class AskCoordinator {
                 quartz: geometry.quartzPoint(fromImagePixel: pixel)
             )
         }
+        let pointers = await snap(modelPointers, geometry: geometry)
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
             \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped
             """)
-        for (pointer, mapped) in zip(parsed.response.pointers, pointers) {
+        for (pointer, mapped) in zip(parsed.response.pointers, modelPointers) {
             Log.ask.notice("""
                 Pointer image px (\(pointer.x, format: .fixed(precision: 0), privacy: .public), \
                 \(pointer.y, format: .fixed(precision: 0), privacy: .public)) → screen \(mapped.quartz.description, privacy: .public) \
@@ -278,6 +289,40 @@ final class AskCoordinator {
         guard !Task.isCancelled else { return }
         state = .speaking
         onAnswer?(parsed.response, pointers)
+    }
+
+    /// Moves each pointer onto a matching real element nearby, if accessibility knows of
+    /// one. Without Accessibility permission pointers are returned unchanged.
+    private func snap(_ pointers: [ScreenPointer], geometry: ScreenGeometry) async -> [ScreenPointer] {
+        guard AXInspector.isTrusted else {
+            Log.ask.notice("Snapping skipped: Accessibility not granted")
+            return pointers
+        }
+        let pid = frontmostPID
+        var snapped: [ScreenPointer] = []
+        for pointer in pointers {
+            let target = pointer.quartz
+            let start = ContinuousClock.now
+            let candidates = await Task.detached(priority: .userInitiated) {
+                AXInspector.candidates(around: target, frontmostPID: pid)
+            }.value
+            let decision = Snapper.decide(target: target, label: pointer.label, candidates: candidates)
+            let moved = decision.point != target
+            let dx = decision.point.x - target.x, dy = decision.point.y - target.y
+            Log.ask.notice("""
+                Snap "\(pointer.label, privacy: .private)": \(target.description, privacy: .public) → \
+                \(decision.point.description, privacy: .public) (moved \((dx * dx + dy * dy).squareRoot(), format: .fixed(precision: 1), privacy: .public) pt, \
+                \(decision.reason.rawValue, privacy: .public), \(candidates.count, privacy: .public) candidates, \
+                matched \(decision.candidate?.role ?? "-", privacy: .public) "\(decision.candidate?.label ?? "", privacy: .private)", \
+                \(String(describing: ContinuousClock.now - start), privacy: .public))
+                """)
+            snapped.append(moved ? ScreenPointer(
+                label: pointer.label,
+                appKit: geometry.appKitPoint(fromQuartz: decision.point),
+                quartz: decision.point
+            ) : pointer)
+        }
+        return snapped
     }
 
     private func cancel(reason: String) {
