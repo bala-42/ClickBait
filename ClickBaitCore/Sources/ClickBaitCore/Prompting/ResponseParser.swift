@@ -1,0 +1,167 @@
+import Foundation
+
+/// Turns whatever the model sent into an `AssistantResponse`.
+///
+/// Models don't always follow the schema. This accepts code fences and chatter around
+/// the JSON, numbers as strings, and the coordinate shapes vision models are trained
+/// on (`"x": [x, y]`, `"point_2d": [x, y]`, `"bbox_2d": [x1, y1, x2, y2]`). If no usable
+/// JSON is found it falls back to speech only — it never throws.
+public enum ResponseParser {
+    public struct Result: Equatable, Sendable {
+        public var response: AssistantResponse
+        /// True when the JSON was unusable and `speech` was salvaged from raw text.
+        public var usedFallback: Bool
+        /// Pointers that were present but unusable (no coordinates, off-image).
+        public var droppedPointers: Int
+    }
+
+    public static let maxPointers = 3
+    /// Coordinates this far outside the image (as a fraction of its size) are clamped
+    /// rather than dropped: models round to their own internal resolution.
+    public static let edgeTolerance = 0.03
+    static let fallbackSpeech = "Sorry, I couldn't work that out. Try asking again."
+
+    public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int) -> Result {
+        guard let object = firstJSONObject(in: raw) else {
+            return Result(response: AssistantResponse(speech: salvageSpeech(from: raw)), usedFallback: true, droppedPointers: 0)
+        }
+
+        let speech = (object["speech"] as? String ?? object["answer"] as? String ?? object["text"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let rawPointers = (object["pointers"] ?? object["points"] ?? object["pointer"]).map(asArray) ?? []
+        var pointers: [Pointer] = []
+        var dropped = 0
+        for entry in rawPointers {
+            guard let dict = entry as? [String: Any],
+                  let pointer = pointer(from: dict, imageWidth: imageWidth, imageHeight: imageHeight)
+            else {
+                dropped += 1
+                continue
+            }
+            pointers.append(pointer)
+        }
+        if pointers.count > maxPointers {
+            dropped += pointers.count - maxPointers
+            pointers = Array(pointers.prefix(maxPointers))
+        }
+
+        return Result(
+            response: AssistantResponse(speech: speech.isEmpty ? fallbackSpeech : speech, pointers: pointers),
+            usedFallback: speech.isEmpty,
+            droppedPointers: dropped
+        )
+    }
+
+    // MARK: - Pointers
+
+    static func pointer(from dict: [String: Any], imageWidth: Int, imageHeight: Int) -> Pointer? {
+        guard let (x, y) = coordinates(in: dict) else { return nil }
+        let width = Double(imageWidth), height = Double(imageHeight)
+        let slackX = width * edgeTolerance, slackY = height * edgeTolerance
+        guard x.isFinite, y.isFinite,
+              x >= -slackX, x <= width + slackX,
+              y >= -slackY, y <= height + slackY
+        else { return nil }
+
+        let label = (dict["label"] ?? dict["name"] ?? dict["text"]).flatMap { $0 as? String }?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return Pointer(x: min(max(x, 0), width - 1), y: min(max(y, 0), height - 1), label: label)
+    }
+
+    private static func coordinates(in dict: [String: Any]) -> (Double, Double)? {
+        // {"x": 10, "y": 20}
+        if let x = number(dict["x"]), let y = number(dict["y"]) { return (x, y) }
+        // {"x": [10, 20]} — seen from Qwen2.5-VL
+        if let pair = numbers(dict["x"]), pair.count == 2 { return (pair[0], pair[1]) }
+        for key in ["point", "point_2d", "coordinates", "position", "center"] {
+            if let pair = numbers(dict[key]), pair.count == 2 { return (pair[0], pair[1]) }
+        }
+        for key in ["bbox_2d", "bbox", "box"] {
+            if let box = numbers(dict[key]), box.count == 4 {
+                return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            }
+        }
+        return nil
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        switch value {
+        case let number as NSNumber where !(number === kCFBooleanTrue || number === kCFBooleanFalse):
+            number.doubleValue
+        case let string as String:
+            Double(string.trimmingCharacters(in: .whitespaces))
+        default:
+            nil
+        }
+    }
+
+    private static func numbers(_ value: Any?) -> [Double]? {
+        guard let array = value as? [Any] else { return nil }
+        let values = array.compactMap(number)
+        return values.count == array.count ? values : nil
+    }
+
+    private static func asArray(_ value: Any) -> [Any] {
+        if let array = value as? [Any] { return array }
+        if let single = value as? [String: Any] { return [single] }
+        return []
+    }
+
+    // MARK: - JSON extraction
+
+    /// The first balanced `{…}` that parses as a JSON object, ignoring fences and chatter.
+    static func firstJSONObject(in text: String) -> [String: Any]? {
+        let scalars = Array(text.unicodeScalars)
+        var start = 0
+        while let open = scalars[start...].firstIndex(of: "{") {
+            if let close = matchingBrace(in: scalars, from: open) {
+                let candidate = String(String.UnicodeScalarView(scalars[open...close]))
+                if let object = try? JSONSerialization.jsonObject(with: Data(candidate.utf8)) as? [String: Any] {
+                    return object
+                }
+            }
+            start = open + 1
+        }
+        return nil
+    }
+
+    private static func matchingBrace(in scalars: [Unicode.Scalar], from open: Int) -> Int? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for index in open..<scalars.count {
+            let scalar = scalars[index]
+            if inString {
+                if escaped { escaped = false }
+                else if scalar == "\\" { escaped = true }
+                else if scalar == "\"" { inString = false }
+                continue
+            }
+            switch scalar {
+            case "\"": inString = true
+            case "{": depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 { return index }
+            default: break
+            }
+        }
+        return nil
+    }
+
+    /// Broken or missing JSON: use the speech the streaming extractor would have found,
+    /// else the plain text if it doesn't look like JSON at all.
+    static func salvageSpeech(from raw: String) -> String {
+        var extractor = StreamingSpeechExtractor()
+        let partial = extractor.feed(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !partial.isEmpty { return partial }
+
+        let plain = raw
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !plain.isEmpty, !plain.contains("{"), !plain.contains("}") { return plain }
+        return fallbackSpeech
+    }
+}

@@ -11,6 +11,18 @@ struct ScreenCapture: @unchecked Sendable {
     /// The display's frame in global AppKit points (origin bottom-left of the main display).
     let displayFrame: CGRect
     let backingScale: CGFloat
+    /// Height of the primary display in points, needed to convert to Quartz coordinates.
+    let primaryDisplayHeight: CGFloat
+
+    /// How to map pixels of a downscaled copy of this capture back onto the screen.
+    func geometry(imageWidth: Int, imageHeight: Int) -> ScreenGeometry {
+        ScreenGeometry(
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            displayFrame: Rect(x: displayFrame.minX, y: displayFrame.minY, width: displayFrame.width, height: displayFrame.height),
+            primaryDisplayHeight: primaryDisplayHeight
+        )
+    }
 }
 
 enum ScreenCaptureError: LocalizedError {
@@ -41,6 +53,8 @@ final class ScreenCapturer {
         let displayID = CGDirectDisplayID(number.uint32Value)
         let displayFrame = screen.frame
         let backingScale = screen.backingScaleFactor
+        // The primary display is always first and holds the global origin.
+        let primaryDisplayHeight = NSScreen.screens.first?.frame.height ?? displayFrame.height
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
@@ -59,6 +73,9 @@ final class ScreenCapturer {
         config.captureResolution = .best
 
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        return ScreenCapture(image: image, displayID: displayID, displayFrame: displayFrame, backingScale: backingScale)
+        return ScreenCapture(
+            image: image, displayID: displayID, displayFrame: displayFrame,
+            backingScale: backingScale, primaryDisplayHeight: primaryDisplayHeight
+        )
     }
 }

@@ -48,11 +48,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         heardItem.isHidden = false
     }
 
-    /// Shows the model's raw reply until the parser and overlay exist (steps 6–7).
-    func showAnswer(_ reply: String) {
-        let oneLine = reply.replacingOccurrences(of: "\n", with: " ")
-        let shown = oneLine.count > 120 ? oneLine.prefix(119) + "…" : Substring(oneLine)
-        answerItem.title = "Reply: \(shown)"
+    /// Shows the spoken answer and where it points until the overlay exists (step 7).
+    func showAnswer(_ speech: String, pointers: [String]) {
+        let shown = speech.count > 100 ? speech.prefix(99) + "…" : Substring(speech)
+        let pointing = pointers.isEmpty ? "" : "  → " + pointers.joined(separator: ", ")
+        answerItem.title = "Answer: \(shown)\(pointing)"
         answerItem.isHidden = false
     }
 

@@ -37,7 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBar = statusBar
         coordinator.onStateChange = { [weak statusBar] state in statusBar?.update(for: state) }
         coordinator.onTranscript = { [weak statusBar] text in statusBar?.showHeard(text) }
-        coordinator.onAnswer = { [weak statusBar] reply in statusBar?.showAnswer(reply) }
+        coordinator.onAnswer = { [weak statusBar] response, pointers in
+            statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
+        }
         hotkey.start()
         speech.loadIfInstalled()
 

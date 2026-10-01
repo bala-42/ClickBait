@@ -3,6 +3,15 @@ import AVFoundation
 import ClickBaitCore
 import Observation
 
+/// A pointer resolved to real screen positions.
+struct ScreenPointer: Equatable {
+    var label: String
+    /// Global AppKit point (bottom-left origin) — for overlay windows.
+    var appKit: Point
+    /// Global Quartz point (top-left origin) — for Accessibility hit-testing.
+    var quartz: Point
+}
+
 enum AskState: Equatable {
     case idle
     case listening
@@ -26,8 +35,9 @@ final class AskCoordinator {
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
     /// Called with what Whisper heard, until the overlay bubble can show it (step 7).
     @ObservationIgnored var onTranscript: ((String) -> Void)?
-    /// Called with the model's raw reply, until the parser and overlay exist (steps 6–7).
-    @ObservationIgnored var onAnswer: ((String) -> Void)?
+    /// Called with the parsed answer and its pointers mapped to screen points, until
+    /// the overlay exists (step 7).
+    @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let speech: SpeechModelManager
@@ -181,8 +191,9 @@ final class AskCoordinator {
 
         guard let provider else { return }
         let reply: String
+        let screenshot: EncodedScreenshot
         do {
-            let screenshot = try await encoding.value
+            screenshot = try await encoding.value
             let request = AskRequest(
                 question: transcript,
                 screenshotJPEG: screenshot.jpeg,
@@ -215,9 +226,31 @@ final class AskCoordinator {
         if settings.keepDebugCaptures {
             DebugCaptureStore.saveReply(reply)
         }
-        onAnswer?(reply)
 
-        // The response parser, pointing and speech are added in later steps.
+        let parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
+        let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
+        let pointers = parsed.response.pointers.map { pointer in
+            let pixel = Point(x: pointer.x, y: pointer.y)
+            return ScreenPointer(
+                label: pointer.label,
+                appKit: geometry.appKitPoint(fromImagePixel: pixel),
+                quartz: geometry.quartzPoint(fromImagePixel: pixel)
+            )
+        }
+        Log.ask.notice("""
+            Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
+            \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped
+            """)
+        for (pointer, mapped) in zip(parsed.response.pointers, pointers) {
+            Log.ask.notice("""
+                Pointer image px (\(pointer.x, format: .fixed(precision: 0), privacy: .public), \
+                \(pointer.y, format: .fixed(precision: 0), privacy: .public)) → screen \(mapped.quartz.description, privacy: .public) \
+                (Quartz), \(mapped.appKit.description, privacy: .public) (AppKit)
+                """)
+        }
+        onAnswer?(parsed.response, pointers)
+
+        // Pointing and speech are added in later steps.
         state = .idle
     }
 
