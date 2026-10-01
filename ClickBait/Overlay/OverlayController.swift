@@ -45,6 +45,7 @@ final class OverlayController {
             if case .answer = model.bubble { return }  // the answer stays until dismissed
             model.bubble = .idle
         case .listening:
+            setCompanionHidden(false)
             dismissTask?.cancel()
             clearPointers()
             model.bubble = .listening
@@ -79,6 +80,7 @@ final class OverlayController {
     /// Shows the final answer. When it's being read aloud, it stays until speech ends
     /// (`speechFinished()`), with a long safety timeout; otherwise for its reading time.
     func showAnswer(_ speech: String, pointers: [ScreenPointer], waitForSpeech: Bool) {
+        setCompanionHidden(false)
         model.bubble = .answer(speech)
         model.pointers = pointers
         model.pointerGeneration += 1
@@ -181,8 +183,17 @@ final class OverlayController {
 
     private func cursorMoved() {
         let mouse = NSEvent.mouseLocation
+        setCompanionHidden(false)
         moveBubble(to: mouse)
         recordTrail(at: mouse)
+    }
+
+    /// macOS hides the pointer while you type and shows it again when the mouse moves;
+    /// the idle companion does the same. Cards (answers, errors) stay visible.
+    private func setCompanionHidden(_ hidden: Bool) {
+        guard let panel = bubblePanel else { return }
+        let alpha: CGFloat = hidden && model.bubble == .idle ? 0 : 1
+        if panel.alphaValue != alpha { panel.alphaValue = alpha }
     }
 
     /// Where the arrowhead is drawn for a cursor position: below-right of the cursor.
@@ -225,6 +236,25 @@ final class OverlayController {
         }
     }
 
+    /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed
+    /// canvas with the companion drawn at its top-left, so placement uses the
+    /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
+    private func moveBubble(to mouse: NSPoint) {
+        guard let panel = bubblePanel else { return }
+        let content = model.bubbleSize
+        let gap = Self.cursorClearance
+        // Top-left corner of the companion, in AppKit coordinates (y up).
+        var topLeft = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height)
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
+            let bounds = screen.visibleFrame
+            if topLeft.x + content.width > bounds.maxX { topLeft.x = mouse.x - gap.width - content.width }
+            if topLeft.y - content.height < bounds.minY { topLeft.y = mouse.y + gap.height + content.height }
+            topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
+            topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
+        }
+        panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
+    }
+
     // MARK: - Input
 
     private func installMonitors() {
@@ -246,6 +276,10 @@ final class OverlayController {
         }
         add(global: .keyDown, handler: escape)
         add(local: .keyDown, handler: escape)
+
+        let typing: @MainActor (NSEvent) -> Void = { [weak self] _ in self?.setCompanionHidden(true) }
+        add(global: .keyDown, handler: typing)
+        add(local: .keyDown, handler: typing)
     }
 
     private func add(global mask: NSEvent.EventTypeMask, handler: @escaping @MainActor (NSEvent) -> Void) {
