@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var coordinator = AskCoordinator(settings: settings, speech: speech)
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
+    private let overlay = OverlayController()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -35,10 +36,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpenPermissions: { [weak self] in self?.onboardingWindow.show() }
         )
         self.statusBar = statusBar
-        coordinator.onStateChange = { [weak statusBar] state in statusBar?.update(for: state) }
-        coordinator.onTranscript = { [weak statusBar] text in statusBar?.showHeard(text) }
-        coordinator.onAnswer = { [weak statusBar] response, pointers in
+        overlay.start()
+        overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
+        overlay.onCancel = { [weak self] in self?.coordinator.cancelInFlight() }
+        coordinator.onStateChange = { [weak self, weak statusBar] state in
+            statusBar?.update(for: state)
+            self?.overlay.show(state)
+        }
+        coordinator.onTranscript = { [weak self, weak statusBar] text in
+            statusBar?.showHeard(text)
+            self?.overlay.show(.thinking, heard: text)
+        }
+        coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
+            self?.overlay.showAnswer(response.speech, pointers: pointers)
         }
         hotkey.start()
         speech.loadIfInstalled()

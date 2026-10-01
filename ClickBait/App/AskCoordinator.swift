@@ -21,7 +21,7 @@ enum AskState: Equatable {
 }
 
 /// Runs one ask from hotkey press to answer: idle → listening → thinking → speaking.
-/// Later steps plug the overlay and speech into `finish`.
+/// Speech output is added in step 9.
 @MainActor
 @Observable
 final class AskCoordinator {
@@ -33,10 +33,9 @@ final class AskCoordinator {
         didSet { if state != oldValue { onStateChange?(state) } }
     }
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
-    /// Called with what Whisper heard, until the overlay bubble can show it (step 7).
+    /// Called with what Whisper heard.
     @ObservationIgnored var onTranscript: ((String) -> Void)?
-    /// Called with the parsed answer and its pointers mapped to screen points, until
-    /// the overlay exists (step 7).
+    /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
     @ObservationIgnored private let settings: AppSettings
@@ -48,6 +47,7 @@ final class AskCoordinator {
     @ObservationIgnored private var context = ScreenContext()
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
+    @ObservationIgnored private var askTask: Task<Void, Never>?
 
     init(settings: AppSettings, speech: SpeechModelManager) {
         self.settings = settings
@@ -58,8 +58,31 @@ final class AskCoordinator {
     func handle(_ event: HotkeyMonitor.Event) {
         switch event {
         case .pressed: begin()
-        case .released: Task { await finish() }
+        case .released:
+            askTask = Task { await finish() }
         case .cancelled: cancel(reason: "another key was pressed")
+        }
+    }
+
+    /// The overlay dismissed the answer (click, Escape or timeout).
+    func answerDismissed() {
+        if state == .speaking { state = .idle }
+    }
+
+    /// Escape while listening or thinking abandons the question.
+    func cancelInFlight() {
+        switch state {
+        case .listening:
+            cancel(reason: "Escape pressed")
+        case .thinking:
+            askTask?.cancel()
+            askTask = nil
+            captureTask?.cancel()
+            captureTask = nil
+            state = .idle
+            Log.ask.notice("Cancelled while thinking: Escape pressed")
+        default:
+            break
         }
     }
 
@@ -183,6 +206,7 @@ final class AskCoordinator {
             }.value
         }
 
+        guard !Task.isCancelled else { return }
         guard !transcript.isEmpty else {
             show(error: "I didn't catch that. Hold Control+Option and try again.")
             return
@@ -217,7 +241,10 @@ final class AskCoordinator {
                 Reply: first chunk \(firstChunk, privacy: .public) after release, complete after \
                 \(String(describing: ContinuousClock.now - releasedAt), privacy: .public), \(reply.count, privacy: .public) characters
                 """)
+        } catch is CancellationError {
+            return
         } catch {
+            guard !Task.isCancelled else { return }
             Log.ask.error("Provider failed: \(error.localizedDescription, privacy: .public)")
             show(error: error.localizedDescription)
             return
@@ -248,10 +275,9 @@ final class AskCoordinator {
                 (Quartz), \(mapped.appKit.description, privacy: .public) (AppKit)
                 """)
         }
+        guard !Task.isCancelled else { return }
+        state = .speaking
         onAnswer?(parsed.response, pointers)
-
-        // Pointing and speech are added in later steps.
-        state = .idle
     }
 
     private func cancel(reason: String) {
