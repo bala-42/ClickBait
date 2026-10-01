@@ -383,8 +383,8 @@ final class AskCoordinator {
         }
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
-        // A plain ⌥⌘ explanation is about the text, not about where to click.
-        if selectedText != nil, question.isEmpty, !parsed.response.pointers.isEmpty {
+        // An ⌥⌘ explanation is about the text, never about where to click.
+        if selectedText != nil, !parsed.response.pointers.isEmpty {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
         }
