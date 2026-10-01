@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpenPermissions: { [weak self] in self?.onboardingWindow.show() }
         )
         self.statusBar = statusBar
+        overlay.trailEnabled = { [weak self] in self?.settings.speedTrail ?? false }
         overlay.start()
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         overlay.onCancel = { [weak self] in self?.coordinator.cancelInFlight() }

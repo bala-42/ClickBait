@@ -10,6 +10,7 @@ struct ScreenOverlayView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
+            SpeedTrailView(model: model, screenFrame: screenFrame)
             ForEach(Array(visiblePointers.enumerated()), id: \.offset) { index, pointer in
                 PointerView(
                     label: pointer.label,
@@ -30,6 +31,56 @@ struct ScreenOverlayView: View {
     /// SwiftUI's origin is the panel's top-left; AppKit's is the bottom-left.
     private func localPosition(of pointer: ScreenPointer) -> CGPoint {
         CGPoint(x: pointer.appKit.x - screenFrame.minX, y: screenFrame.maxY - pointer.appKit.y)
+    }
+}
+
+/// Sandevistan-style speed trail: neon afterimages of the companion arrowhead along its
+/// recent fast path, with a split-colour glitch, fading out in a third of a second.
+struct SpeedTrailView: View {
+    let model: OverlayModel
+    let screenFrame: CGRect
+
+    /// Edgerunners palette: acid green, cyan, magenta, yellow.
+    static let palette: [Color] = [
+        Color(red: 0.22, green: 1.0, blue: 0.29), Color(red: 0.0, green: 0.94, blue: 1.0),
+        Color(red: 1.0, green: 0.17, blue: 0.84), Color(red: 0.96, green: 1.0, blue: 0.23),
+    ]
+
+    var body: some View {
+        TimelineView(.animation(paused: model.trail.isEmpty)) { timeline in
+            Canvas { context, _ in
+                let now = timeline.date.timeIntervalSinceReferenceDate
+                for point in model.trail {
+                    let age = now - point.time
+                    guard age >= 0, age < OverlayModel.trailLifetime else { continue }
+                    let fade = 1 - age / OverlayModel.trailLifetime
+                    let local = CGPoint(x: point.position.x - screenFrame.minX, y: screenFrame.maxY - point.position.y)
+                    guard local.x > -40, local.y > -40, local.x < screenFrame.width + 40, local.y < screenFrame.height + 40
+                    else { continue }
+                    Self.drawGhost(in: &context, at: local, color: Self.palette[point.index % Self.palette.count], opacity: fade)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// One afterimage: cyan and magenta copies split sideways (the glitch), then the
+    /// coloured ghost on top. Normal blending: additive glow vanishes on white pages.
+    static func drawGhost(in context: inout GraphicsContext, at center: CGPoint, color: Color, opacity: Double) {
+        let size = CompanionArrow.size
+        let rect = CGRect(x: -size / 2, y: -size * 0.6, width: size, height: size * 1.2)
+        let arrow = StealthArrow().path(in: rect)
+        context.drawLayer { layer in
+            layer.translateBy(x: center.x, y: center.y)
+            layer.rotate(by: .degrees(-45))
+            layer.opacity = opacity
+            let split = 2.0 * opacity
+            layer.fill(arrow.offsetBy(dx: -split, dy: 0), with: .color(palette[1].opacity(0.45)))
+            layer.fill(arrow.offsetBy(dx: split, dy: 0), with: .color(palette[2].opacity(0.45)))
+            layer.fill(arrow, with: .color(color.opacity(0.85)))
+            layer.stroke(arrow, with: .color(.white.opacity(0.6 * opacity)), lineWidth: 1)
+        }
     }
 }
 

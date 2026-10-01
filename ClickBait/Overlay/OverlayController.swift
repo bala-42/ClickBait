@@ -15,6 +15,8 @@ final class OverlayController {
     var onDismiss: (() -> Void)?
     /// Called when Escape is pressed while ClickBait is listening or thinking.
     var onCancel: (() -> Void)?
+    /// Whether the Sandevistan speed trail is on (Settings); Reduce Motion always wins.
+    var trailEnabled: () -> Bool = { true }
 
     private var screenPanels: [NSPanel] = []
     private var bubblePanel: NSPanel?
@@ -166,6 +168,53 @@ final class OverlayController {
     /// extends about 12 pt right and 20 pt down from its hotspot, so this clears it.
     private static let cursorClearance = CGSize(width: 18, height: 24)
 
+    // MARK: - Speed trail
+
+    /// Below this speed (points per second) there's no trail: it's for fast flicks.
+    private static let trailSpeedThreshold: CGFloat = 900
+    /// Ghosts are dropped at most this often, so the trail reads as discrete afterimages.
+    private static let trailSpacing: TimeInterval = 1.0 / 45
+    private var lastMouse: (point: CGPoint, time: TimeInterval)?
+    private var trailIndex = 0
+    private var trailCleanup: Task<Void, Never>?
+
+    private func cursorMoved() {
+        let mouse = NSEvent.mouseLocation
+        moveBubble(to: mouse)
+        recordTrail(at: mouse)
+    }
+
+    private func recordTrail(at mouse: CGPoint) {
+        let now = Date.timeIntervalSinceReferenceDate
+        defer { lastMouse = (mouse, now) }
+        guard trailEnabled(), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              model.bubble == .idle, let last = lastMouse
+        else { return }
+        let elapsed = now - last.time
+        guard elapsed > 0 else { return }
+        let speed = hypot(mouse.x - last.point.x, mouse.y - last.point.y) / elapsed
+        guard speed >= Self.trailSpeedThreshold,
+              now - (model.trail.last?.time ?? 0) >= Self.trailSpacing
+        else { return }
+
+        // Ghosts sit where the arrowhead was drawn: below-right of the cursor.
+        let arrowCenter = CGPoint(
+            x: mouse.x + Self.cursorClearance.width + 4 + CompanionArrow.size * 0.8,
+            y: mouse.y - Self.cursorClearance.height - 4 - CompanionArrow.size * 0.8
+        )
+        trailIndex += 1
+        model.trail.removeAll { now - $0.time > OverlayModel.trailLifetime }
+        model.trail.append(TrailPoint(position: arrowCenter, time: now, index: trailIndex))
+
+        // Empty the trail once it has faded, so the animation clock pauses.
+        trailCleanup?.cancel()
+        trailCleanup = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(OverlayModel.trailLifetime + 0.05))
+            guard !Task.isCancelled else { return }
+            self?.model.trail.removeAll()
+        }
+    }
+
     /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed
     /// canvas with the companion drawn at its top-left, so placement uses the
     /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
@@ -189,8 +238,8 @@ final class OverlayController {
 
     private func installMonitors() {
         let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
-        add(global: moves) { [weak self] _ in self?.moveBubble(to: NSEvent.mouseLocation) }
-        add(local: moves) { [weak self] _ in self?.moveBubble(to: NSEvent.mouseLocation) }
+        add(global: moves) { [weak self] _ in self?.cursorMoved() }
+        add(local: moves) { [weak self] _ in self?.cursorMoved() }
 
         // The next click anywhere dismisses the answer (the click itself goes through).
         add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.dismissAnswer() }

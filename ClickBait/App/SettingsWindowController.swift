@@ -75,6 +75,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Companion") {
+                Toggle("Speed trail when the cursor moves fast", isOn: $settings.speedTrail)
+                Text("Neon afterimages behind the companion on quick flicks. Always off when Reduce Motion is on.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Debugging") {
                 Toggle("Keep the last screenshot and recording", isOn: $settings.keepDebugCaptures)
                     .onChange(of: settings.keepDebugCaptures) { _, keep in
