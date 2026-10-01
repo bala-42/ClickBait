@@ -67,6 +67,7 @@ final class AskCoordinator {
         recorder.prepare()
         speaker.onStart = { [weak self] in
             guard let self, let started = answerStartedAt else { return }
+            answerStartedAt = nil  // log once per answer; Preview in Settings isn't an answer
             Log.ask.notice("First audio \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
         }
         speaker.onFinish = { [weak self] in self?.onSpeechFinished?() }
