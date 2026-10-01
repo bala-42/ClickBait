@@ -34,19 +34,4 @@ final class OverlayModel {
 
     /// Changes every time a new set of pointers appears, to restart their animation.
     var pointerGeneration = 0
-
-    /// Recent fast positions of the companion's arrowhead (global AppKit points), for
-    /// the Sandevistan speed trail. Empty when the cursor is still or slow.
-    var trail: [TrailPoint] = []
-    /// Seconds a ghost stays visible.
-    static let trailLifetime: TimeInterval = 0.5
-    /// Most ghosts on screen at once.
-    static let trailMaximum = 60
-}
-
-struct TrailPoint: Equatable {
-    var position: CGPoint
-    var time: TimeInterval
-    /// Increments per ghost so colours cycle along the trail.
-    var index: Int
 }

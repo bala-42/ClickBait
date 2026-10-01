@@ -15,8 +15,6 @@ final class OverlayController {
     var onDismiss: (() -> Void)?
     /// Called when Escape is pressed while ClickBait is listening or thinking.
     var onCancel: (() -> Void)?
-    /// Whether the Sandevistan speed trail is on (Settings); Reduce Motion always wins.
-    var trailEnabled: () -> Bool = { true }
 
     private var screenPanels: [NSPanel] = []
     private var bubblePanel: NSPanel?
@@ -127,11 +125,10 @@ final class OverlayController {
 
     private var screenPanelsVisible = false
 
-    /// The full-screen overlay windows exist only while they draw something (a pointer
-    /// or the speed trail). Kept off-screen otherwise, so no full-screen ClickBait
+    /// The full-screen overlay windows exist only while they draw a pointer. Kept off-screen otherwise, so no full-screen ClickBait
     /// window sits on every Space — a suspected cause of black Mission Control previews.
     private func updateScreenPanels() {
-        let needed = !model.pointers.isEmpty || !model.trail.isEmpty
+        let needed = !model.pointers.isEmpty
         guard needed != screenPanelsVisible else { return }
         screenPanelsVisible = needed
         for panel in screenPanels {
@@ -195,7 +192,7 @@ final class OverlayController {
     /// How long the companion takes to (mostly) catch up with the cursor. Driven by the
     /// display's refresh, not by mouse events — those arrive at different rates
     /// depending on the app under the cursor (Chrome and Electron apps differ from the
-    /// desktop), which made the follow and the trail feel different from app to app.
+    /// desktop), which made the follow feel different from app to app.
     private static let followTime: TimeInterval = 0.06
     private var anchor: CGPoint?
     private var lastFrame: CFTimeInterval?
@@ -243,7 +240,6 @@ final class OverlayController {
         anchor = next
 
         moveBubble(to: next)
-        recordTrail(from: previous, to: next, elapsed: elapsed)
         updateVisibility()
 
         // Stop ticking once the companion has settled and the mouse is still.
@@ -271,54 +267,6 @@ final class OverlayController {
         guard let panel = bubblePanel else { return }
         let alpha: CGFloat = hidden && model.bubble == .idle ? 0 : 1
         if panel.alphaValue != alpha { panel.alphaValue = alpha }
-    }
-
-    // MARK: - Speed trail
-
-    /// Below this speed (points per second) there's no trail: it's for quick moves.
-    private static let trailSpeedThreshold: CGFloat = 500
-    /// Distance between ghosts along the path; fast moves are filled in so the trail
-    /// reads as a dense stream of afterimages rather than a few scattered copies.
-    private static let trailSpacing: CGFloat = 9
-    private var trailIndex = 0
-    private var trailCleanup: Task<Void, Never>?
-
-    /// Where the arrowhead is drawn for a cursor position: below-right of the cursor.
-    private static func arrowCenter(for mouse: CGPoint) -> CGPoint {
-        CGPoint(
-            x: mouse.x + cursorClearance.width + 4 + CompanionArrow.size * 0.8,
-            y: mouse.y - cursorClearance.height - 4 - CompanionArrow.size * 0.8
-        )
-    }
-
-    /// Ghosts along the companion's own (smoothed) path this frame.
-    private func recordTrail(from start: CGPoint, to end: CGPoint, elapsed: TimeInterval) {
-        guard trailEnabled(), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              model.bubble == .idle, bubblePanel?.alphaValue != 0
-        else { return }
-        let distance = hypot(end.x - start.x, end.y - start.y)
-        guard distance / elapsed >= Self.trailSpeedThreshold else { return }
-
-        let now = Date.timeIntervalSinceReferenceDate
-        let steps = max(1, Int(distance / Self.trailSpacing))
-        var ghosts = model.trail.filter { now - $0.time <= OverlayModel.trailLifetime }
-        for step in 1...steps {
-            let fraction = Double(step) / Double(steps)
-            let point = CGPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
-            trailIndex += 1
-            ghosts.append(TrailPoint(position: Self.arrowCenter(for: point), time: now - elapsed * (1 - fraction), index: trailIndex))
-        }
-        model.trail = Array(ghosts.suffix(OverlayModel.trailMaximum))
-        updateScreenPanels()
-
-        // Empty the trail once it has faded, so the animation clock pauses.
-        trailCleanup?.cancel()
-        trailCleanup = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(OverlayModel.trailLifetime + 0.05))
-            guard !Task.isCancelled else { return }
-            self?.model.trail.removeAll()
-            self?.updateScreenPanels()
-        }
     }
 
     /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed

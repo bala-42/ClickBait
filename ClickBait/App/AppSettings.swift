@@ -18,7 +18,6 @@ final class AppSettings {
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
         static let commandsEnabled = "settings.commandsEnabled"
-        static let speedTrail = "settings.speedTrail"
         static let allowedShortcuts = "settings.allowedShortcuts"
         static func speechModelFolder(_ model: SpeechModel) -> String { "settings.speechModelFolder.\(model.rawValue)" }
     }
@@ -69,11 +68,6 @@ final class AppSettings {
 
     static let defaultSpeechRate = 0.52
 
-    /// Sandevistan-style afterimages behind the companion on fast mouse movement.
-    var speedTrail: Bool {
-        didSet { defaults.set(speedTrail, forKey: Key.speedTrail) }
-    }
-
     /// Carry out direct spoken orders (open apps, volume, Dark Mode, allowed shortcuts).
     var commandsEnabled: Bool {
         didSet { defaults.set(commandsEnabled, forKey: Key.commandsEnabled) }
@@ -96,7 +90,6 @@ final class AppSettings {
         voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
         speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
         commandsEnabled = defaults.object(forKey: Key.commandsEnabled) as? Bool ?? true
-        speedTrail = defaults.object(forKey: Key.speedTrail) as? Bool ?? true
         allowedShortcuts = defaults.stringArray(forKey: Key.allowedShortcuts) ?? []
     }
 
