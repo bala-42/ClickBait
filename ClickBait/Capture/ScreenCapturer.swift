@@ -1,4 +1,5 @@
 import AppKit
+import ClickBaitCore
 import ScreenCaptureKit
 
 /// A full-resolution screenshot of one display plus what's needed to map pixels
@@ -25,10 +26,11 @@ enum ScreenCaptureError: LocalizedError {
 }
 
 /// Captures the display under the mouse cursor with ScreenCaptureKit, leaving out
-/// ClickBait's own windows (overlay, bubble).
+/// ClickBait's own windows (overlay, bubble) and every window of a blocked app, even
+/// one that is only visible in the background.
 @MainActor
 final class ScreenCapturer {
-    func captureDisplayUnderCursor() async throws -> ScreenCapture {
+    func captureDisplayUnderCursor(excluding blocklist: AppBlocklist) async throws -> ScreenCapture {
         let mouse = NSEvent.mouseLocation
         guard
             let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main,
@@ -45,9 +47,11 @@ final class ScreenCapturer {
             throw ScreenCaptureError.displayNotShareable
         }
         let ownPID = ProcessInfo.processInfo.processIdentifier
-        let ownApps = content.applications.filter { $0.processID == ownPID }
+        let excludedApps = content.applications.filter {
+            $0.processID == ownPID || blocklist.isBlocked(bundleID: $0.bundleIdentifier)
+        }
 
-        let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+        let filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])
         let config = SCStreamConfiguration()
         config.width = Int(displayFrame.width * backingScale)
         config.height = Int(displayFrame.height * backingScale)

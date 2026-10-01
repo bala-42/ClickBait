@@ -75,7 +75,8 @@ final class AskCoordinator {
         pressedAt = .now
         // Capture at press time: the screen the user is asking about is the one they
         // were looking at when they started talking.
-        captureTask = Task { [capturer] in try await capturer.captureDisplayUnderCursor() }
+        let blocklist = settings.blocklist
+        captureTask = Task { [capturer] in try await capturer.captureDisplayUnderCursor(excluding: blocklist) }
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
     }
