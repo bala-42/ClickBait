@@ -189,17 +189,22 @@ final class OverlayController {
 
     // MARK: - Motion
 
-    /// How long the companion takes to (mostly) catch up with the cursor. Driven by the
-    /// display's refresh, not by mouse events — those arrive at different rates
-    /// depending on the app under the cursor (Chrome and Electron apps differ from the
-    /// desktop), which made the follow feel different from app to app.
+    /// How long the companion takes to (mostly) catch up with the cursor.
+    ///
+    /// Motion is driven entirely by the display's refresh: every frame reads the cursor
+    /// position. Mouse-moved events can't be used even to wake this up — macOS only
+    /// generates them for apps that ask, so over Chrome or Electron apps (Claude) they
+    /// arrive late or in bursts, which made the follow feel different from the desktop.
     private static let followTime: TimeInterval = 0.06
+    /// The system-wide cursor check is a call into the window server; ~20 times a second
+    /// is plenty to catch a video hiding the pointer.
+    private static let visibilityInterval: CFTimeInterval = 0.05
     private var anchor: CGPoint?
+    private var lastMouse: CGPoint?
     private var lastFrame: CFTimeInterval?
-    private var stillFrames = 0
+    private var lastVisibilityCheck: CFTimeInterval = 0
     private var displayLink: CADisplayLink?
     private lazy var frameTarget = FrameTarget(controller: self)
-    private var visibilityTask: Task<Void, Never>?
     private var hiddenByTyping = false
 
     private func startMotion() {
@@ -207,24 +212,9 @@ final class OverlayController {
         if let view = bubblePanel?.contentView {
             let link = view.displayLink(target: frameTarget, selector: #selector(FrameTarget.tick(_:)))
             link.add(to: .main, forMode: .common)
-            link.isPaused = true
             displayLink = link
         }
-        // While the mouse is still (no frames), keep checking whether something —
-        // a video player, a game — has hidden the pointer.
-        visibilityTask = Task { [weak self] in
-            while !Task.isCancelled {
-                self?.updateVisibility()
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
         Log.app.notice("Cursor visibility: \(CursorVisibility.isAvailable ? "system-wide" : "typing only", privacy: .public)")
-    }
-
-    private func cursorMoved() {
-        hiddenByTyping = false
-        stillFrames = 0
-        displayLink?.isPaused = false
     }
 
     fileprivate func frame(_ link: CADisplayLink) {
@@ -233,21 +223,22 @@ final class OverlayController {
         lastFrame = now
 
         let mouse = NSEvent.mouseLocation
+        if mouse != lastMouse {
+            if lastMouse != nil { hiddenByTyping = false }  // like the pointer: moving shows it again
+            lastMouse = mouse
+        }
+        if now - lastVisibilityCheck >= Self.visibilityInterval {
+            lastVisibilityCheck = now
+            updateVisibility()
+        }
+
         let previous = anchor ?? mouse
+        guard previous != mouse else { return }  // settled: nothing to do this frame
         let pull = 1 - exp(-elapsed / Self.followTime)
         var next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
         if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
         anchor = next
-
         moveBubble(to: next)
-        updateVisibility()
-
-        // Stop ticking once the companion has settled and the mouse is still.
-        stillFrames = next == previous ? stillFrames + 1 : 0
-        if stillFrames > 20 {
-            link.isPaused = true
-            lastFrame = nil
-        }
     }
 
     /// Hidden whenever macOS hides the pointer (system-wide check), and — like the
@@ -291,10 +282,6 @@ final class OverlayController {
     // MARK: - Input
 
     private func installMonitors() {
-        let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
-        add(global: moves) { [weak self] _ in self?.cursorMoved() }
-        add(local: moves) { [weak self] _ in self?.cursorMoved() }
-
         // The next click anywhere dismisses the answer (the click itself goes through).
         add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.dismissAnswer() }
 
