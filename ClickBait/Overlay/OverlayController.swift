@@ -29,6 +29,7 @@ final class OverlayController {
         rebuildScreenPanels()
         makeBubblePanel()
         installMonitors()
+        startMotion()
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -174,7 +175,10 @@ final class OverlayController {
         let host = NSHostingView(rootView: CompanionBubbleView(model: model))
         let panel = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.bubbleCanvas))
         panel.contentView = host
-        model.onBubbleSizeChange = { [weak self] in self?.moveBubble(to: NSEvent.mouseLocation) }
+        model.onBubbleSizeChange = { [weak self] in
+            guard let self else { return }
+            moveBubble(to: anchor ?? NSEvent.mouseLocation)
+        }
         panel.orderFrontRegardless()
         bubblePanel = panel
         bubbleHost = host
@@ -186,31 +190,98 @@ final class OverlayController {
     /// extends about 12 pt right and 20 pt down from its hotspot, so this clears it.
     private static let cursorClearance = CGSize(width: 18, height: 24)
 
-    // MARK: - Speed trail
+    // MARK: - Motion
 
-    /// Below this speed (points per second) there's no trail: it's for quick moves.
-    private static let trailSpeedThreshold: CGFloat = 500
-    /// Distance between ghosts along the path; fast flicks are filled in so the trail
-    /// reads as a dense stream of afterimages rather than a few scattered copies.
-    private static let trailSpacing: CGFloat = 9
-    private var lastMouse: (point: CGPoint, time: TimeInterval)?
-    private var trailIndex = 0
-    private var trailCleanup: Task<Void, Never>?
+    /// How long the companion takes to (mostly) catch up with the cursor. Driven by the
+    /// display's refresh, not by mouse events — those arrive at different rates
+    /// depending on the app under the cursor (Chrome and Electron apps differ from the
+    /// desktop), which made the follow and the trail feel different from app to app.
+    private static let followTime: TimeInterval = 0.06
+    private var anchor: CGPoint?
+    private var lastFrame: CFTimeInterval?
+    private var stillFrames = 0
+    private var displayLink: CADisplayLink?
+    private lazy var frameTarget = FrameTarget(controller: self)
+    private var visibilityTask: Task<Void, Never>?
+    private var hiddenByTyping = false
 
-    private func cursorMoved() {
-        let mouse = NSEvent.mouseLocation
-        setCompanionHidden(false)
-        moveBubble(to: mouse)
-        recordTrail(at: mouse)
+    private func startMotion() {
+        anchor = NSEvent.mouseLocation
+        if let view = bubblePanel?.contentView {
+            let link = view.displayLink(target: frameTarget, selector: #selector(FrameTarget.tick(_:)))
+            link.add(to: .main, forMode: .common)
+            link.isPaused = true
+            displayLink = link
+        }
+        // While the mouse is still (no frames), keep checking whether something —
+        // a video player, a game — has hidden the pointer.
+        visibilityTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.updateVisibility()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        Log.app.notice("Cursor visibility: \(CursorVisibility.isAvailable ? "system-wide" : "typing only", privacy: .public)")
     }
 
-    /// macOS hides the pointer while you type and shows it again when the mouse moves;
-    /// the idle companion does the same. Cards (answers, errors) stay visible.
+    private func cursorMoved() {
+        hiddenByTyping = false
+        stillFrames = 0
+        displayLink?.isPaused = false
+    }
+
+    fileprivate func frame(_ link: CADisplayLink) {
+        let now = link.targetTimestamp
+        let elapsed = min(max(now - (lastFrame ?? now - 1.0 / 60), 1.0 / 240), 0.1)
+        lastFrame = now
+
+        let mouse = NSEvent.mouseLocation
+        let previous = anchor ?? mouse
+        let pull = 1 - exp(-elapsed / Self.followTime)
+        var next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
+        if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
+        anchor = next
+
+        moveBubble(to: next)
+        recordTrail(from: previous, to: next, elapsed: elapsed)
+        updateVisibility()
+
+        // Stop ticking once the companion has settled and the mouse is still.
+        stillFrames = next == previous ? stillFrames + 1 : 0
+        if stillFrames > 20 {
+            link.isPaused = true
+            lastFrame = nil
+        }
+    }
+
+    /// Hidden whenever macOS hides the pointer (system-wide check), and — like the
+    /// pointer — while typing until the mouse moves. Cards (answers, errors) stay up.
+    private var lastSystemHidden = false
+
+    private func updateVisibility() {
+        let systemHidden = CursorVisibility.isVisible() == false
+        if systemHidden != lastSystemHidden {
+            lastSystemHidden = systemHidden
+            Log.app.notice("System cursor \(systemHidden ? "hidden" : "shown", privacy: .public)")
+        }
+        setCompanionHidden(hiddenByTyping || systemHidden)
+    }
+
     private func setCompanionHidden(_ hidden: Bool) {
         guard let panel = bubblePanel else { return }
         let alpha: CGFloat = hidden && model.bubble == .idle ? 0 : 1
         if panel.alphaValue != alpha { panel.alphaValue = alpha }
     }
+
+    // MARK: - Speed trail
+
+    /// Below this speed (points per second) there's no trail: it's for quick moves.
+    private static let trailSpeedThreshold: CGFloat = 500
+    /// Distance between ghosts along the path; fast moves are filled in so the trail
+    /// reads as a dense stream of afterimages rather than a few scattered copies.
+    private static let trailSpacing: CGFloat = 9
+    private var trailIndex = 0
+    private var trailCleanup: Task<Void, Never>?
 
     /// Where the arrowhead is drawn for a cursor position: below-right of the cursor.
     private static func arrowCenter(for mouse: CGPoint) -> CGPoint {
@@ -220,26 +291,22 @@ final class OverlayController {
         )
     }
 
-    private func recordTrail(at mouse: CGPoint) {
-        let now = Date.timeIntervalSinceReferenceDate
-        defer { lastMouse = (mouse, now) }
+    /// Ghosts along the companion's own (smoothed) path this frame.
+    private func recordTrail(from start: CGPoint, to end: CGPoint, elapsed: TimeInterval) {
         guard trailEnabled(), !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              model.bubble == .idle, let last = lastMouse
+              model.bubble == .idle, bubblePanel?.alphaValue != 0
         else { return }
-        let elapsed = now - last.time
-        let distance = hypot(mouse.x - last.point.x, mouse.y - last.point.y)
-        guard elapsed > 0, distance / elapsed >= Self.trailSpeedThreshold else { return }
+        let distance = hypot(end.x - start.x, end.y - start.y)
+        guard distance / elapsed >= Self.trailSpeedThreshold else { return }
 
-        // Ghosts every `trailSpacing` points from the last move to this one, with times
-        // spread across the interval so older ones fade first.
+        let now = Date.timeIntervalSinceReferenceDate
         let steps = max(1, Int(distance / Self.trailSpacing))
         var ghosts = model.trail.filter { now - $0.time <= OverlayModel.trailLifetime }
         for step in 1...steps {
             let fraction = Double(step) / Double(steps)
-            let point = CGPoint(x: last.point.x + (mouse.x - last.point.x) * fraction,
-                                y: last.point.y + (mouse.y - last.point.y) * fraction)
+            let point = CGPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
             trailIndex += 1
-            ghosts.append(TrailPoint(position: Self.arrowCenter(for: point), time: last.time + elapsed * fraction, index: trailIndex))
+            ghosts.append(TrailPoint(position: Self.arrowCenter(for: point), time: now - elapsed * (1 - fraction), index: trailIndex))
         }
         model.trail = Array(ghosts.suffix(OverlayModel.trailMaximum))
         updateScreenPanels()
@@ -295,7 +362,10 @@ final class OverlayController {
         add(global: .keyDown, handler: escape)
         add(local: .keyDown, handler: escape)
 
-        let typing: @MainActor (NSEvent) -> Void = { [weak self] _ in self?.setCompanionHidden(true) }
+        let typing: @MainActor (NSEvent) -> Void = { [weak self] _ in
+            self?.hiddenByTyping = true
+            self?.updateVisibility()
+        }
         add(global: .keyDown, handler: typing)
         add(local: .keyDown, handler: typing)
     }
@@ -324,5 +394,19 @@ private extension OverlayModel.Bubble {
         case .answer, .done, .error: return true  // a click or Escape clears these
         default: return false
         }
+    }
+}
+
+/// Receives display-link frames (on the main run loop) for the controller.
+@MainActor
+private final class FrameTarget: NSObject {
+    weak var controller: OverlayController?
+
+    init(controller: OverlayController) {
+        self.controller = controller
+    }
+
+    @objc func tick(_ link: CADisplayLink) {
+        controller?.frame(link)
     }
 }
