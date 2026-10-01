@@ -18,6 +18,10 @@ enum DebugCaptureStore {
         try transcript.write(to: directory.appending(path: "last-transcript.txt"), atomically: true, encoding: .utf8)
     }
 
+    static func saveReply(_ reply: String) {
+        try? reply.write(to: directory.appending(path: "last-reply.txt"), atomically: true, encoding: .utf8)
+    }
+
     static func deleteAll() {
         try? FileManager.default.removeItem(at: directory)
     }

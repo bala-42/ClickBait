@@ -47,8 +47,7 @@ struct SettingsView: View {
             }
 
             Section("Provider") {
-                Text("Provider, model and API key settings arrive in a later step.")
-                    .foregroundStyle(.secondary)
+                ProviderSettingsSection(settings: settings)
             }
 
             Section {

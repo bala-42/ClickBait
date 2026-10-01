@@ -12,7 +12,7 @@ enum AskState: Equatable {
 }
 
 /// Runs one ask from hotkey press to answer: idle → listening → thinking → speaking.
-/// Later steps plug the LLM, the overlay and speech into `finish`.
+/// Later steps plug the overlay and speech into `finish`.
 @MainActor
 @Observable
 final class AskCoordinator {
@@ -26,6 +26,8 @@ final class AskCoordinator {
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
     /// Called with what Whisper heard, until the overlay bubble can show it (step 7).
     @ObservationIgnored var onTranscript: ((String) -> Void)?
+    /// Called with the model's raw reply, until the parser and overlay exist (steps 6–7).
+    @ObservationIgnored var onAnswer: ((String) -> Void)?
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let speech: SpeechModelManager
@@ -33,6 +35,8 @@ final class AskCoordinator {
     @ObservationIgnored private let capturer = ScreenCapturer()
     @ObservationIgnored private var captureTask: Task<ScreenCapture, Error>?
     @ObservationIgnored private var pressedAt: ContinuousClock.Instant?
+    @ObservationIgnored private var context = ScreenContext()
+    @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
 
     init(settings: AppSettings, speech: SpeechModelManager) {
@@ -82,6 +86,10 @@ final class AskCoordinator {
             show(error: message)
             return
         }
+        if settings.provider == .anthropic, (KeychainStore.read(.anthropicAPIKey) ?? "").isEmpty {
+            show(error: LLMError.missingAPIKey.localizedDescription)
+            return
+        }
 
         let micStart = ContinuousClock.now
         do {
@@ -98,6 +106,11 @@ final class AskCoordinator {
         // were looking at when they started talking.
         let blocklist = settings.blocklist
         captureTask = Task { [capturer] in try await capturer.captureDisplayUnderCursor(excluding: blocklist) }
+        context = ScreenContext(appName: frontmost?.localizedName)
+        // Load a cold local model while the user is still talking. Sends no user content.
+        let provider = settings.makeProvider()
+        self.provider = provider
+        Task.detached(priority: .userInitiated) { await provider.warmUp() }
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
     }
@@ -111,6 +124,7 @@ final class AskCoordinator {
         }
 
         let samples = recorder.stop()
+        let releasedAt = ContinuousClock.now
         state = .thinking
         self.pressedAt = nil
 
@@ -131,6 +145,9 @@ final class AskCoordinator {
             screenshot \(capture.image.width, privacy: .public)x\(capture.image.height, privacy: .public)px \
             of display \(capture.displayID, privacy: .public) at \(capture.backingScale, privacy: .public)x
             """)
+
+        // Downscale while Whisper runs.
+        let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
 
         let transcript: String
         do {
@@ -162,7 +179,45 @@ final class AskCoordinator {
         }
         onTranscript?(transcript)
 
-        // The LLM call, pointing and speech are added in later steps.
+        guard let provider else { return }
+        let reply: String
+        do {
+            let screenshot = try await encoding.value
+            let request = AskRequest(
+                question: transcript,
+                screenshotJPEG: screenshot.jpeg,
+                screenshotWidth: screenshot.width,
+                screenshotHeight: screenshot.height,
+                context: context
+            )
+            Log.ask.notice("""
+                Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
+                JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))
+                """)
+            var text = ""
+            var firstChunkAt: ContinuousClock.Instant?
+            for try await chunk in provider.stream(request) {
+                if firstChunkAt == nil { firstChunkAt = .now }
+                text += chunk
+            }
+            reply = text
+            let firstChunk = firstChunkAt.map { String(describing: $0 - releasedAt) } ?? "none"
+            Log.ask.notice("""
+                Reply: first chunk \(firstChunk, privacy: .public) after release, complete after \
+                \(String(describing: ContinuousClock.now - releasedAt), privacy: .public), \(reply.count, privacy: .public) characters
+                """)
+        } catch {
+            Log.ask.error("Provider failed: \(error.localizedDescription, privacy: .public)")
+            show(error: error.localizedDescription)
+            return
+        }
+
+        if settings.keepDebugCaptures {
+            DebugCaptureStore.saveReply(reply)
+        }
+        onAnswer?(reply)
+
+        // The response parser, pointing and speech are added in later steps.
         state = .idle
     }
 

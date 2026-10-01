@@ -11,6 +11,9 @@ final class AppSettings {
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
         static let speechModel = "settings.speechModel"
+        static let provider = "settings.provider"
+        static let ollamaModel = "settings.ollamaModel"
+        static let anthropicModel = "settings.anthropicModel"
         static func speechModelFolder(_ model: SpeechModel) -> String { "settings.speechModelFolder.\(model.rawValue)" }
     }
 
@@ -30,11 +33,46 @@ final class AppSettings {
         didSet { defaults.set(speechModel.rawValue, forKey: Key.speechModel) }
     }
 
+    /// Local Ollama by default; Anthropic only when the user switches and adds a key.
+    var provider: ProviderKind {
+        didSet { defaults.set(provider.rawValue, forKey: Key.provider) }
+    }
+
+    var ollamaModel: String {
+        didSet { defaults.set(ollamaModel, forKey: Key.ollamaModel) }
+    }
+
+    var anthropicModel: String {
+        didSet { defaults.set(anthropicModel, forKey: Key.anthropicModel) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
         keepDebugCaptures = defaults.bool(forKey: Key.keepDebugCaptures)
         speechModel = defaults.string(forKey: Key.speechModel).flatMap(SpeechModel.init(rawValue:)) ?? .default
+        provider = defaults.string(forKey: Key.provider).flatMap(ProviderKind.init(rawValue:)) ?? .ollama
+        ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
+        anthropicModel = Self.nonEmpty(defaults.string(forKey: Key.anthropicModel)) ?? AnthropicProvider.defaultModel
+    }
+
+    /// Builds the provider the user selected. The API key is read from the Keychain
+    /// each time, so it's never cached in memory longer than one ask.
+    func makeProvider() -> any LLMProvider {
+        switch provider {
+        case .ollama:
+            OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces))
+        case .anthropic:
+            AnthropicProvider(
+                model: anthropicModel.trimmingCharacters(in: .whitespaces),
+                apiKey: KeychainStore.read(.anthropicAPIKey)
+            )
+        }
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return value
     }
 
     /// Where a downloaded speech model lives, as reported by WhisperKit after download.
@@ -57,5 +95,19 @@ final class AppSettings {
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+}
+
+enum ProviderKind: String, CaseIterable, Identifiable {
+    case ollama
+    case anthropic
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .ollama: "Ollama — local, private (default)"
+        case .anthropic: "Anthropic — your API key (sends the screenshot to Anthropic)"
+        }
     }
 }

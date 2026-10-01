@@ -10,6 +10,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusLine = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
     private let revealCaptureItem = NSMenuItem(title: "Reveal Last Capture", action: nil, keyEquivalent: "")
     private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
@@ -47,6 +48,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         heardItem.isHidden = false
     }
 
+    /// Shows the model's raw reply until the parser and overlay exist (steps 6–7).
+    func showAnswer(_ reply: String) {
+        let oneLine = reply.replacingOccurrences(of: "\n", with: " ")
+        let shown = oneLine.count > 120 ? oneLine.prefix(119) + "…" : Substring(oneLine)
+        answerItem.title = "Reply: \(shown)"
+        answerItem.isHidden = false
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
     }
@@ -60,6 +69,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         heardItem.isEnabled = false
         heardItem.isHidden = true
         menu.addItem(heardItem)
+        answerItem.isEnabled = false
+        answerItem.isHidden = true
+        menu.addItem(answerItem)
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))

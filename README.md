@@ -32,6 +32,12 @@ ollama pull qwen2.5vl:7b
 Any Ollama model that accepts images works; set its name in **Settings → Provider**.
 `qwen2.5vl:7b` is the default because it is good at locating UI elements.
 
+### Optional: use Anthropic instead (bring your own key)
+
+In **Settings → Provider**, choose **Anthropic**, paste your API key (stored in the macOS Keychain)
+and click **Test Connection**. The default model is `claude-opus-5-5`; any vision-capable Claude
+model name works. With Anthropic selected, the screenshot and your question are sent to Anthropic.
+
 ### 2. Build
 
 ```sh
