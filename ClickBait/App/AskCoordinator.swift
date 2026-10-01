@@ -332,6 +332,8 @@ final class AskCoordinator {
                     onPartialAnswer?(spokenSoFar)
                 }
             }
+            // A cancelled stream just ends; don't treat it as an (empty) answer.
+            guard !Task.isCancelled else { return }
             reply = text
             let firstChunk = firstChunkAt.map { String(describing: $0 - releasedAt) } ?? "none"
             Log.ask.notice("""
@@ -390,9 +392,10 @@ final class AskCoordinator {
         for pointer in pointers {
             let target = pointer.quartz
             let start = ContinuousClock.now
-            let candidates = await Task.detached(priority: .userInitiated) {
+            let (candidates, probe) = await Task.detached(priority: .userInitiated) {
                 AXInspector.candidates(around: target, frontmostPID: pid)
             }.value
+            Log.ask.notice("Snap probe: \(probe.description, privacy: .public)")
             let decision = Snapper.decide(target: target, label: pointer.label, candidates: candidates)
             let moved = decision.point != target
             let dx = decision.point.x - target.x, dy = decision.point.y - target.y

@@ -64,8 +64,22 @@ enum AXInspector {
 
     /// Actionable elements around `point` (Quartz global points), found by hit-testing
     /// a small grid of rings out to the snapping radius.
-    static func candidates(around point: Point, frontmostPID: pid_t?) -> [SnapCandidate] {
-        guard isTrusted else { return [] }
+    /// What the hit-tests saw, for diagnosing snapping. Roles only — never names or text.
+    struct Probe: CustomStringConvertible {
+        var samples = 0
+        var hits = 0
+        var ownHits = 0
+        var roles: [String: Int] = [:]
+
+        var description: String {
+            let top = roles.sorted { $0.value > $1.value }.prefix(6).map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+            return "\(hits)/\(samples) hits, \(ownHits) on ClickBait's own windows, roles: \(top.isEmpty ? "none" : top)"
+        }
+    }
+
+    static func candidates(around point: Point, frontmostPID: pid_t?) -> ([SnapCandidate], Probe) {
+        var probe = Probe()
+        guard isTrusted else { return ([], probe) }
         let systemWide = element(AXUIElementCreateSystemWide())
         let frontmostApp = frontmostPID.map { element(AXUIElementCreateApplication($0)) }
         let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -80,10 +94,18 @@ enum AXInspector {
 
         var seen: [AXUIElement] = []
         var found: [SnapCandidate] = []
+        probe.samples = samples.count
         for sample in samples {
             var hit = systemWide.hitTest(sample)
             // ClickBait's own panels can be on top; look straight into the frontmost app.
-            if hit?.pid == ownPID { hit = frontmostApp?.hitTest(sample) }
+            if hit?.pid == ownPID {
+                probe.ownHits += 1
+                hit = frontmostApp?.hitTest(sample)
+            }
+            if let hit {
+                probe.hits += 1
+                probe.roles[hit.string(kAXRoleAttribute) ?? "?", default: 0] += 1
+            }
             guard let actionable = hit?.actionableAncestor(),
                   !seen.contains(where: { CFEqual($0, actionable.ref) })
             else { continue }
@@ -92,7 +114,7 @@ enum AXInspector {
                 found.append(SnapCandidate(role: actionable.string(kAXRoleAttribute) ?? "", label: actionable.name, frame: frame))
             }
         }
-        return found
+        return (found, probe)
     }
 
     private static func element(_ ref: AXUIElement) -> AXElement {
