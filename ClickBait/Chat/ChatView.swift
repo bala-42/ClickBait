@@ -18,6 +18,9 @@ struct ChatView: View {
             inputRow
         }
         .frame(width: Self.width)
+        // Empty parts of the card drag the window (SwiftUI content would otherwise
+        // swallow the mouse-down before the window could move).
+        .background(WindowDragArea())
         .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: 16, style: .continuous)))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .fixedSize(horizontal: false, vertical: true)
@@ -135,6 +138,21 @@ private struct MessageRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// An AppKit view that moves its window when dragged. Sits behind the card's content,
+/// so it receives clicks on empty areas only.
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
         }
     }
 }
