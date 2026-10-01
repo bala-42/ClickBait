@@ -129,7 +129,7 @@ struct StealthArrow: Shape {
     }
 }
 
-/// The companion's arrowhead: aims up-left at the real cursor. Translucent black with
+/// The companion's arrowhead: aims up-left at the real cursor. Translucent black (35%) with
 /// a white edge so it reads on light and dark content (windows can't invert the
 /// pixels of other apps behind them).
 struct CompanionArrow: View {
@@ -137,7 +137,7 @@ struct CompanionArrow: View {
 
     var body: some View {
         StealthArrow()
-            .fill(.black.opacity(0.55))
+            .fill(.black.opacity(0.35))
             .overlay(StealthArrow().stroke(.white, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
             .frame(width: Self.size, height: Self.size * 1.2)
             .rotationEffect(.degrees(-45))
@@ -153,67 +153,103 @@ struct CompanionBubbleView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathing = false
 
-    static let maxTextWidth: CGFloat = 280
+    static let maxTextWidth: CGFloat = 300
 
     var body: some View {
         HStack(alignment: .top, spacing: 2) {
             CompanionArrow()
                 .padding(4)
-            status
+            card
         }
-        .font(.system(size: 13))
         .fixedSize()
         .onAppear {
             guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.8).repeatForever()) { breathing = true }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever()) { breathing = true }
         }
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder private var status: some View {
-        Group {
-            switch model.bubble {
-            case .idle:
-                EmptyView()
-            case .listening:
-                row(symbol: "mic.fill", tint: .red, text: "Listening…")
-                    .scaleEffect(breathing && !reduceMotion ? 1.04 : 1)
-            case .thinking(let heard):
-                HStack(alignment: .top, spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text(heard.map { "“\($0)”" } ?? "Thinking…")
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: Self.maxTextWidth, alignment: .leading)
-                }
-                .bubbleStyle()
-            case .answer(let text):
-                row(symbol: "cursorarrow.rays", tint: .accentColor, text: text)
-            case .error(let message):
-                row(symbol: "exclamationmark.triangle.fill", tint: .orange, text: message)
-            }
+    @ViewBuilder private var card: some View {
+        switch model.bubble {
+        case .idle:
+            EmptyView()
+        case .listening:
+            BubbleCard(symbol: "mic.fill", tint: .red, title: "Listening", message: "Let go of ⌃⌥ when you're done.",
+                       pulsing: breathing && !reduceMotion)
+        case .thinking(let heard):
+            BubbleCard(symbol: "sparkles", tint: .purple, title: "Thinking", message: heard.map { "“\($0)”" },
+                       showsSpinner: true)
+        case .answer(let text):
+            BubbleCard(symbol: "cursorarrow.rays", tint: .accentColor, title: "ClickBait", message: text)
+        case .error(let message):
+            BubbleCard(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't do that", message: message)
         }
-    }
-
-    private func row(symbol: String, tint: Color, text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol).foregroundStyle(tint)
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: Self.maxTextWidth, alignment: .leading)
-        }
-        .bubbleStyle()
     }
 }
 
-private extension View {
-    func bubbleStyle() -> some View {
-        padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.12)))
-            .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-            .padding(.top, 10)  // sit level with the arrow's tail, not its tip
-            .padding([.trailing, .bottom], 8)  // room for the shadow inside the panel
+/// A clean card in the macOS notification style: tinted icon, small title, message.
+/// Liquid Glass on macOS 26+, the standard blurred material before that.
+private struct BubbleCard: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    var message: String?
+    var showsSpinner = false
+    var pulsing = false
+
+    private static let corner: CGFloat = 16
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint)
+                .frame(width: 26, height: 26)
+                .background(tint.opacity(0.16), in: Circle())
+                .scaleEffect(pulsing ? 1.08 : 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    if showsSpinner {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+                if let message, !message.isEmpty {
+                    Text(message)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .lineSpacing(1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: CompanionBubbleView.maxTextWidth, alignment: .leading)
+            .padding(.top, 4)
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, 14)
+        .padding(.vertical, 9)
+        .modifier(GlassBackground(cornerRadius: Self.corner))
+        .padding(.top, 8)  // sit level with the arrow's tail, not its tip
+        .padding([.trailing, .bottom], 10)  // room for the shadow inside the panel
+    }
+}
+
+private struct GlassBackground: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+        }
     }
 }
