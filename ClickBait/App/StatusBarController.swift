@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let statusLine = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
     private let revealCaptureItem = NSMenuItem(title: "Reveal Last Capture", action: nil, keyEquivalent: "")
+    private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
@@ -39,6 +40,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusLine.title = line
     }
 
+    /// Shows the last transcript until the overlay bubble exists (step 7).
+    func showHeard(_ transcript: String) {
+        let shown = transcript.count > 80 ? transcript.prefix(79) + "…" : Substring(transcript)
+        heardItem.title = "Heard: “\(shown)”"
+        heardItem.isHidden = false
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
     }
@@ -49,6 +57,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         statusLine.isEnabled = false
         menu.addItem(statusLine)
+        heardItem.isEnabled = false
+        heardItem.isHidden = true
+        menu.addItem(heardItem)
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))

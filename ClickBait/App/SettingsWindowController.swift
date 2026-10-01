@@ -6,16 +6,16 @@ import SwiftUI
 /// window, so it activates itself before showing this one.
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(settings: AppSettings) {
+    init(settings: AppSettings, speech: SpeechModelManager) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 640),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "ClickBait Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, speech: speech))
         window.center()
         super.init(window: window)
     }
@@ -31,6 +31,7 @@ final class SettingsWindowController: NSWindowController {
 
 struct SettingsView: View {
     @Bindable var settings: AppSettings
+    let speech: SpeechModelManager
 
     var body: some View {
         Form {
@@ -39,6 +40,10 @@ struct SettingsView: View {
                 Text("Pressing any other key while holding cancels, so shortcuts like ⌃⌥← still work.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Speech") {
+                SpeechModelSection(settings: settings, speech: speech)
             }
 
             Section("Provider") {
@@ -67,7 +72,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 560, minHeight: 520)
+        .frame(minWidth: 580, minHeight: 640)
     }
 }
 

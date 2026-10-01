@@ -21,13 +21,25 @@ final class AudioRecorder {
 
     private var engine: AVAudioEngine?
     private var sink: SampleSink?
+    /// An engine whose graph is already built, so pressing the hotkey only has to start
+    /// it. Preparing doesn't open the microphone (no orange indicator).
+    private var preparedEngine: AVAudioEngine?
 
     var isRecording: Bool { engine != nil }
+
+    func prepare() {
+        guard preparedEngine == nil else { return }
+        let engine = AVAudioEngine()
+        _ = engine.inputNode
+        engine.prepare()
+        preparedEngine = engine
+    }
 
     func start() throws {
         guard engine == nil else { return }
 
-        let engine = AVAudioEngine()
+        let engine = preparedEngine ?? AVAudioEngine()
+        preparedEngine = nil
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -70,6 +82,7 @@ final class AudioRecorder {
 
         let samples = sink?.drain() ?? []
         sink = nil
+        prepare()
         return samples
     }
 }

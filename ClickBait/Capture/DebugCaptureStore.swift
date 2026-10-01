@@ -11,10 +11,11 @@ enum DebugCaptureStore {
         FileManager.default.temporaryDirectory.appending(path: "ClickBait-debug", directoryHint: .isDirectory)
     }
 
-    static func save(_ capture: ScreenCapture, samples: [Float]) throws {
+    static func save(_ capture: ScreenCapture, samples: [Float], transcript: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try writePNG(capture.image, to: directory.appending(path: "last-screenshot.png"))
         try writeWAV(samples, to: directory.appending(path: "last-recording.wav"))
+        try transcript.write(to: directory.appending(path: "last-transcript.txt"), atomically: true, encoding: .utf8)
     }
 
     static func deleteAll() {

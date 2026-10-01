@@ -8,11 +8,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let settings = AppSettings()
     private let permissions = PermissionsManager()
-    private lazy var coordinator = AskCoordinator(settings: settings)
+    private lazy var speech = SpeechModelManager(settings: settings)
+    private lazy var coordinator = AskCoordinator(settings: settings, speech: speech)
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
-    private lazy var settingsWindow = SettingsWindowController(settings: settings)
-    private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions)
+    private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech)
+    private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
     static func main() {
         let app = NSApplication.shared
@@ -35,7 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.statusBar = statusBar
         coordinator.onStateChange = { [weak statusBar] state in statusBar?.update(for: state) }
+        coordinator.onTranscript = { [weak statusBar] text in statusBar?.showHeard(text) }
         hotkey.start()
+        speech.loadIfInstalled()
 
         logPermissions()
         if onboardingWindow.shouldShowAtLaunch {

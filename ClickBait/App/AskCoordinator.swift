@@ -12,7 +12,7 @@ enum AskState: Equatable {
 }
 
 /// Runs one ask from hotkey press to answer: idle → listening → thinking → speaking.
-/// Later steps plug transcription, the LLM, the overlay and speech into `finish`.
+/// Later steps plug the LLM, the overlay and speech into `finish`.
 @MainActor
 @Observable
 final class AskCoordinator {
@@ -24,16 +24,21 @@ final class AskCoordinator {
         didSet { if state != oldValue { onStateChange?(state) } }
     }
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
+    /// Called with what Whisper heard, until the overlay bubble can show it (step 7).
+    @ObservationIgnored var onTranscript: ((String) -> Void)?
 
     @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private let speech: SpeechModelManager
     @ObservationIgnored private let recorder = AudioRecorder()
     @ObservationIgnored private let capturer = ScreenCapturer()
     @ObservationIgnored private var captureTask: Task<ScreenCapture, Error>?
     @ObservationIgnored private var pressedAt: ContinuousClock.Instant?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, speech: SpeechModelManager) {
         self.settings = settings
+        self.speech = speech
+        recorder.prepare()
     }
 
     func handle(_ event: HotkeyMonitor.Event) {
@@ -63,7 +68,22 @@ final class AskCoordinator {
             show(error: "Screen Recording is off. Open Permissions… from the menu bar icon.")
             return
         }
+        // Check before recording so nobody talks into a pipeline that can't hear them.
+        switch speech.state {
+        case .ready:
+            break
+        case .notDownloaded, .downloading:
+            show(error: "The speech model isn't downloaded yet. Open Settings… → Speech.")
+            return
+        case .loading:
+            show(error: "The speech model is still loading. Try again in a moment.")
+            return
+        case .failed(let message):
+            show(error: message)
+            return
+        }
 
+        let micStart = ContinuousClock.now
         do {
             try recorder.start()
         } catch {
@@ -73,6 +93,7 @@ final class AskCoordinator {
         }
 
         pressedAt = .now
+        Log.input.notice("Microphone started in \(String(describing: ContinuousClock.now - micStart), privacy: .public)")
         // Capture at press time: the screen the user is asking about is the one they
         // were looking at when they started talking.
         let blocklist = settings.blocklist
@@ -111,17 +132,37 @@ final class AskCoordinator {
             of display \(capture.displayID, privacy: .public) at \(capture.backingScale, privacy: .public)x
             """)
 
+        let transcript: String
+        do {
+            let start = ContinuousClock.now
+            transcript = try await speech.transcribe(samples)
+            Log.ask.notice("""
+                Transcribed \(seconds, format: .fixed(precision: 2), privacy: .public)s of audio in \
+                \(String(describing: ContinuousClock.now - start), privacy: .public): \(transcript.count, privacy: .public) characters
+                """)
+        } catch {
+            Log.ask.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
+            show(error: "Couldn't understand the recording: \(error.localizedDescription)")
+            return
+        }
+
         if settings.keepDebugCaptures {
             await Task.detached(priority: .utility) {
                 do {
-                    try DebugCaptureStore.save(capture, samples: samples)
+                    try DebugCaptureStore.save(capture, samples: samples, transcript: transcript)
                 } catch {
                     Log.capture.error("Debug save failed: \(error.localizedDescription, privacy: .public)")
                 }
             }.value
         }
 
-        // Transcription, the LLM call, pointing and speech are added in later steps.
+        guard !transcript.isEmpty else {
+            show(error: "I didn't catch that. Hold Control+Option and try again.")
+            return
+        }
+        onTranscript?(transcript)
+
+        // The LLM call, pointing and speech are added in later steps.
         state = .idle
     }
 

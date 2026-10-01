@@ -8,11 +8,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     static let suppressAtLaunchKey = "onboarding.suppressAtLaunch"
 
     private let permissions: PermissionsManager
+    private let speech: SpeechModelManager
 
-    init(permissions: PermissionsManager) {
+    init(permissions: PermissionsManager, settings: AppSettings, speech: SpeechModelManager) {
         self.permissions = permissions
+        self.speech = speech
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -24,6 +26,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.contentView = NSHostingView(rootView: OnboardingView(
             permissions: permissions,
+            settings: settings,
+            speech: speech,
             onDone: { [weak self] in self?.close() }
         ))
         window.center()
@@ -36,7 +40,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let isFirstLaunch = !UserDefaults.standard.bool(forKey: "onboarding.hasLaunched")
         UserDefaults.standard.set(true, forKey: "onboarding.hasLaunched")
         if isFirstLaunch { return true }
-        return !permissions.allGranted && !UserDefaults.standard.bool(forKey: Self.suppressAtLaunchKey)
+        let incomplete = !permissions.allGranted || speech.state == .notDownloaded
+        return incomplete && !UserDefaults.standard.bool(forKey: Self.suppressAtLaunchKey)
     }
 
     func show() {
@@ -53,6 +58,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
 struct OnboardingView: View {
     let permissions: PermissionsManager
+    let settings: AppSettings
+    let speech: SpeechModelManager
     let onDone: () -> Void
 
     @AppStorage(OnboardingWindowController.suppressAtLaunchKey) private var suppressAtLaunch = false
@@ -60,7 +67,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("ClickBait needs three permissions")
+                Text("Set up ClickBait")
                     .font(.title2.bold())
                 Text("Hold Control+Option, ask out loud, and ClickBait points at what to click. Everything runs on your Mac by default.")
                     .foregroundStyle(.secondary)
@@ -79,6 +86,13 @@ struct OnboardingView: View {
             }
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
 
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Speech model").font(.headline)
+                SpeechModelSection(settings: settings, speech: speech, showsPicker: false)
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+
             Text(footnote)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -88,18 +102,22 @@ struct OnboardingView: View {
 
             HStack {
                 Toggle("Don't show this at launch", isOn: $suppressAtLaunch)
-                    .disabled(permissions.allGranted)
+                    .disabled(isComplete)
                 Spacer()
-                Button(permissions.allGranted ? "Done" : "Continue Without") { onDone() }
+                Button(isComplete ? "Done" : "Continue Without") { onDone() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 560, height: 420)
+        .frame(width: 560, height: 560)
+    }
+
+    private var isComplete: Bool {
+        permissions.allGranted && speech.isReady
     }
 
     private var footnote: String {
-        if permissions.allGranted {
+        if isComplete {
             return "All set. Hold Control+Option anywhere and ask a question."
         }
         return "After turning on Screen Recording, macOS may ask you to quit and reopen ClickBait. "
