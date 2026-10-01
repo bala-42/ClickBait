@@ -4,7 +4,7 @@ import AppKit
 /// the icon and the menu's first line are where ClickBait shows its state.
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
-    private static let hint = "Hold ⌃⌥ Control+Option and ask"
+    private static let hint = "Hold ⌃⌥ to ask · tap ⌥⌘ to explain highlighted text"
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let statusLine = NSMenuItem(title: hint, action: nil, keyEquivalent: "")

@@ -63,9 +63,12 @@ ClickBaitCore/             Platform-agnostic Swift package (Package.swift lives 
 6. **Snap**: hit-test the AX element at that point; if a nearby actionable element (button, link, menu item, text field) within ~40pt better matches `label`, move the pointer to that element's center. Log original vs snapped.
 7. Speak `speech`, animate pointer on the overlay, auto-dismiss after ~6s or on next click/Escape.
 
+### Explain flow (added during M1)
+Highlight text, then press and release **Option+Command** alone (no other key in between; `ChordDetector` in Core). The selected text is read via AX (`kAXSelectedTextAttribute`), sent with a screenshot for context, and the model returns a concise 2–4 sentence explanation in `speech` (usually no pointers). Same blocklist, provider and privacy rules as Ask.
+
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.
-- Small companion bubble follows the cursor (global `mouseMoved` monitor) showing state: idle / listening / thinking / speaking.
+- Companion follows the cursor (global `mouseMoved` monitor): idle it's a small translucent stealth arrowhead aimed at the cursor; for listening / thinking / explaining / answers / errors the arrowhead itself morphs into a Liquid Glass card (material fallback before macOS 26).
 - Pointer: animated arrow/ring + label pill. Respect Reduce Motion.
 
 ## Permissions

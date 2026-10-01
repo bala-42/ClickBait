@@ -146,22 +146,33 @@ struct CompanionArrow: View {
     }
 }
 
-/// The small companion that follows the cursor and shows what ClickBait is doing.
+/// The companion that follows the cursor. Idle it's a small arrowhead; when there's
+/// something to say, the arrowhead itself grows into the bubble (and shrinks back).
 struct CompanionBubbleView: View {
     let model: OverlayModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var morph
     @State private var breathing = false
 
     static let maxTextWidth: CGFloat = 300
 
     var body: some View {
-        HStack(alignment: .top, spacing: 2) {
-            CompanionArrow()
-                .padding(4)
-            card
+        ZStack(alignment: .topLeading) {
+            if model.bubble == .idle {
+                CompanionArrow()
+                    .matchedGeometryEffect(id: "companion", in: morph)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .topLeading)))
+            } else {
+                card
+                    .matchedGeometryEffect(id: "companion", in: morph)
+                    .transition(.opacity)
+            }
         }
+        .padding(4)
+        .padding([.trailing, .bottom], 10)  // room for the shadow inside the panel
         .fixedSize()
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.78), value: model.bubble)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever()) { breathing = true }
@@ -173,6 +184,9 @@ struct CompanionBubbleView: View {
         switch model.bubble {
         case .idle:
             EmptyView()
+        case .explaining(let excerpt):
+            BubbleCard(symbol: "text.magnifyingglass", tint: .teal, title: "Explaining", message: Self.quote(excerpt),
+                       showsSpinner: true)
         case .listening:
             BubbleCard(symbol: "mic.fill", tint: .red, title: "Listening", message: "Let go of ⌃⌥ when you're done.",
                        pulsing: breathing && !reduceMotion)
@@ -184,6 +198,11 @@ struct CompanionBubbleView: View {
         case .error(let message):
             BubbleCard(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't do that", message: message)
         }
+    }
+
+    private static func quote(_ text: String) -> String {
+        let oneLine = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return "“" + (oneLine.count > 90 ? oneLine.prefix(89) + "…" : Substring(oneLine)) + "”"
     }
 }
 
@@ -233,8 +252,8 @@ private struct BubbleCard: View {
         .padding(.trailing, 14)
         .padding(.vertical, 9)
         .modifier(GlassBackground(cornerRadius: Self.corner))
-        .padding(.top, 8)  // sit level with the arrow's tail, not its tip
-        .padding([.trailing, .bottom], 10)  // room for the shadow inside the panel
+        // While the arrowhead grows into the card, keep the text inside the shape.
+        .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
     }
 }
 

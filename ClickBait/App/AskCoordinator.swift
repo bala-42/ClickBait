@@ -35,6 +35,8 @@ final class AskCoordinator {
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
     /// Called with what Whisper heard.
     @ObservationIgnored var onTranscript: ((String) -> Void)?
+    /// Called with the start of the highlighted text being explained (⌥⌘).
+    @ObservationIgnored var onExplaining: ((String) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -57,12 +59,13 @@ final class AskCoordinator {
         recorder.prepare()
     }
 
-    func handle(_ event: HotkeyMonitor.Event) {
+    func handle(_ event: ChordDetector.Event) {
         switch event {
-        case .pressed: begin()
-        case .released:
+        case .askPressed: begin()
+        case .askReleased:
             askTask = Task { await finish() }
-        case .cancelled: cancel(reason: "another key was pressed")
+        case .askCancelled: cancel(reason: "another key was pressed")
+        case .explain: explain()
         }
     }
 
@@ -93,18 +96,9 @@ final class AskCoordinator {
         errorResetTask?.cancel()
 
         let frontmost = NSWorkspace.shared.frontmostApplication
-        if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
-            let name = frontmost?.localizedName ?? "this app"
-            Log.ask.notice("Refused: frontmost app is on the blocklist")
-            show(error: "ClickBait doesn't look at \(name) — it's on your blocklist.")
-            return
-        }
+        guard checkCanAsk(frontmost: frontmost) else { return }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             show(error: "Microphone access is off. Open Permissions… from the menu bar icon.")
-            return
-        }
-        guard CGPreflightScreenCaptureAccess() else {
-            show(error: "Screen Recording is off. Open Permissions… from the menu bar icon.")
             return
         }
         // Check before recording so nobody talks into a pipeline that can't hear them.
@@ -121,11 +115,6 @@ final class AskCoordinator {
             show(error: message)
             return
         }
-        if settings.provider == .anthropic, (KeychainStore.read(.anthropicAPIKey) ?? "").isEmpty {
-            show(error: LLMError.missingAPIKey.localizedDescription)
-            return
-        }
-
         let micStart = ContinuousClock.now
         do {
             try recorder.start()
@@ -151,6 +140,25 @@ final class AskCoordinator {
         Task.detached(priority: .userInitiated) { await provider.warmUp() }
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
+    }
+
+    /// Checks shared by ask and explain. Shows the reason and returns false if blocked.
+    private func checkCanAsk(frontmost: NSRunningApplication?) -> Bool {
+        if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
+            let name = frontmost?.localizedName ?? "this app"
+            Log.ask.notice("Refused: frontmost app is on the blocklist")
+            show(error: "ClickBait doesn't look at \(name) — it's on your blocklist.")
+            return false
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            show(error: "Screen Recording is off. Open Permissions… from the menu bar icon.")
+            return false
+        }
+        if settings.provider == .anthropic, (KeychainStore.read(.anthropicAPIKey) ?? "").isEmpty {
+            show(error: LLMError.missingAPIKey.localizedDescription)
+            return false
+        }
+        return true
     }
 
     private func finish() async {
@@ -223,17 +231,82 @@ final class AskCoordinator {
         }
         onTranscript?(transcript)
 
+        await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt)
+    }
+
+    // MARK: - Explain highlighted text (⌥⌘)
+
+    private func explain() {
+        guard state != .listening, state != .thinking else { return }
+        errorResetTask?.cancel()
+
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        guard checkCanAsk(frontmost: frontmost) else { return }
+        guard AXInspector.isTrusted else {
+            show(error: "Explaining highlighted text needs Accessibility. Open Permissions… from the menu bar icon.")
+            return
+        }
+
+        let pid = frontmost?.processIdentifier
+        frontmostPID = pid
+        context = ScreenContext(appName: frontmost?.localizedName)
+        let provider = settings.makeProvider()
+        self.provider = provider
+        Task.detached(priority: .userInitiated) { await provider.warmUp() }
+        state = .thinking
+        Log.ask.notice("Explain requested (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
+        askTask = Task { await finishExplain(pid: pid) }
+    }
+
+    private func finishExplain(pid: pid_t?) async {
+        let startedAt = ContinuousClock.now
+        let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
+        guard !Task.isCancelled else { return }
+        guard let selected = snapshot.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty else {
+            Log.ask.notice("Explain: no selected text exposed by the frontmost app")
+            show(error: "Highlight some text first, then press ⌥⌘. (A few apps don't share their selection.)")
+            return
+        }
+        context.windowTitle = snapshot.windowTitle
+        context.focusedElement = snapshot.focusedElement
+        Log.ask.notice("Explain: \(selected.count, privacy: .public) characters selected")
+        onExplaining?(selected)
+
+        let capture: ScreenCapture
+        do {
+            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist)
+        } catch {
+            Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
+            show(error: "Couldn't capture the screen: \(error.localizedDescription)")
+            return
+        }
+        let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
+        await respond(question: "", selectedText: selected, capture: capture, encoding: encoding, startedAt: startedAt)
+    }
+
+    // MARK: - Answering
+
+    /// Shared by ask and explain: send to the model, parse, map, snap, show.
+    private func respond(
+        question: String,
+        selectedText: String?,
+        capture: ScreenCapture,
+        encoding: Task<EncodedScreenshot, Error>,
+        startedAt: ContinuousClock.Instant
+    ) async {
+        let releasedAt = startedAt
         guard let provider else { return }
         let reply: String
         let screenshot: EncodedScreenshot
         do {
             screenshot = try await encoding.value
             let request = AskRequest(
-                question: transcript,
+                question: question,
                 screenshotJPEG: screenshot.jpeg,
                 screenshotWidth: screenshot.width,
                 screenshotHeight: screenshot.height,
-                context: context
+                context: context,
+                selectedText: selectedText
             )
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \

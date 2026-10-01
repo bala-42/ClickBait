@@ -23,12 +23,22 @@ public struct AskRequest: Sendable {
     public var screenshotWidth: Int
     public var screenshotHeight: Int
     public var context: ScreenContext
+    /// Text the user highlighted and asked to have explained (⌥⌘). Nil for voice asks.
+    public var selectedText: String?
 
-    public init(question: String, screenshotJPEG: Data, screenshotWidth: Int, screenshotHeight: Int, context: ScreenContext) {
+    public init(
+        question: String,
+        screenshotJPEG: Data,
+        screenshotWidth: Int,
+        screenshotHeight: Int,
+        context: ScreenContext,
+        selectedText: String? = nil
+    ) {
         self.question = question
         self.screenshotJPEG = screenshotJPEG
         self.screenshotWidth = screenshotWidth
         self.screenshotHeight = screenshotHeight
         self.context = context
+        self.selectedText = selectedText
     }
 }

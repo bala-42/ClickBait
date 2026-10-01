@@ -6,7 +6,9 @@ import SwiftUI
 /// follows the cursor. Click-through everywhere; never takes focus.
 @MainActor
 final class OverlayController {
-    static let pointerLifetime: Duration = .seconds(6)
+    /// Answers stay up at least this long, longer for longer text (reading time).
+    static let minimumAnswerLifetime = 6.0
+    static let maximumAnswerLifetime = 25.0
 
     let model = OverlayModel()
     /// Called when the user dismisses an answer (click, Escape, or timeout).
@@ -45,6 +47,7 @@ final class OverlayController {
             clearPointers()
             model.bubble = .listening
         case .thinking:
+            if case .explaining = model.bubble, heard == nil { return }  // keep the excerpt up
             model.bubble = .thinking(heard: heard)
         case .speaking:
             break  // set by showAnswer
@@ -53,6 +56,18 @@ final class OverlayController {
             model.bubble = .error(message)
         }
         resizeBubble()
+    }
+
+    func showExplaining(_ selectedText: String) {
+        clearPointers()
+        model.bubble = .explaining(excerpt: selectedText)
+        resizeBubble()
+    }
+
+    /// About 2.5 words a second, plus a moment to look at the pointer.
+    static func answerLifetime(for text: String) -> Duration {
+        let words = Double(text.split(whereSeparator: \.isWhitespace).count)
+        return .seconds(min(max(words / 2.5 + 3, minimumAnswerLifetime), maximumAnswerLifetime))
     }
 
     func showAnswer(_ speech: String, pointers: [ScreenPointer]) {
@@ -64,7 +79,7 @@ final class OverlayController {
 
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.pointerLifetime)
+            try? await Task.sleep(for: Self.answerLifetime(for: speech))
             guard !Task.isCancelled else { return }
             self?.dismissAnswer()
         }
@@ -146,15 +161,36 @@ final class OverlayController {
         panel.setFrameOrigin(origin)
     }
 
+    private var pendingShrink: Task<Void, Never>?
+
+    /// Grows the panel right away; shrinks it only after the morph back to the
+    /// arrowhead has played, so the animation isn't clipped. `moveBubble` keeps the
+    /// panel's top-left (where the arrowhead sits) fixed relative to the cursor.
     private func resizeBubble() {
-        guard let panel = bubblePanel, let host = bubbleHost else { return }
+        pendingShrink?.cancel()
         // Let SwiftUI lay out the new content before measuring it.
         DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = bubblePanel, let host = bubbleHost else { return }
             host.layoutSubtreeIfNeeded()
-            panel.setContentSize(host.fittingSize)
-            self?.moveBubble(to: NSEvent.mouseLocation)
-            panel.orderFrontRegardless()
+            let target = host.fittingSize
+            if target.width < panel.frame.width || target.height < panel.frame.height {
+                pendingShrink = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    guard !Task.isCancelled else { return }
+                    self?.applyBubbleSize()
+                }
+            } else {
+                applyBubbleSize()
+            }
         }
+    }
+
+    private func applyBubbleSize() {
+        guard let panel = bubblePanel, let host = bubbleHost else { return }
+        host.layoutSubtreeIfNeeded()
+        panel.setContentSize(host.fittingSize)
+        moveBubble(to: NSEvent.mouseLocation)
+        panel.orderFrontRegardless()
     }
 
     // MARK: - Input
@@ -172,7 +208,7 @@ final class OverlayController {
         let escape: @MainActor (NSEvent) -> Void = { [weak self] event in
             guard event.keyCode == 53, let self else { return }
             switch self.model.bubble {
-            case .listening, .thinking: self.onCancel?()
+            case .listening, .thinking, .explaining: self.onCancel?()
             default: self.dismissAnswer()
             }
         }

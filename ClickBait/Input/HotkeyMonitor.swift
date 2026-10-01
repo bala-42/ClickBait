@@ -1,27 +1,18 @@
 import AppKit
+import ClickBaitCore
 
-/// Detects Control+Option being held on its own. Pressing any other key while holding
-/// cancels, so real shortcuts like ⌃⌥← keep working and don't trigger ClickBait.
+/// Feeds keyboard events into `ChordDetector`: hold ⌃⌥ to ask, tap ⌥⌘ to explain the
+/// highlighted text. Real shortcuts that use these modifiers keep working.
 ///
 /// Global monitors only receive events once Accessibility is granted; the local
-/// monitors keep the hotkey working while ClickBait itself is frontmost.
+/// monitors keep the hotkeys working while ClickBait itself is frontmost.
 @MainActor
 final class HotkeyMonitor {
-    enum Event {
-        case pressed
-        case released
-        case cancelled
-    }
-
-    private static let hotkey: NSEvent.ModifierFlags = [.control, .option]
-    /// Modifiers that count as "something else is held too". Caps Lock and Fn are ignored.
-    private static let relevant: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
-
-    private let handler: (Event) -> Void
+    private let handler: (ChordDetector.Event) -> Void
     private var monitors: [Any] = []
-    private var isHeld = false
+    private var detector = ChordDetector()
 
-    init(handler: @escaping (Event) -> Void) {
+    init(handler: @escaping (ChordDetector.Event) -> Void) {
         self.handler = handler
     }
 
@@ -45,28 +36,29 @@ final class HotkeyMonitor {
     func stop() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
-        isHeld = false
+        detector = ChordDetector()
     }
 
     private func handle(_ event: NSEvent) {
+        let events: [ChordDetector.Event]
         switch event.type {
         case .flagsChanged:
-            let flags = event.modifierFlags.intersection(Self.relevant)
-            if flags == Self.hotkey {
-                guard !isHeld else { return }
-                isHeld = true
-                handler(.pressed)
-            } else if isHeld {
-                isHeld = false
-                // Adding ⌘ or ⇧ means the user is reaching for a different shortcut.
-                handler(flags.isStrictSuperset(of: Self.hotkey) ? .cancelled : .released)
-            }
+            events = detector.modifiersChanged(to: Self.modifiers(from: event.modifierFlags))
         case .keyDown:
-            guard isHeld else { return }
-            isHeld = false
-            handler(.cancelled)
+            events = detector.keyPressed()
         default:
-            break
+            events = []
         }
+        events.forEach(handler)
+    }
+
+    /// Caps Lock and Fn are ignored.
+    private static func modifiers(from flags: NSEvent.ModifierFlags) -> Modifiers {
+        var result: Modifiers = []
+        if flags.contains(.control) { result.insert(.control) }
+        if flags.contains(.option) { result.insert(.option) }
+        if flags.contains(.command) { result.insert(.command) }
+        if flags.contains(.shift) { result.insert(.shift) }
+        return result
     }
 }

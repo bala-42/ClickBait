@@ -152,6 +152,31 @@ struct RequestBuilderTests {
         #expect(text.hasSuffix("The user said: How do I share this?"))
     }
 
+    @Test func userTextForHighlightedTextAsksForAnExplanation() {
+        var request = ask
+        request.question = ""
+        request.selectedText = "Amortization is the spreading of payments over time."
+        let text = Prompt.userText(for: request)
+        #expect(text.contains("The user highlighted this text:\n<<<\nAmortization is the spreading of payments over time.\n>>>"))
+        #expect(text.hasSuffix("Explain the highlighted text."))
+        #expect(text.contains("Frontmost app: Pages"))
+    }
+
+    @Test func highlightedTextKeepsASpokenQuestion() {
+        var request = ask
+        request.question = "Is this good for me?"
+        request.selectedText = "APR 24.9%"
+        #expect(Prompt.userText(for: request).hasSuffix("The user said: Is this good for me?"))
+    }
+
+    @Test func longHighlightsAreCutOff() {
+        var request = ask
+        request.selectedText = String(repeating: "a", count: Prompt.maxSelectedCharacters + 500)
+        let text = Prompt.userText(for: request)
+        #expect(text.contains("[…cut off]"))
+        #expect(!text.contains(String(repeating: "a", count: Prompt.maxSelectedCharacters + 1)))
+    }
+
     @Test func errorsMapToPlainLanguage() {
         #expect(AnthropicProvider.error(status: 401, body: Data(#"{"error":{"message":"invalid x-api-key"}}"#.utf8), model: "m")
             == .http(status: 401, message: "invalid x-api-key"))

@@ -16,7 +16,15 @@ public enum Prompt {
         - Only point at things you can actually see in the screenshot. If the answer isn't \
         on screen, say what to do instead and use an empty "pointers" list.
         - If the question isn't about the screen, just answer it in "speech" with no pointers.
+        - If the user highlighted text, explain it: a concise summary in 2–4 short sentences \
+        that says what it means in plain words and why it matters here. Use the rest of the \
+        screen (the app, document, surrounding text) for context, and briefly define any \
+        jargon. Don't repeat the text back. Use an empty "pointers" list unless they asked \
+        where something is.
         """
+
+    /// Highlighted text beyond this is cut off; the screenshot still gives context.
+    public static let maxSelectedCharacters = 6000
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
@@ -26,7 +34,22 @@ public enum Prompt {
         if let title = context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
         if let focused = context.focusedElement, !focused.isEmpty { lines.append("Focused element: \(focused)") }
         lines.append("")
-        lines.append("The user said: \(request.question)")
+        if let selected = request.selectedText, !selected.isEmpty {
+            lines.append("The user highlighted this text:")
+            lines.append("<<<")
+            lines.append(truncated(selected))
+            lines.append(">>>")
+            lines.append("")
+            let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
+            lines.append(question.isEmpty ? "Explain the highlighted text." : "The user said: \(question)")
+        } else {
+            lines.append("The user said: \(request.question)")
+        }
         return lines.joined(separator: "\n")
+    }
+
+    static func truncated(_ text: String) -> String {
+        guard text.count > maxSelectedCharacters else { return text }
+        return String(text.prefix(maxSelectedCharacters)) + " […cut off]"
     }
 }

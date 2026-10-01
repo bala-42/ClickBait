@@ -10,6 +10,8 @@ final class OverlayModel {
         case idle
         case listening
         case thinking(heard: String?)
+        /// ⌥⌘: explaining highlighted text (shows its start).
+        case explaining(excerpt: String)
         case answer(String)
         case error(String)
     }

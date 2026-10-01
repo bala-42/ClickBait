@@ -78,9 +78,20 @@ On first launch ClickBait asks for:
 
 ## Usage
 
-1. Hold **Control+Option**.
+**Ask & point**
+
+1. Hold **Control+Option** (⌃⌥).
 2. Ask your question out loud, e.g. *"How do I share this document?"*
 3. Let go. ClickBait answers out loud and points at what to click.
+
+**Explain highlighted text**
+
+1. Highlight some text in any app.
+2. Press and release **Option+Command** (⌥⌘).
+3. ClickBait explains it in a few sentences, using what's on screen for context.
+
+Both hotkeys only fire when pressed on their own, so shortcuts like ⌃⌥← or ⌥⌘D keep working.
+Press **Esc** to cancel or dismiss.
 
 ## Project layout
 
