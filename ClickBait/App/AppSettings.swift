@@ -14,6 +14,9 @@ final class AppSettings {
         static let provider = "settings.provider"
         static let ollamaModel = "settings.ollamaModel"
         static let anthropicModel = "settings.anthropicModel"
+        static let speakAnswers = "settings.speakAnswers"
+        static let voiceIdentifier = "settings.voiceIdentifier"
+        static let speechRate = "settings.speechRate"
         static func speechModelFolder(_ model: SpeechModel) -> String { "settings.speechModelFolder.\(model.rawValue)" }
     }
 
@@ -46,6 +49,23 @@ final class AppSettings {
         didSet { defaults.set(anthropicModel, forKey: Key.anthropicModel) }
     }
 
+    /// Read answers aloud (on-device system voices).
+    var speakAnswers: Bool {
+        didSet { defaults.set(speakAnswers, forKey: Key.speakAnswers) }
+    }
+
+    /// A system voice identifier; nil means the best voice for the system language.
+    var voiceIdentifier: String? {
+        didSet { defaults.set(voiceIdentifier, forKey: Key.voiceIdentifier) }
+    }
+
+    /// AVSpeechUtterance rate (0…1, system default 0.5).
+    var speechRate: Double {
+        didSet { defaults.set(speechRate, forKey: Key.speechRate) }
+    }
+
+    static let defaultSpeechRate = 0.52
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
@@ -54,6 +74,9 @@ final class AppSettings {
         provider = defaults.string(forKey: Key.provider).flatMap(ProviderKind.init(rawValue:)) ?? .ollama
         ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
         anthropicModel = Self.nonEmpty(defaults.string(forKey: Key.anthropicModel)) ?? AnthropicProvider.defaultModel
+        speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true
+        voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
+        speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
     }
 
     /// Builds the provider the user selected. The API key is read from the Keychain

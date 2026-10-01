@@ -6,7 +6,7 @@ import SwiftUI
 /// window, so it activates itself before showing this one.
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(settings: AppSettings, speech: SpeechModelManager) {
+    init(settings: AppSettings, speech: SpeechModelManager, speaker: Speaker) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 580, height: 640),
             styleMask: [.titled, .closable, .resizable],
@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController {
         )
         window.title = "ClickBait Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, speech: speech))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, speech: speech, speaker: speaker))
         window.center()
         super.init(window: window)
     }
@@ -32,6 +32,7 @@ final class SettingsWindowController: NSWindowController {
 struct SettingsView: View {
     @Bindable var settings: AppSettings
     let speech: SpeechModelManager
+    let speaker: Speaker
 
     var body: some View {
         Form {
@@ -42,7 +43,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Speech") {
+            Section("Voice") {
+                VoiceSettingsSection(settings: settings, speaker: speaker)
+            }
+
+            Section("Speech recognition") {
                 SpeechModelSection(settings: settings, speech: speech)
             }
 
@@ -117,5 +122,31 @@ private struct BlocklistEditor: View {
             }
             .filter { !blocklist.isBlocked(bundleID: $0.bundleID) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+private struct VoiceSettingsSection: View {
+    @Bindable var settings: AppSettings
+    let speaker: Speaker
+
+    var body: some View {
+        Toggle("Read answers aloud", isOn: $settings.speakAnswers)
+        Picker("Voice", selection: $settings.voiceIdentifier) {
+            Text("Automatic (best for your language)").tag(String?.none)
+            ForEach(Speaker.availableVoices, id: \.identifier) { voice in
+                Text("\(voice.name) — \(voice.language), \(voice.quality.label)").tag(Optional(voice.identifier))
+            }
+        }
+        .disabled(!settings.speakAnswers)
+        HStack {
+            Text("Speed")
+            Slider(value: $settings.speechRate, in: 0.4...0.62)
+            Button("Preview") { speaker.preview() }
+        }
+        .disabled(!settings.speakAnswers)
+        Text("Uses the voices built into macOS, on your Mac. For nicer voices, download “Enhanced” or “Premium” ones in System Settings → Accessibility → Spoken Content → System Voice → Manage Voices.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

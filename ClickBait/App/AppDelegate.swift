@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
-    private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech)
+    private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
     static func main() {
@@ -49,9 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
         coordinator.onPartialAnswer = { [weak self] partial in self?.overlay.showPartialAnswer(partial) }
+        coordinator.onSpeechFinished = { [weak self] in self?.overlay.speechFinished() }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
-            self?.overlay.showAnswer(response.speech, pointers: pointers)
+            guard let self else { return }
+            overlay.showAnswer(response.speech, pointers: pointers, waitForSpeech: coordinator.willSpeak && coordinator.speaker.isSpeaking)
         }
         hotkey.start()
         speech.loadIfInstalled()

@@ -21,7 +21,7 @@ enum AskState: Equatable {
 }
 
 /// Runs one ask from hotkey press to answer: idle → listening → thinking → speaking.
-/// Speech output is added in step 9.
+/// Answers are spoken sentence by sentence as they stream in.
 @MainActor
 @Observable
 final class AskCoordinator {
@@ -37,6 +37,8 @@ final class AskCoordinator {
     @ObservationIgnored var onTranscript: ((String) -> Void)?
     /// Called with the start of the highlighted text being explained (⌥⌘).
     @ObservationIgnored var onExplaining: ((String) -> Void)?
+    /// Called when everything has been spoken, so the answer can start fading.
+    @ObservationIgnored var onSpeechFinished: (() -> Void)?
     /// Called with the spoken answer so far while it streams in.
     @ObservationIgnored var onPartialAnswer: ((String) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
@@ -54,12 +56,24 @@ final class AskCoordinator {
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
     @ObservationIgnored private var askTask: Task<Void, Never>?
+    @ObservationIgnored let speaker: Speaker
+    /// When the user let go (or pressed ⌥⌘), for the time-to-first-audio log.
+    @ObservationIgnored private var answerStartedAt: ContinuousClock.Instant?
 
     init(settings: AppSettings, speech: SpeechModelManager) {
         self.settings = settings
         self.speech = speech
+        speaker = Speaker(settings: settings)
         recorder.prepare()
+        speaker.onStart = { [weak self] in
+            guard let self, let started = answerStartedAt else { return }
+            Log.ask.notice("First audio \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
+        }
+        speaker.onFinish = { [weak self] in self?.onSpeechFinished?() }
     }
+
+    /// Whether the overlay should wait for speech to end before fading the answer.
+    var willSpeak: Bool { settings.speakAnswers }
 
     func handle(_ event: ChordDetector.Event) {
         switch event {
@@ -74,6 +88,7 @@ final class AskCoordinator {
     /// The overlay dismissed the answer (click, Escape or timeout). If it was still
     /// streaming in, stop the request too so it doesn't pop back up.
     func answerDismissed() {
+        speaker.stop()
         askTask?.cancel()
         askTask = nil
         if state == .speaking || state == .thinking { state = .idle }
@@ -81,6 +96,7 @@ final class AskCoordinator {
 
     /// Escape while listening or thinking abandons the question.
     func cancelInFlight() {
+        speaker.stop()
         switch state {
         case .listening:
             cancel(reason: "Escape pressed")
@@ -98,6 +114,7 @@ final class AskCoordinator {
 
     private func begin() {
         guard state != .listening, state != .thinking else { return }
+        speaker.stop()  // never record ClickBait talking
         errorResetTask?.cancel()
 
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -243,6 +260,7 @@ final class AskCoordinator {
 
     private func explain() {
         guard state != .listening, state != .thinking else { return }
+        speaker.stop()
         errorResetTask?.cancel()
 
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -302,6 +320,8 @@ final class AskCoordinator {
         startedAt: ContinuousClock.Instant
     ) async {
         let releasedAt = startedAt
+        answerStartedAt = startedAt
+        var spokeAnything = false
         guard let provider else { return }
         let reply: String
         let screenshot: EncodedScreenshot
@@ -322,6 +342,7 @@ final class AskCoordinator {
             var text = ""
             var firstChunkAt: ContinuousClock.Instant?
             var extractor = StreamingSpeechExtractor()
+            var sentences = SentenceSplitter()
             var spokenSoFar = ""
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
@@ -330,7 +351,15 @@ final class AskCoordinator {
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
                     onPartialAnswer?(spokenSoFar)
+                    for sentence in sentences.feed(newSpeech) {
+                        speaker.speak(sentence)
+                        spokeAnything = true
+                    }
                 }
+            }
+            if !Task.isCancelled, let rest = sentences.flush() {
+                speaker.speak(rest)
+                spokeAnything = true
             }
             // A cancelled stream just ends; don't treat it as an (empty) answer.
             guard !Task.isCancelled else { return }
@@ -376,6 +405,12 @@ final class AskCoordinator {
                 """)
         }
         guard !Task.isCancelled else { return }
+        // No streamed "speech" field (e.g. plain-text fallback): speak the parsed answer.
+        if !spokeAnything {
+            var sentences = SentenceSplitter()
+            sentences.feed(parsed.response.speech).forEach(speaker.speak)
+            sentences.flush().map(speaker.speak)
+        }
         state = .speaking
         onAnswer?(parsed.response, pointers)
     }

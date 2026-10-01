@@ -74,15 +74,26 @@ final class OverlayController {
         model.bubble = .answer(speech)
     }
 
-    func showAnswer(_ speech: String, pointers: [ScreenPointer]) {
+    /// Shows the final answer. When it's being read aloud, it stays until speech ends
+    /// (`speechFinished()`), with a long safety timeout; otherwise for its reading time.
+    func showAnswer(_ speech: String, pointers: [ScreenPointer], waitForSpeech: Bool) {
         model.bubble = .answer(speech)
         model.pointers = pointers
         model.pointerGeneration += 1
         screenPanels.forEach { $0.orderFrontRegardless() }
+        scheduleDismiss(after: waitForSpeech ? .seconds(60) : Self.answerLifetime(for: speech))
+    }
 
+    /// Speech ended: leave the answer up a little longer, then fade it.
+    func speechFinished() {
+        guard model.bubble.isAnswer else { return }
+        scheduleDismiss(after: .seconds(3))
+    }
+
+    private func scheduleDismiss(after delay: Duration) {
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.answerLifetime(for: speech))
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             self?.dismissAnswer()
         }
