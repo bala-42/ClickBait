@@ -27,7 +27,7 @@ enum AskState: Equatable {
 final class AskCoordinator {
     /// Taps shorter than this are treated as accidental and dropped silently.
     private static let minimumHold: Duration = .milliseconds(250)
-    private static let errorDisplayTime: Duration = .seconds(4)
+    private static let errorDisplayTime: Duration = .milliseconds(2500)
 
     private(set) var state: AskState = .idle {
         didSet { if state != oldValue { onStateChange?(state) } }

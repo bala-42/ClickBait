@@ -229,7 +229,7 @@ final class OverlayController {
 private extension OverlayModel.Bubble {
     var isAnswer: Bool {
         switch self {
-        case .answer, .done: return true
+        case .answer, .done, .error: return true  // a click or Escape clears these
         default: return false
         }
     }
