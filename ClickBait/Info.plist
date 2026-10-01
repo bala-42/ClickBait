@@ -24,6 +24,8 @@
 	<string>public.app-category.productivity</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>ClickBait uses System Events to carry out spoken commands like switching Dark Mode.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ClickBait contributors. Apache License 2.0.</string>
 	<key>NSMicrophoneUsageDescription</key>

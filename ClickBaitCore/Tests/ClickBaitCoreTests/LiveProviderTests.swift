@@ -19,7 +19,7 @@ struct LiveOllamaTests {
         let longEdge = Int(ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_LONG_EDGE"] ?? "") ?? 1280
         let (jpeg, width, height) = try SyntheticScreen.render(longEdge: longEdge)
         let request = AskRequest(
-            question: "How do I share this document?",
+            question: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_QUESTION"] ?? "How do I share this document?",
             screenshotJPEG: jpeg, screenshotWidth: width, screenshotHeight: height,
             context: ScreenContext(appName: "Notes")
         )

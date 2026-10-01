@@ -43,6 +43,16 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                CommandsSettingsSection(settings: settings)
+            } header: {
+                Text("Commands")
+            } footer: {
+                Text("Say an order like “open Safari”, “volume 30”, “dark mode” or “run Focus Time” while holding ⌃⌥. Questions still just get an answer. Only the shortcuts you tick can be run, and those run without asking.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Voice") {
                 VoiceSettingsSection(settings: settings, speaker: speaker)
             }
@@ -174,5 +184,55 @@ private struct VoiceSettingsSection: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct CommandsSettingsSection: View {
+    @Bindable var settings: AppSettings
+    @State private var shortcuts: [String] = []
+    @State private var isLoading = false
+
+    var body: some View {
+        Toggle("Carry out spoken commands", isOn: $settings.commandsEnabled)
+
+        HStack {
+            Text("Shortcuts ClickBait may run").font(.headline)
+            Spacer()
+            if isLoading { ProgressView().controlSize(.small) }
+            Button("Refresh") { load() }
+        }
+        .disabled(!settings.commandsEnabled)
+
+        if shortcuts.isEmpty, !isLoading {
+            Text("No shortcuts found. Make some in the Shortcuts app, then click Refresh.")
+                .foregroundStyle(.secondary)
+        }
+        ForEach(shortcuts, id: \.self) { name in
+            Toggle(name, isOn: allowed(name))
+                .disabled(!settings.commandsEnabled)
+        }
+        // Shortcuts that were allowed but no longer exist stay visible so they can be removed.
+        ForEach(settings.allowedShortcuts.filter { !shortcuts.contains($0) && !isLoading }, id: \.self) { name in
+            Toggle("\(name) (not found)", isOn: allowed(name))
+        }
+        .onAppear { if shortcuts.isEmpty { load() } }
+    }
+
+    private func allowed(_ name: String) -> Binding<Bool> {
+        Binding(
+            get: { settings.allowedShortcuts.contains(name) },
+            set: { isOn in
+                settings.allowedShortcuts.removeAll { $0 == name }
+                if isOn { settings.allowedShortcuts.append(name) }
+            }
+        )
+    }
+
+    private func load() {
+        isLoading = true
+        Task {
+            shortcuts = await ShortcutsCLI.list()
+            isLoading = false
+        }
     }
 }

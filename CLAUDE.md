@@ -66,6 +66,9 @@ ClickBaitCore/             Platform-agnostic Swift package (Package.swift lives 
 ### Explain flow (added during M1)
 Highlight text, then press and release **Option+Command** alone (no other key in between; `ChordDetector` in Core). The selected text is read via AX (`kAXSelectedTextAttribute`), sent with a screenshot for context, and the model returns a concise 2–4 sentence explanation in `speech` (usually no pointers). Same blocklist, provider and privacy rules as Ask.
 
+### Commands (added after M1, step 10)
+Direct orders spoken with ⌃⌥ are recognised from the transcript by `CommandParser` (Core) — plain rules, never the vision model (qwen2.5vl:7b missed real orders and acted on questions). Questions never act. Built-ins: open/quit app, volume, mute, Dark/Light Mode; plus Shortcuts the user ticked in Settings (the tick is the permission — they run without a prompt). Everything goes through `ActionCatalog.resolve` before `ActionExecutor` runs it. Unknown app names fall through to a normal answer.
+
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.
 - Companion follows the cursor (global `mouseMoved` monitor): idle it's a small translucent stealth arrowhead aimed at the cursor; for listening / thinking / explaining / answers / errors the arrowhead itself morphs into a Liquid Glass card (material fallback before macOS 26).

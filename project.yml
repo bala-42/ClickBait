@@ -41,10 +41,12 @@ targets:
         LSUIElement: true
         NSHumanReadableCopyright: "Copyright © 2026 ClickBait contributors. Apache License 2.0."
         NSMicrophoneUsageDescription: "ClickBait listens while you hold Control+Option so it can hear your question."
+        NSAppleEventsUsageDescription: "ClickBait uses System Events to carry out spoken commands like switching Dark Mode."
     entitlements:
       path: ClickBait/ClickBait.entitlements
       properties:
         com.apple.security.device.audio-input: true
+        com.apple.security.automation.apple-events: true
     configFiles:
       Debug: Config/Signing.xcconfig
       Release: Config/Signing.xcconfig

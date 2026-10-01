@@ -199,6 +199,8 @@ struct CompanionBubbleView: View {
                        showsSpinner: true)
         case .answer(let text):
             BubbleCard(symbol: "cursorarrow.rays", tint: .accentColor, title: "ClickBait", message: text)
+        case .done(let message):
+            BubbleCard(symbol: "checkmark", tint: .green, title: "Done", message: message)
         case .error(let message):
             BubbleCard(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't do that", message: message)
         }

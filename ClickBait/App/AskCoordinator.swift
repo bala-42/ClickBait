@@ -41,6 +41,8 @@ final class AskCoordinator {
     @ObservationIgnored var onSpeechFinished: (() -> Void)?
     /// Called with the spoken answer so far while it streams in.
     @ObservationIgnored var onPartialAnswer: ((String) -> Void)?
+    /// Called after a spoken command ran, with a short confirmation.
+    @ObservationIgnored var onActionDone: ((String) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -194,6 +196,7 @@ final class AskCoordinator {
 
         let samples = recorder.stop()
         let releasedAt = ContinuousClock.now
+        answerStartedAt = releasedAt
         state = .thinking
         self.pressedAt = nil
 
@@ -253,6 +256,16 @@ final class AskCoordinator {
             return
         }
         onTranscript?(transcript)
+
+        // Direct orders run right away, without the model.
+        if settings.commandsEnabled,
+           let command = CommandParser.parse(transcript, allowedShortcuts: settings.allowedShortcuts),
+           !isUnknownApp(command) {
+            Log.ask.notice("Command recognised: \(command.name, privacy: .public)")
+            encoding.cancel()
+            await perform(command)
+            return
+        }
 
         await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt)
     }
@@ -419,6 +432,40 @@ final class AskCoordinator {
         }
         state = .speaking
         onAnswer?(parsed.response, pointers)
+    }
+
+    /// "Open the File menu" isn't an app: let the model answer it instead.
+    private func isUnknownApp(_ command: ActionRequest) -> Bool {
+        command.name == "open_app" && AppLocator.url(forAppNamed: command.argument ?? "") == nil
+    }
+
+    /// A direct order: validate it, run it, confirm out loud. Nothing runs unless it
+    /// resolves against the catalog and the user's allowed shortcuts.
+    private func perform(_ request: ActionRequest) async {
+        guard settings.commandsEnabled else { return }
+        switch ActionCatalog.resolve(request, allowedShortcuts: settings.allowedShortcuts) {
+        case .failure(let error):
+            Log.ask.notice("Action refused: \(request.name, privacy: .public) (\(String(describing: error), privacy: .private))")
+            speaker.stop()
+            speaker.speak(error.message)
+            show(error: error.message)
+        case .success(let action):
+            do {
+                let confirmation = try await ActionExecutor.run(action)
+                Log.ask.notice("Action done: \(request.name, privacy: .public)")
+                if let started = answerStartedAt {
+                    Log.ask.notice("Command finished \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
+                }
+                speaker.speak(confirmation + ".")
+                state = .speaking
+                onActionDone?(confirmation)
+            } catch {
+                Log.ask.error("Action failed: \(request.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                speaker.stop()
+                speaker.speak(error.localizedDescription)
+                show(error: error.localizedDescription)
+            }
+        }
     }
 
     /// Moves each pointer onto a matching real element nearby, if accessibility knows of

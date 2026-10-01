@@ -13,6 +13,8 @@ final class OverlayModel {
         /// ⌥⌘: explaining highlighted text (shows its start).
         case explaining(excerpt: String)
         case answer(String)
+        /// A spoken command was carried out.
+        case done(String)
         case error(String)
     }
 

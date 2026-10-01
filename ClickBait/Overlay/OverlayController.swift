@@ -84,6 +84,13 @@ final class OverlayController {
         scheduleDismiss(after: waitForSpeech ? .seconds(60) : Self.answerLifetime(for: speech))
     }
 
+    /// A command was carried out: brief confirmation, then fade.
+    func showDone(_ message: String) {
+        clearPointers()
+        model.bubble = .done(message)
+        scheduleDismiss(after: .seconds(3))
+    }
+
     /// Speech ended: leave the answer up a little longer, then fade it.
     func speechFinished() {
         guard model.bubble.isAnswer else { return }
@@ -221,7 +228,9 @@ final class OverlayController {
 
 private extension OverlayModel.Bubble {
     var isAnswer: Bool {
-        if case .answer = self { return true }
-        return false
+        switch self {
+        case .answer, .done: return true
+        default: return false
+        }
     }
 }

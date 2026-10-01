@@ -1,0 +1,147 @@
+/// Recognises direct spoken orders in a transcript with plain rules — no model.
+///
+/// A local vision model proved unreliable at this (it missed real orders and acted on
+/// questions like "how do I open Safari?"), and a rule is instant. Questions are never
+/// orders. App names aren't checked here; the app verifies them and treats an unknown
+/// name ("open the File menu") as a normal question instead.
+public enum CommandParser {
+    static let questionWords: Set<String> = [
+        "how", "what", "where", "why", "when", "which", "who", "whats", "wheres", "hows",
+        "is", "are", "does", "do", "did", "should", "will", "am", "was",
+    ]
+    /// Polite lead-ins that still make an order: "please open…", "can you open…".
+    static let leadIns = [
+        "hey clickbait", "clickbait", "please", "can you", "could you", "would you", "will you", "can u", "go ahead and", "now",
+    ]
+
+    public static func parse(_ transcript: String, allowedShortcuts: [String]) -> ActionRequest? {
+        var words = normalize(transcript)
+        guard !words.isEmpty else { return nil }
+
+        // "Can I…?" / "How do I…?" are questions; "can you…" is a polite order.
+        if words.count > 1, ["can", "could"].contains(words[0]), ["i", "we"].contains(words[1]) { return nil }
+        words = strippingLeadIns(words)
+        guard let first = words.first, !questionWords.contains(first) else { return nil }
+        if words.last == "please" { words.removeLast() }
+        let text = words.joined(separator: " ")
+
+        if let action = volume(words) ?? appearance(text) ?? mute(text) { return action }
+        if let action = shortcut(words, allowedShortcuts: allowedShortcuts) { return action }
+        if let action = app(words) { return action }
+        return nil
+    }
+
+    // MARK: - Rules
+
+    private static func volume(_ words: [String]) -> ActionRequest? {
+        guard words.contains(where: { $0 == "volume" || $0 == "sound" }),
+              let level = NumberWords.value(in: words), (0...100).contains(level)
+        else { return nil }
+        // Any order that names the volume and a level: "volume 30", "set the volume to
+        // twenty", "turn the sound down to 10 percent".
+        let verbs: Set<String> = ["volume", "set", "turn", "change", "put", "make", "sound"]
+        guard let first = words.first, verbs.contains(first) else { return nil }
+        return ActionRequest(name: "set_volume", argument: String(level))
+    }
+
+    private static func appearance(_ text: String) -> ActionRequest? {
+        let dark = ["dark mode", "dark mode on", "turn on dark mode", "switch to dark mode", "enable dark mode", "go dark",
+                    "use dark mode", "change to dark mode", "set dark mode"]
+        let light = ["light mode", "light mode on", "turn on light mode", "switch to light mode", "enable light mode",
+                     "turn off dark mode", "disable dark mode", "dark mode off", "use light mode", "change to light mode"]
+        if dark.contains(text) { return ActionRequest(name: "dark_mode") }
+        if light.contains(text) { return ActionRequest(name: "light_mode") }
+        return nil
+    }
+
+    private static func mute(_ text: String) -> ActionRequest? {
+        let objects = ["", " the sound", " sound", " the volume", " volume", " the audio", " audio", " my mac", " the mac"]
+        if objects.contains(where: { text == "mute" + $0 }) { return ActionRequest(name: "mute") }
+        if objects.contains(where: { text == "unmute" + $0 || text == "un mute" + $0 }) { return ActionRequest(name: "unmute") }
+        if text == "turn the sound off" || text == "sound off" { return ActionRequest(name: "mute") }
+        if text == "turn the sound on" || text == "sound on" { return ActionRequest(name: "unmute") }
+        return nil
+    }
+
+    /// "run Focus Time", "run my Focus Time shortcut", or just an allowed shortcut's name.
+    private static func shortcut(_ words: [String], allowedShortcuts: [String]) -> ActionRequest? {
+        guard !allowedShortcuts.isEmpty else { return nil }
+        var rest = words
+        let hasVerb = ["run", "start", "do", "trigger", "launch"].contains(rest.first ?? "")
+        if hasVerb { rest.removeFirst() }
+        rest = rest.filter { !["my", "the", "shortcut"].contains($0) }
+        let name = rest.joined(separator: " ")
+        guard !name.isEmpty, let match = ActionCatalog.bestMatch(for: name, in: allowedShortcuts, threshold: hasVerb ? 0.8 : 0.95)
+        else { return nil }
+        return ActionRequest(name: "run_shortcut", argument: match)
+    }
+
+    private static func app(_ words: [String]) -> ActionRequest? {
+        guard let verb = words.first, words.count > 1 else { return nil }
+        let action: String
+        switch verb {
+        case "open", "launch", "start": action = "open_app"
+        case "quit", "close", "exit": action = "quit_app"
+        default: return nil
+        }
+        var rest = Array(words.dropFirst())
+        if rest.first == "up" { rest.removeFirst() }  // "open up Safari"
+        if rest.first == "the" { rest.removeFirst() }
+        if rest.last == "app" || rest.last == "application" { rest.removeLast() }
+        guard !rest.isEmpty else { return nil }
+        return ActionRequest(name: action, argument: rest.joined(separator: " "))
+    }
+
+    // MARK: - Text
+
+    /// Lowercased words with punctuation removed ("Open Safari, please!" → open safari please).
+    static func normalize(_ text: String) -> [String] {
+        let scalars = text.lowercased().unicodeScalars.map { scalar -> Character in
+            if scalar.properties.isAlphabetic || scalar.properties.numericType != nil { return Character(scalar) }
+            if scalar == "'" || scalar == "’" { return "\u{0}" }  // "what's" → "whats"
+            return " "
+        }
+        return String(scalars).replacingOccurrences(of: "\u{0}", with: "").split(separator: " ").map(String.init)
+    }
+
+    private static func strippingLeadIns(_ words: [String]) -> [String] {
+        var words = words
+        var changed = true
+        while changed {
+            changed = false
+            for leadIn in leadIns {
+                let parts = leadIn.split(separator: " ").map(String.init)
+                if words.count > parts.count, Array(words.prefix(parts.count)) == parts {
+                    words.removeFirst(parts.count)
+                    changed = true
+                }
+            }
+        }
+        return words
+    }
+}
+
+/// "20", "twenty", "twenty five", "a hundred" → numbers (0–100), for volume levels.
+enum NumberWords {
+    private static let units: [String: Int] = [
+        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+        "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    ]
+    private static let tens: [String: Int] = [
+        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+    ]
+
+    static func value(in words: [String]) -> Int? {
+        for (index, word) in words.enumerated() {
+            if let number = Int(word) { return number }
+            if word == "hundred" { return 100 }
+            if let ten = tens[word] {
+                if index + 1 < words.count, let unit = units[words[index + 1]], unit < 10 { return ten + unit }
+                return ten
+            }
+            if let unit = units[word] { return unit }
+        }
+        return nil
+    }
+}

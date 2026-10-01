@@ -17,6 +17,8 @@ final class AppSettings {
         static let speakAnswers = "settings.speakAnswers"
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
+        static let commandsEnabled = "settings.commandsEnabled"
+        static let allowedShortcuts = "settings.allowedShortcuts"
         static func speechModelFolder(_ model: SpeechModel) -> String { "settings.speechModelFolder.\(model.rawValue)" }
     }
 
@@ -66,6 +68,16 @@ final class AppSettings {
 
     static let defaultSpeechRate = 0.52
 
+    /// Carry out direct spoken orders (open apps, volume, Dark Mode, allowed shortcuts).
+    var commandsEnabled: Bool {
+        didSet { defaults.set(commandsEnabled, forKey: Key.commandsEnabled) }
+    }
+
+    /// Shortcuts the user ticked. Being on this list is the permission to run on command.
+    var allowedShortcuts: [String] {
+        didSet { defaults.set(allowedShortcuts, forKey: Key.allowedShortcuts) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
@@ -77,6 +89,8 @@ final class AppSettings {
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true
         voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
         speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
+        commandsEnabled = defaults.object(forKey: Key.commandsEnabled) as? Bool ?? true
+        allowedShortcuts = defaults.stringArray(forKey: Key.allowedShortcuts) ?? []
     }
 
     /// Builds the provider the user selected. The API key is read from the Keychain

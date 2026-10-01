@@ -90,6 +90,14 @@ On first launch ClickBait asks for:
 2. Press and release **Option+Command** (⌥⌘).
 3. ClickBait explains it in a few sentences, using what's on screen for context.
 
+**Spoken commands**
+
+Hold ⌃⌥ and give an order instead of a question: *"open Safari"*, *"quit Music"*, *"volume 30"*,
+*"mute"*, *"dark mode"*, or *"run Focus Time"*. Orders run immediately. Questions (*"how do I…"*)
+are never treated as orders. Shortcuts only run if you've ticked them in **Settings → Commands**,
+and that tick is the permission: ticked shortcuts run without asking. Switching Dark Mode asks
+once for permission to control System Events.
+
 Both hotkeys only fire when pressed on their own, so shortcuts like ⌃⌥← or ⌥⌘D keep working.
 Press **Esc** to cancel or dismiss.
 

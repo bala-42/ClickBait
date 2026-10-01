@@ -1,0 +1,199 @@
+import AppKit
+import ClickBaitCore
+import AudioToolbox
+import CoreAudio
+
+enum ActionExecutionError: LocalizedError {
+    case appNotFound(String)
+    case appNotRunning(String)
+    case audio(String)
+    case script(String)
+    case shortcutFailed(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .appNotFound(let name): "I couldn't find an app called “\(name)”."
+        case .appNotRunning(let name): "“\(name)” isn't running."
+        case .audio(let detail): "I couldn't change the sound: \(detail)."
+        case .script(let detail): "macOS didn't let me do that: \(detail)"
+        case .shortcutFailed(let name, let detail): "The shortcut “\(name)” didn't finish: \(detail)"
+        }
+    }
+}
+
+/// Carries out validated actions. Only `ResolvedAction`s reach here — the model's
+/// proposal has already been checked against `ActionCatalog` and the allowed shortcuts.
+@MainActor
+enum ActionExecutor {
+    /// Runs the action and returns a short past-tense confirmation for the bubble.
+    static func run(_ action: ResolvedAction) async throws -> String {
+        switch action {
+        case .openApp(let name):
+            guard let url = AppLocator.url(forAppNamed: name) else { throw ActionExecutionError.appNotFound(name) }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            let app = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            return "Opened \(app.localizedName ?? url.deletingPathExtension().lastPathComponent)"
+
+        case .quitApp(let name):
+            let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+            let names = running.compactMap(\.localizedName)
+            guard let match = ActionCatalog.bestMatch(for: name, in: names, threshold: 0.75),
+                  let app = running.first(where: { $0.localizedName == match })
+            else { throw ActionExecutionError.appNotRunning(name) }
+            app.terminate()
+            return "Quit \(match)"
+
+        case .setVolume(let percent):
+            try SystemAudio.setVolume(Float(percent) / 100)
+            if percent > 0 { try? SystemAudio.setMuted(false) }
+            return "Volume set to \(percent)%"
+
+        case .setMuted(let muted):
+            try SystemAudio.setMuted(muted)
+            return muted ? "Muted" : "Unmuted"
+
+        case .setDarkMode(let dark):
+            try await AppleScriptRunner.run(
+                "tell application \"System Events\" to tell appearance preferences to set dark mode to \(dark)"
+            )
+            return dark ? "Dark Mode on" : "Light Mode on"
+
+        case .runShortcut(let name):
+            try await ShortcutsCLI.run(name)
+            return "Ran “\(name)”"
+        }
+    }
+}
+
+/// Finds installed apps by (fuzzy) name in the standard application folders.
+enum AppLocator {
+    private static var searchFolders: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            "/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities",
+            "/System/Library/CoreServices/Applications", home.appending(path: "Applications").path,
+        ].map { URL(fileURLWithPath: $0, isDirectory: true) }
+    }
+
+    static func url(forAppNamed name: String) -> URL? {
+        var apps: [String: URL] = [:]
+        for folder in searchFolders {
+            let contents = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            for url in contents where url.pathExtension == "app" {
+                apps[url.deletingPathExtension().lastPathComponent] = apps[url.deletingPathExtension().lastPathComponent] ?? url
+            }
+        }
+        guard let match = ActionCatalog.bestMatch(for: name, in: Array(apps.keys), threshold: 0.75) else { return nil }
+        return apps[match]
+    }
+}
+
+/// Default output device volume and mute through Core Audio — no permission needed.
+enum SystemAudio {
+    static func setVolume(_ level: Float) throws {
+        var value = min(max(level, 0), 1)
+        try set(kAudioHardwareServiceDeviceProperty_VirtualMainVolume, value: &value)
+    }
+
+    static func setMuted(_ muted: Bool) throws {
+        var value: UInt32 = muted ? 1 : 0
+        try set(kAudioDevicePropertyMute, value: &value)
+    }
+
+    private static func set<T: BitwiseCopyable>(_ selector: AudioObjectPropertySelector, value: inout T) throws {
+        let device = try defaultOutputDevice()
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(device, &address) else {
+            throw ActionExecutionError.audio("this output device doesn't support it")
+        }
+        let status = AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<T>.size), &value)
+        guard status == noErr else { throw ActionExecutionError.audio("error \(status)") }
+    }
+
+    private static func defaultOutputDevice() throws -> AudioDeviceID {
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+        guard status == noErr, device != 0 else { throw ActionExecutionError.audio("no output device") }
+        return device
+    }
+}
+
+/// Runs AppleScript off the main thread: the first use of System Events shows a
+/// macOS permission prompt, which blocks the calling thread until answered.
+enum AppleScriptRunner {
+    static func run(_ source: String) async throws {
+        let failure: String? = await Task.detached(priority: .userInitiated) {
+            var error: NSDictionary?
+            NSAppleScript(source: source)?.executeAndReturnError(&error)
+            guard let error else { return nil }
+            let number = error[NSAppleScript.errorNumber] as? Int
+            if number == -1743 {
+                return "ClickBait isn't allowed to control System Events. Turn it on in System Settings → Privacy & Security → Automation."
+            }
+            return error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number ?? 0)"
+        }.value
+        if let failure { throw ActionExecutionError.script(failure) }
+    }
+}
+
+/// Apple's `shortcuts` command-line tool.
+enum ShortcutsCLI {
+    private static let tool = URL(fileURLWithPath: "/usr/bin/shortcuts")
+
+    /// Names of the user's shortcuts, for the allow-list in Settings.
+    static func list() async -> [String] {
+        guard let output = try? await execute(["list"], timeout: .seconds(10)) else { return [] }
+        return output.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    static func run(_ name: String) async throws {
+        do {
+            _ = try await execute(["run", name], timeout: .seconds(60))
+        } catch let error as ActionExecutionError {
+            throw error
+        } catch {
+            throw ActionExecutionError.shortcutFailed(name, error.localizedDescription)
+        }
+    }
+
+    /// Runs the tool with arguments passed as an array (never through a shell).
+    private static func execute(_ arguments: [String], timeout: Duration) async throws -> String {
+        let name = arguments.last ?? ""
+        return try await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            process.executableURL = tool
+            process.arguments = arguments
+            let output = Pipe(), errors = Pipe()
+            process.standardOutput = output
+            process.standardError = errors
+            try process.run()
+
+            let deadline = ContinuousClock.now + timeout
+            while process.isRunning {
+                if ContinuousClock.now > deadline {
+                    process.terminate()
+                    throw ActionExecutionError.shortcutFailed(name, "it took too long")
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            guard process.terminationStatus == 0 else {
+                let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                throw ActionExecutionError.shortcutFailed(name, message.isEmpty ? "exit code \(process.terminationStatus)" : message)
+            }
+            return text
+        }.value
+    }
+}
