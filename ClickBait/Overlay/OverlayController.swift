@@ -189,13 +189,16 @@ final class OverlayController {
 
     // MARK: - Motion
 
-    /// How long the companion takes to (mostly) catch up with the cursor.
+    /// How long the companion takes to (mostly) catch up with the cursor: a soft, floaty
+    /// glide (the feel the desktop used to have by accident, now on purpose everywhere).
     ///
     /// Motion is driven entirely by the display's refresh: every frame reads the cursor
     /// position. Mouse-moved events can't be used even to wake this up — macOS only
     /// generates them for apps that ask, so over Chrome or Electron apps (Claude) they
     /// arrive late or in bursts, which made the follow feel different from the desktop.
-    private static let followTime: TimeInterval = 0.06
+    /// The display's refresh rate also varies (ProMotion drops it over static content
+    /// like the desktop), so a steady rate is requested while the companion moves.
+    private static let followTime: TimeInterval = 0.11
     /// The system-wide cursor check is a call into the window server; ~20 times a second
     /// is plenty to catch a video hiding the pointer.
     private static let visibilityInterval: CFTimeInterval = 0.05
@@ -206,12 +209,18 @@ final class OverlayController {
     private var displayLink: CADisplayLink?
     private lazy var frameTarget = FrameTarget(controller: self)
     private var hiddenByTyping = false
+    /// Steady frames while moving, so the glide looks the same over any content.
+    private static let movingRate = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+    /// Low rate while still: the cursor is still sampled (to notice movement and hidden
+    /// pointers) without keeping a ProMotion display at 120 Hz.
+    private static let restingRate = CAFrameRateRange(minimum: 10, maximum: 60, preferred: 30)
 
     private func startMotion() {
         anchor = NSEvent.mouseLocation
         if let view = bubblePanel?.contentView {
             let link = view.displayLink(target: frameTarget, selector: #selector(FrameTarget.tick(_:)))
             link.add(to: .main, forMode: .common)
+            link.preferredFrameRateRange = Self.restingRate
             displayLink = link
         }
         Log.app.notice("Cursor visibility: \(CursorVisibility.isAvailable ? "system-wide" : "typing only", privacy: .public)")
@@ -233,7 +242,12 @@ final class OverlayController {
         }
 
         let previous = anchor ?? mouse
-        guard previous != mouse else { return }  // settled: nothing to do this frame
+        guard previous != mouse else {
+            // Settled: let the display relax its refresh rate again.
+            if link.preferredFrameRateRange != Self.restingRate { link.preferredFrameRateRange = Self.restingRate }
+            return
+        }
+        if link.preferredFrameRateRange != Self.movingRate { link.preferredFrameRateRange = Self.movingRate }
         let pull = 1 - exp(-elapsed / Self.followTime)
         var next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
         if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
