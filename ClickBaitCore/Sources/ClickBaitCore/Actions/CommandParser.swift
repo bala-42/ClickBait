@@ -90,9 +90,16 @@ public enum CommandParser {
     /// Finder is frontmost (see `FileAction.requiredFrontmostApp`).
     private static func file(_ words: [String]) -> ActionRequest? {
         let references: Set<String> = ["these", "this", "them", "it", "selected", "selection", "files", "file", "items",
-                                       "pdfs", "pdf", "images", "photos", "pictures", "screenshots", "documents", "folder", "folders"]
+                                       "pdfs", "pdf", "images", "photos", "pictures", "screenshots", "documents", "folder", "folders",
+                                       "videos", "video", "movies"]
         guard let verb = words.first, words.contains(where: references.contains) || words.count == 1 else { return nil }
         let rest = Set(words.dropFirst())
+
+        // "make these smaller", "reduce the size of this", "shrink them", "optimise these images"
+        let shrinkVerbs: Set<String> = ["shrink", "reduce", "downsize", "optimise", "optimize", "minify", "lighten"]
+        if shrinkVerbs.contains(verb) || (verb == "make" && (rest.contains("smaller") || rest.contains("lighter"))) {
+            return ActionRequest(name: "shrink")
+        }
 
         switch verb {
         case "compress", "zip":

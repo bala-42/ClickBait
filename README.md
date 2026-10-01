@@ -98,6 +98,11 @@ are never treated as orders. Shortcuts only run if you've ticked them in **Setti
 and that tick is the permission: ticked shortcuts run without asking. Switching Dark Mode asks
 once for permission to control System Events.
 
+**File actions** (Finder in front, files selected): *"compress these"* (zip), *"merge these"*,
+*"convert these to JPEG/PNG"*, *"make these smaller"* (smaller copies of images, PDFs and videos),
+*"put these in a new folder"*, *"move these to the Trash"*. New files go next to the originals and
+never overwrite anything; originals are left untouched except when moving them.
+
 Both hotkeys only fire when pressed on their own, so shortcuts like ⌃⌥← or ⌥⌘D keep working.
 Press **Esc** to cancel or dismiss.
 

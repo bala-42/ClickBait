@@ -1,7 +1,9 @@
 import AppKit
+@preconcurrency import AVFoundation
 import ClickBaitCore
 import ImageIO
 import PDFKit
+import Quartz
 import UniformTypeIdentifiers
 
 enum FileActionError: LocalizedError {
@@ -33,19 +35,20 @@ enum FileActions {
         guard !selection.isEmpty else { throw FileActionError.nothingSelected }
 
         let (message, reveal): (String, [URL]) = try await Task.detached(priority: .userInitiated) {
-            try perform(action, on: selection)
+            try await perform(action, on: selection)
         }.value
         if !reveal.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(reveal) }
         return message
     }
 
-    private static func perform(_ action: FileAction, on files: [URL]) throws -> (String, [URL]) {
+    private static func perform(_ action: FileAction, on files: [URL]) async throws -> (String, [URL]) {
         switch action {
         case .compress: return try compress(files)
         case .merge: return try merge(files)
         case .convertImages(let format): return try convert(files, to: format)
         case .moveIntoNewFolder: return try moveIntoNewFolder(files)
         case .moveToTrash: return try moveToTrash(files)
+        case .shrink: return try await shrink(files)
         }
     }
 
@@ -140,6 +143,113 @@ enum FileActions {
             try FileManager.default.trashItem(at: file, resultingItemURL: nil)
         }
         return ("Moved \(count(files)) to the Trash", [])
+    }
+
+    /// Smaller copies next to the originals: images re-saved (JPEG 80%, ≤ 2560 px),
+    /// PDFs through macOS's "Reduce File Size" filter, videos re-encoded to HEVC ≤ 1080p.
+    /// A copy that wouldn't be meaningfully smaller is discarded.
+    private static func shrink(_ files: [URL]) async throws -> (String, [URL]) {
+        var outputs: [URL] = []
+        var before: Int64 = 0, after: Int64 = 0
+        var alreadySmall = 0, unsupported = 0
+
+        for file in files {
+            let type = UTType(filenameExtension: file.pathExtension)
+            let folder = file.deletingLastPathComponent()
+            let base = file.deletingPathExtension().lastPathComponent + " (smaller)"
+            let output: URL
+            if type?.conforms(to: .image) == true {
+                output = try shrinkImage(file, base: base, in: folder)
+            } else if type?.conforms(to: .pdf) == true {
+                output = folder.appending(path: try uniqueName(base: base, extension: "pdf", in: folder))
+                try shrinkPDF(file, to: output)
+            } else if type?.conforms(to: .movie) == true || type?.conforms(to: .video) == true {
+                output = folder.appending(path: try uniqueName(base: base, extension: "mov", in: folder))
+                try await shrinkVideo(file, to: output)
+            } else {
+                unsupported += 1
+                continue
+            }
+
+            let originalSize = fileSize(file), newSize = fileSize(output)
+            if newSize >= originalSize * 97 / 100 {
+                try? FileManager.default.removeItem(at: output)  // our own copy; not worth keeping
+                alreadySmall += 1
+                continue
+            }
+            before += originalSize
+            after += newSize
+            outputs.append(output)
+        }
+
+        var parts: [String] = []
+        if !outputs.isEmpty {
+            let formatter = ByteCountFormatter()
+            parts.append("Made \(count(outputs)) smaller: \(formatter.string(fromByteCount: before)) → \(formatter.string(fromByteCount: after))")
+        }
+        if alreadySmall > 0 { parts.append("\(alreadySmall == 1 ? "1 was" : "\(alreadySmall) were") already as small as I can make it") }
+        if unsupported > 0 { parts.append("skipped \(unsupported) I can't shrink (images, PDFs and videos only)") }
+        guard !parts.isEmpty else { throw FileActionError.nothingSelected }
+        return (parts.joined(separator: "; "), outputs)
+    }
+
+    private static func shrinkImage(_ file: URL, base: String, in folder: URL) throws -> URL {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,  // bake in rotation
+            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height), 2560),
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw FileActionError.failed("couldn't read \(file.lastPathComponent)")
+        }
+        let hasAlpha = ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+        let (type, ext): (UTType, String) = hasAlpha ? (.png, "png") : (.jpeg, "jpg")
+        let output = folder.appending(path: try uniqueName(base: base, extension: ext, in: folder))
+        guard let destination = CGImageDestinationCreateWithURL(output as CFURL, type.identifier as CFString, 1, nil) else {
+            throw FileActionError.failed("couldn't create \(output.lastPathComponent)")
+        }
+        // Location and other metadata aren't copied: smaller, and nothing personal leaks.
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
+        return output
+    }
+
+    /// The same filter as Preview's Export → Reduce File Size: recompresses and downsamples
+    /// images, keeps text selectable. (PDFKit's own write options didn't change the size.)
+    private static func shrinkPDF(_ file: URL, to output: URL) throws {
+        let filterURL = URL(fileURLWithPath: "/System/Library/Filters/Reduce File Size.qfilter")
+        guard let document = PDFDocument(url: file) else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        guard let filter = QuartzFilter(url: filterURL) else {
+            throw FileActionError.unsupported("This Mac is missing the system PDF filter needed to shrink PDFs.")
+        }
+        guard document.write(to: output, withOptions: [PDFDocumentWriteOption(rawValue: "QuartzFilter"): filter]) else {
+            throw FileActionError.failed("couldn't shrink \(file.lastPathComponent)")
+        }
+    }
+
+    private static func shrinkVideo(_ file: URL, to output: URL) async throws {
+        let asset = AVURLAsset(url: file)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVC1920x1080) else {
+            throw FileActionError.failed("can't re-encode \(file.lastPathComponent)")
+        }
+        session.shouldOptimizeForNetworkUse = true
+        if #available(macOS 15.0, *) {
+            try await session.export(to: output, as: .mov)
+        } else {
+            session.outputURL = output
+            session.outputFileType = .mov
+            await session.export()
+            if let error = session.error { throw FileActionError.failed(error.localizedDescription) }
+        }
+    }
+
+    private static func fileSize(_ url: URL) -> Int64 {
+        ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
     }
 
     // MARK: - Helpers

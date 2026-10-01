@@ -34,6 +34,8 @@ public enum FileAction: Equatable, Sendable {
     case moveIntoNewFolder
     /// Recoverable: Finder's Trash, never a permanent delete.
     case moveToTrash
+    /// Smaller copies of images, PDFs and videos (originals untouched).
+    case shrink
 
     /// File orders only act while Finder is frontmost, so "delete this" in a text
     /// editor can never touch files.
@@ -109,6 +111,8 @@ public enum ActionCatalog {
             return .success(.file(.convertImages(to: format)))
         case "new_folder":
             return .success(.file(.moveIntoNewFolder))
+        case "shrink":
+            return .success(.file(.shrink))
         case "trash":
             return .success(.file(.moveToTrash))
         case "run_shortcut":

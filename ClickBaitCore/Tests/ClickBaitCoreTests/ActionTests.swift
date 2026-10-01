@@ -117,6 +117,8 @@ struct SystemAndFileCommandTests {
         ("Convert these to JPEG", "convert_images", "jpeg"), ("Make them PNGs", "convert_images", "png"),
         ("Put these in a new folder", "new_folder", nil), ("Move them into a folder", "new_folder", nil),
         ("Delete these files", "trash", nil), ("Move these to the Trash", "trash", nil), ("Trash them", "trash", nil),
+        ("Make these smaller", "shrink", nil), ("Reduce the size of this file", "shrink", nil), ("Shrink them", "shrink", nil),
+        ("Optimize these images", "shrink", nil), ("Reduce the file size of these videos", "shrink", nil), ("Shrink", "shrink", nil),
     ] as [(String, String, String?)])
     func fileOrders(_ text: String, _ name: String, _ argument: String?) {
         #expect(parse(text) == ActionRequest(name: name, argument: argument))
@@ -124,7 +126,7 @@ struct SystemAndFileCommandTests {
 
     @Test(arguments: [
         "Delete", "Make it bigger", "Turn the page", "How do I compress these files?", "What does wifi do?",
-        "Delete the last word", "Remove the background",
+        "Delete the last word", "Remove the background", "Make it bigger", "Reduce the volume",
     ])
     func notFileOrSystemOrders(_ text: String) {
         #expect(parse(text) == nil)
@@ -136,6 +138,7 @@ struct SystemAndFileCommandTests {
         #expect(ActionCatalog.resolve(ActionRequest(name: "convert_images", argument: "gif"), allowedShortcuts: [])
             == .failure(.invalidArgument("I can convert images to JPEG or PNG")))
         #expect(ActionCatalog.resolve(ActionRequest(name: "trash"), allowedShortcuts: []) == .success(.file(.moveToTrash)))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "shrink"), allowedShortcuts: []) == .success(.file(.shrink)))
     }
 
     @Test func outputNamesNeverOverwrite() {
