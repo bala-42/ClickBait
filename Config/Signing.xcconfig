@@ -1,0 +1,21 @@
+// Code signing for the ClickBait app target.
+//
+// Default: ad-hoc ("Sign to Run Locally"). macOS ties Screen Recording and
+// Accessibility grants to the signature, and ad-hoc signatures change on every
+// build, so grants reset after each rebuild.
+//
+// For grants that survive rebuilds, copy Local.xcconfig.example to Local.xcconfig
+// (git-ignored) and put your own Apple Development team ID in it.
+
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+ENABLE_HARDENED_RUNTIME = YES
+// Xcode drops the runtime flag for ad-hoc signing; force it so local builds behave
+// like release builds. Local.xcconfig clears this when a real identity is used.
+OTHER_CODE_SIGN_FLAGS = --options=runtime
+// With ad-hoc signing, library validation rejects Xcode's separate preview dylib
+// (no shared Team ID), so everything is linked into the main binary.
+ENABLE_DEBUG_DYLIB = NO
+
+#include? "Local.xcconfig"

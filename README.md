@@ -59,9 +59,16 @@ On first launch ClickBait asks for:
 | Screen Recording | To see the screen you are asking about. |
 | Accessibility | To detect the hotkey anywhere and to aim the pointer at real buttons. |
 
-> **Local builds:** debug builds are ad-hoc signed, so macOS may forget the Screen Recording and
-> Accessibility grants after a rebuild. If ClickBait stops seeing the screen or hearing the hotkey,
-> remove it from those lists in System Settings → Privacy & Security and add it again.
+> **Local builds:** by default builds are ad-hoc signed, and macOS forgets permission grants after
+> every rebuild. To keep them, sign with your own (free) Apple Development certificate:
+>
+> ```sh
+> cp Config/Local.xcconfig.example Config/Local.xcconfig   # then set DEVELOPMENT_TEAM
+> xcodegen generate
+> ```
+>
+> If a grant still looks stuck, remove ClickBait from the list in System Settings → Privacy &
+> Security and add it again.
 
 ## Usage
 

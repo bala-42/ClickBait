@@ -1,0 +1,6 @@
+// Copy to Config/Local.xcconfig (git-ignored) and fill in your team ID.
+// Find it in Xcode → Settings → Accounts, or with:
+//   security find-identity -v -p codesigning   (the OU of the certificate)
+CODE_SIGN_IDENTITY = Apple Development
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+OTHER_CODE_SIGN_FLAGS =

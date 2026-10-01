@@ -45,20 +45,13 @@ targets:
       path: ClickBait/ClickBait.entitlements
       properties:
         com.apple.security.device.audio-input: true
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.clickbait.ClickBait
         PRODUCT_NAME: ClickBait
-        ENABLE_HARDENED_RUNTIME: YES
-        # Xcode drops the runtime flag for ad-hoc ("-") signing; force it so local builds
-        # behave like release builds (and the audio-input entitlement actually matters).
-        OTHER_CODE_SIGN_FLAGS: "--options=runtime"
-        # With hardened runtime + ad-hoc signing, library validation refuses Xcode's separate
-        # preview dylib (no shared Team ID). Link everything into the main binary instead.
-        ENABLE_DEBUG_DYLIB: NO
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
-        DEVELOPMENT_TEAM: ""
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
 

@@ -90,7 +90,8 @@ Microphone, Screen Recording, Accessibility. On first launch show an onboarding 
   `xcodebuild -scheme ClickBait -configuration Debug -destination 'platform=macOS' build` and fix all errors and warnings before moving on.
 - Run `ClickBaitCoreTests` for anything touching parsing, geometry, or prompting:
   `swift test --package-path ClickBaitCore` (fast) or `xcodebuild -scheme ClickBait -destination 'platform=macOS' test`.
-- Signing: Debug builds are ad-hoc signed with hardened runtime forced on (`OTHER_CODE_SIGN_FLAGS`), and `ENABLE_DEBUG_DYLIB = NO` because library validation rejects Xcode's ad-hoc preview dylib. Don't undo either.
+- Signing lives in `Config/Signing.xcconfig` (ad-hoc + forced hardened runtime + `ENABLE_DEBUG_DYLIB = NO` by default). A git-ignored `Config/Local.xcconfig` (see `.example`) sets a developer's own team so TCC grants survive rebuilds. Never put a team ID in `project.yml`.
+- Logs: `/usr/bin/log show --last 5m --predicate 'subsystem == "org.clickbait.ClickBait"'` (use the full path — zsh has a `log` builtin). Use `.notice` for events worth seeing in `log show`.
 - Prefer Swift concurrency (`async/await`, actors) over callbacks. UI work on `@MainActor`.
 - No force-unwraps outside tests. Errors surface to the user in plain language via the companion bubble.
 - Things you cannot verify by building (permissions prompts, overlay visuals, hotkey feel, audio): tell the user exactly what to test manually and what to look for.
