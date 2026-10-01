@@ -70,6 +70,21 @@ struct SnapperTests {
         #expect(decision.candidate == copyLink)
     }
 
+    @Test func largeElementsKeepThePointInsteadOfJumpingToTheCenter() {
+        // A 400-pt-wide search field: centering it moved a real pointer 160 pt.
+        let field = SnapCandidate(role: "AXTextField", label: "", frame: Rect(x: 3000, y: 780, width: 400, height: 30))
+        let decision = Snapper.decide(target: Point(x: 3101, y: 796), label: "Search", candidates: [field])
+        #expect(decision.reason == .containingElement)
+        #expect(decision.point == Point(x: 3101, y: 796))
+    }
+
+    @Test func largeElementsPullAnOutsidePointJustInsideTheEdge() {
+        let field = SnapCandidate(role: "AXTextField", label: "Search", frame: Rect(x: 0, y: 0, width: 400, height: 30))
+        let decision = Snapper.decide(target: Point(x: 200, y: 50), label: "Search", candidates: [field])
+        #expect(decision.reason == .labelMatch)
+        #expect(decision.point == Point(x: 200, y: 22))
+    }
+
     @Test func distanceIsZeroInsideAndEuclideanOutside() {
         let rect = Rect(x: 0, y: 0, width: 10, height: 10)
         #expect(Snapper.distance(from: Point(x: 5, y: 5), to: rect) == 0)

@@ -37,7 +37,9 @@ public struct SnapDecision: Equatable, Sendable {
 /// Vision models are good at *what* to click and a little off on *where*. The label
 /// says what; accessibility knows exactly where things are. A pointer moves only when
 /// an element within `radius` clearly matches the label, or when it already sits
-/// inside an actionable element (centering it there is always an improvement).
+/// inside an actionable element. Small elements (buttons, checkboxes) get the pointer
+/// at their center; large ones (wide text fields, tables) keep the model's point,
+/// just pulled inside their edge, so the pointer never jumps far across them.
 public enum Snapper {
     public static let radius = 40.0
     static let minimumSimilarity = 0.5
@@ -61,18 +63,35 @@ public enum Snapper {
         }
 
         if let best = scored.filter({ $0.similarity >= minimumSimilarity }).max(by: { $0.score < $1.score }) {
-            return SnapDecision(point: best.0.center, candidate: best.0, reason: .labelMatch, score: best.score)
+            return SnapDecision(point: aim(at: best.0, from: target), candidate: best.0, reason: .labelMatch, score: best.score)
         }
 
         // No label match. If the pointer is already on an actionable element, the model
-        // found it visually; center it there. Prefer the smallest such element.
+        // found it visually; settle it there. Prefer the smallest such element.
         let containing = nearby
             .filter { contains($0.frame, target) }
             .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
         if let containing {
-            return SnapDecision(point: containing.center, candidate: containing, reason: .containingElement, score: 0)
+            return SnapDecision(point: aim(at: containing, from: target), candidate: containing, reason: .containingElement, score: 0)
         }
         return SnapDecision(point: target, candidate: nil, reason: .noConfidentMatch, score: 0)
+    }
+
+    /// Elements up to this size are "small": the pointer goes to their center.
+    public static let smallElement = (width: 160.0, height: 80.0)
+    /// How far inside a large element's edge the pointer is kept.
+    static let edgeInset = 8.0
+
+    static func aim(at candidate: SnapCandidate, from target: Point) -> Point {
+        let frame = candidate.frame
+        if frame.width <= smallElement.width, frame.height <= smallElement.height {
+            return candidate.center
+        }
+        let insetX = min(edgeInset, frame.width / 2), insetY = min(edgeInset, frame.height / 2)
+        return Point(
+            x: min(max(target.x, frame.minX + insetX), frame.maxX - insetX),
+            y: min(max(target.y, frame.minY + insetY), frame.maxY - insetY)
+        )
     }
 
     /// 0 when the point is inside the rect.
