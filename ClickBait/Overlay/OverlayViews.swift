@@ -59,9 +59,9 @@ struct PointerView: View {
                 .background(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 6).padding(-2))
                 .frame(width: Self.ringSize, height: Self.ringSize)
 
-            Arrow()
+            StealthArrow()
                 .fill(accent)
-                .overlay(Arrow().stroke(.white, lineWidth: 1.5))
+                .overlay(StealthArrow().stroke(.white, lineWidth: 1.5))
                 .frame(width: 28, height: 28)
                 .rotationEffect(.degrees(135))  // up-pointing shape → aims down-right at the ring
                 .offset(x: -Self.ringSize / 2 - 14, y: -Self.ringSize / 2 - 14)
@@ -111,16 +111,38 @@ struct PointerView: View {
     }
 }
 
-/// An arrowhead pointing up; rotated to aim down-right at the target.
-private struct Arrow: Shape {
+/// A stealth (barbed) arrowhead pointing up: straight flanks, swept-back barbs and a
+/// concave notch at the back. Rotate it to aim.
+struct StealthArrow: Shape {
     func path(in rect: CGRect) -> Path {
+        let tip = CGPoint(x: rect.midX, y: rect.minY)
+        let rightBarb = CGPoint(x: rect.maxX, y: rect.maxY)
+        let leftBarb = CGPoint(x: rect.minX, y: rect.maxY)
+        let notch = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.68)
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY * 0.72))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.move(to: tip)
+        path.addLine(to: rightBarb)
+        path.addQuadCurve(to: notch, control: CGPoint(x: rect.midX + rect.width * 0.12, y: rect.minY + rect.height * 0.8))
+        path.addQuadCurve(to: leftBarb, control: CGPoint(x: rect.midX - rect.width * 0.12, y: rect.minY + rect.height * 0.8))
         path.closeSubpath()
         return path
+    }
+}
+
+/// The companion's arrowhead: aims up-left at the real cursor. Translucent black with
+/// a white edge so it reads on light and dark content (windows can't invert the
+/// pixels of other apps behind them).
+struct CompanionArrow: View {
+    static let size: CGFloat = 14
+
+    var body: some View {
+        StealthArrow()
+            .fill(.black.opacity(0.55))
+            .overlay(StealthArrow().stroke(.white, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
+            .frame(width: Self.size, height: Self.size * 1.2)
+            .rotationEffect(.degrees(-45))
+            .frame(width: Self.size * 1.6, height: Self.size * 1.6)
+            .shadow(color: .black.opacity(0.25), radius: 1.5, y: 0.5)
     }
 }
 
@@ -134,14 +156,25 @@ struct CompanionBubbleView: View {
     static let maxTextWidth: CGFloat = 280
 
     var body: some View {
+        HStack(alignment: .top, spacing: 2) {
+            CompanionArrow()
+                .padding(4)
+            status
+        }
+        .font(.system(size: 13))
+        .fixedSize()
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.8).repeatForever()) { breathing = true }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var status: some View {
         Group {
             switch model.bubble {
             case .idle:
-                Circle()
-                    .fill(Color.accentColor.opacity(0.55))
-                    .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
-                    .frame(width: 9, height: 9)
-                    .padding(3)
+                EmptyView()
             case .listening:
                 row(symbol: "mic.fill", tint: .red, text: "Listening…")
                     .scaleEffect(breathing && !reduceMotion ? 1.04 : 1)
@@ -160,13 +193,6 @@ struct CompanionBubbleView: View {
                 row(symbol: "exclamationmark.triangle.fill", tint: .orange, text: message)
             }
         }
-        .font(.system(size: 13))
-        .fixedSize()
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.8).repeatForever()) { breathing = true }
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private func row(symbol: String, tint: Color, text: String) -> some View {
@@ -187,6 +213,7 @@ private extension View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.12)))
             .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
-            .padding(8)  // room for the shadow inside the panel
+            .padding(.top, 10)  // sit level with the arrow's tail, not its tip
+            .padding([.trailing, .bottom], 8)  // room for the shadow inside the panel
     }
 }

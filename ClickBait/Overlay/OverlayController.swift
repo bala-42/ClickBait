@@ -126,15 +126,20 @@ final class OverlayController {
 
     // MARK: - Bubble position
 
+    /// Gap between the cursor's hotspot and the companion. The system arrow cursor
+    /// extends about 12 pt right and 20 pt down from its hotspot, so this clears it.
+    private static let cursorClearance = CGSize(width: 18, height: 24)
+
     /// Bottom-right of the cursor, kept on the cursor's screen.
     private func moveBubble(to mouse: NSPoint) {
         guard let panel = bubblePanel else { return }
         let size = panel.frame.size
-        var origin = NSPoint(x: mouse.x + 14, y: mouse.y - 18 - size.height)
+        let gap = Self.cursorClearance
+        var origin = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height - size.height)
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
             let bounds = screen.visibleFrame
-            if origin.x + size.width > bounds.maxX { origin.x = mouse.x - 14 - size.width }
-            if origin.y < bounds.minY { origin.y = mouse.y + 18 }
+            if origin.x + size.width > bounds.maxX { origin.x = mouse.x - gap.width - size.width }
+            if origin.y < bounds.minY { origin.y = mouse.y + gap.height }
             origin.x = max(bounds.minX, min(origin.x, bounds.maxX - size.width))
             origin.y = max(bounds.minY, min(origin.y, bounds.maxY - size.height))
         }
