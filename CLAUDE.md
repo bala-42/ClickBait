@@ -75,6 +75,10 @@ Spoken and typed asks send the model a numbered list of up to 50 clickable thing
 ### Listening
 Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips silent recordings (peak < 0.01), lifts quiet ones (up to 12×) and adds 0.2 s lead-in; Whisper's own no-speech filter is off. What was heard shows in a tiny pill while thinking.
 
+### Places and file orders (phase E, steps 1–2)
+- A box/circle snip in Finder selects the items under it (`AXInspector.finderItemNames` → `FinderSelection.select`; names reach AppleScript only via `AppleScriptText` escaping), so "combine these" acts on them.
+- Rule-based orders (typed in a chat too): "make a new folder [in <place>] [called X]", "open Downloads", "move/copy these to <place>", "rename this to X", "put these in a new folder called X". Places: Desktop, Downloads, Documents, Applications, iCloud Drive; Home/Music/Pictures/Movies only with "folder". Names keep the user's casing and are validated (no `/`, `:`, leading `.`). Nothing is overwritten (numbered names); rename refuses clashes and keeps the extension.
+
 ### Snips (phase C)
 Hold ⌥⌘ for 0.4 s to arm (companion turns red, trackpad tick); only then a transparent layer covers every screen (below the companion, which turns Strawberry Red). Moving traces a red line; click-drag draws a box (the click never reaches the app). Release decides (`SnipTracker`): a box ≥ 12 pt or a trace ≥ 60 pt long is a snip, anything else is a tap → explain highlighted text. The screenshot is cropped around the region (`SnipLayout`) with the shape drawn in red (`SnipRenderer`), sent with `AskRequest.snip`, answered in a chat bubble like an explanation (no pointers, no speech). Failsafe: the layer cancels itself if ⌥⌘ is no longer held or after 60 s. Trade-off: ⌥⌘-click/drag in other apps (e.g. Finder alias drag) is captured while the chord is held.
 

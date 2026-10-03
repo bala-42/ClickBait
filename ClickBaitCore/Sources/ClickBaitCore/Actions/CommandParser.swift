@@ -26,7 +26,8 @@ public enum CommandParser {
         let text = words.joined(separator: " ")
 
         if let action = volume(words) ?? appearance(text) ?? mute(text) ?? wifi(words) ?? system(text) { return action }
-        if let action = file(words) { return action }
+        if let action = places(words, transcript: transcript) { return action }
+        if let action = file(words, transcript: transcript) { return action }
         if let action = shortcut(words, allowedShortcuts: allowedShortcuts) { return action }
         if let action = app(words) { return action }
         return nil
@@ -86,9 +87,63 @@ public enum CommandParser {
         return nil
     }
 
+    /// Folders by name: make one, open one, move or copy the selection to one, rename.
+    private static func places(_ words: [String], transcript: String) -> ActionRequest? {
+        guard let verb = words.first else { return nil }
+        let selection: Set<String> = ["these", "this", "them", "it", "that", "selected", "selection", "files", "file", "items",
+                                      "pdfs", "images", "photos", "pictures", "screenshots", "documents", "videos"]
+        let rest = words.dropFirst()
+        let refersToSelection = rest.contains(where: selection.contains)
+        let name = SpokenName.after(["called", "named"], in: transcript)
+
+        // "rename this to Invoice March"
+        if verb == "rename" {
+            return ActionRequest(name: "rename", detail: SpokenName.renameTarget(in: transcript))
+        }
+
+        // "make a new folder (in Downloads) (called Receipts)" — but "put these in a
+        // new folder" moves the selection into one.
+        let pointsAtSelection = rest.contains(where: ["these", "this", "them", "it", "that", "selected", "selection"].contains)
+        if rest.contains("folder"), ["make", "create", "new", "add"].contains(verb), !pointsAtSelection {
+            let place = placeAfterPreposition(words)
+            return ActionRequest(name: "make_folder", argument: place?.rawValue, detail: name)
+        }
+        if ["put", "move", "group"].contains(verb), refersToSelection, rest.contains("new") || rest.contains("folder"),
+           placeAfterPreposition(words) == nil, !rest.contains("trash"), !rest.contains("bin") {
+            return ActionRequest(name: "new_folder", detail: name)
+        }
+
+        // "open Downloads", "go to my Documents folder", "show me the Desktop folder"
+        if ["open", "show", "go"].contains(verb) {
+            var after = rest
+            while let first = after.first, ["me", "to", "up"].contains(first) { after = after.dropFirst() }
+            if let (place, used) = Place.named(at: after, strict: true), after.count == used {
+                // "show desktop" hides windows; only "show the Desktop folder" opens it.
+                if verb == "show", place == .desktop, !after.contains("folder") { return nil }
+                return ActionRequest(name: "open_place", argument: place.rawValue)
+            }
+            return nil
+        }
+
+        // "move these to Documents", "copy this to the Desktop"
+        if ["move", "copy", "put", "send"].contains(verb), refersToSelection, !rest.contains("trash"), !rest.contains("bin"),
+           let place = placeAfterPreposition(words) {
+            return ActionRequest(name: verb == "copy" ? "copy_to" : "move_to", argument: place.rawValue)
+        }
+        return nil
+    }
+
+    /// The place after "in/on/to/into…": "in Downloads", "to the Desktop", "into my documents folder".
+    private static func placeAfterPreposition(_ words: [String]) -> Place? {
+        for (index, word) in words.enumerated() where ["in", "on", "to", "into", "inside", "onto"].contains(word) {
+            if let (place, _) = Place.named(at: words[(index + 1)...], strict: false) { return place }
+        }
+        return nil
+    }
+
     /// Orders about "these/this/the selected files". The app only runs them while
     /// Finder is frontmost (see `FileAction.requiredFrontmostApp`).
-    private static func file(_ words: [String]) -> ActionRequest? {
+    private static func file(_ words: [String], transcript: String) -> ActionRequest? {
         let references: Set<String> = ["these", "this", "them", "it", "selected", "selection", "files", "file", "items",
                                        "pdfs", "pdf", "images", "photos", "pictures", "screenshots", "documents", "folder", "folders",
                                        "videos", "video", "movies"]
@@ -114,7 +169,7 @@ public enum CommandParser {
             return nil
         case "put", "move", "group":
             if rest.contains("trash") || rest.contains("bin") { return ActionRequest(name: "trash") }
-            if rest.contains("folder") { return ActionRequest(name: "new_folder") }
+            if rest.contains("folder") { return ActionRequest(name: "new_folder", detail: SpokenName.after(["called", "named"], in: transcript)) }
             return nil
         case "delete", "trash", "remove", "bin":
             return words.count == 1 ? nil : ActionRequest(name: "trash")

@@ -867,12 +867,17 @@ final class AskCoordinator {
         case .setWiFi: "Changing Wi-Fi…"
         case .lockScreen: "Locking…"
         case .sleepDisplay: "Turning off the display…"
+        case .newFolder: "Making a folder…"
+        case .openPlace(let place): "Opening \(place.displayName)…"
         case .file(let file):
             switch file {
             case .compress: "Compressing…"
             case .merge: "Merging…"
             case .convertImages: "Converting…"
             case .moveIntoNewFolder: "Making a new folder…"
+            case .moveTo(let place): "Moving to \(place.displayName)…"
+            case .copyTo(let place): "Copying to \(place.displayName)…"
+            case .rename: "Renaming…"
             case .moveToTrash: "Moving to the Trash…"
             case .shrink: "Making smaller copies…"
             }

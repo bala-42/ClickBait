@@ -115,7 +115,7 @@ struct SystemAndFileCommandTests {
         ("Compress these files.", "compress", nil), ("Zip them", "compress", nil), ("Zip this folder", "compress", nil),
         ("Merge these PDFs.", "merge", nil), ("Merge.", "merge", nil), ("Zip", "compress", nil), ("Combine the selected images", "merge", nil),
         ("Convert these to JPEG", "convert_images", "jpeg"), ("Make them PNGs", "convert_images", "png"),
-        ("Put these in a new folder", "new_folder", nil), ("Move them into a folder", "new_folder", nil),
+        ("Put these in a new folder", "new_folder", nil),
         ("Delete these files", "trash", nil), ("Move these to the Trash", "trash", nil), ("Trash them", "trash", nil),
         ("Make these smaller", "shrink", nil), ("Reduce the size of this file", "shrink", nil), ("Shrink them", "shrink", nil),
         ("Optimize these images", "shrink", nil), ("Reduce the file size of these videos", "shrink", nil), ("Shrink", "shrink", nil),

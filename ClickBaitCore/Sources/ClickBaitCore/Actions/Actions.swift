@@ -2,10 +2,13 @@
 public struct ActionRequest: Codable, Equatable, Sendable {
     public var name: String
     public var argument: String?
+    /// A name as the user said it ("called Receipts", "rename this to …"), case kept.
+    public var detail: String?
 
-    public init(name: String, argument: String? = nil) {
+    public init(name: String, argument: String? = nil, detail: String? = nil) {
         self.name = name
         self.argument = argument
+        self.detail = detail
     }
 }
 
@@ -20,6 +23,10 @@ public enum ResolvedAction: Equatable, Sendable {
     case setWiFi(Bool)
     case lockScreen
     case sleepDisplay
+    /// An empty folder in `place`, or (nil) in the front Finder window's folder or on
+    /// the Desktop. Unnamed: "untitled folder", like Finder.
+    case newFolder(in: Place?, name: String?)
+    case openPlace(Place)
     /// Acts on the files selected in Finder.
     case file(FileAction)
 }
@@ -31,7 +38,12 @@ public enum FileAction: Equatable, Sendable {
     /// PDFs and images become one PDF; text files become one text file.
     case merge
     case convertImages(to: ImageFormat)
-    case moveIntoNewFolder
+    case moveIntoNewFolder(name: String?)
+    /// Into a named place; nothing is ever overwritten (clashing names get a number).
+    case moveTo(Place)
+    case copyTo(Place)
+    /// Exactly one selected item; its extension is kept if the new name has none.
+    case rename(to: String)
     /// Recoverable: Finder's Trash, never a permanent delete.
     case moveToTrash
     /// Smaller copies of images, PDFs and videos (originals untouched).
@@ -57,7 +69,7 @@ public enum ActionError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .unknown:
-            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode or Wi-Fi, lock the screen, work with files selected in Finder, and run the shortcuts you've allowed in Settings."
+            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode or Wi-Fi, lock the screen, make and open folders, work with files selected in Finder, and run the shortcuts you've allowed in Settings."
         case .missingArgument(let action):
             "I didn't catch what to \(action)."
         case .invalidArgument(let detail):
@@ -75,6 +87,12 @@ public enum ActionCatalog {
     public static func resolve(_ request: ActionRequest, allowedShortcuts: [String]) -> Result<ResolvedAction, ActionError> {
         let name = request.name.lowercased().trimmingCharacters(in: .whitespaces)
         let argument = request.argument?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A spoken name must be usable as one file name.
+        let detail = request.detail.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        if let detail, SpokenName.validated(detail) == nil {
+            return .failure(.invalidArgument("“\(detail)” can't be used as a name"))
+        }
+        let place = Place(rawValue: argument.lowercased())
 
         switch name {
         case "open_app", "quit_app":
@@ -110,7 +128,19 @@ public enum ActionCatalog {
             }
             return .success(.file(.convertImages(to: format)))
         case "new_folder":
-            return .success(.file(.moveIntoNewFolder))
+            return .success(.file(.moveIntoNewFolder(name: detail)))
+        case "make_folder":
+            guard argument.isEmpty || place != nil else { return .failure(.invalidArgument("I don't know the folder “\(argument)”")) }
+            return .success(.newFolder(in: place, name: detail))
+        case "open_place":
+            guard let place else { return .failure(.missingArgument("open")) }
+            return .success(.openPlace(place))
+        case "move_to", "copy_to":
+            guard let place else { return .failure(.missingArgument(name == "move_to" ? "move them to" : "copy them to")) }
+            return .success(.file(name == "move_to" ? .moveTo(place) : .copyTo(place)))
+        case "rename":
+            guard let detail else { return .failure(.missingArgument("rename it to")) }
+            return .success(.file(.rename(to: detail)))
         case "shrink":
             return .success(.file(.shrink))
         case "trash":

@@ -93,6 +93,12 @@ enum ActionExecutor {
             try process.run()
             return "Display asleep"
 
+        case .newFolder(let place, let name):
+            return try await Places.newFolder(in: place, name: name)
+
+        case .openPlace(let place):
+            return try Places.open(place)
+
         case .file(let action):
             return try await FileActions.run(action)
         }

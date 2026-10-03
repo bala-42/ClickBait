@@ -46,7 +46,10 @@ enum FileActions {
         case .compress: return try compress(files)
         case .merge: return try merge(files)
         case .convertImages(let format): return try convert(files, to: format)
-        case .moveIntoNewFolder: return try moveIntoNewFolder(files)
+        case .moveIntoNewFolder(let name): return try moveIntoNewFolder(files, name: name)
+        case .moveTo(let place): return try transfer(files, to: place, copying: false)
+        case .copyTo(let place): return try transfer(files, to: place, copying: true)
+        case .rename(let name): return try rename(files, to: name)
         case .moveToTrash: return try moveToTrash(files)
         case .shrink: return try await shrink(files)
         }
@@ -128,14 +131,55 @@ enum FileActions {
         return ("Converted \(count(images)) to \(format == .jpeg ? "JPEG" : "PNG")\(note)", outputs)
     }
 
-    private static func moveIntoNewFolder(_ files: [URL]) throws -> (String, [URL]) {
+    private static func moveIntoNewFolder(_ files: [URL], name: String?) throws -> (String, [URL]) {
         let parent = try commonFolder(of: files)
-        let folder = parent.appending(path: try uniqueName(base: "New Folder", extension: "", in: parent), directoryHint: .isDirectory)
+        let folder = parent.appending(path: try uniqueName(base: name ?? "New Folder", extension: "", in: parent), directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         for file in files {
             try FileManager.default.moveItem(at: file, to: folder.appending(path: file.lastPathComponent))
         }
         return ("Moved \(count(files)) into \(folder.lastPathComponent)", [folder])
+    }
+
+    /// Moves or copies into a named place. Clashing names get a number ("Report 2.pdf");
+    /// nothing is ever overwritten. Items already there are left alone.
+    private static func transfer(_ files: [URL], to place: Place, copying: Bool) throws -> (String, [URL]) {
+        let destination = try Places.url(for: place)
+        var results: [URL] = []
+        var alreadyThere = 0
+        for file in files {
+            if !copying, file.deletingLastPathComponent().standardizedFileURL == destination.standardizedFileURL {
+                alreadyThere += 1
+                continue
+            }
+            let ext = file.pathExtension
+            let base = ext.isEmpty ? file.lastPathComponent : file.deletingPathExtension().lastPathComponent
+            let target = destination.appending(path: try uniqueName(base: base, extension: ext, in: destination))
+            if copying {
+                try FileManager.default.copyItem(at: file, to: target)
+            } else {
+                try FileManager.default.moveItem(at: file, to: target)
+            }
+            results.append(target)
+        }
+        guard !results.isEmpty else { return ("Already in \(place.displayName)", []) }
+        let note = alreadyThere > 0 ? " (\(alreadyThere) already there)" : ""
+        return ("\(copying ? "Copied" : "Moved") \(count(results)) to \(place.displayName)\(note)", results)
+    }
+
+    /// Renames the one selected item, keeping its extension unless the new name has one.
+    private static func rename(_ files: [URL], to name: String) throws -> (String, [URL]) {
+        guard files.count == 1, let file = files.first else {
+            throw FileActionError.unsupported("Select just one item to rename.")
+        }
+        let ext = file.pathExtension
+        let newName = (ext.isEmpty || !(name as NSString).pathExtension.isEmpty) ? name : name + "." + ext
+        let target = file.deletingLastPathComponent().appending(path: newName)
+        guard !FileManager.default.fileExists(atPath: target.path) else {
+            throw FileActionError.unsupported("There's already something called “\(newName)” there.")
+        }
+        try FileManager.default.moveItem(at: file, to: target)
+        return ("Renamed to “\(newName)”", [target])
     }
 
     private static func moveToTrash(_ files: [URL]) throws -> (String, [URL]) {
@@ -312,6 +356,21 @@ enum FinderSelection {
             return .success(Int(output?.int32Value ?? 0))
         }.value
         return try result.get()
+    }
+
+    /// The folder shown in the front Finder window, if there is one.
+    static func frontFolder() async -> URL? {
+        let script = """
+            tell application "Finder"
+                if (count of Finder windows) is 0 then return ""
+                return POSIX path of (target of front Finder window as alias)
+            end tell
+            """
+        let path: String = await Task.detached(priority: .userInitiated) {
+            var error: NSDictionary?
+            return NSAppleScript(source: script)?.executeAndReturnError(&error).stringValue ?? ""
+        }.value
+        return path.isEmpty ? nil : URL(fileURLWithPath: path, isDirectory: true)
     }
 
     static func read() async throws -> [URL] {
