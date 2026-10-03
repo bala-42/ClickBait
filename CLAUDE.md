@@ -74,8 +74,8 @@ Every answer or ⌥⌘ explanation opens a chat bubble (`ChatController`: border
 
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.
-- Companion follows the cursor (global `mouseMoved` monitor): idle it's a small translucent stealth arrowhead aimed at the cursor; for listening / thinking / explaining / answers / errors the arrowhead itself morphs into a Liquid Glass card (material fallback before macOS 26).
-- Pointer: animated arrow/ring + label pill. Respect Reduce Motion.
+- Companion follows the cursor (display-link driven): a small equilateral triangle in the state colour, vertex aimed up-left at the cursor; a Liquid Glass card beside it for listening / thinking / explaining / errors (material fallback before macOS 26).
+- Pointing (phase B): no separate arrow. The triangle detaches, glides to each target and turns its vertex onto it, with a label pill on the side away from the target ("1/2 · File"). Advances on any click or after 8 s; Esc, a new question or closing the chat sends it back. Reduce Motion: it jumps instead of gliding.
 
 ## Permissions
 Microphone, Screen Recording, Accessibility. On first launch show an onboarding window that checks each, explains why in one sentence, and deep-links to the right System Settings pane. App must degrade gracefully (e.g. no AX → no snapping, still points).
@@ -93,8 +93,8 @@ Microphone, Screen Recording, Accessibility. On first launch show an onboarding 
 ## Master roadmap (from 2026-10-03; supersedes M2–M5 above)
 Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offline. Be honest about speed: local inference takes seconds, so promise "private and offline", not "zero latency".
 
-- **A. Identity & quick wins** (in progress): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Sky Blue idle/tracking, Mango Orange input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping.
-- **B. Companion guides you**: after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
+- **A. Identity & quick wins** (done): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Sky Blue idle/tracking, Mango Orange input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping.
+- **B. Companion guides you** (done): after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
 - **C. Circling & snipping** (Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
 - **D. Air-gapped mode**: the optional Anthropic provider is pending a decision (the user is deciding whether to remove it); Whisper model import from a local file as an alternative to the one-time download.
 - **E. File management** beyond the Finder selection: inspect/organize/clean up across folders. Clear orders stay rule-based; bulk changes the model proposes are shown for confirmation. Trash only, never permanent deletes.

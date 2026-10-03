@@ -49,13 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chat.model.onClose = { [weak self] in self?.closeChat() }
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
-            overlay.hidePointers()
+            overlay.endGuide()
             chat.open(at: overlay.companionTopLeft)
             chat.model.addUser(firstMessage)
             chat.model.isBusy = true
         }
         coordinator.onChatUserMessage = { [weak self] message in
-            self?.overlay.hidePointers()
+            self?.overlay.endGuide()
             self?.chat.model.addUser(message)
             self?.chat.model.isBusy = true
         }
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.chat.model.isBusy = false
         }
         coordinator.onChatClose = { [weak self] in
-            self?.overlay.hidePointers()
+            self?.overlay.endGuide()
             self?.chat.close()
         }
         coordinator.onStateChange = { [weak self, weak statusBar] state in
@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             chat.model.setAssistant(response.displayText)  // final text, with any code as a block
             chat.model.isBusy = false
-            overlay.showPointers(pointers)
+            overlay.guide(to: pointers)
         }
         hotkey.start()
         speech.loadIfInstalled()
@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ✕ or Escape on the chat bubble: close it and forget the conversation.
     private func closeChat() {
         coordinator.closeChat()
-        overlay.hidePointers()
+        overlay.endGuide()
         chat.close()
     }
 }

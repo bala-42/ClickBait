@@ -56,11 +56,18 @@ final class OverlayModel {
     var isPulsing: Bool {
         switch bubble {
         case .listening, .thinking, .explaining, .working: true
-        default: false
+        default: isGuiding  // a gentle beat draws the eye to the target
         }
     }
-    /// Pointers being shown, in global AppKit points. Empty when nothing is pointed at.
-    var pointers: [ScreenPointer] = []
+    /// The triangle's rotation in degrees (0 = vertex up, clockwise). Aimed up-left at
+    /// the cursor normally; turned toward a target while guiding.
+    var triangleAngle: Double = CompanionTriangle.restingAngle
+    /// Detached from the cursor, pointing at a target from an answer.
+    var isGuiding = false
+    /// Shown beside the triangle while guiding, e.g. "1/2 · Share".
+    var guideLabel: String?
+    var guideLabelSize: CGSize = .zero
+    static let guideLabelCanvas = CGSize(width: 320, height: 40)
     /// The companion's drawn size. Ignored by observation: the controller reacts through
     /// `onBubbleSizeChange` instead, and the view never reads it.
     @ObservationIgnored var bubbleSize: CGSize = .zero {
@@ -72,6 +79,4 @@ final class OverlayModel {
     /// click-through, so content is never clipped while it grows or animates.
     static let bubbleCanvas = CGSize(width: 420, height: 560)
 
-    /// Changes every time a new set of pointers appears, to restart their animation.
-    var pointerGeneration = 0
 }

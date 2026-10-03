@@ -2,8 +2,9 @@ import AppKit
 import ClickBaitCore
 import SwiftUI
 
-/// Owns the transparent overlay panels (one per screen) and the companion bubble that
-/// follows the cursor. Click-through everywhere; never takes focus.
+/// Owns the companion: the triangle that follows the cursor, shows ClickBait's state,
+/// and — after an answer — detaches to glide over and point at targets on screen.
+/// Click-through everywhere; never takes focus.
 @MainActor
 final class OverlayController {
     let model = OverlayModel()
@@ -14,23 +15,16 @@ final class OverlayController {
     /// Escape otherwise: returns true if it closed something (the chat bubble).
     var onEscape: (() -> Bool)?
 
-    private var screenPanels: [NSPanel] = []
+    private var guideLabelPanel: NSPanel?
     private var bubblePanel: NSPanel?
     private var bubbleHost: NSHostingView<CompanionBubbleView>?
     private var monitors: [Any] = []
     private var dismissTask: Task<Void, Never>?
-    private var screenObserver: NSObjectProtocol?
 
     func start() {
-        rebuildScreenPanels()
         makeBubblePanel()
         installMonitors()
         startMotion()
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.rebuildScreenPanels() }
-        }
         moveBubble(to: NSEvent.mouseLocation)
     }
 
@@ -43,7 +37,7 @@ final class OverlayController {
         case .listening:
             setCompanionHidden(false)
             dismissTask?.cancel()
-            clearPointers()
+            endGuide()
             model.bubble = .listening
         case .thinking:
             if case .explaining = model.bubble, heard == nil { return }  // keep the excerpt up
@@ -51,37 +45,15 @@ final class OverlayController {
         case .speaking:
             break  // set by showAnswer
         case .error(let message):
-            clearPointers()
+            endGuide()
             model.bubble = .error(message)
         }
     }
 
     func showExplaining(_ selectedText: String) {
-        clearPointers()
+        endGuide()
         model.bubble = .explaining(excerpt: selectedText)
     }
-
-    /// Points at things on screen for a chat answer. They fade after a while, or when
-    /// the next message is sent or the chat closes.
-    func showPointers(_ pointers: [ScreenPointer]) {
-        model.pointers = pointers
-        model.pointerGeneration += 1
-        updateScreenPanels()
-        pointerTimeout?.cancel()
-        guard !pointers.isEmpty else { return }
-        pointerTimeout = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(12))
-            guard !Task.isCancelled else { return }
-            self?.clearPointers()
-        }
-    }
-
-    func hidePointers() {
-        pointerTimeout?.cancel()
-        clearPointers()
-    }
-
-    private var pointerTimeout: Task<Void, Never>?
 
     /// Where a chat bubble should open: where the companion's card sits now.
     var companionTopLeft: CGPoint {
@@ -91,7 +63,7 @@ final class OverlayController {
 
     /// A command is running (green, pulsing) — file actions can take a while.
     func showWorking(_ message: String) {
-        clearPointers()
+        endGuide()
         dismissTask?.cancel()
         setCompanionHidden(false)
         model.bubble = .working(message)
@@ -99,7 +71,6 @@ final class OverlayController {
 
     /// A command was carried out: brief confirmation, then fade.
     func showDone(_ message: String) {
-        clearPointers()
         model.bubble = .done(message)
         scheduleDismiss(after: .seconds(3))
     }
@@ -116,28 +87,9 @@ final class OverlayController {
     func dismissAnswer() {
         dismissTask?.cancel()
         dismissTask = nil
-        let wasShowing = !model.pointers.isEmpty || model.bubble.isAnswer
-        clearPointers()
+        let wasShowing = model.bubble.isAnswer
         if model.bubble.isAnswer { model.bubble = .idle }
         if wasShowing { onDismiss?() }
-    }
-
-    private func clearPointers() {
-        model.pointers = []
-        updateScreenPanels()
-    }
-
-    private var screenPanelsVisible = false
-
-    /// The full-screen overlay windows exist only while they draw a pointer. Kept off-screen otherwise, so no full-screen ClickBait
-    /// window sits on every Space — a suspected cause of black Mission Control previews.
-    private func updateScreenPanels() {
-        let needed = !model.pointers.isEmpty
-        guard needed != screenPanelsVisible else { return }
-        screenPanelsVisible = needed
-        for panel in screenPanels {
-            if needed { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
-        }
     }
 
     // MARK: - Panels
@@ -160,29 +112,21 @@ final class OverlayController {
         return panel
     }
 
-    private func rebuildScreenPanels() {
-        screenPanels.forEach { $0.close() }
-        screenPanels = NSScreen.screens.map { screen in
-            let panel = Self.makePanel(frame: screen.frame)
-            panel.contentView = NSHostingView(rootView: ScreenOverlayView(model: model, screenFrame: screen.frame))
-            panel.setFrame(screen.frame, display: false)
-            return panel
-        }
-        screenPanelsVisible = false
-        updateScreenPanels()
-    }
-
     private func makeBubblePanel() {
         let host = NSHostingView(rootView: CompanionBubbleView(model: model))
         let panel = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.bubbleCanvas))
         panel.contentView = host
         model.onBubbleSizeChange = { [weak self] in
-            guard let self else { return }
+            guard let self, guide == nil else { return }
             moveBubble(to: anchor ?? NSEvent.mouseLocation)
         }
         panel.orderFrontRegardless()
         bubblePanel = panel
         bubbleHost = host
+
+        let label = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.guideLabelCanvas))
+        label.contentView = NSHostingView(rootView: GuideLabelView(model: model))
+        guideLabelPanel = label
     }
 
     // MARK: - Bubble position
@@ -245,6 +189,11 @@ final class OverlayController {
             updateVisibility()
         }
 
+        if guide != nil {
+            stepGuide(now: now, elapsed: elapsed, link: link)
+            return
+        }
+
         let previous = anchor ?? mouse
         guard previous != mouse else {
             // Settled: let the display relax its refresh rate again.
@@ -274,7 +223,8 @@ final class OverlayController {
 
     private func setCompanionHidden(_ hidden: Bool) {
         guard let panel = bubblePanel else { return }
-        let alpha: CGFloat = hidden && model.bubble == .idle ? 0 : 1
+        // While guiding, the triangle is the answer: it never hides.
+        let alpha: CGFloat = hidden && model.bubble == .idle && guide == nil ? 0 : 1
         if panel.alphaValue != alpha { panel.alphaValue = alpha }
     }
 
@@ -297,11 +247,145 @@ final class OverlayController {
         panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
     }
 
+    // MARK: - Guiding (roadmap phase B)
+
+    /// After an answer the triangle detaches from the cursor, glides to each target in
+    /// turn and points its vertex at it, then glides back. A click anywhere moves on
+    /// (the user has probably just clicked the target); so does `dwell` without one.
+    private struct Guide {
+        var targets: [ScreenPointer]
+        var index = 0
+        /// Unit vector from the target toward where the triangle sits.
+        var approach = CGVector(dx: -0.7071, dy: 0.7071)
+        /// The triangle's centre, eased toward its spot each frame.
+        var center: CGPoint
+        var targetStarted: CFTimeInterval = 0
+    }
+
+    private var guide: Guide?
+    private static let guideGlideTime: TimeInterval = 0.16
+    private static let dwell: CFTimeInterval = 8
+    /// Distance from the triangle's centre to its vertex (up to its pulse size), plus a gap.
+    private static var tipDistance: CGFloat { CompanionTriangle.size * 3.squareRoot() / 4 * 1.2 + 3 }
+    /// The triangle's centre measured from the companion panel's top-left corner.
+    private static var triangleInset: CGFloat { 4 + 2 + CompanionTriangle.size * 0.85 }
+
+    var isGuiding: Bool { guide != nil }
+
+    func guide(to targets: [ScreenPointer]) {
+        endGuide()
+        guard !targets.isEmpty else { return }
+        // Start from wherever the triangle is drawn now.
+        let frame = bubblePanel?.frame ?? .zero
+        let start = CGPoint(x: frame.minX + Self.triangleInset, y: frame.maxY - Self.triangleInset)
+        guide = Guide(targets: targets, center: start)
+        model.bubble = .idle
+        beginTarget()
+        setCompanionHidden(false)
+        Log.ask.notice("Guiding to \(targets.count, privacy: .public) target(s)")
+    }
+
+    /// Back to following the cursor, gliding from wherever the triangle is now.
+    func endGuide() {
+        guard let guide else { return }
+        // The cursor position that would put the triangle where it is: the normal follow
+        // then glides it back from here.
+        anchor = CGPoint(x: guide.center.x - Self.cursorClearance.width - Self.triangleInset,
+                         y: guide.center.y + Self.cursorClearance.height + Self.triangleInset)
+        self.guide = nil
+        guideLabelPanel?.orderOut(nil)
+        model.isGuiding = false
+        model.guideLabel = nil
+        model.triangleAngle = CompanionTriangle.restingAngle
+    }
+
+    private func advanceGuide() {
+        guard var guide else { return }
+        if guide.index + 1 < guide.targets.count {
+            guide.index += 1
+            self.guide = guide
+            beginTarget()
+        } else {
+            endGuide()
+        }
+    }
+
+    private func beginTarget() {
+        guard var guide else { return }
+        let target = guide.targets[guide.index].appKit
+        let point = CGPoint(x: target.x, y: target.y)
+        // Approach from the side the triangle is already on, staying on screen.
+        var direction = CGVector(dx: guide.center.x - point.x, dy: guide.center.y - point.y)
+        let length = hypot(direction.dx, direction.dy)
+        direction = length > 1 ? CGVector(dx: direction.dx / length, dy: direction.dy / length) : CGVector(dx: -0.7071, dy: 0.7071)
+        let spot = CGPoint(x: point.x + direction.dx * 40, y: point.y + direction.dy * 40)
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }),
+           !screen.visibleFrame.insetBy(dx: 10, dy: 10).contains(spot) {
+            direction = CGVector(dx: -direction.dx, dy: -direction.dy)
+        }
+        guide.approach = direction
+        guide.targetStarted = CACurrentMediaTime()
+        self.guide = guide
+
+        let label = guide.targets[guide.index].label
+        let step = guide.targets.count > 1 ? "\(guide.index + 1)/\(guide.targets.count)" : nil
+        model.guideLabel = [step, label.isEmpty ? nil : label].compactMap { $0 }.joined(separator: " · ")
+        model.isGuiding = true
+        guideLabelPanel?.orderFrontRegardless()
+    }
+
+    private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
+        guard var guide else { return }
+        if CACurrentMediaTime() - guide.targetStarted > Self.dwell {
+            advanceGuide()
+            return
+        }
+        let target = guide.targets[guide.index].appKit
+        let point = CGPoint(x: target.x, y: target.y)
+        let spot = CGPoint(x: point.x + guide.approach.dx * Self.tipDistance, y: point.y + guide.approach.dy * Self.tipDistance)
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let pull = reduceMotion ? 1 : 1 - exp(-elapsed / Self.guideGlideTime)
+        var next = CGPoint(x: guide.center.x + (spot.x - guide.center.x) * pull, y: guide.center.y + (spot.y - guide.center.y) * pull)
+        if hypot(spot.x - next.x, spot.y - next.y) < 0.25 { next = spot }
+        let moving = next != guide.center
+        guide.center = next
+        self.guide = guide
+
+        let wanted: CAFrameRateRange = moving ? Self.movingRate : Self.restingRate
+        if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
+
+        // Point the vertex at the target (0° = up, clockwise; AppKit's y points up).
+        var angle = atan2(point.x - next.x, point.y - next.y) * 180 / .pi
+        while angle - model.triangleAngle > 180 { angle -= 360 }  // turn the short way round
+        while angle - model.triangleAngle < -180 { angle += 360 }
+        if abs(angle - model.triangleAngle) > 0.5 { model.triangleAngle = angle }
+
+        bubblePanel?.setFrameOrigin(NSPoint(x: next.x - Self.triangleInset,
+                                            y: next.y + Self.triangleInset - (bubblePanel?.frame.height ?? 0)))
+        placeGuideLabel(triangleCenter: next, awayFrom: guide.approach)
+    }
+
+    /// Beside the triangle on the side away from the target (left of it when the target
+    /// is to the left), so the label never covers what it's pointing at.
+    private func placeGuideLabel(triangleCenter c: CGPoint, awayFrom approach: CGVector) {
+        guard let panel = guideLabelPanel else { return }
+        let size = model.guideLabelSize
+        let gap: CGFloat = 12
+        let x = approach.dx >= 0 ? c.x + gap - 6 : c.x - gap - size.width + 6  // 6 = the view's shadow padding
+        let top = c.y + size.height / 2
+        let origin = NSPoint(x: x, y: top - panel.frame.height)
+        if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
+    }
+
     // MARK: - Input
 
     private func installMonitors() {
         // The next click anywhere dismisses the answer (the click itself goes through).
-        add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.dismissAnswer() }
+        add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self else { return }
+            if guide != nil { advanceGuide() } else { dismissAnswer() }
+        }
 
         // Escape: dismiss an answer, or cancel a question in progress. Global key
         // events need Accessibility; the local monitor covers ClickBait's own windows.
@@ -309,7 +393,9 @@ final class OverlayController {
             guard event.keyCode == 53, let self else { return }
             switch self.model.bubble {
             case .listening, .thinking, .explaining: self.onCancel?()
-            default: if self.onEscape?() != true { self.dismissAnswer() }
+            default:
+                if self.guide != nil { self.endGuide() }
+                if self.onEscape?() != true { self.dismissAnswer() }
             }
         }
         add(global: .keyDown, handler: escape)

@@ -1,134 +1,6 @@
 import ClickBaitCore
 import SwiftUI
 
-/// Fills one screen's overlay panel and draws the pointers that fall on that screen.
-struct ScreenOverlayView: View {
-    let model: OverlayModel
-    /// The panel's screen frame in global AppKit points.
-    let screenFrame: CGRect
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.clear
-            ForEach(Array(visiblePointers.enumerated()), id: \.offset) { index, pointer in
-                PointerView(
-                    label: pointer.label,
-                    number: model.pointers.count > 1 ? index + 1 : nil
-                )
-                .position(localPosition(of: pointer))
-                .id("\(model.pointerGeneration)-\(index)")
-            }
-        }
-        .frame(width: screenFrame.width, height: screenFrame.height)
-        .allowsHitTesting(false)
-    }
-
-    private var visiblePointers: [ScreenPointer] {
-        model.pointers.filter { screenFrame.contains(CGPoint(x: $0.appKit.x, y: $0.appKit.y)) }
-    }
-
-    /// SwiftUI's origin is the panel's top-left; AppKit's is the bottom-left.
-    private func localPosition(of pointer: ScreenPointer) -> CGPoint {
-        CGPoint(x: pointer.appKit.x - screenFrame.minX, y: screenFrame.maxY - pointer.appKit.y)
-    }
-}
-
-/// A stealth arrowhead whose tip sits exactly on the target, with a small glass label
-/// above its tail. Same look as the companion: translucent dark with a white edge.
-struct PointerView: View {
-    let label: String
-    let number: Int?
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var appeared = false
-
-    private static let arrowSize: CGFloat = 30
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            labelPill
-                .padding(.trailing, Self.arrowSize * 0.55)  // sit over the arrow's tail, not its tip
-            AimedStealthArrow()
-                .fill(.black.opacity(0.5))
-                .overlay(AimedStealthArrow().stroke(.white, style: StrokeStyle(lineWidth: 2, lineJoin: .round)))
-                .frame(width: Self.arrowSize, height: Self.arrowSize)
-                .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-        }
-        .fixedSize()
-        // The stack's bottom-right corner is the arrow's tip: pin it to the target.
-        .frame(width: 1, height: 1, alignment: .bottomTrailing)
-        .offset(x: appeared || reduceMotion ? 0 : -22, y: appeared || reduceMotion ? 0 : -22)
-        .opacity(appeared ? 1 : 0)
-        .onAppear {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.75)) {
-                appeared = true
-            }
-        }
-        .accessibilityElement()
-        .accessibilityLabel("ClickBait is pointing at \(label)")
-    }
-
-    @ViewBuilder private var labelPill: some View {
-        if !label.isEmpty || number != nil {
-            HStack(spacing: 5) {
-                if let number {
-                    Text("\(number)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .frame(width: 15, height: 15)
-                        .background(.primary.opacity(0.12), in: Circle())
-                }
-                if !label.isEmpty {
-                    Text(label).font(.system(size: 12, weight: .semibold))
-                }
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .modifier(GlassBackground(shape: Capsule()))
-        }
-    }
-}
-
-/// A stealth arrowhead aimed down-right, with its tip at the bottom-right corner of the
-/// rect so it can be pinned to a point.
-struct AimedStealthArrow: Shape {
-    func path(in rect: CGRect) -> Path {
-        let size = min(rect.width, rect.height)
-        let tip = CGPoint(x: rect.minX + size, y: rect.minY + size)
-        // Unit vectors: back along the diagonal toward the tail, and across it.
-        let back = CGVector(dx: -1 / 2.squareRoot(), dy: -1 / 2.squareRoot())
-        let across = CGVector(dx: 1 / 2.squareRoot(), dy: -1 / 2.squareRoot())
-        let length = size * 0.97, halfWidth = length * 0.4
-        func point(along: CGFloat, side: CGFloat) -> CGPoint {
-            CGPoint(x: tip.x + back.dx * along + across.dx * side, y: tip.y + back.dy * along + across.dy * side)
-        }
-        var path = Path()
-        path.move(to: tip)
-        path.addLine(to: point(along: length, side: halfWidth))
-        path.addQuadCurve(to: point(along: length * 0.68, side: 0), control: point(along: length * 0.8, side: halfWidth * 0.3))
-        path.addQuadCurve(to: point(along: length, side: -halfWidth), control: point(along: length * 0.8, side: -halfWidth * 0.3))
-        path.closeSubpath()
-        return path
-    }
-}
-
-/// A stealth (barbed) arrowhead pointing up: straight flanks, swept-back barbs and a
-/// concave notch at the back. Rotate it to aim.
-struct StealthArrow: Shape {
-    func path(in rect: CGRect) -> Path {
-        let tip = CGPoint(x: rect.midX, y: rect.minY)
-        let rightBarb = CGPoint(x: rect.maxX, y: rect.maxY)
-        let leftBarb = CGPoint(x: rect.minX, y: rect.maxY)
-        let notch = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.68)
-        var path = Path()
-        path.move(to: tip)
-        path.addLine(to: rightBarb)
-        path.addQuadCurve(to: notch, control: CGPoint(x: rect.midX + rect.width * 0.12, y: rect.minY + rect.height * 0.8))
-        path.addQuadCurve(to: leftBarb, control: CGPoint(x: rect.midX - rect.width * 0.12, y: rect.minY + rect.height * 0.8))
-        path.closeSubpath()
-        return path
-    }
-}
-
 /// An equilateral triangle with a vertex pointing up; rotate it to aim.
 struct EquilateralTriangle: Shape {
     func path(in rect: CGRect) -> Path {
@@ -146,11 +18,16 @@ struct EquilateralTriangle: Shape {
 }
 
 /// The companion: an equilateral triangle in the current state's colour, its vertex
-/// aimed up-left at the cursor. Pulses while something is in progress.
+/// aimed up-left at the cursor — or at a target while guiding. Pulses while something
+/// is in progress.
 struct CompanionTriangle: View {
     let tone: CompanionTone
     let pulsing: Bool
+    /// Degrees clockwise from vertex-up.
+    var angle: Double = Self.restingAngle
     static let size: CGFloat = 15
+    /// Up-left, at the cursor.
+    static let restingAngle: Double = -45
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var beat = false
@@ -160,7 +37,8 @@ struct CompanionTriangle: View {
             .fill(tone.color.opacity(0.9))
             .overlay(EquilateralTriangle().stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
             .frame(width: Self.size, height: Self.size)
-            .rotationEffect(.degrees(-45))
+            .rotationEffect(.degrees(angle))
+            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: angle)
             .shadow(color: tone.color.opacity(pulsing && beat ? 0.9 : 0.45), radius: pulsing && beat ? 7 : 3)
             .scaleEffect(pulsing && beat && !reduceMotion ? 1.18 : 1)
             .opacity(pulsing && beat && reduceMotion ? 0.6 : 1)
@@ -177,6 +55,30 @@ struct CompanionTriangle: View {
     }
 }
 
+/// What the guiding triangle is pointing at ("Share", "1/2 · File"). Lives in its own
+/// panel so the controller can keep it on the far side of the triangle from the target.
+struct GuideLabelView: View {
+    let model: OverlayModel
+
+    var body: some View {
+        Group {
+            if let label = model.guideLabel, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .modifier(GlassBackground(shape: Capsule()))
+                    .accessibilityLabel("ClickBait is pointing at \(label)")
+            }
+        }
+        .padding(6)  // room for the glass shadow
+        .fixedSize()
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { model.guideLabelSize = $0 }
+        .frame(width: OverlayModel.guideLabelCanvas.width, height: OverlayModel.guideLabelCanvas.height, alignment: .topLeading)
+    }
+}
+
 /// The companion that follows the cursor: the triangle, with a card beside it when
 /// there's something to say — both in the same state colour.
 struct CompanionBubbleView: View {
@@ -188,9 +90,9 @@ struct CompanionBubbleView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 3) {
-            CompanionTriangle(tone: model.tone, pulsing: model.isPulsing)
+            CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, angle: model.triangleAngle)
                 .padding(2)
-            if model.bubble != .idle {
+            if model.bubble != .idle && !model.isGuiding {
                 card
                     .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
             }
