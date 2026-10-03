@@ -54,6 +54,8 @@ final class OverlayModel {
 
     var bubble: Bubble = .idle
 
+    /// How loud the user is right now while listening, 0…1 (drives the waveform).
+    var waveLevel: Double = 0
     /// ⌥⌘ is held and the user is circling or boxing something.
     var isSnipping = false
 
@@ -70,7 +72,7 @@ final class OverlayModel {
     var isPulsing: Bool {
         if isSnipping { return true }
         return switch bubble {
-        case .listening, .thinking, .explaining, .working: true
+        case .thinking, .explaining, .working: true  // listening shows the waveform instead
         default: isGuiding  // a gentle beat draws the eye to the target
         }
     }
@@ -84,7 +86,7 @@ final class OverlayModel {
     /// The element's name, for VoiceOver (the visible label is just "this one!").
     var guideTarget: String?
     var guideLabelSize: CGSize = .zero
-    static let guideLabelCanvas = CGSize(width: 320, height: 40)
+    static let guideLabelCanvas = CGSize(width: 320, height: 220)
     /// The companion's drawn size. Ignored by observation: the controller reacts through
     /// `onBubbleSizeChange` instead, and the view never reads it.
     @ObservationIgnored var bubbleSize: CGSize = .zero {

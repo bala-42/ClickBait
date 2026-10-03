@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.showHeard(text)
             self?.overlay.show(.thinking, heard: text)
         }
+        overlay.levelSource = { [weak coordinator] in coordinator?.microphoneLevel ?? 0 }
         coordinator.onSnipMarking = { [weak self] marking in self?.overlay.setSnipping(marking) }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
         coordinator.onPartialAnswer = { [weak self] partial in self?.chat.model.setAssistant(partial) }

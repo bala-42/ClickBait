@@ -431,6 +431,9 @@ final class AskCoordinator {
                       speak: false, display: "Explain: “\(excerpt)”")
     }
 
+    /// The microphone's level while listening, for the waveform.
+    var microphoneLevel: Float { state == .listening ? recorder.level : 0 }
+
     // MARK: - Element list
 
     /// Enough to cover a window and an open menu without slowing a local model much.

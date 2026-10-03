@@ -37,8 +37,7 @@ struct CompanionTriangle: View {
             .fill(tone.color.opacity(0.9))
             .overlay(EquilateralTriangle().stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
             .frame(width: Self.size, height: Self.size)
-            .rotationEffect(.degrees(angle))
-            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: angle)
+            .rotationEffect(.degrees(angle))  // smoothed by OverlayController, not animated here
             .shadow(color: tone.color.opacity(pulsing && beat ? 0.9 : 0.45), radius: pulsing && beat ? 7 : 3)
             .scaleEffect(pulsing && beat && !reduceMotion ? 1.18 : 1)
             .opacity(pulsing && beat && reduceMotion ? 0.6 : 1)
@@ -68,14 +67,27 @@ private struct TinyPill: View {
                 .font(.system(size: 10, weight: .bold))
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+                .wrapped(text, maxWidth: 270)
         }
-        .frame(maxWidth: 260, alignment: .leading)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .modifier(ToneFill(tone: tone, shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
+    }
+}
+
+extension View {
+    /// Text that's as wide as it needs up to `maxWidth`, then wraps onto as many lines
+    /// as it takes. Measured explicitly: inside the overlay's fixed-size layout SwiftUI
+    /// would otherwise lay a long label out on one line, or cut it off.
+    func wrapped(_ text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold) -> some View {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let widest = text.split(whereSeparator: \.isNewline)
+            .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        return self
+            .frame(width: min(ceil(widest) + 2, maxWidth), alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -104,10 +116,10 @@ struct GuideLabelView: View {
             if let label = model.guideLabel, !label.isEmpty {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+                    .wrapped(label, maxWidth: 240)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .modifier(ToneFill(tone: model.tone, shape: Capsule()))
+                    .modifier(ToneFill(tone: model.tone, shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
                     .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
             }
         }
@@ -115,6 +127,37 @@ struct GuideLabelView: View {
         .fixedSize()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.guideLabelSize = $0 }
         .frame(width: OverlayModel.guideLabelCanvas.width, height: OverlayModel.guideLabelCanvas.height, alignment: .topLeading)
+    }
+}
+
+/// While listening the triangle becomes a few bars that move with the user's voice.
+struct ListeningWaveform: View {
+    let level: Double
+    let tone: CompanionTone
+
+    /// Middle bars reach highest, like a voice-memo meter.
+    private static let shape: [Double] = [0.55, 0.85, 1, 0.85, 0.55]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(Self.shape.indices, id: \.self) { index in
+                    // A little independent wobble per bar so a steady voice still looks alive.
+                    let wobble = reduceMotion ? 1 : 0.8 + 0.2 * sin(time * 11 + Double(index) * 1.7)
+                    let height = 4 + 18 * level * Self.shape[index] * wobble
+                    Capsule()
+                        .fill(tone.color.opacity(0.95))
+                        .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: 0.8))
+                        .frame(width: 3.5, height: height)
+                }
+            }
+            .shadow(color: tone.color.opacity(0.5), radius: 3)
+        }
+        .frame(width: CompanionTriangle.size * 1.7, height: CompanionTriangle.size * 1.7)
+        .accessibilityLabel("Listening")
     }
 }
 
@@ -129,8 +172,16 @@ struct CompanionBubbleView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 3) {
-            CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, angle: model.triangleAngle)
-                .padding(2)
+            Group {
+                if model.bubble == .listening {
+                    ListeningWaveform(level: model.waveLevel, tone: model.tone)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                } else {
+                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, angle: model.triangleAngle)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+            .padding(2)
             if model.bubble.hasWords && !model.isGuiding {
                 card
                     .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))

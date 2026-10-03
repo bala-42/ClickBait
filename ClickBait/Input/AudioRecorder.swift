@@ -65,6 +65,9 @@ final class AudioRecorder {
         self.sink = sink
     }
 
+    /// How loud the microphone is right now (RMS, 0…1); 0 when not recording.
+    var level: Float { sink?.level ?? 0 }
+
     /// Stops recording and returns everything captured since `start()`.
     func stop() -> [Float] {
         guard let engine else { return [] }
@@ -144,6 +147,8 @@ final class AudioRecorder {
 private final class SampleSink: @unchecked Sendable {
     private struct State {
         var samples: [Float] = []
+        /// RMS of the latest buffer, for the listening waveform.
+        var level: Float = 0
         var converter: AVAudioConverter?
         var converterInput: AVAudioFormat?
     }
@@ -178,9 +183,15 @@ private final class SampleSink: @unchecked Sendable {
                 return buffer
             }
             guard status != .error, let channel = output.floatChannelData?[0] else { return }
-            state.samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
+            let converted = UnsafeBufferPointer(start: channel, count: Int(output.frameLength))
+            state.samples.append(contentsOf: converted)
+            if !converted.isEmpty {
+                state.level = (converted.reduce(0) { $0 + $1 * $1 } / Float(converted.count)).squareRoot()
+            }
         }
     }
+
+    var level: Float { state.withLock { $0.level } }
 
     func drain() -> [Float] {
         state.withLock { state in

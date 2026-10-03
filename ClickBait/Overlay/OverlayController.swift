@@ -189,15 +189,23 @@ final class OverlayController {
             updateVisibility()
         }
 
+        updateWaveform()
+        defer { stepTurn(elapsed: elapsed) }
         if guide != nil {
             stepGuide(now: now, elapsed: elapsed, link: link)
             return
         }
+        if isTurning || model.bubble == .listening, link.preferredFrameRateRange != Self.movingRate {
+            link.preferredFrameRateRange = Self.movingRate
+        }
 
         let previous = anchor ?? mouse
         guard previous != mouse else {
-            // Settled: let the display relax its refresh rate again.
-            if link.preferredFrameRateRange != Self.restingRate { link.preferredFrameRateRange = Self.restingRate }
+            // Settled: let the display relax its refresh rate again (unless the
+            // triangle is turning or the waveform is moving).
+            let busy = isTurning || model.bubble == .listening
+            let wanted = busy ? Self.movingRate : Self.restingRate
+            if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
             return
         }
         if link.preferredFrameRateRange != Self.movingRate { link.preferredFrameRateRange = Self.movingRate }
@@ -264,13 +272,20 @@ final class OverlayController {
         var index = 0
         /// Unit vector from the target toward where the triangle sits.
         var approach = CGVector(dx: -0.7071, dy: 0.7071)
-        /// The triangle's centre, eased toward its spot each frame.
+        /// The triangle's centre, sprung toward its spot each frame.
         var center: CGPoint
+        var velocity = CGVector.zero
         var targetStarted: CFTimeInterval = 0
     }
 
     private var guide: Guide?
-    private static let guideGlideTime: TimeInterval = 0.16
+    /// Gliding to a target: eases in, slows down and settles softly (about half a second).
+    private static let glideSpring = Spring(period: 0.55, damping: 0.88)
+    /// Turning: a little quicker than the glide so the tip leads.
+    private static let turnSpring = Spring(period: 0.4, damping: 0.85)
+    /// The angle the triangle is turning toward, and how fast it's turning.
+    private var wantedAngle = CompanionTriangle.restingAngle
+    private var angleVelocity = 0.0
     private static let dwell: CFTimeInterval = 8
     /// Distance from the triangle's centre to its vertex (up to its pulse size), plus a gap.
     private static var tipDistance: CGFloat { CompanionTriangle.size * 3.squareRoot() / 4 * 1.2 + 3 }
@@ -304,7 +319,7 @@ final class OverlayController {
         model.isGuiding = false
         model.guideLabel = nil
         model.guideTarget = nil
-        model.triangleAngle = CompanionTriangle.restingAngle
+        wantedAngle = CompanionTriangle.restingAngle  // turns back while gliding home
     }
 
     private func advanceGuide(reason: String) {
@@ -353,26 +368,90 @@ final class OverlayController {
         let point = CGPoint(x: target.x, y: target.y)
         let spot = CGPoint(x: point.x + guide.approach.dx * Self.tipDistance, y: point.y + guide.approach.dy * Self.tipDistance)
 
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let pull = reduceMotion ? 1 : 1 - exp(-elapsed / Self.guideGlideTime)
-        var next = CGPoint(x: guide.center.x + (spot.x - guide.center.x) * pull, y: guide.center.y + (spot.y - guide.center.y) * pull)
-        if hypot(spot.x - next.x, spot.y - next.y) < 0.25 { next = spot }
+        var next = guide.center
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            next = spot
+            guide.velocity = .zero
+        } else if next != spot {
+            var vx = Double(guide.velocity.dx), vy = Double(guide.velocity.dy)
+            var x = Double(next.x), y = Double(next.y)
+            Self.glideSpring.step(&x, velocity: &vx, toward: spot.x, dt: elapsed)
+            Self.glideSpring.step(&y, velocity: &vy, toward: spot.y, dt: elapsed)
+            if Spring.isSettled(x, velocity: vx, target: spot.x, tolerance: 0.2),
+               Spring.isSettled(y, velocity: vy, target: spot.y, tolerance: 0.2) {
+                (x, y, vx, vy) = (spot.x, spot.y, 0, 0)
+            }
+            next = CGPoint(x: x, y: y)
+            guide.velocity = CGVector(dx: vx, dy: vy)
+        }
         let moving = next != guide.center
         guide.center = next
         self.guide = guide
 
-        let wanted: CAFrameRateRange = moving ? Self.movingRate : Self.restingRate
+        let wanted: CAFrameRateRange = moving || isTurning ? Self.movingRate : Self.restingRate
         if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
 
         // Point the vertex at the target (0° = up, clockwise; AppKit's y points up).
-        var angle = atan2(point.x - next.x, point.y - next.y) * 180 / .pi
-        while angle - model.triangleAngle > 180 { angle -= 360 }  // turn the short way round
-        while angle - model.triangleAngle < -180 { angle += 360 }
-        if abs(angle - model.triangleAngle) > 0.5 { model.triangleAngle = angle }
+        if hypot(point.x - next.x, point.y - next.y) > 1 {
+            wantedAngle = atan2(point.x - next.x, point.y - next.y) * 180 / .pi
+        }
 
         bubblePanel?.setFrameOrigin(NSPoint(x: next.x - Self.triangleInset,
                                             y: next.y + Self.triangleInset - (bubblePanel?.frame.height ?? 0)))
         placeGuideLabel(triangleCenter: next, awayFrom: guide.approach)
+    }
+
+    /// Whether the triangle is still turning toward `wantedAngle`.
+    private var isTurning: Bool {
+        abs(angleDelta) > 0.2 || abs(angleVelocity) > 2
+    }
+
+    /// `wantedAngle` relative to the current angle, the short way round.
+    private var angleDelta: Double {
+        var delta = (wantedAngle - model.triangleAngle).truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 }
+        if delta < -180 { delta += 360 }
+        return delta
+    }
+
+    /// Turns the triangle with a spring, in the frame loop rather than a SwiftUI
+    /// animation (which restarted every frame while gliding and stuttered).
+    private func stepTurn(elapsed: CFTimeInterval) {
+        guard isTurning else { return }
+        let target = model.triangleAngle + angleDelta
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            model.triangleAngle = target
+            angleVelocity = 0
+            return
+        }
+        var angle = model.triangleAngle
+        Self.turnSpring.step(&angle, velocity: &angleVelocity, toward: target, dt: elapsed)
+        if Spring.isSettled(angle, velocity: angleVelocity, target: target, tolerance: 0.2) {
+            angle = target
+            angleVelocity = 0
+        }
+        model.triangleAngle = angle
+    }
+
+    // MARK: - Listening waveform
+
+    /// The microphone's current level (RMS, 0…1) while listening.
+    var levelSource: (() -> Float)?
+    private var waveEnvelope: Double = 0
+
+    /// Follows the voice: rises at once, falls back over ~150 ms, on a dB scale so
+    /// quiet and loud speech both move the bars.
+    private func updateWaveform() {
+        guard model.bubble == .listening else {
+            if model.waveLevel != 0 { model.waveLevel = 0 }
+            waveEnvelope = 0
+            return
+        }
+        let rms = Double(levelSource?() ?? 0)
+        let decibels = 20 * log10(max(rms, 0.000_01))
+        let loudness = min(max((decibels + 55) / 40, 0), 1)  // −55 dB → 0, −15 dB → 1
+        waveEnvelope = loudness > waveEnvelope ? loudness : waveEnvelope * 0.88 + loudness * 0.12
+        if abs(model.waveLevel - waveEnvelope) > 0.005 { model.waveLevel = waveEnvelope }
     }
 
     /// Beside the triangle on the side away from the target (left of it when the target
