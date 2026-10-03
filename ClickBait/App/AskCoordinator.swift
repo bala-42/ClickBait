@@ -630,6 +630,12 @@ final class AskCoordinator {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
         }
+        // Asked where something is, the answer names a listed element but doesn't point.
+        if snip == nil, selectedText == nil, parsed.response.pointers.isEmpty,
+           let implied = ImpliedPointer.find(question: question, speech: parsed.response.speech, elements: listed) {
+            Log.ask.notice("Pointer taken from the element list: the answer named it without pointing")
+            parsed.response.pointers = [implied]
+        }
         let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
         let modelPointers = parsed.response.pointers.map { pointer in
             let pixel = Point(x: pointer.x, y: pointer.y)

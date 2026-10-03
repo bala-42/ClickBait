@@ -57,7 +57,10 @@ public struct OllamaProvider: LLMProvider {
         var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: 60)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["model": model, "keep_alive": "15m"])
+        // Same context size as real requests, or Ollama reloads the model for the first one.
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": model, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
+        ])
         _ = try? await session.data(for: request)
     }
 
@@ -75,6 +78,10 @@ public struct OllamaProvider: LLMProvider {
         return request
     }
 
+    /// The screenshot alone is ~1,400 tokens and the element list can add ~2,000; Ollama's
+    /// default of 4,096 overflowed (an error, or worse, the instructions silently cut).
+    static let contextTokens = 8192
+
     static func chatBody(for ask: AskRequest, model: String) -> [String: Any] {
         [
             "model": model,
@@ -82,7 +89,7 @@ public struct OllamaProvider: LLMProvider {
             "format": "json",
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
-            "options": ["temperature": 0.1],
+            "options": ["temperature": 0.1, "num_ctx": contextTokens],
             "messages": [["role": "system", "content": Prompt.system]]
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
                 + [[
