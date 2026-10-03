@@ -449,7 +449,9 @@ final class AskCoordinator {
         }
 
         // An order in other words: ask the model which action it is (text only, ~1 s).
-        if let (action, proposal) = await understandOrder(transcript) {
+        let understood = await understandOrder(transcript)
+        guard !Task.isCancelled else { return }  // Esc while checking
+        if let (action, proposal) = understood {
             encoding.cancel()
             let message = await handleProposal(action, request: proposal, speak: true)
             if chatShown {
@@ -702,7 +704,9 @@ final class AskCoordinator {
         let encoding = Task.detached(priority: .userInitiated) {
             try ScreenshotEncoder.encode(SnipRenderer.closeUp(capture, region: region))
         }
-        let contextImage = try? ScreenshotEncoder.encode(SnipRenderer.context(capture, region: region)).jpeg
+        // No whole-screen context picture: with qwen2.5vl:7b it doubled the wait (8–13 s)
+        // and made answers worse; the window title gives the context instead.
+        let contextImage: Data? = nil
         await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
                       speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
                       snip: kind, snipContext: contextImage)

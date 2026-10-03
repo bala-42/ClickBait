@@ -93,8 +93,14 @@ struct SnipPromptTests {
         let request = AskRequest(question: "", screenshotJPEG: .init(), screenshotWidth: 600, screenshotHeight: 400,
                                  context: ScreenContext(appName: "Safari"), snip: .circled)
         let text = Prompt.userText(for: request)
-        #expect(text.contains("close-up of the part of the screen the user circled"))
-        #expect(text.hasSuffix("Explain what's inside the red outline."))
+        #expect(text.contains("The image is a close-up of part of the user's screen that they want explained."))
+        #expect(text.hasSuffix("Explain it: start with what it is."))
+        #expect(!text.lowercased().contains("outline"))
+        // Follow-ups stay on the same snip and answer the new question.
+        var followUp = request
+        followUp.question = "parts of a liver?"
+        followUp.history = [ChatTurn(role: .user, content: "…"), .assistant(speech: "The liver.")]
+        #expect(Prompt.userText(for: followUp).contains("Follow-up about the same part of the screen as before"))
     }
 }
 

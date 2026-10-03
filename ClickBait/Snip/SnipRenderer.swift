@@ -2,46 +2,50 @@ import ClickBaitCore
 import CoreGraphics
 import Foundation
 
-/// Turns a snip into the image the model sees: the marked area cropped out of the
-/// screenshot with some context around it, and the user's circle or box drawn on it in
-/// red so the model knows exactly what they meant.
+/// Turns a snip into what the model sees: a clean close-up of exactly what was marked
+/// (no outline: small models describe a drawn outline instead of the thing inside it),
+/// plus a small picture of the whole screen with the area boxed, for context.
 enum SnipRenderer {
-    static func render(_ capture: ScreenCapture, kind: SnipKind, region: Rect, path: [Point]) throws -> CGImage {
-        // Global Quartz points → this display's top-left-origin points.
-        let displayTop = capture.primaryDisplayHeight - capture.displayFrame.maxY
-        let toDisplay = { (p: Point) in Point(x: p.x - capture.displayFrame.minX, y: p.y - displayTop) }
-        let regionOrigin = toDisplay(Point(x: region.x, y: region.y))
-        let crop = SnipLayout.crop(
-            around: Rect(x: regionOrigin.x, y: regionOrigin.y, width: region.width, height: region.height),
-            displayWidth: capture.displayFrame.width, displayHeight: capture.displayFrame.height
-        )
+    /// The marked area with a little room around it, at full resolution.
+    static func closeUp(_ capture: ScreenCapture, region: Rect) throws -> CGImage {
+        let local = displayLocal(region, in: capture)
+        let crop = SnipLayout.crop(around: local, displayWidth: capture.displayFrame.width, displayHeight: capture.displayFrame.height)
         let scale = Double(capture.image.width) / capture.displayFrame.width
         let pixelCrop = CGRect(x: crop.x * scale, y: crop.y * scale, width: crop.width * scale, height: crop.height * scale).integral
-        guard let cropped = capture.image.cropping(to: pixelCrop),
-              let context = CGContext(
-                  data: nil, width: cropped.width, height: cropped.height, bitsPerComponent: 8, bytesPerRow: 0,
-                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
-        else { throw CocoaError(.coderInvalidValue) }
+        guard let cropped = capture.image.cropping(to: pixelCrop) else { throw CocoaError(.coderInvalidValue) }
+        return cropped
+    }
 
-        let height = CGFloat(cropped.height)
-        context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
-        // Display points → pixels in the crop (CoreGraphics' origin is bottom-left).
-        let toCrop = { (p: Point) -> CGPoint in
-            let d = toDisplay(p)
-            return CGPoint(x: d.x * scale - pixelCrop.minX, y: height - (d.y * scale - pixelCrop.minY))
-        }
+    /// The whole display, small (long edge `contextLongEdge`), with a thin box around the
+    /// marked area so the model can tell where on screen it was.
+    static let contextLongEdge = 768.0
+
+    static func context(_ capture: ScreenCapture, region: Rect) throws -> CGImage {
+        let image = capture.image
+        let factor = contextLongEdge / Double(max(image.width, image.height))
+        let width = Int((Double(image.width) * factor).rounded()), height = Int((Double(image.height) * factor).rounded())
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { throw CocoaError(.coderInvalidValue) }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Display points → this small image's pixels (CoreGraphics' origin is bottom-left).
+        let local = displayLocal(region, in: capture)
+        let perPoint = Double(width) / capture.displayFrame.width
+        let box = CGRect(x: local.x * perPoint, y: Double(height) - (local.y + local.height) * perPoint,
+                         width: local.width * perPoint, height: local.height * perPoint).insetBy(dx: -3, dy: -3)
         context.setStrokeColor(CGColor(srgbRed: 0.98, green: 0.22, blue: 0.36, alpha: 1))
-        context.setLineWidth(max(3, 2 * scale))
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        let points = path.map(toCrop)
-        guard let first = points.first else { throw CocoaError(.coderInvalidValue) }
-        context.move(to: first)
-        points.dropFirst().forEach { context.addLine(to: $0) }
-        if kind == .boxed { context.closePath() }
-        context.strokePath()
-        guard let image = context.makeImage() else { throw CocoaError(.coderInvalidValue) }
-        return image
+        context.setLineWidth(2)
+        context.stroke(box)
+        guard let result = context.makeImage() else { throw CocoaError(.coderInvalidValue) }
+        return result
+    }
+
+    /// Global Quartz points → the captured display's top-left-origin points.
+    private static func displayLocal(_ region: Rect, in capture: ScreenCapture) -> Rect {
+        let displayTop = capture.primaryDisplayHeight - capture.displayFrame.maxY
+        return Rect(x: region.x - capture.displayFrame.minX, y: region.y - displayTop, width: region.width, height: region.height)
     }
 }

@@ -36,6 +36,15 @@ struct LiveOllamaTests {
             request.screenshotJPEG = Data()
             request.context = ScreenContext(appName: "Finder")
         }
+        if snip != nil, ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_NO_CONTEXT"] == nil {
+            // The small whole-screen context picture the app sends after the close-up.
+            request.contextJPEG = try SyntheticScreen.render(longEdge: 768).0
+        }
+        if let earlier = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_HISTORY"] {
+            // A follow-up: the first exchange, then this question.
+            request.history = [ChatTurn(role: .user, content: "The user circled something. Explain what they marked."),
+                               .assistant(speech: earlier)]
+        }
         let clock = ContinuousClock()
         let start = clock.now
         var firstChunk: Duration?
@@ -81,9 +90,7 @@ enum SyntheticScreen {
 
         var image = try #require(context.makeImage())
         if snipped {
-            context.setStrokeColor(CGColor(red: 0.98, green: 0.22, blue: 0.36, alpha: 1))
-            context.setLineWidth(3)
-            context.stroke(CGRect(x: 30, y: 192, width: 800, height: 40))
+            // Like the app: a clean close-up, no outline.
             let marked = try #require(context.makeImage())
             image = try #require(marked.cropping(to: CGRect(x: 0, y: 120 * scale, width: 900 * scale, height: 180 * scale).integral))
         }

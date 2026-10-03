@@ -87,7 +87,8 @@ public struct OllamaProvider: LLMProvider {
 
     static func chatBody(for ask: AskRequest, model: String) -> [String: Any] {
         var message: [String: Any] = ["role": "user", "content": Prompt.userText(for: ask)]
-        if !ask.screenshotJPEG.isEmpty { message["images"] = [ask.screenshotJPEG.base64EncodedString()] }
+        let images = ([ask.screenshotJPEG] + (ask.contextJPEG.map { [$0] } ?? [])).filter { !$0.isEmpty }
+        if !images.isEmpty { message["images"] = images.map { $0.base64EncodedString() } }
         return [
             "model": model,
             "stream": true,
