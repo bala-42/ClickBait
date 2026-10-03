@@ -26,6 +26,7 @@ public enum CommandParser {
         let text = words.joined(separator: " ")
 
         if let action = volume(words) ?? appearance(text) ?? mute(text) ?? wifi(words) ?? system(text) { return action }
+        if let action = apps(words, transcript: transcript) { return action }
         if let action = places(words, transcript: transcript) { return action }
         if let action = file(words, transcript: transcript) { return action }
         if let action = shortcut(words, allowedShortcuts: allowedShortcuts) { return action }
@@ -84,6 +85,57 @@ public enum CommandParser {
                      "turn the display off", "put the display to sleep", "put the screen to sleep", "screen off", "display off"]
         if lock.contains(text) { return ActionRequest(name: "lock_screen") }
         if sleep.contains(text) { return ActionRequest(name: "sleep_display") }
+        return nil
+    }
+
+    /// Built-in apps and system conveniences: notes, reminders, media keys, screenshots,
+    /// Finder windows, show desktop.
+    private static func apps(_ words: [String], transcript: String) -> ActionRequest? {
+        let text = words.joined(separator: " ")
+        guard let verb = words.first else { return nil }
+
+        // "make a note: call the dentist", "note that the meeting moved", "jot down buy milk"
+        if words.contains("note") || (verb == "jot" && words.dropFirst().first == "down") {
+            let noteVerbs: Set<String> = ["make", "create", "add", "take", "write", "new", "note", "jot", "start"]
+            guard noteVerbs.contains(verb) else { return nil }
+            return ActionRequest(name: "make_note", detail: SpokenContent.after(["note", "jot down"], in: transcript))
+        }
+        // "remind me to send the invoice", "add a reminder to call Sam", "set a reminder: dentist"
+        if verb == "remind" || words.contains("reminder") {
+            let reminderVerbs: Set<String> = ["remind", "add", "set", "create", "make", "new"]
+            guard reminderVerbs.contains(verb) else { return nil }
+            return ActionRequest(name: "add_reminder", detail: SpokenContent.after(["remind me", "reminder"], in: transcript))
+        }
+
+        // Media keys: "play", "pause the music", "resume", "next song", "skip this track", "previous track"
+        let playPause = ["play", "pause", "resume", "play music", "pause music", "play the music", "pause the music",
+                         "stop the music", "stop music", "play the song", "pause the song", "pause this", "play this",
+                         "pause the video", "play the video", "resume the music", "resume playback", "pause playback"]
+        if playPause.contains(text) { return ActionRequest(name: "media", argument: MediaKey.playPause.rawValue) }
+        let track: Set<String> = ["song", "track", "video", "one"]
+        if ["next", "skip"].contains(verb), words.count <= 4, words.contains(where: track.contains) || text == "skip" || text == "next" {
+            return ActionRequest(name: "media", argument: MediaKey.next.rawValue)
+        }
+        if verb == "previous" || text.hasPrefix("go back a") || text == "last song" || text == "last track",
+           words.count <= 4, words.contains(where: track.contains) || verb == "previous" {
+            return ActionRequest(name: "media", argument: MediaKey.previous.rawValue)
+        }
+
+        // "take a screenshot", "screenshot this window", "screenshot an area"
+        if words.contains("screenshot") || words.contains("screengrab") || text.hasPrefix("capture the screen") {
+            guard ["take", "screenshot", "grab", "capture", "make", "screengrab"].contains(verb) else { return nil }
+            let kind: ScreenshotKind = words.contains("window") ? .window
+                : (words.contains("area") || words.contains("part") || words.contains("region") || words.contains("selection")) ? .area
+                : .full
+            return ActionRequest(name: "screenshot", argument: kind.rawValue)
+        }
+
+        if words.contains("finder"), words.contains("window"), words.contains("new") {
+            return ActionRequest(name: "finder_window")
+        }
+        if ["show desktop", "show the desktop", "show my desktop", "hide all windows", "clear the screen"].contains(text) {
+            return ActionRequest(name: "show_desktop")
+        }
         return nil
     }
 

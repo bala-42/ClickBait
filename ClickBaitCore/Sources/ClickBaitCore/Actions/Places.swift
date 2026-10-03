@@ -102,3 +102,35 @@ public enum SpokenName {
         return trimmed
     }
 }
+
+/// Free text the user dictated into a note or reminder: everything after the keyword,
+/// minus connecting words ("make a note *that* …", "remind me *to* …"), first letter
+/// capitalised, original casing otherwise kept.
+public enum SpokenContent {
+    public static func after(_ markers: [String], in transcript: String) -> String? {
+        let pattern = "(?i)\\b(?:" + markers.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|") + ")\\b(.*)$"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: transcript, range: NSRange(transcript.startIndex..., in: transcript)),
+              let range = Range(match.range(at: 1), in: transcript)
+        else { return nil }
+        var text = String(transcript[range]).trimmingCharacters(in: .whitespaces)
+        // Connectors between the keyword and the content.
+        let connectors = [":", ",", "-", "—", "that says", "saying", "says", "that", "to say", "to", "about", "for", "of"]
+        var changed = true
+        while changed {
+            changed = false
+            for connector in connectors {
+                let lower = text.lowercased()
+                let isWord = connector.first?.isLetter == true
+                guard lower.hasPrefix(connector),
+                      !isWord || lower.count == connector.count || lower.dropFirst(connector.count).first == " "
+                else { continue }
+                text = String(text.dropFirst(connector.count)).trimmingCharacters(in: .whitespaces)
+                changed = true
+            }
+        }
+        guard var cleaned = SpokenName.clean(text) else { return nil }
+        if let first = cleaned.first, first.isLowercase { cleaned = first.uppercased() + cleaned.dropFirst() }
+        return cleaned
+    }
+}

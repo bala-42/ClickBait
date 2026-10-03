@@ -27,6 +27,15 @@ public enum ResolvedAction: Equatable, Sendable {
     /// the Desktop. Unnamed: "untitled folder", like Finder.
     case newFolder(in: Place?, name: String?)
     case openPlace(Place)
+    /// A new note in Notes with this text.
+    case makeNote(String)
+    /// A new reminder in Reminders' default list.
+    case addReminder(String)
+    /// The keyboard's media keys, so it works with whatever is playing.
+    case media(MediaKey)
+    case screenshot(ScreenshotKind)
+    case newFinderWindow
+    case showDesktop
     /// Acts on the files selected in Finder.
     case file(FileAction)
 }
@@ -54,6 +63,21 @@ public enum FileAction: Equatable, Sendable {
     public static let requiredFrontmostApp = "com.apple.finder"
 }
 
+public enum MediaKey: String, Equatable, Sendable {
+    case playPause = "play_pause"
+    case next
+    case previous
+}
+
+public enum ScreenshotKind: String, Equatable, Sendable {
+    /// The whole screen, saved without asking.
+    case full
+    /// macOS's crosshair: drag out an area.
+    case area
+    /// macOS's window picker.
+    case window
+}
+
 public enum ImageFormat: String, Equatable, Sendable {
     case jpeg
     case png
@@ -69,7 +93,7 @@ public enum ActionError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .unknown:
-            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode or Wi-Fi, lock the screen, make and open folders, work with files selected in Finder, and run the shortcuts you've allowed in Settings."
+            "I can't do that yet. I can open or quit apps, change the volume, switch Dark Mode or Wi-Fi, lock the screen, make and open folders, work with files selected in Finder, make notes and reminders, control what's playing, take screenshots, and run the shortcuts you've allowed in Settings."
         case .missingArgument(let action):
             "I didn't catch what to \(action)."
         case .invalidArgument(let detail):
@@ -89,7 +113,8 @@ public enum ActionCatalog {
         let argument = request.argument?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         // A spoken name must be usable as one file name.
         let detail = request.detail.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
-        if let detail, SpokenName.validated(detail) == nil {
+        let detailIsFileName = !["make_note", "add_reminder"].contains(name)
+        if detailIsFileName, let detail, SpokenName.validated(detail) == nil {
             return .failure(.invalidArgument("“\(detail)” can't be used as a name"))
         }
         let place = Place(rawValue: argument.lowercased())
@@ -138,6 +163,21 @@ public enum ActionCatalog {
         case "move_to", "copy_to":
             guard let place else { return .failure(.missingArgument(name == "move_to" ? "move them to" : "copy them to")) }
             return .success(.file(name == "move_to" ? .moveTo(place) : .copyTo(place)))
+        case "make_note", "add_reminder":
+            // Note and reminder text is content, not a file name: only needs to be there.
+            guard let text = request.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+                return .failure(.missingArgument(name == "make_note" ? "write in the note" : "remind you about"))
+            }
+            return .success(name == "make_note" ? .makeNote(text) : .addReminder(text))
+        case "media":
+            guard let key = MediaKey(rawValue: argument) else { return .failure(.invalidArgument("unknown media key")) }
+            return .success(.media(key))
+        case "screenshot":
+            return .success(.screenshot(ScreenshotKind(rawValue: argument) ?? .full))
+        case "finder_window":
+            return .success(.newFinderWindow)
+        case "show_desktop":
+            return .success(.showDesktop)
         case "rename":
             guard let detail else { return .failure(.missingArgument("rename it to")) }
             return .success(.file(.rename(to: detail)))

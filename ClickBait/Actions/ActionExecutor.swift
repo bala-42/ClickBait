@@ -4,6 +4,8 @@ import AudioToolbox
 import Carbon.HIToolbox
 import CoreAudio
 import CoreWLAN
+import ImageIO
+import UniformTypeIdentifiers
 
 enum ActionExecutionError: LocalizedError {
     case appNotFound(String)
@@ -30,7 +32,8 @@ enum ActionExecutionError: LocalizedError {
 @MainActor
 enum ActionExecutor {
     /// Runs the action and returns a short past-tense confirmation for the bubble.
-    static func run(_ action: ResolvedAction) async throws -> String {
+    /// `blocklist` keeps blocked apps out of screenshots ClickBait takes for the user.
+    static func run(_ action: ResolvedAction, blocklist: AppBlocklist = .defaults) async throws -> String {
         switch action {
         case .openApp(let name):
             guard let url = AppLocator.url(forAppNamed: name) else { throw ActionExecutionError.appNotFound(name) }
@@ -98,6 +101,46 @@ enum ActionExecutor {
 
         case .openPlace(let place):
             return try Places.open(place)
+
+        case .makeNote(let text):
+            try await AppleScriptRunner.run(
+                "tell application \"Notes\" to make new note with properties {body:\(AppleScriptText.quoted(text))}",
+                app: "Notes")
+            return "Added a note"
+
+        case .addReminder(let text):
+            try await AppleScriptRunner.run(
+                "tell application \"Reminders\" to make new reminder with properties {name:\(AppleScriptText.quoted(text))}",
+                app: "Reminders")
+            return "Added a reminder"
+
+        case .media(let key):
+            MediaKeys.press(key)
+            return switch key {
+            case .playPause: "Play/pause"
+            case .next: "Next track"
+            case .previous: "Previous track"
+            }
+
+        case .screenshot(let kind):
+            return try await Screenshots.take(kind, blocklist: blocklist)
+
+        case .newFinderWindow:
+            try await AppleScriptRunner.run("""
+                tell application "Finder"
+                    make new Finder window
+                    activate
+                end tell
+                """, app: "Finder")
+            return "Opened a Finder window"
+
+        case .showDesktop:
+            // Mission Control's own "show desktop" (the same as its keyboard shortcut).
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/System/Applications/Mission Control.app/Contents/MacOS/Mission Control")
+            process.arguments = ["1"]
+            try process.run()
+            return "Showing the desktop"
 
         case .file(let action):
             return try await FileActions.run(action)
@@ -169,14 +212,15 @@ enum SystemAudio {
 /// Runs AppleScript off the main thread: the first use of System Events shows a
 /// macOS permission prompt, which blocks the calling thread until answered.
 enum AppleScriptRunner {
-    static func run(_ source: String) async throws {
+    /// `app` names the app being controlled, for the permission message.
+    static func run(_ source: String, app: String = "System Events") async throws {
         let failure: String? = await Task.detached(priority: .userInitiated) {
             var error: NSDictionary?
             NSAppleScript(source: source)?.executeAndReturnError(&error)
             guard let error else { return nil }
             let number = error[NSAppleScript.errorNumber] as? Int
             if number == -1743 {
-                return "ClickBait isn't allowed to control System Events. Turn it on in System Settings → Privacy & Security → Automation."
+                return "ClickBait isn't allowed to control \(app). Turn it on in System Settings → Privacy & Security → Automation."
             }
             return error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number ?? 0)"
         }.value
@@ -234,5 +278,68 @@ enum ShortcutsCLI {
             }
             return text
         }.value
+    }
+}
+
+/// The keyboard's play/pause, next and previous keys, posted as system events so they
+/// reach whatever is playing (Music, Spotify, a video in the browser).
+enum MediaKeys {
+    static func press(_ key: MediaKey) {
+        // NX_KEYTYPE_PLAY, NX_KEYTYPE_NEXT, NX_KEYTYPE_PREVIOUS from IOKit's ev_keymap.h.
+        let code: Int = switch key {
+        case .playPause: 16
+        case .next: 17
+        case .previous: 18
+        }
+        for down in [true, false] {
+            let state = down ? 0xA : 0xB
+            let event = NSEvent.otherEvent(
+                with: .systemDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state << 8)),
+                timestamp: 0, windowNumber: 0, context: nil, subtype: 8, data1: (code << 16) | (state << 8), data2: -1)
+            event?.cgEvent?.post(tap: .cghidEventTap)
+        }
+    }
+}
+
+/// Screenshots the user asked for, saved where macOS saves its own.
+enum Screenshots {
+    @MainActor
+    static func take(_ kind: ScreenshotKind, blocklist: AppBlocklist) async throws -> String {
+        let folder = saveFolder()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let file = folder.appending(path: "Screenshot \(formatter.string(from: Date())).png")
+
+        switch kind {
+        case .full:
+            // ScreenCaptureKit, so ClickBait's own triangle and pills aren't in it.
+            let capture = try await ScreenCapturer().captureDisplayUnderCursor(excluding: blocklist)
+            guard let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+                throw FileActionError.failed("couldn't save the screenshot")
+            }
+            CGImageDestinationAddImage(destination, capture.image, nil)
+            guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save the screenshot") }
+        case .area, .window:
+            // macOS's own picker; Esc cancels and leaves no file.
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-i", kind == .area ? "-s" : "-W", file.path]
+            try process.run()
+            await withCheckedContinuation { continuation in
+                process.terminationHandler = { _ in continuation.resume() }
+            }
+            guard FileManager.default.fileExists(atPath: file.path) else { return "Screenshot cancelled" }
+        }
+        let place = folder.standardizedFileURL == (try? Places.url(for: .desktop))?.standardizedFileURL ? "the Desktop" : folder.lastPathComponent
+        return "Saved a screenshot to \(place)"
+    }
+
+    /// The folder set in the Screenshot app's Options, or the Desktop.
+    private static func saveFolder() -> URL {
+        if let path = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return (try? Places.url(for: .desktop)) ?? FileManager.default.homeDirectoryForCurrentUser
     }
 }

@@ -841,7 +841,7 @@ final class AskCoordinator {
         case .success(let action):
             onActionStarted?(Self.workingMessage(for: action))
             do {
-                let confirmation = try await ActionExecutor.run(action)
+                let confirmation = try await ActionExecutor.run(action, blocklist: settings.blocklist)
                 Log.ask.notice("Action done: \(request.name, privacy: .public)")
                 if let started = answerStartedAt {
                     Log.ask.notice("Command finished \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
@@ -874,6 +874,12 @@ final class AskCoordinator {
         case .sleepDisplay: "Turning off the display…"
         case .newFolder: "Making a folder…"
         case .openPlace(let place): "Opening \(place.displayName)…"
+        case .makeNote: "Adding a note…"
+        case .addReminder: "Adding a reminder…"
+        case .media: "…"
+        case .screenshot: "Taking a screenshot…"
+        case .newFinderWindow: "Opening Finder…"
+        case .showDesktop: "Showing the desktop…"
         case .file(let file):
             switch file {
             case .compress: "Compressing…"
