@@ -125,3 +125,56 @@ public enum SnipLayout {
         return Rect(x: x, y: y, width: width, height: height)
     }
 }
+
+/// Which points of a snip's region the user actually marked: everything inside a box,
+/// and inside the loop of a circle (closed back to its start), not just its bounds.
+public enum SnipArea {
+    public static func contains(_ point: Point, kind: SnipKind, region: Rect, path: [Point]) -> Bool {
+        let inBounds = point.x >= region.minX && point.x <= region.maxX && point.y >= region.minY && point.y <= region.maxY
+        guard inBounds, kind == .circled, path.count >= 3 else { return inBounds }
+        // Even–odd ray casting against the traced loop.
+        var inside = false
+        var j = path.count - 1
+        for i in path.indices {
+            let a = path[i], b = path[j]
+            if (a.y > point.y) != (b.y > point.y),
+               point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
+    }
+
+    /// Sample points across the region, about `spacing` apart, at most `limit` of them.
+    public static func samples(kind: SnipKind, region: Rect, path: [Point], spacing: Double = 12, limit: Int = 600) -> [Point] {
+        let area = max(region.width * region.height, 1)
+        let step = max(spacing, (area / Double(limit)).squareRoot())
+        var points: [Point] = []
+        var y = region.minY + step / 2
+        while y < region.maxY {
+            var x = region.minX + step / 2
+            while x < region.maxX {
+                let point = Point(x: x, y: y)
+                if contains(point, kind: kind, region: region, path: path) { points.append(point) }
+                if points.count == limit { return points }
+                x += step
+            }
+            y += step
+        }
+        return points
+    }
+}
+
+/// AppleScript literals built from untrusted text (file names).
+public enum AppleScriptText {
+    /// `{"a", "b \"c\""}`: quotes and backslashes escaped, so a name can never end the
+    /// string and inject script.
+    public static func list(_ strings: [String]) -> String {
+        "{" + strings.map(quoted).joined(separator: ", ") + "}"
+    }
+
+    public static func quoted(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+}

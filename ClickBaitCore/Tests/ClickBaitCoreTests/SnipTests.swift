@@ -97,3 +97,32 @@ struct SnipPromptTests {
         #expect(text.hasSuffix("Explain what's inside the red outline."))
     }
 }
+
+struct SnipAreaTests {
+    private let square = [Point(x: 0, y: 0), Point(x: 100, y: 0), Point(x: 100, y: 100), Point(x: 0, y: 100)]
+
+    @Test func boxContainsItsWholeRegion() {
+        let region = Rect(x: 0, y: 0, width: 100, height: 100)
+        #expect(SnipArea.contains(Point(x: 5, y: 95), kind: .boxed, region: region, path: square))
+        #expect(!SnipArea.contains(Point(x: 105, y: 50), kind: .boxed, region: region, path: square))
+    }
+
+    @Test func circleContainsOnlyItsLoop() {
+        // A diamond traced inside the 100×100 bounds: the corners are outside it.
+        let diamond = [Point(x: 50, y: 0), Point(x: 100, y: 50), Point(x: 50, y: 100), Point(x: 0, y: 50)]
+        let region = Rect(x: 0, y: 0, width: 100, height: 100)
+        #expect(SnipArea.contains(Point(x: 50, y: 50), kind: .circled, region: region, path: diamond))
+        #expect(!SnipArea.contains(Point(x: 5, y: 5), kind: .circled, region: region, path: diamond))
+        let samples = SnipArea.samples(kind: .circled, region: region, path: diamond)
+        #expect(!samples.isEmpty && samples.allSatisfy { abs($0.x - 50) + abs($0.y - 50) <= 50 })
+    }
+
+    @Test func samplesStayWithinTheLimitForBigAreas() {
+        let region = Rect(x: 0, y: 0, width: 1500, height: 900)
+        #expect(SnipArea.samples(kind: .boxed, region: region, path: []).count <= 600)
+    }
+
+    @Test func appleScriptListEscapesNames() {
+        #expect(AppleScriptText.list(["a.jpg", #"say "hi".txt"#, #"back\slash"#]) == #"{"a.jpg", "say \"hi\".txt", "back\\slash"}"#)
+    }
+}

@@ -129,6 +129,39 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
+    // MARK: - Finder items
+
+    /// Names of the Finder items under `points` (Quartz): rows in list and column view,
+    /// icons and their name labels in icon view and on the desktop. Unchecked — Finder
+    /// itself is asked which of these names are real items.
+    static func finderItemNames(at points: [Point], finderPID pid: pid_t) -> [String] {
+        guard isTrusted else { return [] }
+        let app = element(AXUIElementCreateApplication(pid))
+        var names: [String] = []
+        var seen = Set<String>()
+        for point in points {
+            guard let hit = app.hitTest(point) else { continue }
+            var current: AXElement? = hit
+            for _ in 0..<4 {
+                guard let element = current else { break }
+                let role = element.string(kAXRoleAttribute) ?? ""
+                let name: String? = switch role {
+                case "AXRow": element.rowLabel()
+                case "AXImage": element.name
+                case "AXTextField", "AXStaticText": element.string(kAXValueAttribute)
+                default: nil
+                }
+                if let name, !name.isEmpty {
+                    if seen.insert(name).inserted { names.append(name) }
+                    break
+                }
+                if role == "AXWindow" || role == "AXScrollArea" || role == "AXOutline" { break }
+                current = element.element(kAXParentAttribute)
+            }
+        }
+        return names
+    }
+
     // MARK: - Snapping
 
     /// Actionable elements around `point` (Quartz global points), found by hit-testing

@@ -273,6 +273,47 @@ enum FileActions {
 /// The files currently selected in Finder, read with AppleScript (one Automation
 /// prompt for Finder the first time).
 enum FinderSelection {
+    /// Selects the items with these names (as shown in Finder, extension or not) in the
+    /// front Finder window, or on the desktop if the window has none of them. Returns
+    /// how many were selected.
+    static func select(names: [String]) async throws -> Int {
+        guard !names.isEmpty else { return 0 }
+        let script = """
+            set wanted to \(AppleScriptText.list(names))
+            tell application "Finder"
+                set places to {}
+                try
+                    set end of places to (target of front Finder window)
+                end try
+                set end of places to desktop
+                repeat with place in places
+                    set found to {}
+                    repeat with aName in wanted
+                        try
+                            set found to found & (every item of place whose name is (aName as text) or displayed name is (aName as text))
+                        end try
+                    end repeat
+                    if (count of found) > 0 then
+                        select found
+                        return count of found
+                    end if
+                end repeat
+                return 0
+            end tell
+            """
+        let result: Result<Int, FileActionError> = await Task.detached(priority: .userInitiated) {
+            var error: NSDictionary?
+            let output = NSAppleScript(source: script)?.executeAndReturnError(&error)
+            if let error {
+                let number = error[NSAppleScript.errorNumber] as? Int
+                if number == -1743 { return .failure(.finderNotAllowed) }
+                return .failure(.failed(error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number ?? 0)"))
+            }
+            return .success(Int(output?.int32Value ?? 0))
+        }.value
+        return try result.get()
+    }
+
     static func read() async throws -> [URL] {
         let script = """
             tell application "Finder"

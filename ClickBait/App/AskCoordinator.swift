@@ -505,6 +505,7 @@ final class AskCoordinator {
         let frontmost = NSWorkspace.shared.frontmostApplication
         guard checkCanAsk(frontmost: frontmost) else { return }
         frontmostPID = frontmost?.processIdentifier
+        frontmostBundleID = frontmost?.bundleIdentifier
         context = ScreenContext(appName: frontmost?.localizedName)
         let provider = settings.makeProvider()
         self.provider = provider
@@ -516,6 +517,10 @@ final class AskCoordinator {
 
     private func finishSnip(_ kind: SnipKind, region: Rect, path: [Point]) async {
         let startedAt = ContinuousClock.now
+        // Marked files in Finder become the selection, so "combine these" acts on them.
+        if frontmostBundleID == FileAction.requiredFrontmostApp, let pid = frontmostPID {
+            await selectMarkedFiles(kind: kind, region: region, path: path, finderPID: pid)
+        }
         // The display holding the middle of the region.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let center = NSPoint(x: region.x + region.width / 2, y: primaryHeight - (region.y + region.height / 2))
@@ -534,6 +539,20 @@ final class AskCoordinator {
         await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
                       speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
                       snip: kind)
+    }
+
+    private func selectMarkedFiles(kind: SnipKind, region: Rect, path: [Point], finderPID pid: pid_t) async {
+        let points = SnipArea.samples(kind: kind, region: region, path: path)
+        let names = await Task.detached(priority: .userInitiated) {
+            AXInspector.finderItemNames(at: points, finderPID: pid)
+        }.value
+        guard !names.isEmpty else { return }
+        do {
+            let selected = try await FinderSelection.select(names: names)
+            Log.ask.notice("Snip in Finder: selected \(selected, privacy: .public) of \(names.count, privacy: .public) marked item(s)")
+        } catch {
+            Log.ask.error("Snip in Finder: couldn't select the marked files: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Answering
