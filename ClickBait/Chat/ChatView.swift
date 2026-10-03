@@ -1,3 +1,5 @@
+import AppKit
+import ClickBaitCore
 import SwiftUI
 
 /// The chat bubble: the answer and any follow-ups, with a field to keep asking.
@@ -114,6 +116,12 @@ struct ChatView: View {
 private struct MessageRow: View {
     let message: ChatModel.Message
 
+    /// Inline markdown only (bold, italics, `code`, links); line breaks kept.
+    static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
+    }
+
     var body: some View {
         switch message.role {
         case .user:
@@ -127,18 +135,78 @@ private struct MessageRow: View {
                     .textSelection(.enabled)
             }
         case .assistant:
-            Text(message.text)
-                .font(.system(size: 13))
-                .lineSpacing(1.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(MessageFormat.segments(message.text).enumerated()), id: \.offset) { _, segment in
+                    switch segment {
+                    case .text(let prose):
+                        Text(Self.markdown(prose))
+                            .font(.system(size: 13))
+                            .lineSpacing(1.5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    case .code(let language, let code):
+                        CodeBlock(language: language, code: code)
+                    }
+                }
+            }
         case .error:
             Label(message.text, systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Code, formulas and commands: monospaced on a dark panel, with the language and a
+/// Copy button; long lines scroll sideways instead of wrapping.
+private struct CodeBlock: View {
+    let language: String?
+    let code: String
+    @State private var copied = false
+
+    private static let background = Color(red: 0.09, green: 0.09, blue: 0.1)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(language?.lowercased() ?? "code")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                    copied = true
+                    Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy code")
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 7)
+            .padding(.bottom, 4)
+
+            ScrollView(.horizontal) {
+                Text(code)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color(white: 0.9))
+                    .lineSpacing(3)
+                    .fixedSize()
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
+            }
+            .scrollIndicators(.automatic)
+        }
+        .background(Self.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        .environment(\.colorScheme, .dark)
     }
 }
 

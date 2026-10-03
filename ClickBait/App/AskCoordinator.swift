@@ -446,6 +446,7 @@ final class AskCoordinator {
             var firstChunkAt: ContinuousClock.Instant?
             var extractor = StreamingSpeechExtractor()
             var sentences = SentenceSplitter()
+            var codeFilter = CodeFenceFilter()  // code is shown, never read aloud
             var spokenSoFar = ""
             var isFirstSentence = true
             // Explanations shouldn't open with "The highlighted text refers to…".
@@ -457,11 +458,18 @@ final class AskCoordinator {
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
                     onPartialAnswer?(tidy(spokenSoFar))
-                    for sentence in sentences.feed(newSpeech) where speak {
+                    for sentence in sentences.feed(codeFilter.feed(newSpeech)) where speak {
                         speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
                         isFirstSentence = false
                         spokeAnything = true
                     }
+                }
+            }
+            if speak, !Task.isCancelled {
+                for sentence in sentences.feed(codeFilter.flush()) {
+                    speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
+                    isFirstSentence = false
+                    spokeAnything = true
                 }
             }
             if speak, !Task.isCancelled, let rest = sentences.flush() {
@@ -522,7 +530,7 @@ final class AskCoordinator {
         // No streamed "speech" field (e.g. plain-text fallback): speak the parsed answer.
         if speak, !spokeAnything {
             var sentences = SentenceSplitter()
-            sentences.feed(parsed.response.speech).forEach(speaker.speak)
+            sentences.feed(MessageFormat.spokenText(parsed.response.speech)).forEach(speaker.speak)
             sentences.flush().map(speaker.speak)
         }
         conversation?.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech)
@@ -571,8 +579,10 @@ final class AskCoordinator {
         }
     }
 
-    /// Moves each pointer onto a matching real element nearby, if accessibility knows of
-    /// one. Without Accessibility permission pointers are returned unchanged.
+    /// Moves each pointer onto a matching real element nearby, and drops pointers that
+    /// don't land on or near anything clickable — the model sometimes points at empty
+    /// space for questions that need no clicking. Without Accessibility permission
+    /// there's no way to check, so pointers are returned unchanged.
     private func snap(_ pointers: [ScreenPointer], geometry: ScreenGeometry) async -> [ScreenPointer] {
         guard AXInspector.isTrusted else {
             Log.ask.notice("Snapping skipped: Accessibility not granted")
@@ -597,6 +607,10 @@ final class AskCoordinator {
                 matched \(decision.candidate?.role ?? "-", privacy: .public) "\(decision.candidate?.label ?? "", privacy: .private)", \
                 \(String(describing: ContinuousClock.now - start), privacy: .public))
                 """)
+            guard decision.candidate != nil else {
+                Log.ask.notice("Pointer dropped: nothing clickable there")
+                continue
+            }
             snapped.append(moved ? ScreenPointer(
                 label: pointer.label,
                 appKit: geometry.appKitPoint(fromQuartz: decision.point),

@@ -15,6 +15,8 @@ public enum Prompt {
         "label" is the element's visible text or a 1–3 word name for it.
         - Only point at things you can actually see in the screenshot. If the answer isn't \
         on screen, say what to do instead and use an empty "pointers" list.
+        - Add pointers only when the user asks how or where to do something on screen. For \
+        explanations, facts, opinions or code, "pointers" must be empty.
         - If the question isn't about the screen, just answer it in "speech" with no pointers.
         - If the user highlighted text, explain it: a concise summary in 2–4 short sentences \
         that says what it means in plain words and why it matters here. Use the rest of the \
@@ -25,6 +27,9 @@ public enum Prompt {
         - The conversation can continue with follow-ups. Use what was said before for \
         context, and the newest screenshot for what's on screen now. Typed follow-ups are \
         read, not heard, so "speech" may run to 4 sentences when the question needs it.
+        - When the answer needs code, a formula or a terminal command, put it in "speech" as a \
+        fenced code block (```language on its own line, then the code, then ```). Code is shown \
+        to the user, never read aloud, so keep the words around it short.
         """
 
     /// Highlighted text beyond this is cut off; the screenshot still gives context.
