@@ -40,6 +40,15 @@ final class OverlayModel {
         /// A spoken command was carried out.
         case done(String)
         case error(String)
+
+        /// A result or a problem: shown as a tiny pill. Everything else is just the
+        /// triangle's colour and pulse.
+        var hasWords: Bool {
+            switch self {
+            case .answer, .done, .error: true
+            default: false
+            }
+        }
     }
 
     var bubble: Bubble = .idle
@@ -71,6 +80,8 @@ final class OverlayModel {
     var isGuiding = false
     /// Shown beside the triangle while guiding, e.g. "1/2 · Share".
     var guideLabel: String?
+    /// The element's name, for VoiceOver (the visible label is just "this one!").
+    var guideTarget: String?
     var guideLabelSize: CGSize = .zero
     static let guideLabelCanvas = CGSize(width: 320, height: 40)
     /// The companion's drawn size. Ignored by observation: the controller reacts through

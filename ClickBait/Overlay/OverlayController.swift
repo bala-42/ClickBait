@@ -303,11 +303,13 @@ final class OverlayController {
         guideLabelPanel?.orderOut(nil)
         model.isGuiding = false
         model.guideLabel = nil
+        model.guideTarget = nil
         model.triangleAngle = CompanionTriangle.restingAngle
     }
 
-    private func advanceGuide() {
+    private func advanceGuide(reason: String) {
         guard var guide else { return }
+        Log.ask.notice("Guide: moving on from target \(guide.index + 1, privacy: .public) (\(reason, privacy: .public))")
         if guide.index + 1 < guide.targets.count {
             guide.index += 1
             self.guide = guide
@@ -335,8 +337,8 @@ final class OverlayController {
         self.guide = guide
 
         let label = guide.targets[guide.index].label
-        let step = guide.targets.count > 1 ? "\(guide.index + 1)/\(guide.targets.count)" : nil
-        model.guideLabel = [step, label.isEmpty ? nil : label].compactMap { $0 }.joined(separator: " · ")
+        model.guideLabel = GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
+        model.guideTarget = label.isEmpty ? nil : label
         model.isGuiding = true
         guideLabelPanel?.orderFrontRegardless()
     }
@@ -344,7 +346,7 @@ final class OverlayController {
     private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
         guard var guide else { return }
         if CACurrentMediaTime() - guide.targetStarted > Self.dwell {
-            advanceGuide()
+            advanceGuide(reason: "timeout")
             return
         }
         let target = guide.targets[guide.index].appKit
@@ -391,7 +393,7 @@ final class OverlayController {
         // The next click anywhere dismisses the answer (the click itself goes through).
         add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self else { return }
-            if guide != nil { advanceGuide() } else { dismissAnswer() }
+            if guide != nil { advanceGuide(reason: "click") } else { dismissAnswer() }
         }
 
         // Escape: dismiss an answer, or cancel a question in progress. Global key
@@ -454,5 +456,19 @@ private final class FrameTarget: NSObject {
 
     @objc func tick(_ link: CADisplayLink) {
         controller?.frame(link)
+    }
+}
+
+/// What the triangle says while it points: tiny and friendly, lowercase words and
+/// punctuation only — never the element's name or step numbers.
+enum GuidePhrase {
+    static let single = ["found it!", "this one!", "over here!", "right here!"]
+    static let first = ["first, this one!", "first, over here!", "start here!"]
+    static let middle = ["then this one!", "next, over here!", "then right here!"]
+    static let last = ["and finally, this one!", "and then here!", "last one, right here!"]
+
+    static func next(step: Int, of count: Int, avoiding previous: String?) -> String {
+        let pool = count <= 1 ? single : step == 0 ? first : step == count - 1 ? last : middle
+        return pool.filter { $0 != previous }.randomElement() ?? pool[0]
     }
 }

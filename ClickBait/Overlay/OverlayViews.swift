@@ -55,6 +55,31 @@ struct CompanionTriangle: View {
     }
 }
 
+/// A few words beside the triangle, in the guide label's style: "Compressed 3 files",
+/// "Screen Recording is off…". Wraps to a few lines for longer messages.
+private struct TinyPill: View {
+    let text: String
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+        .padding(.top, 3)
+    }
+}
+
 /// What the guiding triangle is pointing at ("Share", "1/2 · File"). Lives in its own
 /// panel so the controller can keep it on the far side of the triangle from the target.
 struct GuideLabelView: View {
@@ -69,7 +94,7 @@ struct GuideLabelView: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .modifier(GlassBackground(shape: Capsule()))
-                    .accessibilityLabel("ClickBait is pointing at \(label)")
+                    .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
             }
         }
         .padding(6)  // room for the glass shadow
@@ -79,8 +104,8 @@ struct GuideLabelView: View {
     }
 }
 
-/// The companion that follows the cursor: the triangle, with a card beside it when
-/// there's something to say — both in the same state colour.
+/// The companion that follows the cursor: the triangle, with a tiny pill beside it
+/// when there's a result or a problem to show.
 struct CompanionBubbleView: View {
     let model: OverlayModel
 
@@ -92,7 +117,7 @@ struct CompanionBubbleView: View {
         HStack(alignment: .top, spacing: 3) {
             CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, angle: model.triangleAngle)
                 .padding(2)
-            if model.bubble != .idle && !model.isGuiding {
+            if model.bubble.hasWords && !model.isGuiding {
                 card
                     .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
             }
@@ -108,83 +133,17 @@ struct CompanionBubbleView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Only things that need words get any: a result or a problem, as a tiny pill.
+    /// Listening, thinking and working are shown by the triangle's colour and pulse.
     @ViewBuilder private var card: some View {
-        let tint = model.tone.color
         switch model.bubble {
-        case .idle:
+        case .idle, .listening, .thinking, .explaining, .working:
             EmptyView()
-        case .explaining(let excerpt):
-            BubbleCard(symbol: "text.magnifyingglass", tint: tint, title: "Explaining", message: Self.quote(excerpt),
-                       showsSpinner: true)
-        case .listening:
-            BubbleCard(symbol: "mic.fill", tint: tint, title: "Listening", message: "Let go of ⌃⌥ when you're done.")
-        case .thinking(let heard):
-            BubbleCard(symbol: "sparkles", tint: tint, title: "Thinking", message: heard.map { "“\($0)”" },
-                       showsSpinner: true)
-        case .answer(let text):
-            BubbleCard(symbol: "cursorarrow.rays", tint: tint, title: "ClickBait", message: text)
-        case .working(let message):
-            BubbleCard(symbol: "gearshape.fill", tint: tint, title: "Working", message: message, showsSpinner: true)
-        case .done(let message):
-            BubbleCard(symbol: "checkmark", tint: tint, title: "Done", message: message)
+        case .answer(let text), .done(let text):
+            TinyPill(text: text, symbol: "checkmark", tint: model.tone.color)
         case .error(let message):
-            BubbleCard(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't do that", message: message)
+            TinyPill(text: message, symbol: "exclamationmark", tint: .orange)
         }
-    }
-
-    private static func quote(_ text: String) -> String {
-        let oneLine = text.split(whereSeparator: \.isNewline).joined(separator: " ")
-        return "“" + (oneLine.count > 90 ? oneLine.prefix(89) + "…" : Substring(oneLine)) + "”"
-    }
-}
-
-/// A clean card in the macOS notification style: tinted icon, small title, message.
-/// Liquid Glass on macOS 26+, the standard blurred material before that.
-private struct BubbleCard: View {
-    let symbol: String
-    let tint: Color
-    let title: String
-    var message: String?
-    var showsSpinner = false
-    var pulsing = false
-
-    private static let corner: CGFloat = 16
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
-                .frame(width: 26, height: 26)
-                .background(tint.opacity(0.16), in: Circle())
-                .scaleEffect(pulsing ? 1.08 : 1)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    if showsSpinner {
-                        ProgressView().controlSize(.mini)
-                    }
-                }
-                if let message, !message.isEmpty {
-                    Text(message)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
-                        .lineSpacing(1.5)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: CompanionBubbleView.maxTextWidth, alignment: .leading)
-            .padding(.top, 4)
-        }
-        .padding(.leading, 9)
-        .padding(.trailing, 14)
-        .padding(.vertical, 9)
-        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: Self.corner, style: .continuous)))
-        .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
     }
 }
 
