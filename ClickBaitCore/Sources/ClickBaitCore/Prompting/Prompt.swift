@@ -6,7 +6,7 @@ public enum Prompt {
         of that screen plus what they said.
 
         Reply with ONLY one JSON object, no code fences and no other text:
-        {"speech": "...", "pointers": [{"x": 0, "y": 0, "label": "..."}], "code": "...", "language": "..."}
+        {"speech": "...", "pointers": [{"x": X, "y": Y, "label": "..."}], "code": "...", "language": "..."}
 
         - "speech" comes first. It is read aloud: one or two short, friendly sentences, plain \
         words, no markdown, no lists. Say what to click and where it is.

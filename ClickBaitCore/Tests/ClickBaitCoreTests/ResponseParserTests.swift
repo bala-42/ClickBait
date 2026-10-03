@@ -17,10 +17,10 @@ struct ResponseParserTests {
         let raw = """
             Sure! Here's what to do:
             ```json
-            {"speech": "Click Share.", "pointers": [{"x": 10, "y": 20, "label": "Share"}]}
+            {"speech": "Click Share.", "pointers": [{"x": 100, "y": 40, "label": "Share"}]}
             ```
             """
-        #expect(parse(raw).response.pointers == [Pointer(x: 10, y: 20, label: "Share")])
+        #expect(parse(raw).response.pointers == [Pointer(x: 100, y: 40, label: "Share")])
     }
 
     @Test func skipsBracesInsideLeadingTextAndStrings() {
@@ -47,9 +47,9 @@ struct ResponseParserTests {
     }
 
     @Test func dropsPointersWithoutCoordinatesOrFarOffImage() {
-        let raw = #"{"speech": "s", "pointers": [{"label": "none"}, {"x": 5000, "y": 10, "label": "far"}, {"x": 5, "y": 6, "label": "ok"}, "junk"]}"#
+        let raw = #"{"speech": "s", "pointers": [{"label": "none"}, {"x": 5000, "y": 10, "label": "far"}, {"x": 50, "y": 60, "label": "ok"}, "junk"]}"#
         let result = parse(raw)
-        #expect(result.response.pointers == [Pointer(x: 5, y: 6, label: "ok")])
+        #expect(result.response.pointers == [Pointer(x: 50, y: 60, label: "ok")])
         #expect(result.droppedPointers == 3)
     }
 
@@ -60,9 +60,17 @@ struct ResponseParserTests {
     }
 
     @Test func keepsAtMostThreePointers() {
-        let points = (1...5).map { #"{"x": \#($0), "y": \#($0), "label": "p\#($0)"}"# }.joined(separator: ",")
+        let points = (1...5).map { #"{"x": \#($0 * 100), "y": \#($0 * 100), "label": "p\#($0)"}"# }.joined(separator: ",")
         let result = parse(#"{"speech": "s", "pointers": [\#(points)]}"#)
         #expect(result.response.pointers.map(\.label) == ["p1", "p2", "p3"])
+        #expect(result.droppedPointers == 2)
+    }
+
+    @Test func dropsPlaceholderPointsInTheTopLeftCorner() {
+        // Real qwen2.5vl:7b replies: (10, 10) and (18, 18) for a "where is" question —
+        // snapping then put them on the window's close button.
+        let result = parse(#"{"speech": "s", "pointers": [{"x": 10, "y": 10, "label": "a"}, {"x": 0, "y": 0}, {"x": 18, "y": 300, "label": "sidebar"}]}"#)
+        #expect(result.response.pointers == [Pointer(x: 18, y: 300, label: "sidebar")])
         #expect(result.droppedPointers == 2)
     }
 
@@ -88,7 +96,7 @@ struct ResponseParserTests {
     }
 
     @Test func missingSpeechUsesFallbackButKeepsPointers() {
-        let result = parse(#"{"pointers": [{"x": 1, "y": 2, "label": "a"}]}"#)
+        let result = parse(#"{"pointers": [{"x": 100, "y": 200, "label": "a"}]}"#)
         #expect(result.response.speech == ResponseParser.fallbackSpeech)
         #expect(result.response.pointers.count == 1)
     }

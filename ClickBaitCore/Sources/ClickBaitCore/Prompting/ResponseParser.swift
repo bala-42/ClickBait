@@ -19,6 +19,10 @@ public enum ResponseParser {
     /// Coordinates this far outside the image (as a fraction of its size) are clamped
     /// rather than dropped: models round to their own internal resolution.
     public static let edgeTolerance = 0.03
+    /// Points inside this many pixels of the top-left corner are a model filling in a
+    /// placeholder ({"x": 0, "y": 0}), not a real answer — and snapping would otherwise
+    /// land them on the window's close button.
+    public static let placeholderCorner = 24.0
     static let fallbackSpeech = "Sorry, I couldn't work that out. Try asking again."
 
     public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int) -> Result {
@@ -80,7 +84,8 @@ public enum ResponseParser {
         let slackX = width * edgeTolerance, slackY = height * edgeTolerance
         guard x.isFinite, y.isFinite,
               x >= -slackX, x <= width + slackX,
-              y >= -slackY, y <= height + slackY
+              y >= -slackY, y <= height + slackY,
+              !(x < placeholderCorner && y < placeholderCorner)
         else { return nil }
 
         let label = (dict["label"] ?? dict["name"] ?? dict["text"]).flatMap { $0 as? String }?

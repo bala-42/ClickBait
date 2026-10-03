@@ -111,11 +111,12 @@ final class AskCoordinator {
 
     /// The chat bubble was closed (✕ or Escape): its memory goes with it.
     func closeChat() {
-        guard conversation != nil else { return }
+        guard conversation != nil, chatShown else { return }
         speaker.stop()
         askTask?.cancel()
         askTask = nil
         conversation = nil
+        chatShown = false
         isAnswering = false
         if state == .thinking || state == .speaking { state = .idle }
         Log.ask.notice("Chat closed")
@@ -401,6 +402,11 @@ final class AskCoordinator {
 
     // MARK: - Answering
 
+    /// Whether the chat bubble is on screen. A spoken question doesn't open one until
+    /// its answer is in — and not at all when the answer points somewhere: the
+    /// companion guides and the answer is spoken, so a chat would just be clutter.
+    private var chatShown = false
+
     /// Shared by ask, explain and chat follow-ups: send to the model (with the open
     /// bubble's memory), stream into the bubble, parse, map, snap, show. A first
     /// message opens a new bubble; anything sent while one is open continues it.
@@ -417,10 +423,14 @@ final class AskCoordinator {
         answerStartedAt = startedAt
         var spokeAnything = false
         guard let provider else { return }
+        if conversation != nil, !chatShown { conversation = nil }  // an earlier pointing answer: start fresh
         let history = conversation?.history ?? []
         if conversation == nil {
             conversation = Conversation()
-            onChatOpen?(display)
+            if !speak {  // explain: show the bubble right away, the answer streams into it
+                chatShown = true
+                onChatOpen?(display)
+            }
         } else {
             onChatUserMessage?(display)
         }
@@ -459,7 +469,7 @@ final class AskCoordinator {
                 let newSpeech = extractor.feed(chunk)
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
-                    onPartialAnswer?(tidy(spokenSoFar))
+                    if chatShown { onPartialAnswer?(tidy(spokenSoFar)) }
                     for sentence in sentences.feed(codeFilter.feed(newSpeech)) where speak {
                         speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
                         isFirstSentence = false
@@ -492,7 +502,12 @@ final class AskCoordinator {
             guard !Task.isCancelled else { return }
             Log.ask.error("Provider failed: \(error.localizedDescription, privacy: .public)")
             if state == .thinking { state = .idle }
-            onChatError?(error.localizedDescription)
+            if chatShown {
+                onChatError?(error.localizedDescription)
+            } else {
+                conversation = nil
+                show(error: error.localizedDescription)
+            }
             return
         }
 
@@ -539,6 +554,10 @@ final class AskCoordinator {
                              code: parsed.response.code, language: parsed.response.language)
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
         if state == .thinking || state == .speaking { state = .idle }
+        if !chatShown, pointers.isEmpty {
+            chatShown = true
+            onChatOpen?(display)
+        }
         onAnswer?(parsed.response, pointers)
     }
 
