@@ -6,6 +6,24 @@ import SwiftUI
 private final class ChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// ClickBait is a menu bar app with no Edit menu, which is what normally turns
+    /// ⌘C/⌘V/… into actions — so the panel does it, sending them to the focused text
+    /// field or selected answer text through the responder chain.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let action: Selector? = switch (modifiers, event.charactersIgnoringModifiers?.lowercased()) {
+        case (.command, "c"): #selector(NSText.copy(_:))
+        case (.command, "v"): #selector(NSText.paste(_:))
+        case (.command, "x"): #selector(NSText.cut(_:))
+        case (.command, "a"): #selector(NSResponder.selectAll(_:))
+        case (.command, "z"): Selector(("undo:"))
+        case ([.command, .shift], "z"): Selector(("redo:"))
+        default: nil
+        }
+        if let action, NSApp.sendAction(action, to: nil, from: self) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 /// Owns the chat bubble window: pinned where the answer appeared, draggable, sized
