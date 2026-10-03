@@ -317,32 +317,21 @@ enum FileActions {
 /// The files currently selected in Finder, read with AppleScript (one Automation
 /// prompt for Finder the first time).
 enum FinderSelection {
-    /// Selects the items with these names (as shown in Finder, extension or not) in the
-    /// front Finder window, or on the desktop if the window has none of them. Returns
-    /// how many were selected.
-    static func select(names: [String]) async throws -> Int {
-        guard !names.isEmpty else { return 0 }
+    /// Selects these files in Finder where they're shown (front window or desktop).
+    /// Returns how many were selected. Paths reach AppleScript only as escaped literals.
+    static func select(_ urls: [URL]) async throws -> Int {
+        guard !urls.isEmpty else { return 0 }
         let script = """
-            set wanted to \(AppleScriptText.list(names))
+            set wanted to \(AppleScriptText.list(urls.map(\.path)))
             tell application "Finder"
-                set places to {}
-                try
-                    set end of places to (target of front Finder window)
-                end try
-                set end of places to desktop
-                repeat with place in places
-                    set found to {}
-                    repeat with aName in wanted
-                        try
-                            set found to found & (every item of place whose name is (aName as text) or displayed name is (aName as text))
-                        end try
-                    end repeat
-                    if (count of found) > 0 then
-                        select found
-                        return count of found
-                    end if
+                set found to {}
+                repeat with aPath in wanted
+                    try
+                        set end of found to ((POSIX file (aPath as text)) as alias)
+                    end try
                 end repeat
-                return 0
+                if (count of found) > 0 then select found
+                return count of found
             end tell
             """
         let result: Result<Int, FileActionError> = await Task.detached(priority: .userInitiated) {

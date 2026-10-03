@@ -131,35 +131,29 @@ enum AXInspector {
 
     // MARK: - Finder items
 
-    /// Names of the Finder items under `points` (Quartz): rows in list and column view,
-    /// icons and their name labels in icon view and on the desktop. Unchecked — Finder
-    /// itself is asked which of these names are real items.
-    static func finderItemNames(at points: [Point], finderPID pid: pid_t) -> [String] {
+    /// The files under `points` (Quartz) in Finder: list, column and icon view and the
+    /// desktop expose each item's file URL (`AXURL`) on the item or a parent of it.
+    /// Displayed names aren't used — extensions can be hidden and headers look like names.
+    static func finderItemURLs(at points: [Point], finderPID pid: pid_t) -> [URL] {
         guard isTrusted else { return [] }
         let app = element(AXUIElementCreateApplication(pid))
-        var names: [String] = []
+        var urls: [URL] = []
         var seen = Set<String>()
         for point in points {
             guard let hit = app.hitTest(point) else { continue }
             var current: AXElement? = hit
-            for _ in 0..<4 {
+            for _ in 0..<5 {
                 guard let element = current else { break }
-                let role = element.string(kAXRoleAttribute) ?? ""
-                let name: String? = switch role {
-                case "AXRow": element.rowLabel()
-                case "AXImage": element.name
-                case "AXTextField", "AXStaticText": element.string(kAXValueAttribute)
-                default: nil
-                }
-                if let name, !name.isEmpty {
-                    if seen.insert(name).inserted { names.append(name) }
+                if let url = element.fileURL {
+                    if seen.insert(url.standardizedFileURL.path).inserted { urls.append(url) }
                     break
                 }
-                if role == "AXWindow" || role == "AXScrollArea" || role == "AXOutline" { break }
+                let role = element.string(kAXRoleAttribute) ?? ""
+                if role == "AXWindow" || role == "AXScrollArea" || role == "AXOutline" || role == "AXBrowser" { break }
                 current = element.element(kAXParentAttribute)
             }
         }
-        return names
+        return urls
     }
 
     // MARK: - Snapping
@@ -290,6 +284,13 @@ private struct AXElement {
         guard AXUIElementCopyParameterizedAttributeValue(ref, "AXStringForTextMarkerRange" as CFString, range, &value) == .success
         else { return nil }
         return (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// `AXURL` when it's a file on disk (Finder items).
+    var fileURL: URL? {
+        guard let value = attribute(kAXURLAttribute), CFGetTypeID(value) == CFURLGetTypeID() else { return nil }
+        let url = unsafeDowncast(value, to: CFURL.self) as URL
+        return url.isFileURL ? url : nil
     }
 
     func children(_ name: String) -> [AXElement] {

@@ -81,6 +81,9 @@ public struct OllamaProvider: LLMProvider {
     /// The screenshot alone is ~1,400 tokens and the element list can add ~2,000; Ollama's
     /// default of 4,096 overflowed (an error, or worse, the instructions silently cut).
     static let contextTokens = 8192
+    /// Replies are a few sentences plus maybe some code. A cap stops a runaway reply
+    /// (one ran to 10,000 characters and 2 minutes) from blocking the next question.
+    static let maxReplyTokens = 800
 
     static func chatBody(for ask: AskRequest, model: String) -> [String: Any] {
         [
@@ -89,7 +92,7 @@ public struct OllamaProvider: LLMProvider {
             "format": "json",
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
-            "options": ["temperature": 0.1, "num_ctx": contextTokens],
+            "options": ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens],
             "messages": [["role": "system", "content": Prompt.system(for: ask)]]
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
                 + [[

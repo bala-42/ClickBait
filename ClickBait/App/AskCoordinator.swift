@@ -470,7 +470,7 @@ final class AskCoordinator {
 
     /// Every listed element costs the local model prompt time (100 took answers to
     /// 11–16 s); the question's matches and open menus are listed first.
-    private static let maxListedElements = 50
+    private static let maxListedElements = 40
 
     /// What Accessibility says is clickable on the captured display (off the main thread).
     private static func elements(in capture: ScreenCapture, frontmostPID pid: pid_t?) async -> [ScreenElement] {
@@ -543,13 +543,14 @@ final class AskCoordinator {
 
     private func selectMarkedFiles(kind: SnipKind, region: Rect, path: [Point], finderPID pid: pid_t) async {
         let points = SnipArea.samples(kind: kind, region: region, path: path)
-        let names = await Task.detached(priority: .userInitiated) {
-            AXInspector.finderItemNames(at: points, finderPID: pid)
+        let urls = await Task.detached(priority: .userInitiated) {
+            AXInspector.finderItemURLs(at: points, finderPID: pid)
         }.value
-        guard !names.isEmpty else { return }
+        Log.ask.notice("Snip in Finder: \(urls.count, privacy: .public) file(s) under the marked area")
+        guard !urls.isEmpty else { return }
         do {
-            let selected = try await FinderSelection.select(names: names)
-            Log.ask.notice("Snip in Finder: selected \(selected, privacy: .public) of \(names.count, privacy: .public) marked item(s)")
+            let selected = try await FinderSelection.select(urls)
+            Log.ask.notice("Snip in Finder: selected \(selected, privacy: .public) of \(urls.count, privacy: .public)")
         } catch {
             Log.ask.error("Snip in Finder: couldn't select the marked files: \(error.localizedDescription, privacy: .public)")
         }
@@ -599,8 +600,12 @@ final class AskCoordinator {
         var listed: [PromptElement] = []
         do {
             screenshot = try await encoding.value
-            listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
-                                        question: question, limit: Self.maxListedElements)
+            // Only "where/how/click…" questions need something to point at; for the rest
+            // the list would just slow the local model down.
+            if ImpliedPointer.isLocating(question) || conversation?.isEmpty == false {
+                listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
+                                            question: question, limit: Self.maxListedElements)
+            }
             if !elements.isEmpty {
                 Log.ask.notice("Element list: offering \(listed.count, privacy: .public) of \(elements.count, privacy: .public)")
             }
