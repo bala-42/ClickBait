@@ -11,7 +11,7 @@ ClickBait is a free, open-source (Apache 2.0), local-first AI companion that liv
 4. **Fast feels smart.** Target: spoken answer starts < 1.5s (cloud) / < 3s (local) after the hotkey is released. Stream everything.
 5. **Portable core.** Keep logic that isn't macOS-specific in `ClickBaitCore` (no AppKit/SwiftUI imports) so a Windows shell can come later.
 
-## Differentiators (roadmap context; do not build yet unless asked)
+## Differentiators (earlier ideas; the master roadmap below takes precedence)
 - **Guides: "show it once, it guides forever."** Record a workflow → saved as a portable JSON guide (steps + target element descriptions + AX identifiers, not video) → anyone can replay it with the pointer guiding them on their own screen. Guides re-locate targets on the live UI so they survive UI changes.
 - **Autonomy slider.** Show me → Do it with me (ghost cursor, approve each click) → Do it for me.
 - **Context-aware dictation.** Speak, it cleans up the text using what's on screen, inserts it into the focused field.
@@ -88,11 +88,17 @@ Microphone, Screen Recording, Accessibility. On first launch show an onboarding 
 - Settings include an app blocklist: if the frontmost app is blocked (default: password managers, Keychain Access), refuse to capture.
 
 ## Milestones
-- **M1 – Ask & Point** (current): everything in the Ask flow above, Settings (provider, model name, API key, hotkey help, blocklist), onboarding.
-- **M2 – Dictation**: hold a second hotkey, transcribe, clean up with screen context, insert into focused field (AX setValue, fallback simulated Cmd+V with clipboard restore).
-- **M3 – Guides**: record workflows → JSON guide → replay with step-by-step pointing; import/export files.
-- **M4 – Autonomy slider + agents (BYOK).**
-- **M5 – Windows shell** reusing ClickBaitCore.
+- **M1 – Ask & Point**: done (plus explain, chat bubbles, commands, file actions).
+
+## Master roadmap (from 2026-10-03; supersedes M2–M5 above)
+Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offline. Be honest about speed: local inference takes seconds, so promise "private and offline", not "zero latency".
+
+- **A. Identity & quick wins** (in progress): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Sky Blue idle/tracking, Mango Orange input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping.
+- **B. Companion guides you**: after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
+- **C. Circling & snipping** (Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
+- **D. Air-gapped mode**: the optional Anthropic provider is pending a decision (the user is deciding whether to remove it); Whisper model import from a local file as an alternative to the one-time download.
+- **E. File management** beyond the Finder selection: inspect/organize/clean up across folders. Clear orders stay rule-based; bulk changes the model proposes are shown for confirmation. Trash only, never permanent deletes.
+- **F. Thought Space banner & memory**: a working-memory board beside the companion. Persistent memory is **opt-in, off by default, local only, browsable and deletable in Settings, never records blocked apps**, and samples on app switches rather than continuously.
 
 ## Working conventions for Claude Code
 - Plan before large changes; keep commits small and descriptive.
