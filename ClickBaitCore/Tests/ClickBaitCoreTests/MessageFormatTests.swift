@@ -33,13 +33,32 @@ struct MessageFormatTests {
         #expect(MessageFormat.segments("```\nif x {\n    y()\n}\n```") == [.code(language: nil, code: "if x {\n    y()\n}")])
     }
 
+    @Test func fenceInTheMiddleOfALine() {
+        // A real qwen2.5vl reply: the opening fence right after a colon, no newline.
+        let reply = "Sure, here's the Python version in a code block format:```python\npython3 --version\nPython 3.9.6\n```"
+        #expect(MessageFormat.segments(reply) == [
+            .text("Sure, here's the Python version in a code block format:"),
+            .code(language: "python", code: "python3 --version\nPython 3.9.6"),
+        ])
+    }
+
+    @Test func singleLineFence() {
+        #expect(MessageFormat.segments("Run ```ls -la``` then check.") == [
+            .text("Run"), .code(language: nil, code: "ls -la"), .text("then check."),
+        ])
+    }
+
+    @Test func emptyClosedBlocksAreDropped() {
+        #expect(MessageFormat.segments("Hi ``` ``` there") == [.text("Hi"), .text("there")])
+    }
+
     @Test func spokenTextSkipsCode() {
         #expect(MessageFormat.spokenText(reply) == "Use VLOOKUP like this: Then drag it down the column.")
     }
 }
 
 struct CodeFenceFilterTests {
-    private let reply = "Use this:\n```python\nprint(\"hi\")\n```\nThen run it."
+    private let reply = "Use this:\n```python\nprint(\"hi\")\n```\nThen run it. Or format:```bash\necho hi\n``` done."
 
     private func filter(_ chunks: [String]) -> String {
         var filter = CodeFenceFilter()
@@ -50,7 +69,9 @@ struct CodeFenceFilterTests {
         let out = filter([reply])
         #expect(out.contains("Use this:"))
         #expect(out.contains("Then run it."))
+        #expect(out.contains("done."))
         #expect(!out.contains("print"))
+        #expect(!out.contains("echo"))
         #expect(!out.contains("```"))
     }
 
