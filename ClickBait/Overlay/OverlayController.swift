@@ -484,15 +484,12 @@ final class OverlayController {
             if guide != nil { advanceGuide(reason: "click") } else { dismissAnswer() }
         }
 
-        // Escape stops whatever ClickBait is doing (see AppDelegate). Global key events
-        // need Accessibility; the local monitor covers ClickBait's own windows. ClickBait
-        // only watches the key — the app in front still gets it.
-        let escape: @MainActor (NSEvent) -> Void = { [weak self] event in
+        // Escape in ClickBait's own windows (typing in the chat). Esc in other apps is
+        // handled by EscapeInterceptor, which takes it only while ClickBait is busy.
+        add(local: .keyDown) { [weak self] event in
             guard event.keyCode == 53, let self else { return }
             if self.onEscape?() != true { self.dismissAnswer() }
         }
-        add(global: .keyDown, handler: escape)
-        add(local: .keyDown, handler: escape)
 
         let typing: @MainActor (NSEvent) -> Void = { [weak self] _ in
             self?.hiddenByTyping = true

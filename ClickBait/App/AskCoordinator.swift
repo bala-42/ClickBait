@@ -215,6 +215,12 @@ final class AskCoordinator {
     }
 
     /// Escape while listening or thinking abandons the question.
+    /// Something is going on that Esc should stop (Esc is then taken from other apps).
+    var isBusy: Bool {
+        state == .listening || state == .thinking || state == .speaking || isAnswering || speaker.isSpeaking
+            || snipper.isActive || pendingAction != nil || isRefining
+    }
+
     /// Esc: stop whatever ClickBait is doing — listening, thinking, speaking, a snip,
     /// a pending "Do it?", a background second look. Returns false if nothing was
     /// going on (Esc then closes the chat instead).
@@ -689,12 +695,17 @@ final class AskCoordinator {
             return
         }
         guard !Task.isCancelled else { return }
+        // The window's title tells the model what app/document the marked thing is in.
+        let pid = frontmostPID
+        let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
+        context.windowTitle = snapshot.windowTitle
         let encoding = Task.detached(priority: .userInitiated) {
-            try ScreenshotEncoder.encode(SnipRenderer.render(capture, kind: kind, region: region, path: path))
+            try ScreenshotEncoder.encode(SnipRenderer.closeUp(capture, region: region))
         }
+        let contextImage = try? ScreenshotEncoder.encode(SnipRenderer.context(capture, region: region)).jpeg
         await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
                       speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
-                      snip: kind)
+                      snip: kind, snipContext: contextImage)
     }
 
     private func selectMarkedFiles(kind: SnipKind, region: Rect, path: [Point], finderPID pid: pid_t) async {
@@ -714,6 +725,9 @@ final class AskCoordinator {
 
     // MARK: - Answering
 
+    /// The snip a chat started from: follow-ups resend its close-up and context picture.
+    @ObservationIgnored private var snipMemory: (kind: SnipKind, closeUp: EncodedScreenshot, context: Data?)?
+
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
     /// its answer is in — and not at all when the answer points somewhere: the
     /// companion guides and the answer is spoken, so a chat would just be clutter.
@@ -731,6 +745,7 @@ final class AskCoordinator {
         speak: Bool,
         display: String,
         snip: SnipKind? = nil,
+        snipContext: Data? = nil,
         elements: [ScreenElement] = []
     ) async {
         let releasedAt = startedAt
@@ -739,8 +754,12 @@ final class AskCoordinator {
         guard let provider else { return }
         if conversation != nil, !chatShown { conversation = nil }  // an earlier pointing answer: start fresh
         let history = conversation?.history ?? []
+        // Follow-ups in a snip's chat keep looking at what was marked, not a new screenshot.
+        let snipFollowUp = history.isEmpty ? nil : snipMemory
+        let snip = snip ?? snipFollowUp?.kind
         if conversation == nil {
             conversation = Conversation()
+            snipMemory = nil
             if !speak {  // explain: show the bubble right away, the answer streams into it
                 chatShown = true
                 onChatOpen?(display)
@@ -752,13 +771,21 @@ final class AskCoordinator {
         defer { isAnswering = false }
         let reply: String
         let screenshot: EncodedScreenshot
-        let request: AskRequest
+        var request: AskRequest
         var listed: [PromptElement] = []
         do {
-            screenshot = try await encoding.value
+            if let snipFollowUp {
+                encoding.cancel()
+                screenshot = snipFollowUp.closeUp
+            } else {
+                screenshot = try await encoding.value
+            }
+            if snip != nil, history.isEmpty {
+                snipMemory = (snip!, screenshot, snipContext)
+            }
             // Only "where/how/click…" questions need something to point at; for the rest
-            // the list would just slow the local model down.
-            if ImpliedPointer.isLocating(question) || conversation?.isEmpty == false {
+            // the list would just slow the local model down. Never for snips.
+            if snip == nil, ImpliedPointer.isLocating(question) || conversation?.isEmpty == false {
                 listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
                                             question: question, limit: Self.maxListedElements)
             }
@@ -773,9 +800,10 @@ final class AskCoordinator {
                 context: context,
                 selectedText: selectedText,
                 history: history,
-                snip: history.isEmpty ? snip : nil,
+                snip: snip,
                 elements: listed
             )
+            request.contextJPEG = snipFollowUp?.context ?? snipContext
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))

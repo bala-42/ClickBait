@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private let chat = ChatController()
     private let confirm = ConfirmController()
+    private let escape = EscapeInterceptor()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -40,6 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBar = statusBar
         overlay.start()
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
+        // Esc in other apps: taken only while ClickBait is busy, so it never reaches
+        // both. Esc typed in ClickBait's own chat comes through overlay.onEscape below.
+        escape.isBusy = { [weak self] in
+            guard let self else { return false }
+            return coordinator.isBusy || overlay.isGuiding || confirm.isShowing
+        }
+        escape.onEscape = { [weak self] in _ = self?.overlay.onEscape?() }
+        escape.start()
+
         // Esc, in layers: stop what's happening; else stop pointing; else close the chat.
         overlay.onEscape = { [weak self] in
             guard let self else { return false }
