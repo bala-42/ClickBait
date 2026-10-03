@@ -79,7 +79,7 @@ private struct ConfirmCard: View {
                 Button { answer(false) } label: {
                     Text("Cancel").font(.system(size: 12, weight: .semibold))
                         .padding(.horizontal, 10).padding(.vertical, 4)
-                        .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: 1))
+                        .background(.white.opacity(0.2), in: Capsule())
                 }
                 Text("or say “yes”").font(.system(size: 11)).opacity(0.8)
             }

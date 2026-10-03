@@ -35,7 +35,6 @@ struct CompanionTriangle: View {
     var body: some View {
         EquilateralTriangle()
             .fill(tone.color.opacity(0.9))
-            .overlay(EquilateralTriangle().stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
             .frame(width: Self.size, height: Self.size)
             .rotationEffect(.degrees(angle))  // smoothed by OverlayController, not animated here
             .shadow(color: tone.color.opacity(pulsing && beat ? 0.9 : 0.45), radius: pulsing && beat ? 7 : 3)
@@ -73,8 +72,8 @@ private struct TinyPill: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .modifier(ToneFill(fill: isProblem ? .black.opacity(0.85) : tone.color.opacity(0.9),
-                           glow: isProblem ? .black.opacity(0.5) : tone.color.opacity(0.45),
+        .modifier(ToneFill(fill: isProblem ? Color(white: 0.13).opacity(0.94) : tone.color.opacity(0.9),
+                           glow: isProblem ? .black.opacity(0.6) : tone.color.opacity(0.45),
                            shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
     }
@@ -95,8 +94,8 @@ extension View {
     }
 }
 
-/// Pills wear the triangle's colour (or black, for problems) with its white edge, so
-/// label and pointer read as one.
+/// Pills wear the triangle's colour (or black, for problems), so label and pointer
+/// read as one. No outline: just the fill and a soft glow.
 struct ToneFill<S: Shape>: ViewModifier {
     let fill: Color
     let glow: Color
@@ -106,7 +105,6 @@ struct ToneFill<S: Shape>: ViewModifier {
         content
             .foregroundStyle(.white)
             .background(shape.fill(fill))
-            .overlay(shape.stroke(.white.opacity(0.9), lineWidth: 1.2))
             .shadow(color: glow, radius: 3)
             .animation(.easeInOut(duration: 0.25), value: fill)
     }
@@ -157,7 +155,6 @@ struct ListeningWaveform: View {
                     let height = 4 + 18 * level * Self.shape[index] * wobble
                     Capsule()
                         .fill(tone.color.opacity(0.95))
-                        .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: 0.8))
                         .frame(width: 3.5, height: height)
                 }
             }
@@ -230,7 +227,6 @@ struct GlassBackground<S: Shape>: ViewModifier {
         } else {
             content
                 .background(.regularMaterial, in: shape)
-                .overlay(shape.stroke(.white.opacity(0.25), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
         }
     }
