@@ -634,7 +634,12 @@ final class AskCoordinator {
                 \(String(describing: ContinuousClock.now - start), privacy: .public))
                 """)
             guard decision.candidate != nil else {
-                Log.ask.notice("Pointer dropped: nothing clickable there")
+                if probe.seesContent {
+                    Log.ask.notice("Pointer dropped: nothing clickable there")
+                } else {
+                    Log.ask.notice("Pointer kept as is: accessibility can't see this area")
+                    snapped.append(pointer)
+                }
                 continue
             }
             snapped.append(moved ? ScreenPointer(

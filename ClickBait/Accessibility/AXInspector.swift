@@ -71,6 +71,15 @@ enum AXInspector {
         var ownHits = 0
         var roles: [String: Int] = [:]
 
+        /// Accessibility actually exposes what's drawn here. Web pages without
+        /// accessibility, Electron apps and games show up only as containers, so finding
+        /// nothing clickable there says nothing about what's on screen.
+        var seesContent: Bool {
+            let containers: Set<String> = ["AXScrollArea", "AXGroup", "AXWindow", "AXSplitGroup", "AXLayoutArea",
+                                           "AXWebArea", "AXUnknown", "AXApplication", "AXSplitter"]
+            return roles.keys.contains { !containers.contains($0) }
+        }
+
         var description: String {
             let top = roles.sorted { $0.value > $1.value }.prefix(6).map { "\($0.key)×\($0.value)" }.joined(separator: " ")
             return "\(hits)/\(samples) hits, \(ownHits) on ClickBait's own windows, roles: \(top.isEmpty ? "none" : top)"
