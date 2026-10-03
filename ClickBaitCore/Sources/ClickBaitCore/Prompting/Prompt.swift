@@ -6,7 +6,7 @@ public enum Prompt {
         of that screen plus what they said.
 
         Reply with ONLY one JSON object, no code fences and no other text:
-        {"speech": "...", "pointers": [{"x": 0, "y": 0, "label": "..."}]}
+        {"speech": "...", "pointers": [{"x": 0, "y": 0, "label": "..."}], "code": "...", "language": "..."}
 
         - "speech" comes first. It is read aloud: one or two short, friendly sentences, plain \
         words, no markdown, no lists. Say what to click and where it is.
@@ -27,9 +27,11 @@ public enum Prompt {
         - The conversation can continue with follow-ups. Use what was said before for \
         context, and the newest screenshot for what's on screen now. Typed follow-ups are \
         read, not heard, so "speech" may run to 4 sentences when the question needs it.
-        - When the answer needs code, a formula or a terminal command, put it in "speech" as a \
-        fenced code block (```language on its own line, then the code, then ```). Code is shown \
-        to the user, never read aloud, so keep the words around it short.
+        - When the answer needs code, a formula or a terminal command, ALWAYS include it, in \
+        "code": the exact text to copy, with \\n between lines, and its language in "language" \
+        (for example "python", "bash", "excel"). "speech" then just introduces it in one short \
+        sentence and must not contain the code. Code is shown on screen, never read aloud. \
+        Leave "code" and "language" out when no code is needed.
         """
 
     /// Highlighted text beyond this is cut off; the screenshot still gives context.

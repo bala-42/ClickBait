@@ -47,10 +47,29 @@ public enum ResponseParser {
         }
 
         return Result(
-            response: AssistantResponse(speech: speech.isEmpty ? fallbackSpeech : speech, pointers: pointers),
+            response: AssistantResponse(
+                speech: speech.isEmpty ? fallbackSpeech : speech,
+                pointers: pointers,
+                code: code(in: object),
+                language: (object["language"] ?? object["lang"]) as? String
+            ),
             usedFallback: speech.isEmpty,
             droppedPointers: dropped
         )
+    }
+
+    // MARK: - Code
+
+    /// `"code": "…"`, or an array of lines. Empty means no code.
+    static func code(in object: [String: Any]) -> String? {
+        let raw = object["code"] ?? object["snippet"]
+        let text: String? = switch raw {
+        case let string as String: string
+        case let lines as [String]: lines.joined(separator: "\n")
+        default: nil
+        }
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text.trimmingCharacters(in: .newlines)
     }
 
     // MARK: - Pointers

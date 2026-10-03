@@ -144,3 +144,33 @@ struct StreamingSpeechExtractorTests {
         #expect(run([#"{"speech": null}"#]) == ("", true))
     }
 }
+
+struct CodeFieldTests {
+    private func parse(_ raw: String) -> ResponseParser.Result {
+        ResponseParser.parse(raw, imageWidth: 1280, imageHeight: 800)
+    }
+
+    @Test func codeFieldIsParsedAndShownAsABlock() {
+        let raw = #"{"speech": "Run this in Terminal:", "pointers": [], "code": "python3 --version", "language": "bash"}"#
+        let response = parse(raw).response
+        #expect(response.code == "python3 --version")
+        #expect(response.language == "bash")
+        #expect(response.displayText == "Run this in Terminal:\n```bash\npython3 --version\n```")
+        #expect(MessageFormat.spokenText(response.displayText) == "Run this in Terminal:")
+    }
+
+    @Test func codeRepeatedInsideSpeechIsShownOnce() {
+        // Real qwen2.5vl:7b reply: the code both fenced in "speech" and in "code".
+        let raw = #"{"speech": "To print 'hello world' in Python, you can use the following code:\n\n```python\nprint('hello world')\n```", "pointers": [], "code": "print('hello world')", "language": "python"}"#
+        let blocks = MessageFormat.segments(parse(raw).response.displayText).filter {
+            if case .code = $0 { return true } else { return false }
+        }
+        #expect(blocks == [.code(language: "python", code: "print('hello world')")])
+    }
+
+    @Test func codeAsLinesAndEmptyCode() {
+        #expect(parse(#"{"speech": "s", "code": ["a = 1", "print(a)"]}"#).response.code == "a = 1\nprint(a)")
+        #expect(parse(#"{"speech": "s", "code": ""}"#).response.code == nil)
+        #expect(parse(#"{"speech": "s"}"#).response.displayText == "s")
+    }
+}

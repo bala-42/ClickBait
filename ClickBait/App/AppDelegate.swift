@@ -82,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             guard let self else { return }
-            chat.model.setAssistant(response.speech)  // final text (streaming may have been partial)
+            chat.model.setAssistant(response.displayText)  // final text, with any code as a block
             chat.model.isBusy = false
             overlay.showPointers(pointers)
         }

@@ -196,6 +196,13 @@ struct ConversationTests {
         #expect(history.last == .assistant(speech: "a15"))
     }
 
+    @Test func assistantTurnsKeepTheirCode() {
+        let turn = ChatTurn.assistant(speech: "Use:", code: "ls -la\npwd", language: "bash")
+        let parsed = ResponseParser.parse(turn.content, imageWidth: 10, imageHeight: 10).response
+        #expect(parsed.code == "ls -la\npwd")
+        #expect(parsed.language == "bash")
+    }
+
     @Test func assistantTurnsAreEscapedJSON() {
         let turn = ChatTurn.assistant(speech: "Click \"Share\".\nThen \\ done")
         #expect(turn.content == #"{"speech": "Click \"Share\".\nThen \\ done", "pointers": []}"#)

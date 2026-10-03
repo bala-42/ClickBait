@@ -17,12 +17,15 @@ public struct ChatTurn: Equatable, Sendable {
     /// An assistant turn in the JSON shape the model is asked to produce, so earlier
     /// answers in the history look like the replies it should keep giving. Pointers are
     /// dropped: their coordinates belong to an older screenshot.
-    public static func assistant(speech: String) -> ChatTurn {
-        let escaped = speech
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        return ChatTurn(role: .assistant, content: "{\"speech\": \"\(escaped)\", \"pointers\": []}")
+    public static func assistant(speech: String, code: String? = nil, language: String? = nil) -> ChatTurn {
+        func escape(_ text: String) -> String {
+            text.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+        }
+        var json = "{\"speech\": \"\(escape(speech))\", \"pointers\": []"
+        if let code { json += ", \"code\": \"\(escape(code))\", \"language\": \"\(escape(language ?? ""))\"" }
+        return ChatTurn(role: .assistant, content: json + "}")
     }
 }
 
@@ -41,9 +44,9 @@ public struct Conversation: Equatable, Sendable {
 
     public var isEmpty: Bool { turns.isEmpty }
 
-    public mutating func append(user content: String, assistantSpeech: String) {
+    public mutating func append(user content: String, assistantSpeech: String, code: String? = nil, language: String? = nil) {
         turns.append(ChatTurn(role: .user, content: content))
-        turns.append(.assistant(speech: assistantSpeech))
+        turns.append(.assistant(speech: assistantSpeech, code: code, language: language))
     }
 
     /// The turns to send before the new message.

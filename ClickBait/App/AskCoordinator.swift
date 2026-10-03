@@ -535,7 +535,8 @@ final class AskCoordinator {
             sentences.feed(MessageFormat.spokenText(parsed.response.speech)).forEach(speaker.speak)
             sentences.flush().map(speaker.speak)
         }
-        conversation?.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech)
+        conversation?.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
+                             code: parsed.response.code, language: parsed.response.language)
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
         if state == .thinking || state == .speaking { state = .idle }
         onAnswer?(parsed.response, pointers)
