@@ -40,11 +40,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBar = statusBar
         overlay.start()
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
-        overlay.onCancel = { [weak self] in self?.coordinator.cancelInFlight() }
+        // Esc, in layers: stop what's happening; else stop pointing; else close the chat.
         overlay.onEscape = { [weak self] in
             guard let self else { return false }
-            if confirm.isShowing {
-                coordinator.answerConfirmation(false)
+            if coordinator.stopActivity() {
+                overlay.endGuide()
+                overlay.dismissAnswer()
+                return true
+            }
+            if overlay.isGuiding {
+                overlay.endGuide()
                 return true
             }
             guard chat.isOpen else { return false }
@@ -71,6 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirm.show(question, at: overlay.companionTopLeft)
         }
         coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
+        coordinator.onStopped = { [weak self] in
+            guard let self, chat.isOpen, chat.model.isBusy else { return }
+            chat.model.setAssistant(chat.model.messages.last?.role == .assistant ? (chat.model.messages.last?.text ?? "") + " …(stopped)" : "Stopped.")
+            chat.model.isBusy = false
+        }
         coordinator.onChatReply = { [weak self] text in
             self?.chat.model.setAssistant(text)
             self?.chat.model.isBusy = false

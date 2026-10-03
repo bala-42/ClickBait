@@ -10,9 +10,7 @@ final class OverlayController {
     let model = OverlayModel()
     /// Called when the user dismisses an answer (click, Escape, or timeout).
     var onDismiss: (() -> Void)?
-    /// Called when Escape is pressed while ClickBait is listening or thinking.
-    var onCancel: (() -> Void)?
-    /// Escape otherwise: returns true if it closed something (the chat bubble).
+    /// Escape: returns true if it stopped or closed something (see AppDelegate).
     var onEscape: (() -> Bool)?
 
     private var guideLabelPanel: NSPanel?
@@ -486,16 +484,12 @@ final class OverlayController {
             if guide != nil { advanceGuide(reason: "click") } else { dismissAnswer() }
         }
 
-        // Escape: dismiss an answer, or cancel a question in progress. Global key
-        // events need Accessibility; the local monitor covers ClickBait's own windows.
+        // Escape stops whatever ClickBait is doing (see AppDelegate). Global key events
+        // need Accessibility; the local monitor covers ClickBait's own windows. ClickBait
+        // only watches the key — the app in front still gets it.
         let escape: @MainActor (NSEvent) -> Void = { [weak self] event in
             guard event.keyCode == 53, let self else { return }
-            switch self.model.bubble {
-            case .listening, .thinking, .explaining: self.onCancel?()
-            default:
-                if self.guide != nil { self.endGuide() }
-                if self.onEscape?() != true { self.dismissAnswer() }
-            }
+            if self.onEscape?() != true { self.dismissAnswer() }
         }
         add(global: .keyDown, handler: escape)
         add(local: .keyDown, handler: escape)

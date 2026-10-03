@@ -48,6 +48,8 @@ final class AskCoordinator {
     @ObservationIgnored var onConfirmRequest: ((String) -> Void)?
     /// The question is no longer pending (answered, replaced or dropped).
     @ObservationIgnored var onConfirmEnd: (() -> Void)?
+    /// Esc stopped an answer that was coming in (the chat stops showing it as busy).
+    @ObservationIgnored var onStopped: (() -> Void)?
     /// A typed order was carried out: its confirmation, as the chat's reply.
     @ObservationIgnored var onChatReply: ((String) -> Void)?
     /// Something went wrong answering in the chat.
@@ -213,6 +215,29 @@ final class AskCoordinator {
     }
 
     /// Escape while listening or thinking abandons the question.
+    /// Esc: stop whatever ClickBait is doing — listening, thinking, speaking, a snip,
+    /// a pending "Do it?", a background second look. Returns false if nothing was
+    /// going on (Esc then closes the chat instead).
+    @discardableResult
+    func stopActivity() -> Bool {
+        var stopped: [String] = []
+        if snipper.isActive { snipper.cancel(); stopped.append("snip") }
+        if pendingAction != nil { dropPending(); stopped.append("confirmation") }
+        if isRefining { stopRefining(); stopped.append("close-up") }
+        if state == .listening || state == .thinking || isAnswering {
+            cancelInFlight()
+            onStopped?()
+            stopped.append("answer")
+        }
+        if speaker.isSpeaking || state == .speaking {
+            speaker.stop()
+            if state == .speaking { state = .idle }
+            stopped.append("speech")
+        }
+        if !stopped.isEmpty { Log.ask.notice("Esc stopped: \(stopped.joined(separator: ", "), privacy: .public)") }
+        return !stopped.isEmpty
+    }
+
     func cancelInFlight() {
         speaker.stop()
         if isAnswering {
