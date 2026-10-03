@@ -129,44 +129,70 @@ struct StealthArrow: Shape {
     }
 }
 
-/// The companion's arrowhead: aims up-left at the real cursor. Translucent black (35%) with
-/// a white edge so it reads on light and dark content (windows can't invert the
-/// pixels of other apps behind them).
-struct CompanionArrow: View {
-    static let size: CGFloat = 14
-
-    var body: some View {
-        StealthArrow()
-            .fill(.black.opacity(0.35))
-            .overlay(StealthArrow().stroke(.white, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
-            .frame(width: Self.size, height: Self.size * 1.2)
-            .rotationEffect(.degrees(-45))
-            .frame(width: Self.size * 1.6, height: Self.size * 1.6)
-            .shadow(color: .black.opacity(0.25), radius: 1.5, y: 0.5)
+/// An equilateral triangle with a vertex pointing up; rotate it to aim.
+struct EquilateralTriangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        // Side = width; height = side × √3/2, centred vertically in the rect.
+        let side = rect.width
+        let height = side * 3.squareRoot() / 2
+        let top = rect.midY - height / 2
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: top))
+        path.addLine(to: CGPoint(x: rect.maxX, y: top + height))
+        path.addLine(to: CGPoint(x: rect.minX, y: top + height))
+        path.closeSubpath()
+        return path
     }
 }
 
-/// The companion that follows the cursor. Idle it's a small arrowhead; when there's
-/// something to say, the arrowhead itself grows into the bubble (and shrinks back).
+/// The companion: an equilateral triangle in the current state's colour, its vertex
+/// aimed up-left at the cursor. Pulses while something is in progress.
+struct CompanionTriangle: View {
+    let tone: CompanionTone
+    let pulsing: Bool
+    static let size: CGFloat = 15
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var beat = false
+
+    var body: some View {
+        EquilateralTriangle()
+            .fill(tone.color.opacity(0.9))
+            .overlay(EquilateralTriangle().stroke(.white.opacity(0.95), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round)))
+            .frame(width: Self.size, height: Self.size)
+            .rotationEffect(.degrees(-45))
+            .shadow(color: tone.color.opacity(pulsing && beat ? 0.9 : 0.45), radius: pulsing && beat ? 7 : 3)
+            .scaleEffect(pulsing && beat && !reduceMotion ? 1.18 : 1)
+            .opacity(pulsing && beat && reduceMotion ? 0.6 : 1)
+            .frame(width: Self.size * 1.7, height: Self.size * 1.7)
+            .animation(.easeInOut(duration: 0.25), value: tone)
+            .onAppear { beat = true }
+            .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: beat)
+            .onChange(of: pulsing) { _, isPulsing in
+                // Restart the beat so the repeat animation picks up the new state.
+                beat = false
+                if isPulsing { DispatchQueue.main.async { beat = true } }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The companion that follows the cursor: the triangle, with a card beside it when
+/// there's something to say — both in the same state colour.
 struct CompanionBubbleView: View {
     let model: OverlayModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var morph
-    @State private var breathing = false
 
     static let maxTextWidth: CGFloat = 300
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if model.bubble == .idle {
-                CompanionArrow()
-                    .matchedGeometryEffect(id: "companion", in: morph)
-                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .topLeading)))
-            } else {
+        HStack(alignment: .top, spacing: 3) {
+            CompanionTriangle(tone: model.tone, pulsing: model.isPulsing)
+                .padding(2)
+            if model.bubble != .idle {
                 card
-                    .matchedGeometryEffect(id: "companion", in: morph)
-                    .transition(.opacity)
+                    .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
             }
         }
         .padding(4)
@@ -176,31 +202,29 @@ struct CompanionBubbleView: View {
         // companion really is so it can keep it on screen.
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.bubbleSize = $0 }
         .frame(width: OverlayModel.bubbleCanvas.width, height: OverlayModel.bubbleCanvas.height, alignment: .topLeading)
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.78), value: model.bubble)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever()) { breathing = true }
-        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.8), value: model.bubble)
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder private var card: some View {
+        let tint = model.tone.color
         switch model.bubble {
         case .idle:
             EmptyView()
         case .explaining(let excerpt):
-            BubbleCard(symbol: "text.magnifyingglass", tint: .teal, title: "Explaining", message: Self.quote(excerpt),
+            BubbleCard(symbol: "text.magnifyingglass", tint: tint, title: "Explaining", message: Self.quote(excerpt),
                        showsSpinner: true)
         case .listening:
-            BubbleCard(symbol: "mic.fill", tint: .red, title: "Listening", message: "Let go of ⌃⌥ when you're done.",
-                       pulsing: breathing && !reduceMotion)
+            BubbleCard(symbol: "mic.fill", tint: tint, title: "Listening", message: "Let go of ⌃⌥ when you're done.")
         case .thinking(let heard):
-            BubbleCard(symbol: "sparkles", tint: .purple, title: "Thinking", message: heard.map { "“\($0)”" },
+            BubbleCard(symbol: "sparkles", tint: tint, title: "Thinking", message: heard.map { "“\($0)”" },
                        showsSpinner: true)
         case .answer(let text):
-            BubbleCard(symbol: "cursorarrow.rays", tint: .accentColor, title: "ClickBait", message: text)
+            BubbleCard(symbol: "cursorarrow.rays", tint: tint, title: "ClickBait", message: text)
+        case .working(let message):
+            BubbleCard(symbol: "gearshape.fill", tint: tint, title: "Working", message: message, showsSpinner: true)
         case .done(let message):
-            BubbleCard(symbol: "checkmark", tint: .green, title: "Done", message: message)
+            BubbleCard(symbol: "checkmark", tint: tint, title: "Done", message: message)
         case .error(let message):
             BubbleCard(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Couldn't do that", message: message)
         }
@@ -258,7 +282,6 @@ private struct BubbleCard: View {
         .padding(.trailing, 14)
         .padding(.vertical, 9)
         .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: Self.corner, style: .continuous)))
-        // While the arrowhead grows into the card, keep the text inside the shape.
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
     }
 }

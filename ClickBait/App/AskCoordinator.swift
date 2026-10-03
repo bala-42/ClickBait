@@ -47,6 +47,8 @@ final class AskCoordinator {
     @ObservationIgnored var onChatClose: (() -> Void)?
     /// Called with the spoken answer so far while it streams in.
     @ObservationIgnored var onPartialAnswer: ((String) -> Void)?
+    /// Called when a spoken command starts running, with what it's doing.
+    @ObservationIgnored var onActionStarted: ((String) -> Void)?
     /// Called after a spoken command ran, with a short confirmation.
     @ObservationIgnored var onActionDone: ((String) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
@@ -561,6 +563,7 @@ final class AskCoordinator {
             speaker.speak(error.message)
             show(error: error.message)
         case .success(let action):
+            onActionStarted?(Self.workingMessage(for: action))
             do {
                 let confirmation = try await ActionExecutor.run(action)
                 Log.ask.notice("Action done: \(request.name, privacy: .public)")
@@ -575,6 +578,28 @@ final class AskCoordinator {
                 speaker.stop()
                 speaker.speak(error.localizedDescription)
                 show(error: error.localizedDescription)
+            }
+        }
+    }
+
+    private static func workingMessage(for action: ResolvedAction) -> String {
+        switch action {
+        case .openApp(let name): "Opening \(name)…"
+        case .quitApp(let name): "Quitting \(name)…"
+        case .setVolume, .setMuted: "Changing the sound…"
+        case .setDarkMode: "Switching appearance…"
+        case .runShortcut(let name): "Running “\(name)”…"
+        case .setWiFi: "Changing Wi-Fi…"
+        case .lockScreen: "Locking…"
+        case .sleepDisplay: "Turning off the display…"
+        case .file(let file):
+            switch file {
+            case .compress: "Compressing…"
+            case .merge: "Merging…"
+            case .convertImages: "Converting…"
+            case .moveIntoNewFolder: "Making a new folder…"
+            case .moveToTrash: "Moving to the Trash…"
+            case .shrink: "Making smaller copies…"
             }
         }
     }

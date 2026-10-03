@@ -31,11 +31,10 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "cursorarrow.rays")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+            // Same colour state as the companion: orange while answering, blue otherwise.
+            CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: model.isBusy)
+                .scaleEffect(0.8)
                 .frame(width: 20, height: 20)
-                .background(Color.accentColor.opacity(0.16), in: Circle())
             Text("ClickBait")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)

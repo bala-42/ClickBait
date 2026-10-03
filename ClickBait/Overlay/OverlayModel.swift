@@ -1,6 +1,28 @@
 import ClickBaitCore
 import Foundation
 import Observation
+import SwiftUI
+
+/// The synchronized colour states shared by the companion triangle and the chat banner.
+enum CompanionTone: Equatable {
+    /// Sky Blue: idle, following the cursor.
+    case idle
+    /// Mango Orange: listening, thinking, explaining (pulses).
+    case processing
+    /// Shamrock Green: Mac system actions and document/file processing.
+    case action
+    /// Strawberry Red: circling and snipping (roadmap phase C).
+    case capture
+
+    var color: Color {
+        switch self {
+        case .idle: Color(red: 0.31, green: 0.72, blue: 1.0)
+        case .processing: Color(red: 1.0, green: 0.62, blue: 0.13)
+        case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
+        case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
+        }
+    }
+}
 
 /// What the overlay windows draw. Owned by `OverlayController`, observed by the views.
 @MainActor
@@ -13,12 +35,30 @@ final class OverlayModel {
         /// ⌥⌘: explaining highlighted text (shows its start).
         case explaining(excerpt: String)
         case answer(String)
+        /// A spoken command is running (file actions can take a while).
+        case working(String)
         /// A spoken command was carried out.
         case done(String)
         case error(String)
     }
 
     var bubble: Bubble = .idle
+
+    var tone: CompanionTone {
+        switch bubble {
+        case .idle, .answer, .error: .idle
+        case .listening, .thinking, .explaining: .processing
+        case .working, .done: .action
+        }
+    }
+
+    /// The triangle pulses while something is in progress.
+    var isPulsing: Bool {
+        switch bubble {
+        case .listening, .thinking, .explaining, .working: true
+        default: false
+        }
+    }
     /// Pointers being shown, in global AppKit points. Empty when nothing is pointed at.
     var pointers: [ScreenPointer] = []
     /// The companion's drawn size. Ignored by observation: the controller reacts through

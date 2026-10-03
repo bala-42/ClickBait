@@ -89,6 +89,14 @@ final class OverlayController {
         return CGPoint(x: mouse.x + Self.cursorClearance.width + 4, y: mouse.y - Self.cursorClearance.height - 4)
     }
 
+    /// A command is running (green, pulsing) — file actions can take a while.
+    func showWorking(_ message: String) {
+        clearPointers()
+        dismissTask?.cancel()
+        setCompanionHidden(false)
+        model.bubble = .working(message)
+    }
+
     /// A command was carried out: brief confirmation, then fade.
     func showDone(_ message: String) {
         clearPointers()
