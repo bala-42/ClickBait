@@ -27,6 +27,9 @@ enum AskState: Equatable {
 final class AskCoordinator {
     /// Taps shorter than this are treated as accidental and dropped silently.
     private static let minimumHold: Duration = .milliseconds(250)
+    /// People let go of the keys while still saying the last word: keep listening a
+    /// moment longer.
+    private static let releaseTail: Duration = .milliseconds(350)
     private static let errorDisplayTime: Duration = .milliseconds(2500)
 
     private(set) var state: AskState = .idle {
@@ -167,8 +170,9 @@ final class AskCoordinator {
                 return
             }
             let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
+            let elements = await Self.elements(in: capture, frontmostPID: pid)
             await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
-                          speak: false, display: text)
+                          speak: false, display: text, elements: elements)
         }
     }
 
@@ -275,8 +279,10 @@ final class AskCoordinator {
             return
         }
 
-        let samples = recorder.stop()
         let releasedAt = ContinuousClock.now
+        try? await Task.sleep(for: Self.releaseTail)
+        guard state == .listening else { return }  // cancelled meanwhile
+        let samples = recorder.stop()
         answerStartedAt = releasedAt
         state = .thinking
         self.pressedAt = nil
@@ -293,6 +299,12 @@ final class AskCoordinator {
         captureTask = nil
 
         let seconds = Double(samples.count) / AudioRecorder.sampleRate
+        let audio = AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        Log.ask.notice("""
+            Audio level: peak \(audio.peak, format: .fixed(precision: 3), privacy: .public), \
+            rms \(audio.rms, format: .fixed(precision: 4), privacy: .public), gain \(audio.gain, format: .fixed(precision: 1), privacy: .public)x\
+            \(audio.isSilent ? " — silent" : "", privacy: .public)
+            """)
         Log.ask.notice("""
             Captured \(samples.count, privacy: .public) samples (\(seconds, format: .fixed(precision: 2), privacy: .public)s), \
             screenshot \(capture.image.width, privacy: .public)x\(capture.image.height, privacy: .public)px \
@@ -304,13 +316,19 @@ final class AskCoordinator {
             context.focusedElement = snapshot.focusedElement
         }
 
-        // Downscale while Whisper runs.
+        // Downscale and list what's clickable while Whisper runs.
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
+        let pid = frontmostPID
+        let elementsTask = Task { await Self.elements(in: capture, frontmostPID: pid) }
 
+        guard !audio.isSilent else {
+            show(error: "I didn't hear anything. Check the microphone, hold ⌃⌥ and try again.")
+            return
+        }
         let transcript: String
         do {
             let start = ContinuousClock.now
-            transcript = try await speech.transcribe(samples)
+            transcript = try await speech.transcribe(audio.samples)
             Log.ask.notice("""
                 Transcribed \(seconds, format: .fixed(precision: 2), privacy: .public)s of audio in \
                 \(String(describing: ContinuousClock.now - start), privacy: .public): \(transcript.count, privacy: .public) characters
@@ -350,7 +368,7 @@ final class AskCoordinator {
 
         // With a chat open, a spoken question is a follow-up in it.
         await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt,
-                      speak: true, display: transcript)
+                      speak: true, display: transcript, elements: await elementsTask.value)
     }
 
     // MARK: - Explain highlighted text (⌥⌘)
@@ -411,6 +429,27 @@ final class AskCoordinator {
         // Explanations are read, not heard: you didn't use your voice.
         await respond(question: "", selectedText: selected, capture: capture, encoding: encoding, startedAt: startedAt,
                       speak: false, display: "Explain: “\(excerpt)”")
+    }
+
+    // MARK: - Element list
+
+    /// Enough to cover a window and an open menu without slowing a local model much.
+    private static let maxListedElements = 100
+
+    /// What Accessibility says is clickable on the captured display (off the main thread).
+    private static func elements(in capture: ScreenCapture, frontmostPID pid: pid_t?) async -> [ScreenElement] {
+        let frame = capture.displayFrame
+        let display = Rect(x: frame.minX, y: capture.primaryDisplayHeight - frame.maxY, width: frame.width, height: frame.height)
+        let start = ContinuousClock.now
+        let elements = await Task.detached(priority: .userInitiated) {
+            AXInspector.visibleElements(frontmostPID: pid, display: display)
+        }.value
+        let menus = elements.filter { $0.role == "AXMenuItem" }.count
+        Log.ask.notice("""
+            Element list: \(elements.count, privacy: .public) clickable (\(menus, privacy: .public) menu items) in \
+            \(String(describing: ContinuousClock.now - start), privacy: .public)
+            """)
+        return elements
     }
 
     // MARK: - Snip (hold ⌥⌘)
@@ -478,7 +517,8 @@ final class AskCoordinator {
         startedAt: ContinuousClock.Instant,
         speak: Bool,
         display: String,
-        snip: SnipKind? = nil
+        snip: SnipKind? = nil,
+        elements: [ScreenElement] = []
     ) async {
         let releasedAt = startedAt
         answerStartedAt = startedAt
@@ -500,8 +540,11 @@ final class AskCoordinator {
         let reply: String
         let screenshot: EncodedScreenshot
         let request: AskRequest
+        var listed: [PromptElement] = []
         do {
             screenshot = try await encoding.value
+            listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
+                                        limit: Self.maxListedElements)
             request = AskRequest(
                 question: question,
                 screenshotJPEG: screenshot.jpeg,
@@ -510,7 +553,8 @@ final class AskCoordinator {
                 context: context,
                 selectedText: selectedText,
                 history: history,
-                snip: history.isEmpty ? snip : nil
+                snip: history.isEmpty ? snip : nil,
+                elements: listed
             )
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
@@ -578,7 +622,7 @@ final class AskCoordinator {
             DebugCaptureStore.saveReply(reply)
         }
 
-        var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
+        var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed)
         if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
         // An ⌥⌘ explanation is about the text or area, never about where to click (and a
         // snip's close-up has no screen coordinates anyway).

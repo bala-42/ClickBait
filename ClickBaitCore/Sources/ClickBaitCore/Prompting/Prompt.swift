@@ -13,6 +13,10 @@ public enum Prompt {
         - "pointers" marks the exact things to click, in the order to click them (at most 3). \
         x and y are the CENTER of the element in screenshot pixels, origin at the top-left. \
         "label" is the element's visible text or a 1–3 word name for it.
+        - If a list of on-screen elements is given and the thing to click is in it, point \
+        with its id instead of coordinates: {"element": 7, "label": "Share"}. The list comes \
+        from the app itself, so its positions are exact. Use x and y only for things that \
+        aren't in the list.
         - Only point at things you can actually see in the screenshot. If the answer isn't \
         on screen, say what to do instead and use an empty "pointers" list.
         - When the user asks where something is, how to do something on screen, what to \
@@ -52,6 +56,11 @@ public enum Prompt {
         if let app = context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
         if let title = context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
         if let focused = context.focusedElement, !focused.isEmpty { lines.append("Focused element: \(focused)") }
+        if !request.elements.isEmpty {
+            lines.append("")
+            lines.append("Clickable elements on screen (id: kind \"name\" at center x, y in screenshot pixels):")
+            lines.append(contentsOf: request.elements.map(\.line))
+        }
         lines.append("")
         if !request.history.isEmpty {
             lines.append("Follow-up in the same conversation (the screenshot shows the screen now).")

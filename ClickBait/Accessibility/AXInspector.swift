@@ -60,6 +60,56 @@ enum AXInspector {
         return nil
     }
 
+    // MARK: - Element list
+
+    /// Roles worth offering to the model as something to point at.
+    private static let listedRoles = Snapper.actionableRoles.union(["AXRow"])
+    /// Containers whose visible rows are all that matter (a folder can hold thousands).
+    private static let rowContainers: Set<String> = ["AXTable", "AXOutline", "AXList", "AXBrowser"]
+
+    /// Clickable things in the frontmost app that are on `display` (Quartz points):
+    /// open menus first (context menus and an open menu-bar menu, submenus included),
+    /// then the focused window, then the menu bar's titles. Stops at `budget` seconds —
+    /// some apps (web views, Electron) have huge trees — so the list may be partial.
+    static func visibleElements(frontmostPID pid: pid_t?, display: Rect, budget: TimeInterval = 0.4,
+                                limit: Int = 150) -> [ScreenElement] {
+        guard isTrusted, let pid else { return [] }
+        let deadline = Date().addingTimeInterval(budget)
+        let app = element(AXUIElementCreateApplication(pid))
+        let menuBar = app.element(kAXMenuBarAttribute)
+
+        var roots: [AXElement] = app.children(kAXChildrenAttribute).filter { $0.string(kAXRoleAttribute) == "AXMenu" }
+        for item in menuBar?.children(kAXChildrenAttribute) ?? [] where item.bool(kAXSelectedAttribute) == true {
+            roots += item.children(kAXChildrenAttribute)
+        }
+        if let window = app.element(kAXFocusedWindowAttribute) { roots.append(window) }
+        if let menuBar { roots.append(menuBar) }
+
+        var found: [ScreenElement] = []
+        var queue = roots[...]
+        var visited = 0
+        while let node = queue.popFirst(), visited < 4000, found.count < limit, Date() < deadline {
+            visited += 1
+            let role = node.string(kAXRoleAttribute) ?? ""
+            if listedRoles.contains(role) {
+                let label = role == "AXRow" ? node.rowLabel() : node.name
+                if !label.isEmpty, let frame = node.frame, frame.width > 1, frame.height > 1,
+                   frame.maxX > display.minX, frame.minX < display.maxX, frame.maxY > display.minY, frame.minY < display.maxY {
+                    found.append(ScreenElement(role: role, label: label, frame: frame))
+                }
+                // A menu item's children are its submenu: only look inside an open one.
+                // Other listed elements are leaves as far as pointing is concerned.
+                guard role == "AXMenuItem", node.bool(kAXSelectedAttribute) == true else { continue }
+            }
+            if role == "AXMenuBarItem" { continue }  // closed menus; the open one is a root
+            let key = rowContainers.contains(role) ? kAXVisibleRowsAttribute : kAXChildrenAttribute
+            queue.append(contentsOf: node.children(key))
+        }
+        // Same thing reached twice (a menu bar title is also a root's child): keep the first.
+        var seen = Set<String>()
+        return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
+    }
+
     // MARK: - Snapping
 
     /// Actionable elements around `point` (Quartz global points), found by hit-testing
@@ -188,6 +238,31 @@ private struct AXElement {
         guard AXUIElementCopyParameterizedAttributeValue(ref, "AXStringForTextMarkerRange" as CFString, range, &value) == .success
         else { return nil }
         return (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func children(_ name: String) -> [AXElement] {
+        guard let value = attribute(name), CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
+        return (value as? [AXUIElement] ?? []).map(AXElement.init(ref:))
+    }
+
+    func bool(_ name: String) -> Bool? {
+        attribute(name) as? Bool
+    }
+
+    /// A table or sidebar row's name: the first text inside it.
+    func rowLabel() -> String {
+        var queue = children(kAXChildrenAttribute)[...]
+        var steps = 0
+        while let node = queue.popFirst(), steps < 12 {
+            steps += 1
+            if node.string(kAXRoleAttribute) == "AXStaticText", let text = node.string(kAXValueAttribute), !text.isEmpty {
+                return text
+            }
+            let title = node.name
+            if !title.isEmpty, node.string(kAXRoleAttribute) != "AXImage" { return title }
+            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+        }
+        return ""
     }
 
     func hitTest(_ point: Point) -> AXElement? {

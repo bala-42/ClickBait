@@ -151,6 +151,8 @@ struct CompanionBubbleView: View {
     /// Listening, thinking and working are shown by the triangle's colour and pulse.
     @ViewBuilder private var card: some View {
         switch model.bubble {
+        case .thinking(let heard?):
+            TinyPill(text: "“\(heard)”", symbol: "ear", tone: model.tone)
         case .idle, .listening, .thinking, .explaining, .working:
             EmptyView()
         case .answer(let text), .done(let text):

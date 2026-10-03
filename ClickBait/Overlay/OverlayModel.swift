@@ -46,6 +46,7 @@ final class OverlayModel {
         var hasWords: Bool {
             switch self {
             case .answer, .done, .error: true
+            case .thinking(let heard): heard != nil  // what was heard, so mishearing shows
             default: false
             }
         }

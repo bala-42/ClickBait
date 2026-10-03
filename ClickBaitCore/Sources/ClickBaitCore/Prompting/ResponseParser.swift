@@ -25,7 +25,8 @@ public enum ResponseParser {
     public static let placeholderCorner = 24.0
     static let fallbackSpeech = "Sorry, I couldn't work that out. Try asking again."
 
-    public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int) -> Result {
+    /// `elements` is the numbered list the prompt offered: a pointer may name one by id.
+    public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int, elements: [PromptElement] = []) -> Result {
         guard let object = firstJSONObject(in: raw) else {
             return Result(response: AssistantResponse(speech: salvageSpeech(from: raw)), usedFallback: true, droppedPointers: 0)
         }
@@ -38,7 +39,7 @@ public enum ResponseParser {
         var dropped = 0
         for entry in rawPointers {
             guard let dict = entry as? [String: Any],
-                  let pointer = pointer(from: dict, imageWidth: imageWidth, imageHeight: imageHeight)
+                  let pointer = pointer(from: dict, imageWidth: imageWidth, imageHeight: imageHeight, elements: elements)
             else {
                 dropped += 1
                 continue
@@ -78,7 +79,13 @@ public enum ResponseParser {
 
     // MARK: - Pointers
 
-    static func pointer(from dict: [String: Any], imageWidth: Int, imageHeight: Int) -> Pointer? {
+    static func pointer(from dict: [String: Any], imageWidth: Int, imageHeight: Int, elements: [PromptElement] = []) -> Pointer? {
+        // {"element": 7}: exact position from the app's own accessibility data.
+        if let id = number(dict["element"] ?? dict["element_id"] ?? dict["id"]),
+           let element = elements.first(where: { Double($0.id) == id }) {
+            let label = (dict["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Pointer(x: element.x, y: element.y, label: (label?.isEmpty ?? true) ? element.label : label!)
+        }
         guard let (x, y) = coordinates(in: dict) else { return nil }
         let width = Double(imageWidth), height = Double(imageHeight)
         let slackX = width * edgeTolerance, slackY = height * edgeTolerance
@@ -90,7 +97,25 @@ public enum ResponseParser {
 
         let label = (dict["label"] ?? dict["name"] ?? dict["text"]).flatMap { $0 as? String }?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Coordinates for something that's in the list (models tend to copy them from it,
+        // sometimes mixing up neighbours): use the listed element's exact center.
+        if let match = listedElement(named: label, near: x, y, in: elements) {
+            return Pointer(x: match.x, y: match.y, label: label)
+        }
         return Pointer(x: min(max(x, 0), width - 1), y: min(max(y, 0), height - 1), label: label)
+    }
+
+    /// Listed elements whose name matches closely enough count; the nearest wins, up to
+    /// `maxListedDistance` pixels away (so "OK" doesn't jump to another dialog's OK).
+    static let maxListedDistance = 250.0
+
+    private static func listedElement(named label: String, near x: Double, _ y: Double, in elements: [PromptElement]) -> PromptElement? {
+        guard !label.isEmpty else { return nil }
+        return elements
+            .filter { LabelMatcher.similarity(label, $0.label) >= 0.8 }
+            .map { ($0, ((($0.x - x) * ($0.x - x)) + (($0.y - y) * ($0.y - y))).squareRoot()) }
+            .filter { $0.1 <= maxListedDistance }
+            .min { $0.1 < $1.1 }?.0
     }
 
     private static func coordinates(in dict: [String: Any]) -> (Double, Double)? {

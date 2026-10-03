@@ -24,7 +24,9 @@ struct LiveOllamaTests {
             screenshotJPEG: jpeg, screenshotWidth: width, screenshotHeight: height,
             context: ScreenContext(appName: "Notes"),
             // CLICKBAIT_LIVE_SNIP=circled|boxed tries the hold-⌥⌘ prompt on the same image.
-            snip: snip
+            snip: snip,
+            // CLICKBAIT_LIVE_ELEMENTS=1 offers an accessibility-style element list.
+            elements: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ELEMENTS"] == nil ? [] : SyntheticScreen.elements(scale: Double(width) / 1280)
         )
         let clock = ContinuousClock()
         let start = clock.now
@@ -83,6 +85,20 @@ enum SyntheticScreen {
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         #expect(CGImageDestinationFinalize(destination))
         return (data as Data, outWidth, outHeight)
+    }
+
+    /// What Accessibility might report for the synthetic window (plus a menu that isn't
+    /// drawn, to see whether the model picks by name).
+    static func elements(scale: Double) -> [PromptElement] {
+        let raw: [(String, String, Double, Double)] = [
+            ("menu", "Apple", 20, 12), ("menu", "Notes", 70, 12), ("menu", "File", 120, 12), ("menu", "Edit", 160, 12),
+            ("menu", "View", 200, 12), ("button", "Close", 20, 60), ("button", "Minimize", 40, 60), ("button", "Zoom", 60, 60),
+            ("button", "Sidebar", 110, 60), ("button", "New Note", 300, 60), ("text field", "Search", 900, 60),
+            ("button", "Share", 1160, 60), ("menu item", "Show Path Bar", 230, 140), ("menu item", "Show Status Bar", 230, 162),
+        ]
+        return raw.enumerated().map { index, item in
+            PromptElement(id: index + 1, kind: item.0, label: item.1, x: (item.2 * scale).rounded(), y: (item.3 * scale).rounded())
+        }
     }
 
     /// `baseline` is in flipped (top-left) coordinates.

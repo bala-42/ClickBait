@@ -69,6 +69,12 @@ Highlight text, then press and release **Option+Command** alone (no other key in
 ### Commands (added after M1, step 10)
 Direct orders spoken with ⌃⌥ are recognised from the transcript by `CommandParser` (Core) — plain rules, never the vision model (qwen2.5vl:7b missed real orders and acted on questions). Questions never act. Built-ins: open/quit app, volume, mute, Dark/Light Mode; plus Shortcuts the user ticked in Settings (the tick is the permission — they run without a prompt). Everything goes through `ActionCatalog.resolve` before `ActionExecutor` runs it. Unknown app names fall through to a normal answer.
 
+### Pointing accuracy
+Spoken and typed asks send the model a numbered list of up to 100 clickable things Accessibility reports on the captured display (`AXInspector.visibleElements`: open menus first, then the focused window, then menu bar titles; 0.4 s budget). The model may point by `"element": id`; when it gives x/y with a name that matches a listed element within 250 px, the parser uses that element's exact center. Apps that expose nothing (web views, games) fall back to plain coordinates. Pointers with nothing to snap to are kept.
+
+### Listening
+Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips silent recordings (peak < 0.01), lifts quiet ones (up to 12×) and adds 0.2 s lead-in; Whisper's own no-speech filter is off. What was heard shows in a tiny pill while thinking.
+
 ### Snips (phase C)
 Hold ⌥⌘: a transparent layer covers every screen (below the companion, which turns Strawberry Red). Moving traces a red line; click-drag draws a box (the click never reaches the app). Release decides (`SnipTracker`): a box ≥ 12 pt or a trace ≥ 60 pt long is a snip, anything else is a tap → explain highlighted text. The screenshot is cropped around the region (`SnipLayout`) with the shape drawn in red (`SnipRenderer`), sent with `AskRequest.snip`, answered in a chat bubble like an explanation (no pointers, no speech). Failsafe: the layer cancels itself if ⌥⌘ is no longer held or after 60 s. Trade-off: ⌥⌘-click/drag in other apps (e.g. Finder alias drag) is captured while the chord is held.
 

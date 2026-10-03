@@ -30,6 +30,9 @@ public struct AskRequest: Sendable {
     /// Set when the user circled or boxed part of the screen (hold ⌥⌘): the screenshot
     /// is then a close-up of that part with the shape drawn on it in red.
     public var snip: SnipKind?
+    /// Clickable things Accessibility found on screen, numbered for the model to pick
+    /// from. Empty when the app exposes nothing (or for explanations and snips).
+    public var elements: [PromptElement]
 
     public init(
         question: String,
@@ -39,7 +42,8 @@ public struct AskRequest: Sendable {
         context: ScreenContext,
         selectedText: String? = nil,
         history: [ChatTurn] = [],
-        snip: SnipKind? = nil
+        snip: SnipKind? = nil,
+        elements: [PromptElement] = []
     ) {
         self.question = question
         self.screenshotJPEG = screenshotJPEG
@@ -49,5 +53,6 @@ public struct AskRequest: Sendable {
         self.selectedText = selectedText
         self.history = history
         self.snip = snip
+        self.elements = elements
     }
 }

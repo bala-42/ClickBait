@@ -54,7 +54,10 @@ actor Transcriber {
             temperature: 0,
             skipSpecialTokens: true,
             withoutTimestamps: true,
-            suppressBlank: true
+            suppressBlank: true,
+            // Whisper's own no-speech filter dropped short, quiet questions; silence is
+            // caught before transcribing instead (AudioConditioner).
+            noSpeechThreshold: nil
         )
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
         return TranscriptCleaner.clean(results.map(\.text).joined(separator: " "))
