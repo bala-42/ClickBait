@@ -25,10 +25,14 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>ClickBait uses System Events to carry out spoken commands like switching Dark Mode.</string>
+	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ClickBait contributors. Apache License 2.0.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ClickBait listens while you hold Control+Option so it can hear your question.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>ClickBait adds a reminder when you ask it to (“remind me to…”). It never reads or changes your other reminders.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>ClickBait adds a reminder when you ask it to (“remind me to…”).</string>
 </dict>
 </plist>

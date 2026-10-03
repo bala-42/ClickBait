@@ -4,6 +4,7 @@ import AudioToolbox
 import Carbon.HIToolbox
 import CoreAudio
 import CoreWLAN
+import EventKit
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -109,9 +110,7 @@ enum ActionExecutor {
             return "Added a note"
 
         case .addReminder(let text):
-            try await AppleScriptRunner.run(
-                "tell application \"Reminders\" to make new reminder with properties {name:\(AppleScriptText.quoted(text))}",
-                app: "Reminders")
+            try await ReminderStore.add(text)
             return "Added a reminder"
 
         case .media(let key):
@@ -341,5 +340,34 @@ enum Screenshots {
             if FileManager.default.fileExists(atPath: url.path) { return url }
         }
         return (try? Places.url(for: .desktop)) ?? FileManager.default.homeDirectoryForCurrentUser
+    }
+}
+
+/// Adds reminders through EventKit. Reminders are protected data (like Calendars), with
+/// their own permission prompt — scripting the Reminders app was refused silently.
+enum ReminderStore {
+    enum Failure: LocalizedError {
+        case notAllowed
+        case noList
+
+        var errorDescription: String? {
+            switch self {
+            case .notAllowed:
+                "ClickBait isn't allowed to add reminders. Turn it on in System Settings → Privacy & Security → Reminders."
+            case .noList: "There's no reminders list to add to. Open Reminders once to set one up."
+            }
+        }
+    }
+
+    static func add(_ title: String) async throws {
+        let store = EKEventStore()
+        // macOS asks once ("ClickBait would like to access your reminders"). Adding
+        // needs full access; ClickBait never reads existing reminders.
+        guard try await store.requestFullAccessToReminders() else { throw Failure.notAllowed }
+        guard let list = store.defaultCalendarForNewReminders() else { throw Failure.noList }
+        let reminder = EKReminder(eventStore: store)
+        reminder.title = title
+        reminder.calendar = list
+        try store.save(reminder, commit: true)
     }
 }
