@@ -59,6 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.chat.model.addUser(message)
             self?.chat.model.isBusy = true
         }
+        coordinator.onChatReply = { [weak self] text in
+            self?.chat.model.setAssistant(text)
+            self?.chat.model.isBusy = false
+        }
         coordinator.onChatError = { [weak self] message in
             self?.chat.model.addError(message)
             self?.chat.model.isBusy = false

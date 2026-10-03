@@ -44,6 +44,8 @@ final class AskCoordinator {
     @ObservationIgnored var onChatOpen: ((String) -> Void)?
     /// A follow-up was sent in the open chat (typed or spoken).
     @ObservationIgnored var onChatUserMessage: ((String) -> Void)?
+    /// A typed order was carried out: its confirmation, as the chat's reply.
+    @ObservationIgnored var onChatReply: ((String) -> Void)?
     /// Something went wrong answering in the chat.
     @ObservationIgnored var onChatError: ((String) -> Void)?
     /// The chat closed from this side (a new ⌥⌘ explanation replaces it).
@@ -159,6 +161,24 @@ final class AskCoordinator {
         frontmostPID = pid
         frontmostBundleID = frontmost?.bundleIdentifier
         context = ScreenContext(appName: frontmost?.localizedName)
+
+        // Typed orders run like spoken ones ("combine these files"), answered in the chat.
+        if settings.commandsEnabled,
+           let command = CommandParser.parse(text, allowedShortcuts: settings.allowedShortcuts),
+           !isUnknownApp(command) {
+            Log.ask.notice("Command recognised (typed): \(command.name, privacy: .public)")
+            onChatUserMessage?(text)
+            isAnswering = true
+            askTask = Task {
+                defer { isAnswering = false }
+                switch await perform(command, speak: false) {
+                case .success(let confirmation): onChatReply?(confirmation + ".")
+                case .failure(let message): onChatError?(message)
+                }
+            }
+            return
+        }
+
         let provider = settings.makeProvider()
         self.provider = provider
         let blocklist = settings.blocklist
@@ -779,14 +799,21 @@ final class AskCoordinator {
 
     /// A direct order: validate it, run it, confirm out loud. Nothing runs unless it
     /// resolves against the catalog and the user's allowed shortcuts.
-    private func perform(_ request: ActionRequest) async {
-        guard settings.commandsEnabled else { return }
+    enum ActionOutcome {
+        case success(String)
+        case failure(String)
+    }
+
+    @discardableResult
+    private func perform(_ request: ActionRequest, speak: Bool = true) async -> ActionOutcome {
+        guard settings.commandsEnabled else { return .failure("Commands are turned off in Settings.") }
         switch ActionCatalog.resolve(request, allowedShortcuts: settings.allowedShortcuts) {
         case .failure(let error):
             Log.ask.notice("Action refused: \(request.name, privacy: .public) (\(String(describing: error), privacy: .private))")
             speaker.stop()
-            speaker.speak(error.message)
+            if speak { speaker.speak(error.message) }
             show(error: error.message)
+            return .failure(error.message)
         case .success(let action):
             onActionStarted?(Self.workingMessage(for: action))
             do {
@@ -795,14 +822,18 @@ final class AskCoordinator {
                 if let started = answerStartedAt {
                     Log.ask.notice("Command finished \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
                 }
-                speaker.speak(confirmation + ".")
-                state = .speaking
+                if speak {
+                    speaker.speak(confirmation + ".")
+                    state = .speaking
+                }
                 onActionDone?(confirmation)
+                return .success(confirmation)
             } catch {
                 Log.ask.error("Action failed: \(request.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 speaker.stop()
-                speaker.speak(error.localizedDescription)
+                if speak { speaker.speak(error.localizedDescription) }
                 show(error: error.localizedDescription)
+                return .failure(error.localizedDescription)
             }
         }
     }
