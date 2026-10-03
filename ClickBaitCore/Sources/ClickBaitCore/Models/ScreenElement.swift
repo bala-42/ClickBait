@@ -51,18 +51,38 @@ public struct PromptElement: Equatable, Sendable {
         self.y = y
     }
 
-    /// Numbers the elements that are on the screenshot, in order, from 1.
-    public static func list(_ elements: [ScreenElement], geometry: ScreenGeometry, limit: Int = 120) -> [PromptElement] {
-        var result: [PromptElement] = []
-        for element in elements {
+    /// The elements on the screenshot worth listing, numbered from 1, at most `limit`
+    /// (every line costs the local model time). Elements whose names share words with
+    /// the question come first, then open-menu items, then the rest in screen order.
+    public static func list(_ elements: [ScreenElement], geometry: ScreenGeometry, question: String = "",
+                            limit: Int = 50) -> [PromptElement] {
+        let questionWords = Set(ImpliedPointer.normalized(question).split(separator: " ").filter { $0.count >= 3 })
+        var seen = Set<String>()
+        var ranked: [(element: ScreenElement, center: Point, tier: Int, overlap: Double, order: Int)] = []
+        for (order, element) in elements.enumerated() {
             let center = geometry.imagePixel(fromQuartz: Point(x: element.frame.x + element.frame.width / 2,
                                                                 y: element.frame.y + element.frame.height / 2))
             guard center.x >= 0, center.y >= 0, center.x < geometry.imageWidth, center.y < geometry.imageHeight else { continue }
-            result.append(PromptElement(id: result.count + 1, kind: element.kind, label: element.label,
-                                        x: center.x.rounded(), y: center.y.rounded()))
-            if result.count == limit { break }
+            // The same name in the same spot twice (nested elements) is one thing.
+            guard seen.insert("\(element.label)|\(Int(center.x / 4))|\(Int(center.y / 4))").inserted else { continue }
+            let labelWords = ImpliedPointer.normalized(element.label).split(separator: " ").filter { $0.count >= 3 }
+            let overlap = labelWords.isEmpty ? 0 : Double(labelWords.filter(questionWords.contains).count) / Double(labelWords.count)
+            let tier = overlap > 0 ? 0 : element.role == "AXMenuItem" ? 1 : 2
+            ranked.append((element, center, tier, overlap, order))
         }
-        return result
+        let chosen = ranked
+            .sorted { ($0.tier, -$0.overlap, $0.order) < ($1.tier, -$1.overlap, $1.order) }
+            .prefix(limit)
+            .sorted { $0.order < $1.order }  // back in screen order: easier to read
+        return chosen.enumerated().map { index, item in
+            PromptElement(id: index + 1, kind: item.element.kind, label: item.element.label,
+                          x: item.center.x.rounded(), y: item.center.y.rounded())
+        }
+    }
+
+    /// Whether `pointer` sits exactly on this element's listed center.
+    public func isCenter(of pointer: Pointer) -> Bool {
+        abs(pointer.x - x) < 0.5 && abs(pointer.y - y) < 0.5
     }
 
     /// One prompt line: `7: menu item "Show Path Bar" at (412, 300)`.

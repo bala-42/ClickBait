@@ -68,4 +68,17 @@ struct ScreenElementTests {
         let normal = AskRequest(question: "q", screenshotJPEG: Data(), screenshotWidth: 1, screenshotHeight: 1, context: ScreenContext())
         #expect(Prompt.system(for: normal) == Prompt.system)
     }
+
+    @Test func longListsKeepWhatTheQuestionNamesAndOpenMenus() {
+        var elements = (0..<120).map { ScreenElement(role: "AXButton", label: "Button \($0)", frame: Rect(x: Double($0 * 10), y: 100, width: 8, height: 8)) }
+        elements.append(ScreenElement(role: "AXMenuItem", label: "Copy", frame: Rect(x: 500, y: 300, width: 100, height: 20)))
+        elements.append(ScreenElement(role: "AXRow", label: "Show Path Bar", frame: Rect(x: 600, y: 600, width: 100, height: 20)))
+        elements.append(ScreenElement(role: "AXButton", label: "Button 3", frame: Rect(x: 30, y: 100, width: 8, height: 8)))  // duplicate
+        let listed = PromptElement.list(elements, geometry: geometry, question: "where is show path bar?", limit: 50)
+        #expect(listed.count == 50)
+        #expect(listed.contains { $0.label == "Show Path Bar" })
+        #expect(listed.contains { $0.label == "Copy" })
+        #expect(listed.filter { $0.label == "Button 3" }.count == 1)
+        #expect(listed.map(\.id) == Array(1...50))
+    }
 }

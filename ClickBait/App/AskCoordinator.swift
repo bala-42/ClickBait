@@ -448,8 +448,9 @@ final class AskCoordinator {
 
     // MARK: - Element list
 
-    /// Enough to cover a window and an open menu without slowing a local model much.
-    private static let maxListedElements = 100
+    /// Every listed element costs the local model prompt time (100 took answers to
+    /// 11–16 s); the question's matches and open menus are listed first.
+    private static let maxListedElements = 50
 
     /// What Accessibility says is clickable on the captured display (off the main thread).
     private static func elements(in capture: ScreenCapture, frontmostPID pid: pid_t?) async -> [ScreenElement] {
@@ -560,7 +561,10 @@ final class AskCoordinator {
         do {
             screenshot = try await encoding.value
             listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
-                                        limit: Self.maxListedElements)
+                                        question: question, limit: Self.maxListedElements)
+            if !elements.isEmpty {
+                Log.ask.notice("Element list: offering \(listed.count, privacy: .public) of \(elements.count, privacy: .public)")
+            }
             request = AskRequest(
                 question: question,
                 screenshotJPEG: screenshot.jpeg,
@@ -661,7 +665,17 @@ final class AskCoordinator {
                 quartz: geometry.quartzPoint(fromImagePixel: pixel)
             )
         }
-        let snapped = await snap(modelPointers, geometry: geometry)
+        // Pointers on a listed element's exact center came from the app's own data:
+        // nothing to snap or double-check.
+        let fromList = parsed.response.pointers.map { pointer in listed.contains { $0.isCenter(of: pointer) } }
+        let checked = await snap(zip(modelPointers, fromList).filter { !$0.1 }.map(\.0), geometry: geometry)
+        var remaining = checked[...]
+        let snapped = zip(modelPointers, fromList).map { pointer, listedCenter in
+            listedCenter ? (pointer: pointer, confirmed: true) : remaining.popFirst() ?? (pointer: pointer, confirmed: false)
+        }
+        if fromList.contains(true) {
+            Log.ask.notice("\(fromList.filter { $0 }.count, privacy: .public) pointer(s) on a listed element: exact")
+        }
         let pointers = snapped.map(\.pointer)
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
