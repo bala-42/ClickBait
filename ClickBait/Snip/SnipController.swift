@@ -1,13 +1,14 @@
 import AppKit
 import ClickBaitCore
 
-/// Hold ⌥⌘ to mark part of the screen (roadmap phase C). While the chord is down a
-/// transparent layer covers every screen: moving the cursor traces a red line,
-/// clicking and dragging draws a red box (and the click never reaches the app below).
-/// Letting go decides what it was — see `SnipTracker`.
+/// Hold ⌥⌘ to mark part of the screen (roadmap phase C). Holding it for `armDelay`
+/// arms the snip: the companion turns red (with a trackpad tick) and a transparent
+/// layer covers every screen — moving the cursor traces a red line, clicking and
+/// dragging draws a red box (the click never reaches the app below). Letting go
+/// before then is a plain tap (explain), and the mouse was never taken over.
 @MainActor
 final class SnipController {
-    /// The red state starts (or stops): the companion turns Strawberry Red.
+    /// Armed (or not any more): the companion turns Strawberry Red.
     var onMarkingChange: ((Bool) -> Void)?
 
     private var tracker: SnipTracker?
@@ -25,16 +26,19 @@ final class SnipController {
     /// The key-up event lags the hardware state by a few milliseconds; only give up on
     /// it after this long, or the failsafe throws away the drawing just before release.
     private static let missedKeyUpGrace: TimeInterval = 0.5
+    /// How long ⌥⌘ must be held before snipping starts. Short enough not to feel like
+    /// waiting, long enough that a quick tap never turns red.
+    static let armDelay: TimeInterval = 0.4
 
-    var isActive: Bool { tracker != nil }
+    /// ⌥⌘ is down (armed or not yet).
+    var isActive: Bool { timer != nil }
+    /// Held long enough: the red layer is up and tracking.
+    var isArmed: Bool { tracker != nil }
 
     func begin() {
         cancel()
-        tracker = SnipTracker(start: Self.quartzMouse())
         startedAt = Date()
         keysUpSince = nil
-        panels = NSScreen.screens.map(makePanel)
-        panels.forEach { $0.orderFrontRegardless() }
         // A timer rather than mouse-moved events: those only arrive for apps that ask.
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -43,7 +47,16 @@ final class SnipController {
         self.timer = timer
     }
 
-    /// ⌥⌘ was let go: what did the user mark?
+    private func arm() {
+        tracker = SnipTracker(start: Self.quartzMouse())
+        panels = NSScreen.screens.map(makePanel)
+        panels.forEach { $0.orderFrontRegardless() }
+        isMarking = true
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        Log.input.notice("Snip armed")
+    }
+
+    /// ⌥⌘ was let go: what did the user mark? `.tap` when nothing was (or it wasn't armed).
     func end() -> SnipDecision {
         let decision = tracker?.decide() ?? .tap
         cancel()
@@ -62,7 +75,7 @@ final class SnipController {
     // MARK: - Tracking
 
     private func tick() {
-        guard tracker != nil else { return }
+        guard timer != nil else { return }
         // Failsafe: if the key-up was missed, don't leave a layer eating every click.
         let flags = NSEvent.modifierFlags
         let held = flags.contains(.option) && flags.contains(.command)
@@ -77,6 +90,10 @@ final class SnipController {
         if !held || Date().timeIntervalSince(startedAt) > Self.maxDuration {
             Log.input.notice("Snip ended without a key-up; cancelling")
             cancel()
+            return
+        }
+        guard tracker != nil else {
+            if Date().timeIntervalSince(startedAt) >= Self.armDelay { arm() }
             return
         }
         let before = tracker?.traceLength
@@ -95,7 +112,6 @@ final class SnipController {
     }
 
     private func redraw() {
-        isMarking = tracker?.isMarking ?? false
         for panel in panels { panel.contentView?.needsDisplay = true }
     }
 

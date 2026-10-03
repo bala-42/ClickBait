@@ -99,7 +99,7 @@ public struct AnthropicProvider: LLMProvider {
             // Room for adaptive thinking plus a short JSON answer.
             "max_tokens": 4096,
             "stream": true,
-            "system": Prompt.system,
+            "system": Prompt.system(for: ask),
             // Earlier turns as text; only the newest message carries a screenshot.
             "messages": ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] } + [[
                 "role": "user",

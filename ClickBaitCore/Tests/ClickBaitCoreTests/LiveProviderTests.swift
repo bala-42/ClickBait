@@ -26,7 +26,9 @@ struct LiveOllamaTests {
             // CLICKBAIT_LIVE_SNIP=circled|boxed tries the hold-⌥⌘ prompt on the same image.
             snip: snip,
             // CLICKBAIT_LIVE_ELEMENTS=1 offers an accessibility-style element list.
-            elements: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ELEMENTS"] == nil ? [] : SyntheticScreen.elements(scale: Double(width) / 1280)
+            elements: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ELEMENTS"] == nil ? [] : SyntheticScreen.elements(scale: Double(width) / 1280),
+            // CLICKBAIT_LIVE_LOCATE=Share tries the zoomed-in second look.
+            locate: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_LOCATE"]
         )
         let clock = ContinuousClock()
         let start = clock.now

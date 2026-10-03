@@ -33,6 +33,8 @@ public struct AskRequest: Sendable {
     /// Clickable things Accessibility found on screen, numbered for the model to pick
     /// from. Empty when the app exposes nothing (or for explanations and snips).
     public var elements: [PromptElement]
+    /// Set for a second, zoomed-in look: find this one thing in a close-up screenshot.
+    public var locate: String?
 
     public init(
         question: String,
@@ -43,7 +45,8 @@ public struct AskRequest: Sendable {
         selectedText: String? = nil,
         history: [ChatTurn] = [],
         snip: SnipKind? = nil,
-        elements: [PromptElement] = []
+        elements: [PromptElement] = [],
+        locate: String? = nil
     ) {
         self.question = question
         self.screenshotJPEG = screenshotJPEG
@@ -54,5 +57,6 @@ public struct AskRequest: Sendable {
         self.history = history
         self.snip = snip
         self.elements = elements
+        self.locate = locate
     }
 }

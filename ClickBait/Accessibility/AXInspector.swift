@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import os
 import ClickBaitCore
 
 /// What the accessibility API says about the frontmost app when the hotkey is pressed.
@@ -61,6 +62,24 @@ enum AXInspector {
     }
 
     // MARK: - Element list
+
+    /// Chromium-based browsers and Electron apps (Chrome, Slack, VS Code, Discord…) keep
+    /// their accessibility tree off unless an assistive app asks for it, so their buttons
+    /// and links are invisible to the element list. `AXManualAccessibility` is the
+    /// switch they provide for exactly this; other apps ignore it. Nothing is changed
+    /// on the Mac, and the app forgets it when it quits.
+    static func requestAccessibilityTree(pid: pid_t?) {
+        guard isTrusted, let pid else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, timeout)
+        let result = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        if result == .success, requestedTrees.withLock({ $0.insert(pid).inserted }) {
+            Log.ask.notice("Asked the frontmost app to build its accessibility tree")
+        }
+    }
+
+    /// Apps already asked (only to log once per app).
+    private static let requestedTrees = OSAllocatedUnfairLock(initialState: Set<pid_t>())
 
     /// Roles worth offering to the model as something to point at.
     private static let listedRoles = Snapper.actionableRoles.union(["AXRow"])

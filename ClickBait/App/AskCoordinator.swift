@@ -58,6 +58,8 @@ final class AskCoordinator {
     @ObservationIgnored var onSnipMarking: ((Bool) -> Void)? {
         didSet { snipper.onMarkingChange = onSnipMarking }
     }
+    /// A second, zoomed-in look corrected where some pointers are (same order).
+    @ObservationIgnored var onPointersRefined: (([ScreenPointer]) -> Void)?
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -106,9 +108,11 @@ final class AskCoordinator {
             // Busy answering: a tap still explains, but nothing to snip into.
             if state != .listening, state != .thinking, !isAnswering { snipper.begin() }
         case .explainReleased:
+            let armed = snipper.isArmed
             switch snipper.isActive ? snipper.end() : .tap {
-            case .tap: explain()
             case .snip(let kind, let region, let path): snip(kind, region: region, path: path)
+            case .tap where armed: Log.ask.notice("Snip armed but nothing marked; ignoring")
+            case .tap: explain()
             }
         case .explainCancelled: snipper.cancel()
         }
@@ -140,6 +144,7 @@ final class AskCoordinator {
 
     /// A message typed into the open chat bubble. Replies to typed messages are text only.
     func sendTyped(_ text: String) {
+        stopRefining()
         guard conversation != nil, !isAnswering, state != .listening else { return }
         let frontmost = NSWorkspace.shared.frontmostApplication
         if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
@@ -200,6 +205,7 @@ final class AskCoordinator {
     }
 
     private func begin() {
+        stopRefining()
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()  // never record ClickBait talking
         errorResetTask?.cancel()
@@ -243,7 +249,12 @@ final class AskCoordinator {
         let pid = frontmost?.processIdentifier
         frontmostPID = pid
         frontmostBundleID = frontmost?.bundleIdentifier
-        snapshotTask = Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }
+        snapshotTask = Task.detached(priority: .userInitiated) {
+            // Chrome and Electron apps only build their accessibility tree when asked;
+            // asking now gives them the time the user spends talking to do it.
+            AXInspector.requestAccessibilityTree(pid: pid)
+            return AXInspector.snapshot(frontmostPID: pid)
+        }
         // Load a cold local model while the user is still talking. Sends no user content.
         let provider = settings.makeProvider()
         self.provider = provider
@@ -374,6 +385,7 @@ final class AskCoordinator {
     // MARK: - Explain highlighted text (⌥⌘)
 
     private func explain() {
+        stopRefining()
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
         if conversation != nil {
@@ -460,6 +472,7 @@ final class AskCoordinator {
     /// Explains the part of the screen the user circled or boxed, in a chat bubble like
     /// a highlighted-text explanation.
     private func snip(_ kind: SnipKind, region: Rect, path: [Point]) {
+        stopRefining()
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
         if conversation != nil {
@@ -648,7 +661,8 @@ final class AskCoordinator {
                 quartz: geometry.quartzPoint(fromImagePixel: pixel)
             )
         }
-        let pointers = await snap(modelPointers, geometry: geometry)
+        let snapped = await snap(modelPointers, geometry: geometry)
+        let pointers = snapped.map(\.pointer)
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
             \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped
@@ -676,6 +690,66 @@ final class AskCoordinator {
             onChatOpen?(display)
         }
         onAnswer?(parsed.response, pointers)
+
+        // Pointers no accessibility element backs up: the triangle is already on its
+        // way to the rough spot; take a sharp, zoomed-in look and nudge it if needed.
+        guard snapped.contains(where: { !$0.confirmed }), let provider = self.provider else { return }
+        // The answer is done: the next question mustn't wait for this.
+        isAnswering = false
+        isRefining = true
+        defer { isRefining = false }
+        var refined = pointers
+        for (index, item) in snapped.enumerated() where !item.confirmed {
+            guard !Task.isCancelled else { return }
+            if let better = await refine(item.pointer, question: question, capture: capture, geometry: geometry, provider: provider) {
+                refined[index] = better
+            }
+        }
+        guard !Task.isCancelled, refined != pointers else { return }
+        onPointersRefined?(refined)
+    }
+
+    /// A close-up look is running after an answer (it can be dropped at any time).
+    @ObservationIgnored private var isRefining = false
+
+    /// A new question or explanation takes over: drop a close-up still running so the
+    /// local model is free at once.
+    private func stopRefining() {
+        guard isRefining else { return }
+        askTask?.cancel()
+        isRefining = false
+        Log.ask.notice("Close-up dropped: a new question started")
+    }
+
+    /// A second look at a pointer on a 2× close-up around it. Nil when the model can't
+    /// find the thing there (the rough pointer stays).
+    private func refine(_ pointer: ScreenPointer, question: String, capture: ScreenCapture, geometry: ScreenGeometry,
+                        provider: any LLMProvider) async -> ScreenPointer? {
+        let start = ContinuousClock.now
+        let target = pointer.label.isEmpty ? question : pointer.label
+        do {
+            let closeUp = try CloseUp(capture, around: pointer.quartz)
+            let encoded = try ScreenshotEncoder.encode(closeUp.image)
+            let request = AskRequest(question: question, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
+                                     screenshotHeight: encoded.height, context: context, locate: target)
+            var reply = ""
+            for try await chunk in provider.stream(request) { reply += chunk }
+            let found = ResponseParser.parse(reply, imageWidth: encoded.width, imageHeight: encoded.height).response.pointers.first
+            guard let found else {
+                Log.ask.notice("Close-up: not found (\(String(describing: ContinuousClock.now - start), privacy: .public)); keeping the rough pointer")
+                return nil
+            }
+            let quartz = closeUp.quartzPoint(fromPixel: found.x * encoded.downscale, found.y * encoded.downscale)
+            let shift = ((quartz.x - pointer.quartz.x) * (quartz.x - pointer.quartz.x) + (quartz.y - pointer.quartz.y) * (quartz.y - pointer.quartz.y)).squareRoot()
+            Log.ask.notice("""
+                Close-up: moved \(shift, format: .fixed(precision: 0), privacy: .public) pt \
+                (\(String(describing: ContinuousClock.now - start), privacy: .public))
+                """)
+            return ScreenPointer(label: pointer.label, appKit: geometry.appKitPoint(fromQuartz: quartz), quartz: quartz)
+        } catch {
+            Log.ask.error("Close-up failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     /// Orders that should go to the model as a normal question instead:
@@ -745,13 +819,15 @@ final class AskCoordinator {
     /// don't land on or near anything clickable — the model sometimes points at empty
     /// space for questions that need no clicking. Without Accessibility permission
     /// there's no way to check, so pointers are returned unchanged.
-    private func snap(_ pointers: [ScreenPointer], geometry: ScreenGeometry) async -> [ScreenPointer] {
+    /// Settles each pointer on the accessibility element it's on or near. `confirmed`
+    /// means an element backs it up; the others get a second, zoomed-in look.
+    private func snap(_ pointers: [ScreenPointer], geometry: ScreenGeometry) async -> [(pointer: ScreenPointer, confirmed: Bool)] {
         guard AXInspector.isTrusted else {
             Log.ask.notice("Snapping skipped: Accessibility not granted")
-            return pointers
+            return pointers.map { ($0, false) }
         }
         let pid = frontmostPID
-        var snapped: [ScreenPointer] = []
+        var snapped: [(pointer: ScreenPointer, confirmed: Bool)] = []
         for pointer in pointers {
             let target = pointer.quartz
             let start = ContinuousClock.now
@@ -773,14 +849,14 @@ final class AskCoordinator {
             // point. Useless pointers are kept away by the prompt and the parser instead.
             guard decision.candidate != nil else {
                 Log.ask.notice("Pointer kept as is: \(probe.seesContent ? "no matching element" : "accessibility can't see this area", privacy: .public)")
-                snapped.append(pointer)
+                snapped.append((pointer, false))
                 continue
             }
-            snapped.append(moved ? ScreenPointer(
+            snapped.append((moved ? ScreenPointer(
                 label: pointer.label,
                 appKit: geometry.appKitPoint(fromQuartz: decision.point),
                 quartz: decision.point
-            ) : pointer)
+            ) : pointer, true))
         }
         return snapped
     }

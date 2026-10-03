@@ -307,6 +307,17 @@ final class OverlayController {
         Log.ask.notice("Guiding to \(targets.count, privacy: .public) target(s)")
     }
 
+    /// Better positions for the targets being shown (same order): the triangle glides
+    /// on to the corrected spot, and the current target's wait starts over.
+    func retarget(_ targets: [ScreenPointer]) {
+        guard var guide, guide.targets.count == targets.count else { return }
+        let moved = guide.targets[guide.index] != targets[guide.index]
+        guide.targets = targets
+        if moved { guide.targetStarted = CACurrentMediaTime() }
+        self.guide = guide
+        Log.ask.notice("Guide: targets corrected by the close-up")
+    }
+
     /// Back to following the cursor, gliding from wherever the triangle is now.
     func endGuide() {
         guard let guide else { return }

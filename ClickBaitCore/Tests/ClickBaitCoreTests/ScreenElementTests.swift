@@ -59,4 +59,13 @@ struct ScreenElementTests {
         #expect(ResponseParser.parse(far, imageWidth: 1280, imageHeight: 800, elements: elements).response.pointers
                 == [Pointer(x: 900, y: 600, label: "Show Path Bar"), Pointer(x: 210, y: 30, label: "Edit")])
     }
+
+    @Test func locateRequestsUseTheCloseUpPrompt() {
+        let request = AskRequest(question: "where's the share button", screenshotJPEG: Data(), screenshotWidth: 1120, screenshotHeight: 800,
+                                 context: ScreenContext(), locate: "Share")
+        #expect(Prompt.system(for: request) == Prompt.locateSystem)
+        #expect(Prompt.userText(for: request).contains(#"Find: "Share""#))
+        let normal = AskRequest(question: "q", screenshotJPEG: Data(), screenshotWidth: 1, screenshotHeight: 1, context: ScreenContext())
+        #expect(Prompt.system(for: normal) == Prompt.system)
+    }
 }

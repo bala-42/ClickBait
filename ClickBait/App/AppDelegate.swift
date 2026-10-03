@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.showHeard(text)
             self?.overlay.show(.thinking, heard: text)
         }
+        coordinator.onPointersRefined = { [weak self] pointers in self?.overlay.retarget(pointers) }
         overlay.levelSource = { [weak coordinator] in coordinator?.microphoneLevel ?? 0 }
         coordinator.onSnipMarking = { [weak self] marking in self?.overlay.setSnipping(marking) }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }

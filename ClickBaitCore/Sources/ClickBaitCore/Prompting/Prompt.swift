@@ -46,11 +46,35 @@ public enum Prompt {
         Leave "code" and "language" out when no code is needed.
         """
 
+    /// The system prompt for a request: the normal one, or the close-up locate one.
+    public static func system(for request: AskRequest) -> String {
+        request.locate == nil ? system : locateSystem
+    }
+
+    /// A second look to pin down where something is, on a sharp close-up.
+    public static let locateSystem = """
+        You find one thing in a close-up screenshot of part of a computer screen.
+
+        Reply with ONLY one JSON object, no code fences and no other text:
+        {"speech": "", "pointers": [{"x": X, "y": Y, "label": "..."}]}
+
+        - x and y are the CENTER of the thing in this image's pixels, origin at the top-left.
+        - Look for the visible text, icon or control that matches the description.
+        - If it isn't in the image, reply {"speech": "", "pointers": []}. Never guess.
+        """
+
     /// Highlighted text beyond this is cut off; the screenshot still gives context.
     public static let maxSelectedCharacters = 6000
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
+        if let target = request.locate {
+            return """
+                The image is \(request.screenshotWidth)×\(request.screenshotHeight) pixels, a close-up of part of the screen.
+                Find: "\(target)"
+                The user had asked: "\(request.question)"
+                """
+        }
         var lines = ["The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
         let context = request.context
         if let app = context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
