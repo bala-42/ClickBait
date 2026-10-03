@@ -60,13 +60,12 @@ struct CompanionTriangle: View {
 private struct TinyPill: View {
     let text: String
     let symbol: String
-    let tint: Color
+    let tone: CompanionTone
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(tint)
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(3)
@@ -75,8 +74,23 @@ private struct TinyPill: View {
         .frame(maxWidth: 260, alignment: .leading)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+        .modifier(ToneFill(tone: tone, shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
+    }
+}
+
+/// Pills wear the triangle's colour and white edge, so label and pointer read as one.
+struct ToneFill<S: Shape>: ViewModifier {
+    let tone: CompanionTone
+    let shape: S
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(.white)
+            .background(shape.fill(tone.color.opacity(0.9)))
+            .overlay(shape.stroke(.white.opacity(0.9), lineWidth: 1.2))
+            .shadow(color: tone.color.opacity(0.45), radius: 3)
+            .animation(.easeInOut(duration: 0.25), value: tone)
     }
 }
 
@@ -93,7 +107,7 @@ struct GuideLabelView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .modifier(GlassBackground(shape: Capsule()))
+                    .modifier(ToneFill(tone: model.tone, shape: Capsule()))
                     .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
             }
         }
@@ -140,9 +154,9 @@ struct CompanionBubbleView: View {
         case .idle, .listening, .thinking, .explaining, .working:
             EmptyView()
         case .answer(let text), .done(let text):
-            TinyPill(text: text, symbol: "checkmark", tint: model.tone.color)
+            TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):
-            TinyPill(text: message, symbol: "exclamationmark", tint: .orange)
+            TinyPill(text: message, symbol: "exclamationmark", tone: model.tone)
         }
     }
 }

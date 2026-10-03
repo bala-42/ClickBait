@@ -716,13 +716,11 @@ final class AskCoordinator {
                 matched \(decision.candidate?.role ?? "-", privacy: .public) "\(decision.candidate?.label ?? "", privacy: .private)", \
                 \(String(describing: ContinuousClock.now - start), privacy: .public))
                 """)
+            // Nothing to snap to (sidebar rows, canvases, web content…): trust the model's
+            // point. Useless pointers are kept away by the prompt and the parser instead.
             guard decision.candidate != nil else {
-                if probe.seesContent {
-                    Log.ask.notice("Pointer dropped: nothing clickable there")
-                } else {
-                    Log.ask.notice("Pointer kept as is: accessibility can't see this area")
-                    snapped.append(pointer)
-                }
+                Log.ask.notice("Pointer kept as is: \(probe.seesContent ? "no matching element" : "accessibility can't see this area", privacy: .public)")
+                snapped.append(pointer)
                 continue
             }
             snapped.append(moved ? ScreenPointer(
