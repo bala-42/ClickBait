@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The synchronized colour states shared by the companion triangle and the chat banner.
 enum CompanionTone: Equatable {
-    /// Sky Blue: idle, following the cursor.
+    /// Azure (#007FFF): idle, following the cursor.
     case idle
     /// Mango Orange: listening, thinking, explaining (pulses).
     case processing
@@ -16,7 +16,7 @@ enum CompanionTone: Equatable {
 
     var color: Color {
         switch self {
-        case .idle: Color(red: 0.31, green: 0.72, blue: 1.0)
+        case .idle: Color(red: 0, green: 127.0 / 255, blue: 1.0)
         case .processing: Color(red: 1.0, green: 0.62, blue: 0.13)
         case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
         case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
