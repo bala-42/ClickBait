@@ -27,7 +27,7 @@ public enum SnipDecision: Equatable, Sendable {
 /// it was a tap, a traced circle or a dragged box. All points are global Quartz points.
 public struct SnipTracker: Sendable {
     /// A trace shorter than this is just the hand drifting during a tap.
-    public static let minTraceLength = 60.0
+    public static let minTraceLength = 40.0
     /// A box (or a trace's bounds) smaller than this on both sides isn't a selection.
     public static let minSize = 12.0
     /// Samples closer than this to the previous one are skipped.

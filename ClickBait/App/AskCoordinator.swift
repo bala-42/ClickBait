@@ -389,7 +389,7 @@ final class AskCoordinator {
         guard let (selected, method) = await SelectionReader.read(frontmostPID: pid, accessibilitySelection: snapshot.selectedText)
         else {
             Log.ask.notice("Explain: no selection found (accessibility and copy both empty)")
-            show(error: "Highlight some text first, then press ⌥⌘.")
+            show(error: "Highlight text and tap ⌥⌘ — or hold ⌥⌘ and circle or drag a box around something.")
             return
         }
         guard !Task.isCancelled else { return }

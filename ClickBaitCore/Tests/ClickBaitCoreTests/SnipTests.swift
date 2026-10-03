@@ -26,7 +26,7 @@ struct SnipTrackerTests {
 
     @Test func shortDriftIsATap() {
         var tracker = SnipTracker(start: Point(x: 0, y: 0))
-        tracker.cursorMoved(to: Point(x: 40, y: 0))
+        tracker.cursorMoved(to: Point(x: 25, y: 0))
         #expect(tracker.decide() == .tap)
         #expect(!tracker.isMarking || tracker.traceLength < SnipTracker.minTraceLength)
     }

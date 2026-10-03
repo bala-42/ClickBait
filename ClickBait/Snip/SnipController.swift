@@ -14,12 +14,17 @@ final class SnipController {
     private var panels: [NSPanel] = []
     private var timer: Timer?
     private var startedAt = Date()
+    /// When the keys were first seen up without a key-up event arriving.
+    private var keysUpSince: Date?
     private var isMarking = false {
         didSet { if isMarking != oldValue { onMarkingChange?(isMarking) } }
     }
 
     /// Never block the screen for longer than this, whatever happened to the keys.
     private static let maxDuration: TimeInterval = 60
+    /// The key-up event lags the hardware state by a few milliseconds; only give up on
+    /// it after this long, or the failsafe throws away the drawing just before release.
+    private static let missedKeyUpGrace: TimeInterval = 0.5
 
     var isActive: Bool { tracker != nil }
 
@@ -27,6 +32,7 @@ final class SnipController {
         cancel()
         tracker = SnipTracker(start: Self.quartzMouse())
         startedAt = Date()
+        keysUpSince = nil
         panels = NSScreen.screens.map(makePanel)
         panels.forEach { $0.orderFrontRegardless() }
         // A timer rather than mouse-moved events: those only arrive for apps that ask.
@@ -59,7 +65,16 @@ final class SnipController {
         guard tracker != nil else { return }
         // Failsafe: if the key-up was missed, don't leave a layer eating every click.
         let flags = NSEvent.modifierFlags
-        if !flags.contains(.option) || !flags.contains(.command) || Date().timeIntervalSince(startedAt) > Self.maxDuration {
+        let held = flags.contains(.option) && flags.contains(.command)
+        if held {
+            keysUpSince = nil
+        } else {
+            let since = keysUpSince ?? Date()
+            keysUpSince = since
+            // Still waiting for the key-up event; don't extend the drawing meanwhile.
+            guard Date().timeIntervalSince(since) > Self.missedKeyUpGrace else { return }
+        }
+        if !held || Date().timeIntervalSince(startedAt) > Self.maxDuration {
             Log.input.notice("Snip ended without a key-up; cancelling")
             cancel()
             return
