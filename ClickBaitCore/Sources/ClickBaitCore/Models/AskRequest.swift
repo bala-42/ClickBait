@@ -27,6 +27,9 @@ public struct AskRequest: Sendable {
     public var selectedText: String?
     /// Earlier turns of this bubble's chat (empty for the first message).
     public var history: [ChatTurn]
+    /// Set when the user circled or boxed part of the screen (hold ⌥⌘): the screenshot
+    /// is then a close-up of that part with the shape drawn on it in red.
+    public var snip: SnipKind?
 
     public init(
         question: String,
@@ -35,7 +38,8 @@ public struct AskRequest: Sendable {
         screenshotHeight: Int,
         context: ScreenContext,
         selectedText: String? = nil,
-        history: [ChatTurn] = []
+        history: [ChatTurn] = [],
+        snip: SnipKind? = nil
     ) {
         self.question = question
         self.screenshotJPEG = screenshotJPEG
@@ -44,5 +48,6 @@ public struct AskRequest: Sendable {
         self.context = context
         self.selectedText = selectedText
         self.history = history
+        self.snip = snip
     }
 }

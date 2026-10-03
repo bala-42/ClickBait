@@ -6,11 +6,17 @@ public enum ExplanationCleaner {
         "the selected passage", "the highlighted phrase", "the selected phrase", "the highlighted word", "the selected word",
         "the highlighted sentence", "the selected sentence", "this text", "this passage", "this phrase", "the text you highlighted",
         "the text you selected", "what you highlighted", "what you selected",
+        // Snips (hold ⌥⌘): the close-up has the user's circle or box drawn on it.
+        "the circled area", "the circled part", "the circled section", "the boxed area", "the boxed section",
+        "the outlined area", "the highlighted area", "the area circled in red", "the area outlined in red",
+        "the red outline", "the area inside the red outline", "the content inside the red outline",
+        "what you circled", "the image", "this image", "the screenshot", "this screenshot",
     ]
     /// Verbs after which the rest of the sentence still reads naturally on its own.
     private static let verbs = [
         "refers to", "is referring to", "is about", "talks about", "describes", "explains", "discusses", "means",
         "is saying that", "says that", "states that", "suggests that", "indicates that", "is talking about",
+        "shows", "contains", "displays", "highlights", "marks", "surrounds",
     ]
 
     public static func clean(_ text: String) -> String {

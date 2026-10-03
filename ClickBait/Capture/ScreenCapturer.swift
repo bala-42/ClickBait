@@ -42,8 +42,9 @@ enum ScreenCaptureError: LocalizedError {
 /// one that is only visible in the background.
 @MainActor
 final class ScreenCapturer {
-    func captureDisplayUnderCursor(excluding blocklist: AppBlocklist) async throws -> ScreenCapture {
-        let mouse = NSEvent.mouseLocation
+    /// `point` (global AppKit points) picks the display; the cursor's by default.
+    func captureDisplayUnderCursor(excluding blocklist: AppBlocklist, at point: NSPoint? = nil) async throws -> ScreenCapture {
+        let mouse = point ?? NSEvent.mouseLocation
         guard
             let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main,
             let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber

@@ -17,11 +17,14 @@ struct LiveOllamaTests {
         try await provider.checkConnection()
 
         let longEdge = Int(ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_LONG_EDGE"] ?? "") ?? 1280
-        let (jpeg, width, height) = try SyntheticScreen.render(longEdge: longEdge)
+        let snip = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_SNIP"].flatMap(SnipKind.init(rawValue:))
+        let (jpeg, width, height) = try SyntheticScreen.render(longEdge: longEdge, snipped: snip != nil)
         let request = AskRequest(
             question: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_QUESTION"] ?? "How do I share this document?",
             screenshotJPEG: jpeg, screenshotWidth: width, screenshotHeight: height,
-            context: ScreenContext(appName: "Notes")
+            context: ScreenContext(appName: "Notes"),
+            // CLICKBAIT_LIVE_SNIP=circled|boxed tries the hold-⌥⌘ prompt on the same image.
+            snip: snip
         )
         let clock = ContinuousClock()
         let start = clock.now
@@ -40,7 +43,8 @@ struct LiveOllamaTests {
 /// A plain window with a blue "Share" button whose center is (1160, 60) at 1280×800,
 /// scaled to `longEdge`. A random note defeats Ollama's prompt cache between runs.
 enum SyntheticScreen {
-    static func render(longEdge: Int = 1280) throws -> (Data, Int, Int) {
+    /// `snipped`: like a hold-⌥⌘ snip — the agenda line boxed in red, cropped around it.
+    static func render(longEdge: Int = 1280, snipped: Bool = false) throws -> (Data, Int, Int) {
         let scale = CGFloat(longEdge) / 1280
         let width = longEdge, height = Int((800 * scale).rounded())
         let space = CGColorSpaceCreateDeviceRGB()
@@ -65,12 +69,20 @@ enum SyntheticScreen {
         context.fillPath()
         draw("Share", at: CGPoint(x: 1130, y: 69), size: 20, color: CGColor(gray: 1, alpha: 1), in: context)
 
-        let image = try #require(context.makeImage())
+        var image = try #require(context.makeImage())
+        if snipped {
+            context.setStrokeColor(CGColor(red: 0.98, green: 0.22, blue: 0.36, alpha: 1))
+            context.setLineWidth(3)
+            context.stroke(CGRect(x: 30, y: 192, width: 800, height: 40))
+            let marked = try #require(context.makeImage())
+            image = try #require(marked.cropping(to: CGRect(x: 0, y: 120 * scale, width: 900 * scale, height: 180 * scale).integral))
+        }
+        let (outWidth, outHeight) = (image.width, image.height)
         let data = NSMutableData()
         let destination = try #require(CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         #expect(CGImageDestinationFinalize(destination))
-        return (data as Data, width, height)
+        return (data as Data, outWidth, outHeight)
     }
 
     /// `baseline` is in flipped (top-left) coordinates.

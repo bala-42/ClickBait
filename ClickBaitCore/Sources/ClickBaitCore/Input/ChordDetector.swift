@@ -12,16 +12,20 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
 /// Turns modifier changes and key presses into ClickBait's two hotkeys:
 ///
 /// - **Ask** — hold ⌃⌥ (Control+Option) alone, talk, let go.
-/// - **Explain** — with text highlighted, press and release ⌥⌘ (Option+Command) alone.
+/// - **Explain / snip** — ⌥⌘ (Option+Command) alone. A tap explains the highlighted
+///   text; holding it while tracing or dragging snips part of the screen. Which one it
+///   was is decided by the app from what happened between press and release.
 ///
 /// Pressing any other key, or adding another modifier, means the user is reaching for a
-/// real shortcut (⌃⌥←, ⌥⌘Esc, ⌥⌘D…): ask is cancelled and explain never fires.
+/// real shortcut (⌃⌥←, ⌥⌘Esc, ⌥⌘D…): either chord is cancelled.
 public struct ChordDetector: Sendable {
     public enum Event: Equatable, Sendable {
         case askPressed
         case askReleased
         case askCancelled
-        case explain
+        case explainPressed
+        case explainReleased
+        case explainCancelled
     }
 
     public static let ask: Modifiers = [.control, .option]
@@ -46,19 +50,28 @@ public struct ChordDetector: Sendable {
         }
 
         if modifiers == Self.explain {
-            explainArmed = true
+            if !explainArmed {
+                explainArmed = true
+                events.append(.explainPressed)
+            }
         } else if explainArmed {
             explainArmed = false
             // Letting go of either key fires; adding a modifier doesn't.
-            if modifiers.isStrictSubset(of: Self.explain) { events.append(.explain) }
+            events.append(modifiers.isStrictSubset(of: Self.explain) ? .explainReleased : .explainCancelled)
         }
         return events
     }
 
     public mutating func keyPressed() -> [Event] {
-        explainArmed = false
-        guard askHeld else { return [] }
-        askHeld = false
-        return [.askCancelled]
+        var events: [Event] = []
+        if explainArmed {
+            explainArmed = false
+            events.append(.explainCancelled)
+        }
+        if askHeld {
+            askHeld = false
+            events.append(.askCancelled)
+        }
+        return events
     }
 }

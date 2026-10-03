@@ -44,8 +44,12 @@ final class OverlayModel {
 
     var bubble: Bubble = .idle
 
+    /// ⌥⌘ is held and the user is circling or boxing something.
+    var isSnipping = false
+
     var tone: CompanionTone {
-        switch bubble {
+        if isSnipping { return .capture }
+        return switch bubble {
         case .idle, .answer, .error: .idle
         case .listening, .thinking, .explaining: .processing
         case .working, .done: .action
@@ -54,7 +58,8 @@ final class OverlayModel {
 
     /// The triangle pulses while something is in progress.
     var isPulsing: Bool {
-        switch bubble {
+        if isSnipping { return true }
+        return switch bubble {
         case .listening, .thinking, .explaining, .working: true
         default: isGuiding  // a gentle beat draws the eye to the target
         }

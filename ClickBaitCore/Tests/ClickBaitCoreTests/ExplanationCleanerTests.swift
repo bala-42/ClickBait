@@ -21,4 +21,13 @@ struct ExplanationCleanerTests {
     func leavesEverythingElse(_ input: String) {
         #expect(ExplanationCleaner.clean(input) == input)
     }
+
+    @Test func stripsSnipLeadIns() {
+        #expect(ExplanationCleaner.clean("The circled area shows a Python list comprehension.") == "A Python list comprehension.")
+        #expect(ExplanationCleaner.clean("The area outlined in red is about tax brackets.") == "Tax brackets.")
+        #expect(ExplanationCleaner.clean("The image contains a bar chart of sales.") == "A bar chart of sales.")
+        #expect(ExplanationCleaner.clean("A bar chart of sales by month.") == "A bar chart of sales by month.")
+        // Real qwen2.5vl:7b reply to a boxed snip.
+        #expect(ExplanationCleaner.clean("The red outline highlights a ticket number and agenda items.") == "A ticket number and agenda items.")
+    }
 }

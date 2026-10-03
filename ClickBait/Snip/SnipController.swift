@@ -1,0 +1,168 @@
+import AppKit
+import ClickBaitCore
+
+/// Hold ⌥⌘ to mark part of the screen (roadmap phase C). While the chord is down a
+/// transparent layer covers every screen: moving the cursor traces a red line,
+/// clicking and dragging draws a red box (and the click never reaches the app below).
+/// Letting go decides what it was — see `SnipTracker`.
+@MainActor
+final class SnipController {
+    /// The red state starts (or stops): the companion turns Strawberry Red.
+    var onMarkingChange: ((Bool) -> Void)?
+
+    private var tracker: SnipTracker?
+    private var panels: [NSPanel] = []
+    private var timer: Timer?
+    private var startedAt = Date()
+    private var isMarking = false {
+        didSet { if isMarking != oldValue { onMarkingChange?(isMarking) } }
+    }
+
+    /// Never block the screen for longer than this, whatever happened to the keys.
+    private static let maxDuration: TimeInterval = 60
+
+    var isActive: Bool { tracker != nil }
+
+    func begin() {
+        cancel()
+        tracker = SnipTracker(start: Self.quartzMouse())
+        startedAt = Date()
+        panels = NSScreen.screens.map(makePanel)
+        panels.forEach { $0.orderFrontRegardless() }
+        // A timer rather than mouse-moved events: those only arrive for apps that ask.
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    /// ⌥⌘ was let go: what did the user mark?
+    func end() -> SnipDecision {
+        let decision = tracker?.decide() ?? .tap
+        cancel()
+        return decision
+    }
+
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+        tracker = nil
+        panels.forEach { $0.orderOut(nil); $0.close() }
+        panels = []
+        isMarking = false
+    }
+
+    // MARK: - Tracking
+
+    private func tick() {
+        guard tracker != nil else { return }
+        // Failsafe: if the key-up was missed, don't leave a layer eating every click.
+        let flags = NSEvent.modifierFlags
+        if !flags.contains(.option) || !flags.contains(.command) || Date().timeIntervalSince(startedAt) > Self.maxDuration {
+            Log.input.notice("Snip ended without a key-up; cancelling")
+            cancel()
+            return
+        }
+        let before = tracker?.traceLength
+        tracker?.cursorMoved(to: Self.quartzMouse())
+        if tracker?.traceLength != before { redraw() }
+    }
+
+    fileprivate func mouseDown() {
+        tracker?.mouseDown(at: Self.quartzMouse())
+        redraw()
+    }
+
+    fileprivate func mouseDragged() {
+        tracker?.mouseDragged(to: Self.quartzMouse())
+        redraw()
+    }
+
+    private func redraw() {
+        isMarking = tracker?.isMarking ?? false
+        for panel in panels { panel.contentView?.needsDisplay = true }
+    }
+
+    /// What the canvases draw, in global Quartz points.
+    fileprivate var drawing: (trace: [Point], box: Rect?)? {
+        guard let tracker, tracker.isMarking else { return nil }
+        return (tracker.box == nil ? tracker.trace : [], tracker.box)
+    }
+
+    static func quartzMouse() -> Point {
+        let mouse = NSEvent.mouseLocation
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        return Point(x: mouse.x, y: primaryHeight - mouse.y)
+    }
+
+    // MARK: - Panels
+
+    private func makePanel(for screen: NSScreen) -> NSPanel {
+        let panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = false  // catches the box drag so the app below never sees it
+        // Just under the companion, so the red triangle stays visible on top.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let quartzOrigin = CGPoint(x: screen.frame.minX, y: primaryHeight - screen.frame.maxY)
+        panel.contentView = SnipCanvasView(controller: self, quartzOrigin: quartzOrigin)
+        panel.setFrame(screen.frame, display: false)
+        return panel
+    }
+}
+
+/// Draws the trace or box on one screen and forwards the mouse to the controller.
+private final class SnipCanvasView: NSView {
+    weak var controller: SnipController?
+    /// This screen's top-left in global Quartz points.
+    let quartzOrigin: CGPoint
+
+    static let red = NSColor(srgbRed: 0.98, green: 0.22, blue: 0.36, alpha: 1)
+
+    init(controller: SnipController, quartzOrigin: CGPoint) {
+        self.controller = controller
+        self.quartzOrigin = quartzOrigin
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }  // matches Quartz: y grows downward
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { controller?.mouseDown() }
+    override func mouseDragged(with event: NSEvent) { controller?.mouseDragged() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let drawing = controller?.drawing else { return }
+        let local = { (p: Point) in CGPoint(x: p.x - self.quartzOrigin.x, y: p.y - self.quartzOrigin.y) }
+        let shadow = NSShadow()
+        shadow.shadowColor = Self.red.withAlphaComponent(0.8)
+        shadow.shadowBlurRadius = 8
+        shadow.set()
+        if let box = drawing.box {
+            let rect = CGRect(origin: local(Point(x: box.x, y: box.y)), size: CGSize(width: box.width, height: box.height))
+            let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+            Self.red.withAlphaComponent(0.1).setFill()
+            path.fill()
+            Self.red.setStroke()
+            path.lineWidth = 2.5
+            path.stroke()
+        } else if drawing.trace.count > 1 {
+            let path = NSBezierPath()
+            path.move(to: local(drawing.trace[0]))
+            drawing.trace.dropFirst().forEach { path.line(to: local($0)) }
+            path.lineWidth = 3.5
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            Self.red.setStroke()
+            path.stroke()
+        }
+    }
+}

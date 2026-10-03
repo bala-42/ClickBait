@@ -29,22 +29,23 @@ struct ChordDetectorTests {
         #expect(run([.mods([.control, .option]), .mods([.control, .option, .shift])]) == [.askPressed, .askCancelled])
     }
 
-    @Test func explainFiresOnReleaseInEitherOrder() {
-        #expect(run([.mods(.option), .mods([.option, .command]), .mods(.option), .mods([])]) == [.explain])
-        #expect(run([.mods(.command), .mods([.option, .command]), .mods(.command), .mods([])]) == [.explain])
+    @Test func explainPressAndReleaseInEitherOrder() {
+        #expect(run([.mods(.option), .mods([.option, .command]), .mods(.option), .mods([])]) == [.explainPressed, .explainReleased])
+        #expect(run([.mods(.command), .mods([.option, .command]), .mods(.command), .mods([])]) == [.explainPressed, .explainReleased])
     }
 
-    @Test func explainDoesNotFireForRealShortcuts() {
+    @Test func explainCancelledByRealShortcuts() {
         // ⌥⌘D (toggle Dock), ⌥⌘Esc (Force Quit)
-        #expect(run([.mods([.option, .command]), .key, .mods(.option), .mods([])]) == [])
+        #expect(run([.mods([.option, .command]), .key, .mods(.option), .mods([])]) == [.explainPressed, .explainCancelled])
     }
 
-    @Test func explainDoesNotFireWhenAModifierIsAdded() {
-        #expect(run([.mods([.option, .command]), .mods([.option, .command, .shift]), .mods([])]) == [])
+    @Test func explainCancelledWhenAModifierIsAdded() {
+        #expect(run([.mods([.option, .command]), .mods([.option, .command, .shift]), .mods([])]) == [.explainPressed, .explainCancelled])
     }
 
-    @Test func explainFiresOnlyOncePerPress() {
-        #expect(run([.mods([.option, .command]), .mods(.option), .mods([.option, .command]), .mods([])]) == [.explain, .explain])
+    @Test func explainOncePerPress() {
+        #expect(run([.mods([.option, .command]), .mods(.option), .mods([.option, .command]), .mods([])])
+                == [.explainPressed, .explainReleased, .explainPressed, .explainReleased])
     }
 
     @Test func chordsDoNotTriggerEachOther() {

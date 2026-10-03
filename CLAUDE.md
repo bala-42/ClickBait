@@ -69,6 +69,9 @@ Highlight text, then press and release **Option+Command** alone (no other key in
 ### Commands (added after M1, step 10)
 Direct orders spoken with ⌃⌥ are recognised from the transcript by `CommandParser` (Core) — plain rules, never the vision model (qwen2.5vl:7b missed real orders and acted on questions). Questions never act. Built-ins: open/quit app, volume, mute, Dark/Light Mode; plus Shortcuts the user ticked in Settings (the tick is the permission — they run without a prompt). Everything goes through `ActionCatalog.resolve` before `ActionExecutor` runs it. Unknown app names fall through to a normal answer.
 
+### Snips (phase C)
+Hold ⌥⌘: a transparent layer covers every screen (below the companion, which turns Strawberry Red). Moving traces a red line; click-drag draws a box (the click never reaches the app). Release decides (`SnipTracker`): a box ≥ 12 pt or a trace ≥ 60 pt long is a snip, anything else is a tap → explain highlighted text. The screenshot is cropped around the region (`SnipLayout`) with the shape drawn in red (`SnipRenderer`), sent with `AskRequest.snip`, answered in a chat bubble like an explanation (no pointers, no speech). Failsafe: the layer cancels itself if ⌥⌘ is no longer held or after 60 s. Trade-off: ⌥⌘-click/drag in other apps (e.g. Finder alias drag) is captured while the chord is held.
+
 ### Chat bubbles (added after M1)
 Every answer or ⌥⌘ explanation opens a chat bubble (`ChatController`: borderless non-activating panel that can become key, so typing never activates ClickBait and the user's app stays frontmost). Pinned where it appeared, draggable, sized to its card, open until ✕/Escape. Memory (`Conversation` in Core) is scoped to the bubble, text only, first exchange + last 9 kept; each message gets a fresh screenshot; gone on close, never written to disk. Typed follow-ups get text replies; ⌃⌥ voice follow-ups go into the open chat and are spoken; ⌥⌘ explanations are text and replace the open bubble.
 
@@ -95,7 +98,7 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 
 - **A. Identity & quick wins** (done): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Sky Blue idle/tracking, Mango Orange input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping.
 - **B. Companion guides you** (done): after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
-- **C. Circling & snipping** (Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
+- **C. Circling & snipping** (done; Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
 - **D. Air-gapped mode**: the optional Anthropic provider is pending a decision (the user is deciding whether to remove it); Whisper model import from a local file as an alternative to the one-time download.
 - **E. File management** beyond the Finder selection: inspect/organize/clean up across folders. Clear orders stay rule-based; bulk changes the model proposes are shown for confirmation. Trash only, never permanent deletes.
 - **F. Thought Space banner & memory**: a working-memory board beside the companion. Persistent memory is **opt-in, off by default, local only, browsable and deletable in Settings, never records blocked apps**, and samples on app switches rather than continuously.

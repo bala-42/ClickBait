@@ -27,6 +27,11 @@ public enum Prompt {
         jargon. Start straight with the explanation: never begin with or mention "the \
         highlighted text", "the selected text" or "this text", and don't repeat it back. \
         Always use an empty "pointers" list.
+        - If the user circled or boxed part of the screen, the image is a close-up of that \
+        part with a red outline around what they mean. Say what it is and explain it in 2–4 \
+        short sentences, using what's visible for context and defining any jargon. Start \
+        straight with the explanation; never mention the circle, box or red outline. Put \
+        code or a formula worth copying in "code". Always use an empty "pointers" list.
         - The conversation can continue with follow-ups. Use what was said before for \
         context, and the newest screenshot for what's on screen now. Typed follow-ups are \
         read, not heard, so "speech" may run to 4 sentences when the question needs it.
@@ -53,7 +58,12 @@ public enum Prompt {
             lines.append("The user said: \(request.question)")
             return lines.joined(separator: "\n")
         }
-        if let selected = request.selectedText, !selected.isEmpty {
+        if let snip = request.snip {
+            lines.append("The image is a close-up of the part of the screen the user \(snip.verb); the red outline marks it.")
+            lines.append("")
+            let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
+            lines.append(question.isEmpty ? "Explain what's inside the red outline." : "The user said: \(question)")
+        } else if let selected = request.selectedText, !selected.isEmpty {
             lines.append("The user highlighted this text:")
             lines.append("<<<")
             lines.append(truncated(selected))

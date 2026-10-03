@@ -224,7 +224,7 @@ final class OverlayController {
     private func setCompanionHidden(_ hidden: Bool) {
         guard let panel = bubblePanel else { return }
         // While guiding, the triangle is the answer: it never hides.
-        let alpha: CGFloat = hidden && model.bubble == .idle && guide == nil ? 0 : 1
+        let alpha: CGFloat = hidden && model.bubble == .idle && guide == nil && !model.isSnipping ? 0 : 1
         if panel.alphaValue != alpha { panel.alphaValue = alpha }
     }
 
@@ -245,6 +245,13 @@ final class OverlayController {
             topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
         }
         panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
+    }
+
+    /// Strawberry Red while the user marks part of the screen (hold ⌥⌘).
+    func setSnipping(_ snipping: Bool) {
+        if snipping { endGuide() }
+        model.isSnipping = snipping
+        setCompanionHidden(false)
     }
 
     // MARK: - Guiding (roadmap phase B)

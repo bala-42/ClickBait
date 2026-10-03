@@ -51,6 +51,10 @@ final class AskCoordinator {
     @ObservationIgnored var onActionStarted: ((String) -> Void)?
     /// Called after a spoken command ran, with a short confirmation.
     @ObservationIgnored var onActionDone: ((String) -> Void)?
+    /// The user started (true) or stopped marking part of the screen with ⌥⌘ held.
+    @ObservationIgnored var onSnipMarking: ((Bool) -> Void)? {
+        didSet { snipper.onMarkingChange = onSnipMarking }
+    }
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -58,6 +62,7 @@ final class AskCoordinator {
     @ObservationIgnored private let speech: SpeechModelManager
     @ObservationIgnored private let recorder = AudioRecorder()
     @ObservationIgnored private let capturer = ScreenCapturer()
+    @ObservationIgnored private let snipper = SnipController()
     @ObservationIgnored private var captureTask: Task<ScreenCapture, Error>?
     @ObservationIgnored private var pressedAt: ContinuousClock.Instant?
     @ObservationIgnored private var context = ScreenContext()
@@ -94,7 +99,15 @@ final class AskCoordinator {
         case .askReleased:
             askTask = Task { await finish() }
         case .askCancelled: cancel(reason: "another key was pressed")
-        case .explain: explain()
+        case .explainPressed:
+            // Busy answering: a tap still explains, but nothing to snip into.
+            if state != .listening, state != .thinking, !isAnswering { snipper.begin() }
+        case .explainReleased:
+            switch snipper.isActive ? snipper.end() : .tap {
+            case .tap: explain()
+            case .snip(let kind, let region, let path): snip(kind, region: region, path: path)
+            }
+        case .explainCancelled: snipper.cancel()
         }
     }
 
@@ -400,6 +413,53 @@ final class AskCoordinator {
                       speak: false, display: "Explain: “\(excerpt)”")
     }
 
+    // MARK: - Snip (hold ⌥⌘)
+
+    /// Explains the part of the screen the user circled or boxed, in a chat bubble like
+    /// a highlighted-text explanation.
+    private func snip(_ kind: SnipKind, region: Rect, path: [Point]) {
+        guard state != .listening, state != .thinking, !isAnswering else { return }
+        speaker.stop()
+        if conversation != nil {
+            closeChat()
+            onChatClose?()
+        }
+        errorResetTask?.cancel()
+
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        guard checkCanAsk(frontmost: frontmost) else { return }
+        frontmostPID = frontmost?.processIdentifier
+        context = ScreenContext(appName: frontmost?.localizedName)
+        let provider = settings.makeProvider()
+        self.provider = provider
+        Task.detached(priority: .userInitiated) { await provider.warmUp() }
+        state = .thinking
+        Log.ask.notice("Snip: \(kind.rawValue, privacy: .public) \(Int(region.width), privacy: .public)×\(Int(region.height), privacy: .public) pt")
+        askTask = Task { await finishSnip(kind, region: region, path: path) }
+    }
+
+    private func finishSnip(_ kind: SnipKind, region: Rect, path: [Point]) async {
+        let startedAt = ContinuousClock.now
+        // The display holding the middle of the region.
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let center = NSPoint(x: region.x + region.width / 2, y: primaryHeight - (region.y + region.height / 2))
+        let capture: ScreenCapture
+        do {
+            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center)
+        } catch {
+            Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
+            show(error: "Couldn't capture the screen: \(error.localizedDescription)")
+            return
+        }
+        guard !Task.isCancelled else { return }
+        let encoding = Task.detached(priority: .userInitiated) {
+            try ScreenshotEncoder.encode(SnipRenderer.render(capture, kind: kind, region: region, path: path))
+        }
+        await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
+                      speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
+                      snip: kind)
+    }
+
     // MARK: - Answering
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
@@ -417,7 +477,8 @@ final class AskCoordinator {
         encoding: Task<EncodedScreenshot, Error>,
         startedAt: ContinuousClock.Instant,
         speak: Bool,
-        display: String
+        display: String,
+        snip: SnipKind? = nil
     ) async {
         let releasedAt = startedAt
         answerStartedAt = startedAt
@@ -448,7 +509,8 @@ final class AskCoordinator {
                 screenshotHeight: screenshot.height,
                 context: context,
                 selectedText: selectedText,
-                history: history
+                history: history,
+                snip: history.isEmpty ? snip : nil
             )
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
@@ -462,7 +524,8 @@ final class AskCoordinator {
             var spokenSoFar = ""
             var isFirstSentence = true
             // Explanations shouldn't open with "The highlighted text refers to…".
-            let tidy: (String) -> String = { selectedText == nil ? $0 : ExplanationCleaner.clean($0) }
+            let explaining = selectedText != nil || snip != nil
+            let tidy: (String) -> String = { explaining ? ExplanationCleaner.clean($0) : $0 }
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
@@ -516,9 +579,10 @@ final class AskCoordinator {
         }
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height)
-        if selectedText != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
-        // An ⌥⌘ explanation is about the text, never about where to click.
-        if selectedText != nil, !parsed.response.pointers.isEmpty {
+        if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
+        // An ⌥⌘ explanation is about the text or area, never about where to click (and a
+        // snip's close-up has no screen coordinates anyway).
+        if selectedText != nil || snip != nil, !parsed.response.pointers.isEmpty {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
         }
