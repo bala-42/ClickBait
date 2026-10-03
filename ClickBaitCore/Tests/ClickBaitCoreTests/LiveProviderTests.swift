@@ -19,7 +19,7 @@ struct LiveOllamaTests {
         let longEdge = Int(ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_LONG_EDGE"] ?? "") ?? 1280
         let snip = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_SNIP"].flatMap(SnipKind.init(rawValue:))
         let (jpeg, width, height) = try SyntheticScreen.render(longEdge: longEdge, snipped: snip != nil)
-        let request = AskRequest(
+        var request = AskRequest(
             question: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_QUESTION"] ?? "How do I share this document?",
             screenshotJPEG: jpeg, screenshotWidth: width, screenshotHeight: height,
             context: ScreenContext(appName: "Notes"),
@@ -30,6 +30,12 @@ struct LiveOllamaTests {
             // CLICKBAIT_LIVE_LOCATE=Share tries the zoomed-in second look.
             locate: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_LOCATE"]
         )
+        if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ORDER"] != nil {
+            // The text-only "which action is this?" step.
+            request.interpretOrder = true
+            request.screenshotJPEG = Data()
+            request.context = ScreenContext(appName: "Finder")
+        }
         let clock = ContinuousClock()
         let start = clock.now
         var firstChunk: Duration?

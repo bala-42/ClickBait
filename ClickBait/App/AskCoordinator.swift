@@ -44,6 +44,10 @@ final class AskCoordinator {
     @ObservationIgnored var onChatOpen: ((String) -> Void)?
     /// A follow-up was sent in the open chat (typed or spoken).
     @ObservationIgnored var onChatUserMessage: ((String) -> Void)?
+    /// The model proposed a risky action: ask the user (the question to show).
+    @ObservationIgnored var onConfirmRequest: ((String) -> Void)?
+    /// The question is no longer pending (answered, replaced or dropped).
+    @ObservationIgnored var onConfirmEnd: (() -> Void)?
     /// A typed order was carried out: its confirmation, as the chat's reply.
     @ObservationIgnored var onChatReply: ((String) -> Void)?
     /// Something went wrong answering in the chat.
@@ -184,6 +188,13 @@ final class AskCoordinator {
         let blocklist = settings.blocklist
         askTask = Task {
             let startedAt = ContinuousClock.now
+            if let (action, proposal) = await understandOrder(text) {
+                onChatUserMessage?(text)
+                isAnswering = true
+                defer { isAnswering = false }
+                onChatReply?(await handleProposal(action, request: proposal, speak: false))
+                return
+            }
             let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
             context.windowTitle = snapshot.windowTitle
             context.focusedElement = snapshot.focusedElement
@@ -385,6 +396,15 @@ final class AskCoordinator {
             show(error: "I didn't catch that. Hold Control+Option and try again.")
             return
         }
+        // "yes" / "cancel" answers a pending question; anything else replaces it.
+        if pendingAction != nil {
+            if let answer = CommandParser.confirmation(transcript) {
+                encoding.cancel()
+                await resolvePending(answer)
+                return
+            }
+            dropPending()
+        }
         onTranscript?(transcript)
 
         // Direct orders run right away, without the model.
@@ -394,6 +414,17 @@ final class AskCoordinator {
             Log.ask.notice("Command recognised: \(command.name, privacy: .public)")
             encoding.cancel()
             await perform(command)
+            return
+        }
+
+        // An order in other words: ask the model which action it is (text only, ~1 s).
+        if let (action, proposal) = await understandOrder(transcript) {
+            encoding.cancel()
+            let message = await handleProposal(action, request: proposal, speak: true)
+            if chatShown {
+                onChatUserMessage?(transcript)
+                onChatReply?(message)
+            }
             return
         }
 
@@ -465,6 +496,106 @@ final class AskCoordinator {
 
     /// The microphone's level while listening, for the waveform.
     var microphoneLevel: Float { state == .listening ? recorder.level : 0 }
+
+    // MARK: - Proposed actions (phase E, step 4)
+
+    /// A risky action the model proposed, waiting for the user's yes.
+    @ObservationIgnored private var pendingAction: (request: ActionRequest, speak: Bool, inChat: Bool)?
+
+    /// An order the rules didn't catch but the model understood: safe actions run now;
+    /// ones that move, rename, bin or quit something are asked about first.
+    /// Returns what to show in the chat: the question asked, or the result.
+    @discardableResult
+    private func handleProposal(_ action: ResolvedAction, request proposal: ActionRequest, speak: Bool) async -> String {
+        if ActionCatalog.needsConfirmation(action) {
+            var count: Int?
+            if case .file = action { count = try? await FinderSelection.read().count }
+            if count == 0 {
+                let message = FileActionError.nothingSelected.localizedDescription
+                if speak { speaker.speak(message) }
+                show(error: message)
+                return message
+            }
+            pendingAction = (proposal, speak, chatShown)
+            let question = ActionCatalog.confirmationQuestion(for: action, fileCount: count)
+            Log.ask.notice("Understood order \(proposal.name, privacy: .public): asking first")
+            if speak { speaker.speak(question) }
+            if state == .thinking { state = .idle }
+            onConfirmRequest?(question)
+            return question
+        }
+        Log.ask.notice("Understood order \(proposal.name, privacy: .public): running")
+        switch await perform(proposal, speak: speak) {
+        case .success(let confirmation): return confirmation + "."
+        case .failure(let message): return message
+        }
+    }
+
+    /// The whole reply to `request`, or nil if it fails or takes longer than `limit`.
+    private nonisolated static func reply(from provider: any LLMProvider, to request: AskRequest, within limit: Duration) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
+            group.addTask {
+                var text = ""
+                do { for try await chunk in provider.stream(request) { text += chunk } } catch { return nil }
+                return text
+            }
+            group.addTask {
+                try? await Task.sleep(for: limit)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// For orders the rules don't recognise ("stash these in my documents"): a quick,
+    /// text-only request asking which known action it is. Nil if none (or no answer in
+    /// time); the result still has to pass the catalog and the Finder check.
+    private func understandOrder(_ text: String) async -> (ResolvedAction, ActionRequest)? {
+        guard settings.commandsEnabled, CommandParser.looksLikeOrder(text), let provider else { return nil }
+        let start = ContinuousClock.now
+        var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
+        request.interpretOrder = true
+        let reply = await Self.reply(from: provider, to: request, within: .seconds(8))
+        guard let reply, let proposal = ResponseParser.action(inReply: reply) else {
+            Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
+            return nil
+        }
+        guard !isUnknownApp(proposal),
+              case .success(let action) = ActionCatalog.resolve(proposal, allowedShortcuts: settings.allowedShortcuts)
+        else {
+            Log.ask.notice("Order check: \(proposal.name, privacy: .public) doesn't apply here")
+            return nil
+        }
+        Log.ask.notice("Order check: \(proposal.name, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
+        return (action, proposal)
+    }
+
+    /// The user's answer to a pending question (Do it / Cancel, "yes" / "cancel", Esc).
+    func answerConfirmation(_ yes: Bool) {
+        Task { await resolvePending(yes) }
+    }
+
+    private func resolvePending(_ yes: Bool) async {
+        guard let pending = pendingAction else { return }
+        pendingAction = nil
+        onConfirmEnd?()
+        guard yes else {
+            Log.ask.notice("Proposed action cancelled")
+            if pending.speak { speaker.speak("Okay, I won't.") }
+            if state == .thinking { state = .idle }
+            return
+        }
+        let outcome = await perform(pending.request, speak: pending.speak)
+        if pending.inChat, chatShown, case .success(let confirmation) = outcome { onChatReply?(confirmation + ".") }
+    }
+
+    private func dropPending() {
+        guard pendingAction != nil else { return }
+        pendingAction = nil
+        onConfirmEnd?()
+    }
 
     // MARK: - Element list
 

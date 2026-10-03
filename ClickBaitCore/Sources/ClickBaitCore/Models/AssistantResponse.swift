@@ -20,12 +20,17 @@ public struct AssistantResponse: Codable, Equatable, Sendable {
     /// aloud (small models drop code they're asked to embed inside the speech string).
     public var code: String?
     public var language: String?
+    /// An order the model recognised that the rules didn't. Only a proposal: it's
+    /// checked against `ActionCatalog`, and risky ones are confirmed by the user.
+    public var action: ActionRequest?
 
-    public init(speech: String, pointers: [Pointer] = [], code: String? = nil, language: String? = nil) {
+    public init(speech: String, pointers: [Pointer] = [], code: String? = nil, language: String? = nil,
+                action: ActionRequest? = nil) {
         self.speech = speech
         self.pointers = pointers
         self.code = code
         self.language = language
+        self.action = action
     }
 
     /// What the chat shows: the words, then the code as a fenced block.

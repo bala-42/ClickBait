@@ -56,7 +56,8 @@ public enum ResponseParser {
                 speech: speech.isEmpty ? fallbackSpeech : speech,
                 pointers: pointers,
                 code: code(in: object),
-                language: (object["language"] ?? object["lang"]) as? String
+                language: (object["language"] ?? object["lang"]) as? String,
+                action: action(in: object)
             ),
             usedFallback: speech.isEmpty,
             droppedPointers: dropped
@@ -75,6 +76,27 @@ public enum ResponseParser {
         }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return text.trimmingCharacters(in: .newlines)
+    }
+
+    // MARK: - Action
+
+    /// {"action": {"name": "move_to", "argument": "documents", "detail": null}}; numbers
+    /// become strings ("argument": 30 for the volume).
+    /// The action in a reply to `Prompt.orderSystem`, if any.
+    public static func action(inReply raw: String) -> ActionRequest? {
+        firstJSONObject(in: raw).flatMap(action(in:))
+    }
+
+    static func action(in object: [String: Any]) -> ActionRequest? {
+        guard let dict = object["action"] as? [String: Any],
+              let name = (dict["name"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty
+        else { return nil }
+        func text(_ value: Any?) -> String? {
+            if let string = value as? String { return string.isEmpty ? nil : string }
+            if let number = value as? NSNumber, !(value is Bool) { return number.stringValue }
+            return nil
+        }
+        return ActionRequest(name: name, argument: text(dict["argument"]), detail: text(dict["detail"]))
     }
 
     // MARK: - Pointers

@@ -196,6 +196,38 @@ public enum ActionCatalog {
         }
     }
 
+    /// Actions that change or remove things the user can't simply undo by looking: they
+    /// run straight away only for clear, rule-recognised orders; a model's proposal
+    /// asks first.
+    public static func needsConfirmation(_ action: ResolvedAction) -> Bool {
+        switch action {
+        case .quitApp, .runShortcut, .setWiFi(false), .lockScreen, .sleepDisplay: true
+        case .file(let file):
+            switch file {
+            case .moveToTrash, .moveTo, .rename, .moveIntoNewFolder: true
+            case .compress, .merge, .convertImages, .shrink, .copyTo: false  // only make new files
+            }
+        default: false
+        }
+    }
+
+    /// The question asked before a confirmed action ("Move the selected files to Documents?").
+    public static func confirmationQuestion(for action: ResolvedAction, fileCount: Int?) -> String {
+        let files = fileCount.map { $0 == 1 ? "the selected item" : "the \($0) selected items" } ?? "the selected items"
+        return switch action {
+        case .quitApp(let name): "Quit \(name)?"
+        case .runShortcut(let name): "Run the shortcut “\(name)”?"
+        case .setWiFi: "Turn Wi-Fi off?"
+        case .lockScreen: "Lock the screen?"
+        case .sleepDisplay: "Turn off the display?"
+        case .file(.moveToTrash): "Move \(files) to the Trash?"
+        case .file(.moveTo(let place)): "Move \(files) to \(place.displayName)?"
+        case .file(.rename(let name)): "Rename \(files) to “\(name)”?"
+        case .file(.moveIntoNewFolder(let name)): "Move \(files) into a new folder\(name.map { " called “\($0)”" } ?? "")?"
+        default: "Go ahead?"
+        }
+    }
+
     /// The allowed name that best matches what the model (or Whisper) produced.
     public static func bestMatch(for name: String, in candidates: [String], threshold: Double = 0.8) -> String? {
         candidates

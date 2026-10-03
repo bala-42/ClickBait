@@ -103,17 +103,14 @@ public struct AnthropicProvider: LLMProvider {
             // Earlier turns as text; only the newest message carries a screenshot.
             "messages": ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] } + [[
                 "role": "user",
-                "content": [
-                    [
-                        "type": "image",
-                        "source": [
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": ask.screenshotJPEG.base64EncodedString(),
-                        ],
-                    ],
-                    ["type": "text", "text": Prompt.userText(for: ask)],
-                ],
+                "content": (ask.screenshotJPEG.isEmpty ? [] : [[
+                    "type": "image",
+                    "source": [
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": ask.screenshotJPEG.base64EncodedString(),
+                    ] as [String: Any],
+                ] as [String: Any]]) + [["type": "text", "text": Prompt.userText(for: ask)]],
             ]],
         ]
         let options = options(for: model)

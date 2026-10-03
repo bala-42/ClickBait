@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
     private let chat = ChatController()
+    private let confirm = ConfirmController()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -41,7 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         overlay.onCancel = { [weak self] in self?.coordinator.cancelInFlight() }
         overlay.onEscape = { [weak self] in
-            guard let self, chat.isOpen else { return false }
+            guard let self else { return false }
+            if confirm.isShowing {
+                coordinator.answerConfirmation(false)
+                return true
+            }
+            guard chat.isOpen else { return false }
             closeChat()
             return true
         }
@@ -59,6 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.chat.model.addUser(message)
             self?.chat.model.isBusy = true
         }
+        confirm.onAnswer = { [weak self] yes in self?.coordinator.answerConfirmation(yes) }
+        coordinator.onConfirmRequest = { [weak self] question in
+            guard let self else { return }
+            confirm.show(question, at: overlay.companionTopLeft)
+        }
+        coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
         coordinator.onChatReply = { [weak self] text in
             self?.chat.model.setAssistant(text)
             self?.chat.model.isBusy = false

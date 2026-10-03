@@ -35,6 +35,8 @@ public struct AskRequest: Sendable {
     public var elements: [PromptElement]
     /// Set for a second, zoomed-in look: find this one thing in a close-up screenshot.
     public var locate: String?
+    /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.
+    public var interpretOrder = false
 
     public init(
         question: String,

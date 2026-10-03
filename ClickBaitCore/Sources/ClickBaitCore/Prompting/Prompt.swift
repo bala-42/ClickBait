@@ -48,8 +48,37 @@ public enum Prompt {
 
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
-        request.locate == nil ? system : locateSystem
+        if request.interpretOrder { return orderSystem }
+        return request.locate == nil ? system : locateSystem
     }
+
+    /// Text-only: map an order the rules didn't recognise onto one known action.
+    public static let orderSystem = """
+        You turn a spoken order to a Mac assistant into one action, or none.
+
+        Reply with ONLY one JSON object: {"action": {"name": "...", "argument": "...", "detail": "..."}} \
+        or {"action": null} when the order doesn't match any action below. Never invent other names.
+
+        Actions:
+        - open_app (argument: app name), quit_app (argument: app name)
+        - open_place (argument: desktop, downloads, documents, home, applications, icloud_drive, pictures, music, movies)
+        - make_folder (argument: one of those places, or empty for the current folder; detail: folder name or empty)
+        - move_to, copy_to (argument: a place) — the files selected in Finder
+        - rename (detail: the new name), trash, compress, merge, shrink — the files selected in Finder
+        - convert_images (argument: jpeg or png)
+        - make_note (detail: the note's text), add_reminder (detail: what to be reminded of)
+        - media (argument: play_pause, next or previous)
+        - screenshot (argument: full, area or window)
+        - set_volume (argument: 0 to 100), mute, unmute, dark_mode, light_mode, show_desktop
+
+        Examples:
+        "stash these in my documents" → {"action": {"name": "move_to", "argument": "documents"}}
+        "jot down that the plumber comes Tuesday" → {"action": {"name": "make_note", "detail": "The plumber comes Tuesday"}}
+        "crank the volume up to 70" → {"action": {"name": "set_volume", "argument": "70"}}
+        "bin these" → {"action": {"name": "trash"}}
+        "skip this song" → {"action": {"name": "media", "argument": "next"}}
+        "write me a poem" → {"action": null}
+        """
 
     /// A second look to pin down where something is, on a sharp close-up.
     public static let locateSystem = """
@@ -68,6 +97,10 @@ public enum Prompt {
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
+        if request.interpretOrder {
+            let app = request.context.appName.map { " (frontmost app: \($0))" } ?? ""
+            return "The user said\(app): \"\(request.question)\""
+        }
         if let target = request.locate {
             return """
                 The image is \(request.screenshotWidth)×\(request.screenshotHeight) pixels, a close-up of part of the screen.

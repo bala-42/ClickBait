@@ -86,7 +86,9 @@ public struct OllamaProvider: LLMProvider {
     static let maxReplyTokens = 800
 
     static func chatBody(for ask: AskRequest, model: String) -> [String: Any] {
-        [
+        var message: [String: Any] = ["role": "user", "content": Prompt.userText(for: ask)]
+        if !ask.screenshotJPEG.isEmpty { message["images"] = [ask.screenshotJPEG.base64EncodedString()] }
+        return [
             "model": model,
             "stream": true,
             "format": "json",
@@ -95,11 +97,7 @@ public struct OllamaProvider: LLMProvider {
             "options": ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens],
             "messages": [["role": "system", "content": Prompt.system(for: ask)]]
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
-                + [[
-                    "role": "user",
-                    "content": Prompt.userText(for: ask),
-                    "images": [ask.screenshotJPEG.base64EncodedString()],
-                ]],
+                + [message],
         ]
     }
 

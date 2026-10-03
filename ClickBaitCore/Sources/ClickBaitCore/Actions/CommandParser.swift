@@ -34,6 +34,28 @@ public enum CommandParser {
         return nil
     }
 
+    /// Whether what was said is an order rather than a question — a model's proposed
+    /// action is only considered for orders.
+    public static func looksLikeOrder(_ transcript: String) -> Bool {
+        var words = normalize(transcript)
+        guard !words.isEmpty, !transcript.trimmingCharacters(in: .whitespaces).hasSuffix("?") else { return false }
+        if words.count > 1, ["can", "could"].contains(words[0]), ["i", "we"].contains(words[1]) { return false }
+        words = strippingLeadIns(words)
+        guard let first = words.first else { return false }
+        return !questionWords.contains(first) && !["i", "im", "my", "it", "its", "this", "that", "the"].contains(first)
+    }
+
+    /// The answer to "Go ahead?": true for yes, false for no, nil if it's neither.
+    public static func confirmation(_ transcript: String) -> Bool? {
+        let text = strippingLeadIns(normalize(transcript)).joined(separator: " ")
+        let yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "confirm", "yes please", "please do",
+                   "go", "yes do it", "sure go ahead", "ok do it", "okay do it"]
+        let no = ["no", "nope", "cancel", "dont", "don't", "stop", "no thanks", "never mind", "nevermind", "no dont", "abort"]
+        if yes.contains(text) { return true }
+        if no.contains(text) { return false }
+        return nil
+    }
+
     // MARK: - Rules
 
     private static func volume(_ words: [String]) -> ActionRequest? {
