@@ -7,7 +7,7 @@ import SwiftUI
 enum CompanionTone: Equatable {
     /// Azure (#007FFF): idle, following the cursor.
     case idle
-    /// Burnt Orange (#F5972D): listening, thinking, explaining (pulses).
+    /// Burnt Orange (#CC5500): listening, thinking, explaining (pulses).
     case processing
     /// Shamrock Green: Mac system actions and document/file processing.
     case action
@@ -17,7 +17,7 @@ enum CompanionTone: Equatable {
     var color: Color {
         switch self {
         case .idle: Color(red: 0, green: 127.0 / 255, blue: 1.0)
-        case .processing: Color(red: 245.0 / 255, green: 151.0 / 255, blue: 45.0 / 255)
+        case .processing: Color(red: 204.0 / 255, green: 85.0 / 255, blue: 0)
         case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
         case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
         }
