@@ -30,6 +30,8 @@ public struct SnipTracker: Sendable {
     public static let minTraceLength = 40.0
     /// A box (or a trace's bounds) smaller than this on both sides isn't a selection.
     public static let minSize = 12.0
+    /// A box thinner than this on its short side was a sideways slip, not a selection.
+    public static let minThickness = 6.0
     /// Samples closer than this to the previous one are skipped.
     static let sampleSpacing = 2.0
 
@@ -73,7 +75,8 @@ public struct SnipTracker: Sendable {
 
     public func decide() -> SnipDecision {
         if let box {
-            guard box.width >= Self.minSize || box.height >= Self.minSize else { return .tap }
+            // One side long enough, and the other not a slip of the hand (a 109×1 drag).
+            guard max(box.width, box.height) >= Self.minSize, min(box.width, box.height) >= Self.minThickness else { return .tap }
             let corners = [Point(x: box.x, y: box.y), Point(x: box.x + box.width, y: box.y),
                            Point(x: box.x + box.width, y: box.y + box.height), Point(x: box.x, y: box.y + box.height)]
             return .snip(.boxed, region: box, path: corners)

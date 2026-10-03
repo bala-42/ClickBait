@@ -50,6 +50,14 @@ struct SnipTrackerTests {
         #expect(tracker.decide() == .tap)
     }
 
+    @Test func sidewaysSlipIsNotABox() {
+        // Real drag from testing: 109×1 pt.
+        var tracker = SnipTracker(start: Point(x: 0, y: 0))
+        tracker.mouseDown(at: Point(x: 10, y: 10))
+        tracker.mouseDragged(to: Point(x: 119, y: 11))
+        #expect(tracker.decide() == .tap)
+    }
+
     @Test func thinBoxStillCounts() {
         // Boxing one line of text: wide but short.
         var tracker = SnipTracker(start: Point(x: 0, y: 0))

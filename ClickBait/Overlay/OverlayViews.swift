@@ -60,6 +60,8 @@ private struct TinyPill: View {
     let text: String
     let symbol: String
     let tone: CompanionTone
+    /// Problems are black and white, so they never read as one of the four states.
+    var isProblem = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -71,7 +73,9 @@ private struct TinyPill: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .modifier(ToneFill(tone: tone, shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+        .modifier(ToneFill(fill: isProblem ? .black.opacity(0.85) : tone.color.opacity(0.9),
+                           glow: isProblem ? .black.opacity(0.5) : tone.color.opacity(0.45),
+                           shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
     }
 }
@@ -91,18 +95,20 @@ extension View {
     }
 }
 
-/// Pills wear the triangle's colour and white edge, so label and pointer read as one.
+/// Pills wear the triangle's colour (or black, for problems) with its white edge, so
+/// label and pointer read as one.
 struct ToneFill<S: Shape>: ViewModifier {
-    let tone: CompanionTone
+    let fill: Color
+    let glow: Color
     let shape: S
 
     func body(content: Content) -> some View {
         content
             .foregroundStyle(.white)
-            .background(shape.fill(tone.color.opacity(0.9)))
+            .background(shape.fill(fill))
             .overlay(shape.stroke(.white.opacity(0.9), lineWidth: 1.2))
-            .shadow(color: tone.color.opacity(0.45), radius: 3)
-            .animation(.easeInOut(duration: 0.25), value: tone)
+            .shadow(color: glow, radius: 3)
+            .animation(.easeInOut(duration: 0.25), value: fill)
     }
 }
 
@@ -119,7 +125,8 @@ struct GuideLabelView: View {
                     .wrapped(label, maxWidth: 240)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .modifier(ToneFill(tone: model.tone, shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+                    .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(0.45),
+                                       shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
                     .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
             }
         }
@@ -209,7 +216,7 @@ struct CompanionBubbleView: View {
         case .answer(let text), .done(let text):
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):
-            TinyPill(text: message, symbol: "exclamationmark", tone: model.tone)
+            TinyPill(text: message, symbol: "exclamationmark", tone: model.tone, isProblem: true)
         }
     }
 }
