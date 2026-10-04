@@ -531,6 +531,9 @@ final class TutorialController {
         app?.localizedName?.caseInsensitiveCompare(name) == .orderedSame
     }
 
+    /// What `onFinished` reports when the task is done (checked by the app delegate).
+    static let finishedMessage = "✓ Done!"
+
     private func finish() {
         guard isActive else { return }  // stopped by the user: never "finish" afterwards
         isActive = false
@@ -539,7 +542,7 @@ final class TutorialController {
         overlay.tutorialDone("done")
         if speakSteps { speak?("Done!") }
         Log.ask.notice("Tutorial finished")
-        onFinished?("✓ Done!")
+        onFinished?(Self.finishedMessage)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, !isActive else { return }

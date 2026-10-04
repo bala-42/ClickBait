@@ -407,10 +407,13 @@ final class OverlayController {
     }
 
     /// The walkthrough is finished: a tick by the cursor.
+    /// A brief "done" tick at the end of a tutorial. It clears while the companion is
+    /// still lavender: left up, it turned green when tutoring ended and stayed.
     func tutorialDone(_ text: String) {
         if guide?.isTutorial == true { endGuide() }
         model.bubble = .done(text)
         setCompanionHidden(false)
+        scheduleDismiss(after: .milliseconds(1500))
     }
 
     /// The current step's target isn't on screen: the instruction by the cursor instead.

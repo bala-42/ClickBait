@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tutorial.onFinished = { [weak self] message in
             guard let self, let message else { return }
             // A tutorial that opened another app offers the way back (ignored = stay).
-            if message == "Done!", let home = coordinator.tutorialReturnApp, !home.isTerminated,
+            if message == TutorialController.finishedMessage, let home = coordinator.tutorialReturnApp, !home.isTerminated,
                NSWorkspace.shared.frontmostApplication?.processIdentifier != home.processIdentifier {
                 confirm.show("done! back to \(home.localizedName ?? "where you were")?", at: overlay.companionTopLeft,
                              confirm: "Back", cancel: "Stay", hint: nil, tone: .tutorial) { back in
@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if chat.isOpen, let last = chat.model.messages.last(where: { $0.role == .assistant }) {
                 chat.model.replaceLastAssistant(last.text + "\n\n" + message)
-            } else if message != "Done!" {
+            } else if message != TutorialController.finishedMessage {
                 overlay.show(.error(message))
             }
         }
