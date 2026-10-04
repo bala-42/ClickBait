@@ -109,7 +109,8 @@ Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips si
 ### Orders in other words (phase E, step 4)
 When the rules don't recognise something that looks like an order (not a question), a text-only request (`Prompt.orderSystem`, no screenshot, ~1.3 s on qwen2.5vl:7b, 8 s timeout) asks which catalog action it is, or none. The proposal must pass `ActionCatalog.resolve` and the Finder check. Safe actions run at once; `ActionCatalog.needsConfirmation` ones (trash, move, rename, move into folder, quit, shortcuts, Wi-Fi off, lock, sleep display) show a green confirm card (Do it / Cancel, "yes"/"cancel" by voice, Esc; 20 s timeout). Rule-recognised orders still run directly.
 
-### Type to ask (⌥⌘ + right-click)
+### Type to ask (double-tap ⌥⌘, or ⌥⌘ + right-click)
+Double-tapping ⌥⌘ (two taps within 0.3 s, `DoubleTapDetector`) opens the same chat without the mouse or a selection. Because a tap can't be called single until that window passes, a single tap's explain is held back 0.3 s and dropped if a second press comes; a snip or another shortcut resets the detector.
 Right-clicking while holding ⌥⌘ opens an empty chat at the cursor with the text field focused (the panel takes the keyboard without activating ClickBait). The right-click (down and up) is taken by `InputInterceptor`'s event tap, so the app shows no context menu; the following ⌥⌘ release is ignored (not a tap/explain). The first typed message goes through `sendTyped` like any follow-up.
 
 ### Guided tutorials (lavender)

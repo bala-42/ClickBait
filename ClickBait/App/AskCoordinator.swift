@@ -50,7 +50,11 @@ final class AskCoordinator {
     @ObservationIgnored var onConfirmEnd: (() -> Void)?
     /// Set by ⌥⌘ + right-click so the following release of ⌥⌘ doesn't count as a tap.
     @ObservationIgnored private var ignoreExplainRelease = false
-    /// An empty chat should open, ready to type into (⌥⌘ + right-click).
+    /// Single ⌥⌘ tap (explain) vs double tap (type to ask).
+    @ObservationIgnored private var explainTaps = DoubleTapDetector()
+    /// A single tap's explanation, held back until a second tap can no longer come.
+    @ObservationIgnored private var pendingExplain: Task<Void, Never>?
+    /// An empty chat should open, ready to type into (⌥⌘ + right-click, double-tap ⌥⌘).
     @ObservationIgnored var onChatOpenForTyping: (() -> Void)?
     /// The open chat should take the keyboard.
     @ObservationIgnored var onChatFocus: (() -> Void)?
@@ -125,24 +129,53 @@ final class AskCoordinator {
             askTask = Task { await finish() }
         case .askCancelled: cancel(reason: "another key was pressed")
         case .explainPressed:
+            // Pressed again before a held-back tap explained: this is a double tap or a
+            // snip, never "explain, then something else".
+            pendingExplain?.cancel()
+            pendingExplain = nil
             // Busy answering: a tap still explains, but nothing to snip into.
             if state != .listening, state != .thinking, !isAnswering { snipper.begin() }
         case .explainReleased:
             // Letting go of ⌥⌘ after a right-click (type to ask) isn't a tap.
             if ignoreExplainRelease {
                 ignoreExplainRelease = false
+                explainTaps.reset()
                 snipper.cancel()
                 return
             }
             let armed = snipper.isArmed
             switch snipper.isActive ? snipper.end() : .tap {
-            case .snip(let kind, let region, let path): snip(kind, region: region, path: path)
-            case .tap where armed: Log.ask.notice("Snip armed but nothing marked; ignoring")
-            case .tap: explain()
+            case .snip(let kind, let region, let path):
+                explainTaps.reset()
+                snip(kind, region: region, path: path)
+            case .tap where armed:
+                explainTaps.reset()
+                Log.ask.notice("Snip armed but nothing marked; ignoring")
+            case .tap:
+                explainTapped()
             }
         case .explainCancelled:
             snipper.cancel()
+            explainTaps.reset()
             ignoreExplainRelease = false
+        }
+    }
+
+    /// Tap ⌥⌘: explain the highlighted text. Double-tap ⌥⌘: open a chat to type into,
+    /// the keyboard-only twin of ⌥⌘ + right-click (no selection needed).
+    private func explainTapped() {
+        switch explainTaps.tap(at: ProcessInfo.processInfo.systemUptime) {
+        case .first:
+            pendingExplain = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(DoubleTapDetector.defaultWindow))
+                guard !Task.isCancelled, let self else { return }
+                pendingExplain = nil
+                explain()
+            }
+        case .second:
+            pendingExplain?.cancel()
+            pendingExplain = nil
+            startTypedChat(trigger: "double-tap ⌥⌘")
         }
     }
 
@@ -248,9 +281,9 @@ final class AskCoordinator {
     }
 
     /// Escape while listening or thinking abandons the question.
-    /// ⌥⌘ + right-click: an empty chat to type the first question into. Sent messages go
+    /// ⌥⌘ + right-click or double-tap ⌥⌘: an empty chat to type the first question into. Sent messages go
     /// through `sendTyped` like any typed follow-up (screen, pointing, actions).
-    func startTypedChat() {
+    func startTypedChat(trigger: String = "⌥⌘ right-click") {
         if snipper.isActive { snipper.cancel() }
         let flags = NSEvent.modifierFlags
         if flags.contains(.option), flags.contains(.command) { ignoreExplainRelease = true }
@@ -262,7 +295,7 @@ final class AskCoordinator {
         conversation = Conversation()
         snipMemory = nil
         chatShown = true
-        Log.ask.notice("Chat opened for typing (⌥⌘ right-click)")
+        Log.ask.notice("Chat opened for typing (\(trigger, privacy: .public))")
         onChatOpenForTyping?()
     }
 
@@ -279,6 +312,11 @@ final class AskCoordinator {
     func stopActivity() -> Bool {
         var stopped: [String] = []
         if snipper.isActive { snipper.cancel(); stopped.append("snip") }
+        if let pendingExplain {
+            pendingExplain.cancel()
+            self.pendingExplain = nil
+            stopped.append("explain")
+        }
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
         if isRefining { stopRefining(); stopped.append("close-up") }
         if tutorial?.isActive == true { tutorial?.stop(message: "Tutorial stopped."); stopped.append("tutorial") }

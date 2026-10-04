@@ -126,4 +126,4 @@ project.yml         XcodeGen spec
 
 Apache License 2.0 — see [LICENSE](LICENSE).
 
-**Type instead of talking:** hold ⌥⌘ and right-click anywhere to open a ClickBait chat right there, then type your question.
+**Type instead of talking:** double-tap ⌥⌘ (no mouse, nothing highlighted needed), or hold ⌥⌘ and right-click anywhere, to open a ClickBait chat at the companion, then type your question.
