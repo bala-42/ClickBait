@@ -151,6 +151,10 @@ public struct OllamaProvider: LLMProvider {
             "model": model,
             "stream": true,
             "format": schema(for: ask) ?? "json",
+            // Newer models (Qwen 3.5, Gemma 4) think before answering unless told not to:
+            // ~10 s on a one-line answer, and the thinking can use up the whole reply budget.
+            // Models that can't think ignore it.
+            "think": false,
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
             "options": options(for: ask),
