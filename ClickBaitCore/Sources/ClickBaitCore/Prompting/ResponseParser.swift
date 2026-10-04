@@ -31,8 +31,10 @@ public enum ResponseParser {
             return Result(response: AssistantResponse(speech: salvageSpeech(from: raw)), usedFallback: true, droppedPointers: 0)
         }
 
-        let speech = (object["speech"] as? String ?? object["answer"] as? String ?? object["text"] as? String)?
+        let written = (object["speech"] as? String ?? object["answer"] as? String ?? object["text"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Positions never belong in the text (they'd show in the chat or be read aloud).
+        let (speech, partsInText) = CoordinateScrubber.scrub(written)
 
         let rawPointers = (object["pointers"] ?? object["points"] ?? object["pointer"]).map(asArray) ?? []
         var pointers: [Pointer] = []
@@ -51,14 +53,22 @@ public enum ResponseParser {
             pointers = Array(pointers.prefix(maxPointers))
         }
 
+        var response = AssistantResponse(
+            speech: speech.isEmpty ? fallbackSpeech : speech,
+            pointers: pointers,
+            code: code(in: object),
+            language: (object["language"] ?? object["lang"]) as? String,
+            action: action(in: object)
+        )
+        // Parts of a snipped thing: positions in the image, no element list involved.
+        response.parts = (object["parts"].map(asArray) ?? []).compactMap { entry in
+            (entry as? [String: Any]).flatMap { pointer(from: $0, imageWidth: imageWidth, imageHeight: imageHeight) }
+        }.filter { !$0.label.isEmpty }
+        if response.parts.isEmpty {
+            response.parts = partsInText.filter { $0.x >= 0 && $0.y >= 0 && $0.x <= Double(imageWidth) && $0.y <= Double(imageHeight) }
+        }
         return Result(
-            response: AssistantResponse(
-                speech: speech.isEmpty ? fallbackSpeech : speech,
-                pointers: pointers,
-                code: code(in: object),
-                language: (object["language"] ?? object["lang"]) as? String,
-                action: action(in: object)
-            ),
+            response: response,
             usedFallback: speech.isEmpty,
             droppedPointers: dropped
         )

@@ -39,7 +39,15 @@ public enum Prompt {
         ("A meeting agenda that…", "The liver, the large organ that…") and say what it means \
         or does, defining any jargon. Never start with "The user", "The image" or "This \
         shows", and never mention images, close-ups, circles, boxes, outlines or screenshots. \
-        Put code or a formula worth copying in "code". No pointers.
+        Put code or a formula worth copying in "code". No "pointers".
+        - When explaining part of the screen, if what's shown has named parts you can see \
+        (anatomy, a labelled diagram, a machine, a map, a chart's series, a UI panel), add \
+        "parts": up to 6 of them in a sensible order, each {"x": X, "y": Y, "label": "name"} \
+        with x, y the CENTER of that part in the close-up's pixels and a 1–3 word name. If a \
+        part has a written label in the image, use that label's text. Only parts you can \
+        actually see and place; leave "parts" out when there are none. In follow-ups about \
+        the close-up, "where is X?" also goes in "parts". Never write coordinates or \
+        positions in "speech": ClickBait points at the parts itself.
         - Follow-ups continue the conversation: answer the NEW question itself, using earlier \
         messages as context. Never repeat an earlier answer. Typed follow-ups are read, not \
         heard, so "speech" may run to 4 sentences.
@@ -142,7 +150,9 @@ public enum Prompt {
             lines.append("The image is a close-up of part of the user's screen that they want explained.")
             lines.append("")
             let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
-            lines.append(question.isEmpty ? "Explain it: start with what it is." : "The user said: \(question)")
+            lines.append(question.isEmpty
+                ? "Explain it: start with what it is. If it has named parts you can see, also list them in \"parts\" with their positions."
+                : "The user said: \(question)")
         } else if let selected = request.selectedText, !selected.isEmpty {
             lines.append("The user highlighted this text:")
             lines.append("<<<")

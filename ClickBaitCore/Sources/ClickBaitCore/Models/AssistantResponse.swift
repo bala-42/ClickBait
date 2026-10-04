@@ -23,6 +23,14 @@ public struct AssistantResponse: Codable, Equatable, Sendable {
     /// An order the model recognised that the rules didn't. Only a proposal: it's
     /// checked against `ActionCatalog`, and risky ones are confirmed by the user.
     public var action: ActionRequest?
+    /// For snips: named parts of what was marked, positioned in the close-up's pixels,
+    /// for the red tour ("subscapularis", "supraspinatus"…).
+    public var parts: [Pointer] = []
+
+    /// `parts` is filled in by `ResponseParser`, never decoded.
+    enum CodingKeys: String, CodingKey {
+        case speech, pointers, code, language, action
+    }
 
     public init(speech: String, pointers: [Pointer] = [], code: String? = nil, language: String? = nil,
                 action: ActionRequest? = nil) {
@@ -33,7 +41,8 @@ public struct AssistantResponse: Codable, Equatable, Sendable {
         self.action = action
     }
 
-    /// What the chat shows: the words, then the code as a fenced block.
+    /// What the chat shows: the words, then the code as a fenced block. Parts aren't
+    /// listed: the companion shows them by pointing.
     public var displayText: String {
         guard let code, !code.isEmpty else { return speech }
         // Models sometimes repeat the code fenced inside "speech" too: show it once.

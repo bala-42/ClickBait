@@ -88,6 +88,9 @@ When the rules don't recognise something that looks like an order (not a questio
 ### Type to ask (⌥⌘ + right-click)
 Right-clicking while holding ⌥⌘ opens an empty chat at the cursor with the text field focused (the panel takes the keyboard without activating ClickBait). The right-click (down and up) is taken by `InputInterceptor`'s event tap, so the app shows no context menu; the following ⌥⌘ release is ignored (not a tap/explain). The first typed message goes through `sendTyped` like any follow-up.
 
+### Parts tour (red, unlabelled images only)
+A snip's answer may include `parts` (named parts of what was marked, positioned in the close-up's pixels; never written into the text). The close-up is sent at 1280 px on its long edge (`SnipView`), where qwen2.5vl:7b's positions are most accurate. Apple Vision text recognition reads the close-up's printed words on-device (`TextReader`, warmed at launch, waited for ≤1.5 s): if the part names are printed (`PartsMatcher` finds at least half of them), the image is **labelled and gets no tour** — the names are already there. Otherwise the red companion tours the parts (`PartsTour.plan`: 2–6 stops, inside the marked area, not piled up) with red pills reading "probably <name>": they're the model's best guesses (~46% land on the right structure, see below). ~2.4 s per stop, click to advance, Esc stops. "Where's X?" follow-ups in an unlabelled snip's chat point the same way. Nothing about parts is listed in the chat.
+
 ### Snips (phase C)
 Hold ⌥⌘ for 0.4 s to arm (companion turns red, trackpad tick); only then a transparent layer covers every screen (below the companion, which turns Strawberry Red). Moving traces a red line; click-drag draws a box (the click never reaches the app). Release decides (`SnipTracker`): a box ≥ 12 pt or a trace ≥ 60 pt long is a snip, anything else is a tap → explain highlighted text. The screenshot is cropped around the region (`SnipLayout`) with the shape drawn in red (`SnipRenderer`), sent with `AskRequest.snip`, answered in a chat bubble like an explanation (no pointers, no speech). Failsafe: the layer cancels itself if ⌥⌘ is no longer held or after 60 s. Trade-off: ⌥⌘-click/drag in other apps (e.g. Finder alias drag) is captured while the chord is held.
 
@@ -159,13 +162,13 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 
 **Suggested build order:** (1) plan prompt + step matcher in core with tests and live checks; (2) walkthrough loop for element-list steps only (native apps); (3) vision fallback with verification; (4) re-planning and chat step list; (5) spoken steps.
 
-### Parts tour for snips (tried, removed 2026-10-04)
-Idea: after a red snip explanation, the companion tours the marked thing's named parts ("subscapularis", "supraspinatus"…). Built once (fbee451) and reverted (f2b173c):
+### Parts tour: measurements (2026-10-04)
+Why the tour is unlabelled-only and says "probably" (built fbee451, removed f2b173c, brought back as best guesses):
 - Labelled diagrams: placing parts by their printed labels (Apple Vision text recognition) was accurate, but a tour of names already on screen is useless.
 - Unlabelled images (where a tour would teach something): scored on five real images (shoulder anatomy, a circuit, the visual pathway, an Ohm's-law worksheet, the solar system), one "find X" locate per part, a part counted right if its point fell on the right structure:
   - qwen2.5vl:7b: 18/39 (46%), ~3 s per part. One-call variant: mis-recognised the shoulder as the ear.
   - gemma3:12b: 7/39 (18%), ~5–6 s per part; it answers the image centre when unsure (no pixel grounding).
-- Bar for building it: ~80%. Revisit only with a model trained for grounding that fits in 24 GB (e.g. a newer Qwen-VL); `LiveOllamaTests` takes `CLICKBAIT_LIVE_IMAGE=<file>` + `CLICKBAIT_LIVE_LOCATE=<part>` (+ `CLICKBAIT_OLLAMA_MODEL`) to re-run the comparison.
+- Not reliable enough to state as fact (bar ~80%), hence "probably". Revisit with a model trained for grounding that fits in 24 GB (e.g. a newer Qwen-VL); `LiveOllamaTests` takes `CLICKBAIT_LIVE_IMAGE=<file>` + `CLICKBAIT_LIVE_LOCATE=<part>` (+ `CLICKBAIT_OLLAMA_MODEL`) to re-run the comparison.
 
 ## Working conventions for Claude Code
 - Plan before large changes; keep commits small and descriptive.
