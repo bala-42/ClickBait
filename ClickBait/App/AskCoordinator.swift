@@ -1022,7 +1022,7 @@ final class AskCoordinator {
         // Snips: tour the named parts of what was marked — but only when the names aren't
         // already printed in the image (then a tour adds nothing). Positions come from the
         // model alone, right only about half the time on such images, so every pill is
-        // marked approximate: "~supraspinatus".
+        // marked approximate: "~ supraspinatus".
         var tour: [ScreenPointer] = []
         if snip != nil, let memory = snipMemory, let view = memory.view {
             var text: [TextBox] = []
@@ -1032,7 +1032,7 @@ final class AskCoordinator {
             let labelled = !printed.isEmpty && printed.count * 2 >= max(candidates.count, 1)
             if !labelled {
                 let stops = PartsTour.stops(candidates, marked: view.marked)
-                tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~" + $0.label.lowercased())) }
+                tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) }
             }
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \

@@ -1,6 +1,6 @@
 /// The stops of a snip's parts tour: the parts inside (or just outside) the marked
 /// area, each name once, at most `maxParts`. There's nothing to check positions inside
-/// an image against, so the pills mark them as approximate ("~…").
+/// an image against, so the pills mark them as approximate ("~ …").
 public enum PartsTour {
     public static let maxParts = 6
 
