@@ -150,12 +150,14 @@ final class TutorialController {
 
         // A click on what the companion points at: the step is done (or the menu that
         // hides it is now open). Checked after a moment, once the click has landed.
+        var refreshNow = false
         if let click = pendingClick, Date().timeIntervalSince(click.at) >= 0.35 {
             pendingClick = nil
             if let frame = currentFrame, Self.contains(frame, click.point, margin: 10), !pointingAtMenu {
                 advance(to: index + 1, reason: "clicked")
                 return
             }
+            refreshNow = true  // something else was clicked (a menu opened?): look again now
         }
 
         if needsContinuation {
@@ -163,7 +165,7 @@ final class TutorialController {
             return
         }
 
-        guard tick % 3 == 0 else { return }
+        guard refreshNow || tick % 2 == 0 else { return }
         let pid = front?.processIdentifier
         let display = Self.displayUnderMouse()
         let elements = await Task.detached(priority: .userInitiated) {
@@ -248,21 +250,18 @@ final class TutorialController {
             finish()
             return
         }
-        try? await Task.sleep(for: .milliseconds(800))  // let the last click take effect
-        overlay.tutorialHint("checking…")
-        guard isActive, let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
-              let encoded = try? ScreenshotEncoder.encode(capture.image) else { finish(); return }
-
-        var check = AskRequest(question: goal, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
-                               screenshotHeight: encoded.height, context: context)
-        check.tutorialCheck = (plan, plan.steps.count)
-        if let reply = await Self.reply(from: provider, to: check, within: .seconds(15)),
-           TutorialProgress.parse(reply)?.done == true {
-            Log.ask.notice("Tutorial: the screen shows it's done")
-            finish()
-            return
+        // The companion stays where it is while ClickBait looks (no flying back and forth).
+        if let frame = currentFrame {
+            point(at: frame, label: "checking…", menu: pointingAtMenu)
+        } else {
+            overlay.tutorialHint("checking…")
         }
+        try? await Task.sleep(for: .milliseconds(600))  // let the last click take effect
         guard isActive else { return }
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
+              let encoded = try? ScreenshotEncoder.encode(capture.image) else { finish(); return }
+        guard isActive else { return }
+        // One call: the planner answers "no steps" when the task is already finished.
 
         let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let display = Self.displayUnderMouse()
@@ -276,8 +275,9 @@ final class TutorialController {
                               screenshotHeight: encoded.height, context: context,
                               elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
         next.planTutorial = true
-        guard let reply = await Self.reply(from: provider, to: next, within: .seconds(25)), isActive,
-              let more = TutorialPlan.parse(reply), !more.steps.isEmpty else {
+        let reply = await Self.reply(from: provider, to: next, within: .seconds(25))
+        guard isActive else { return }  // stopped meanwhile: stay stopped
+        guard let reply, let more = TutorialPlan.parse(reply), !more.steps.isEmpty else {
             finish()
             return
         }
@@ -292,6 +292,7 @@ final class TutorialController {
     }
 
     private func finish() {
+        guard isActive else { return }  // stopped by the user: never "finish" afterwards
         isActive = false
         loop?.cancel()
         loop = nil

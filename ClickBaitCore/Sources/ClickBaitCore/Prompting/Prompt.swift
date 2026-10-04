@@ -73,7 +73,11 @@ public enum Prompt {
         Reply with ONLY one JSON object:
         {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "..."}]}
 
-        - Each step is ONE click, in order. "target" is the exact visible name of what to click \
+        - List EVERY click from the screen as it is now to the finished task, in order — \
+        usually 2 to 6. Opening a menu is a click; choosing an item in it is another; a \
+        button in the dialog that then appears is another. Example for "export this as a \
+        PDF" in an editor: File → Export as PDF… → Save (three steps).
+        - Each step is ONE click. "target" is the exact visible name of what to click \
         (a menu, menu item, button, tab or field), as it is written in the app — prefer names \
         from the list of on-screen elements when given. "instruction" is a short imperative \
         ("Open the File menu", "Choose Export as PDF…").
