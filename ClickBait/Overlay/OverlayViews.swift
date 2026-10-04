@@ -30,26 +30,39 @@ struct CompanionTriangle: View {
     static let restingAngle: Double = -45
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var beat = false
+    /// One full beat (swell and back), as the old 0.7 s autoreversing pulse.
+    private static let beatPeriod: Double = 1.4
+    /// When the current pulse began, so every pulse starts from rest instead of mid-swell.
+    @State private var pulseStart = Date()
 
     var body: some View {
-        EquilateralTriangle()
-            .fill(tone.color.opacity(0.9))
-            .frame(width: Self.size, height: Self.size)
-            .rotationEffect(.degrees(angle))  // smoothed by OverlayController, not animated here
-            .shadow(color: tone.color.opacity(pulsing && beat ? 0.9 : 0.45), radius: pulsing && beat ? 7 : 3)
-            .scaleEffect(pulsing && beat && !reduceMotion ? 1.18 : 1)
-            .opacity(pulsing && beat && reduceMotion ? 0.6 : 1)
-            .frame(width: Self.size * 1.7, height: Self.size * 1.7)
-            .animation(.easeInOut(duration: 0.25), value: tone)
-            .onAppear { beat = true }
-            .animation(pulsing ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default, value: beat)
-            .onChange(of: pulsing) { _, isPulsing in
-                // Restart the beat so the repeat animation picks up the new state.
-                beat = false
-                if isPulsing { DispatchQueue.main.async { beat = true } }
-            }
-            .accessibilityHidden(true)
+        // The beat is computed from the clock, not a repeatForever animation: those kept
+        // running after pulsing stopped (each settle/unsettle while pointing started
+        // another), so the triangle went on rippling blue when it should have been idle.
+        // Paused, the timeline draws nothing extra and the beat is exactly 0.
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !pulsing)) { context in
+            let beat = pulsing ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
+            EquilateralTriangle()
+                .fill(tone.color.opacity(0.9))
+                .frame(width: Self.size, height: Self.size)
+                .rotationEffect(.degrees(angle))  // smoothed by OverlayController, not animated here
+                .shadow(color: tone.color.opacity(0.45 + 0.45 * beat), radius: 3 + 4 * beat)
+                .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
+                .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
+        }
+        .frame(width: Self.size * 1.7, height: Self.size * 1.7)
+        .animation(.easeInOut(duration: 0.25), value: tone)
+        .animation(.easeOut(duration: 0.2), value: pulsing)  // settle back softly when it stops
+        .onChange(of: pulsing) { _, isPulsing in
+            if isPulsing { pulseStart = .now }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// 0 → 1 → 0 over one period, eased like the old easeInOut swell.
+    private static func beat(after elapsed: TimeInterval) -> Double {
+        let phase = max(elapsed, 0).truncatingRemainder(dividingBy: beatPeriod) / beatPeriod
+        return (1 - cos(phase * 2 * .pi)) / 2
     }
 }
 
