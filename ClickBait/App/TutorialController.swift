@@ -65,6 +65,9 @@ final class TutorialController {
     /// The user clicked the menu the companion pointed at: it's open, so its items are
     /// looked up directly (toggled by another click on it, cleared by any other click).
     private var menuOpened = false
+    /// The menu the user just opened by clicking a "Open the … menu" step: the next step's
+    /// item is inside it, so point at the item rather than at the menu again.
+    private var openedMenu: String?
     /// Steps whose app was switched to already: the user leaving it again isn't fought.
     private var switchedFor = Set<Int>()
     /// The page that was open when a typing step began: a different one means it's done.
@@ -298,9 +301,12 @@ final class TutorialController {
         }).value {
             menuPaths[index] = path
             Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is inside a menu (\(path.count - 1, privacy: .public) to open): \(path.joined(separator: " ▸ "), privacy: .public)")
+            // Opening that menu becomes a step of the plan, so the pill and the chat's
+            // checklist list the same steps (the pill used to say "open view first" on its own).
+            if insertMenuSteps(path) { return }
         }
         // The menu holding it is open (the user just clicked it): point at the item.
-        if menuOpened, let path = menuPaths[index], let frame = await Task.detached(priority: .userInitiated, operation: {
+        if menuOpened || menuPaths[index]?.first == openedMenu, let path = menuPaths[index], let frame = await Task.detached(priority: .userInitiated, operation: {
             AXInspector.openMenuItemFrame(path, frontmostPID: pid)
         }).value {
             if loggedTarget != index {
@@ -358,9 +364,33 @@ final class TutorialController {
         overlay.tutorialPoint(at: ScreenPointer(label: label, appKit: Point(x: center.x, y: primaryHeight - center.y), quartz: center))
     }
 
+    /// Puts "Open the View menu" (and any submenu) into the plan before the current step,
+    /// unless the step before already opens it. False when nothing was added.
+    private func insertMenuSteps(_ path: [String]) -> Bool {
+        let previous = index > 0 ? TutorialPlan.withoutEllipsis(plan.steps[index - 1].target).lowercased() : nil
+        let openers = path.dropLast().filter { TutorialPlan.withoutEllipsis($0).lowercased() != previous }
+        guard !openers.isEmpty, openers.count == path.count - 1, plan.steps.count + openers.count <= TutorialPlan.maxSteps else {
+            return false
+        }
+        let app = plan.steps[index].app
+        let steps = openers.enumerated().map { offset, title in
+            TutorialStep(target: title, instruction: offset == 0 ? "Open the \(title) menu" : "Open \(title)", app: app)
+        }
+        plan.steps.insert(contentsOf: steps, at: index)
+        // Everything kept per step moves along with its step.
+        menuPaths = Dictionary(uniqueKeysWithValues: menuPaths.map { ($0.key >= index ? $0.key + steps.count : $0.key, $0.value) })
+        menuSearched = Set(menuSearched.map { $0 >= index ? $0 + steps.count : $0 })
+        loggedTarget = nil
+        Log.ask.notice("Tutorial: added \(steps.count, privacy: .public) menu step(s) before step \(self.index + steps.count + 1, privacy: .public)")
+        onChecklist?(checklistText)
+        if speakSteps { speak?(plan.steps[index].instruction) }
+        return true
+    }
+
     private func advance(to next: Int, reason: String) {
         guard isActive, next > index || next < index else { return }
         lastClicked = reason == "clicked" && index < plan.steps.count ? (plan.steps[index].target, currentRole) : nil
+        openedMenu = reason == "clicked" && index < plan.steps.count ? plan.steps[index].target : nil
         index = min(next, plan.steps.count)
         lastProgress = Date()
         currentFrame = nil

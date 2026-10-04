@@ -184,7 +184,7 @@ public struct TutorialPlan: Equatable, Sendable {
     static let appleMenuNames: Set = ["apple", "apple menu", "", "apple logo"]
 
     /// "System Settings…" → "System Settings".
-    static func withoutEllipsis(_ target: String) -> String {
+    public static func withoutEllipsis(_ target: String) -> String {
         var name = target.trimmingCharacters(in: .whitespaces)
         for suffix in ["…", "..."] where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }
         return name.trimmingCharacters(in: .whitespaces)
