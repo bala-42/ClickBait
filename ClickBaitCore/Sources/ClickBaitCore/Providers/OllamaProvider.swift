@@ -113,7 +113,7 @@ public struct OllamaProvider: LLMProvider {
                 "maxItems": TutorialPlan.maxSteps,
                 "items": [
                     "type": "object",
-                    "properties": ["target": ["type": "string"], "instruction": ["type": "string"]],
+                    "properties": ["target": ["type": "string"], "instruction": ["type": "string"], "app": ["type": "string"]],
                     "required": ["target", "instruction"],
                 ] as [String: Any],
             ] as [String: Any],

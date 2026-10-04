@@ -7,10 +7,14 @@ public struct TutorialStep: Codable, Equatable, Sendable {
     public var target: String
     /// A short instruction ("Open the File menu").
     public var instruction: String
+    /// The app the click happens in ("Notes"), when the task spans apps. ClickBait
+    /// switches to it (green) before pointing.
+    public var app: String?
 
-    public init(target: String, instruction: String) {
+    public init(target: String, instruction: String, app: String? = nil) {
         self.target = target
         self.instruction = instruction
+        self.app = app
     }
 }
 
@@ -44,7 +48,9 @@ public struct TutorialPlan: Equatable, Sendable {
         let steps = rawSteps.compactMap { entry -> TutorialStep? in
             guard let target = (entry["target"] as? String).map(cleanTarget), !target.isEmpty else { return nil }
             let instruction = cleanInstruction(entry["instruction"] as? String ?? "")
-            return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction)
+            let app = (entry["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction,
+                                app: (app?.isEmpty ?? true) ? nil : app)
         }
         let intro = cleanInstruction(object["speech"] as? String ?? "")
         // Padding a small model adds when it runs out of real steps: the same target
@@ -83,20 +89,46 @@ public struct TutorialPlan: Equatable, Sendable {
         return plan
     }
 
-    /// Separates "open that app" from the steps: a step whose target is an installed app
-    /// other than the one in front becomes `app` (ClickBait opens it — green — and the
-    /// lesson continues there); a step that "opens" the app already in front is dropped.
-    /// The model rarely uses the "app" field and writes "Open Safari" as a step instead.
+    /// Separates "open that app" from the clicks, and gives every step the app it happens
+    /// in. ClickBait opens and switches apps itself (green), so "Open Safari" / "Switch to
+    /// Notes" steps are dropped and the steps after them belong to that app. `app` becomes
+    /// the first step's app when it isn't the one in front (opened before the lesson starts).
     public func separatingSetup(frontmostApp: String?, isInstalledApp: (String) -> Bool) -> TutorialPlan {
         var plan = self
         let front = frontmostApp?.lowercased()
-        plan.steps = steps.filter { $0.target.lowercased() != front }
-        if plan.app == nil, let first = plan.steps.first, isInstalledApp(first.target) {
-            plan.app = first.target
-            plan.steps.removeFirst()
+        var current = app.flatMap(Self.realApp) ?? frontmostApp
+        var kept: [TutorialStep] = []
+        for (position, var step) in steps.enumerated() {
+            let switching = ["open", "launch", "switch", "go", "return", "back", "start", "click", "choose"]
+            let verb = ImpliedPointer.normalized(step.instruction).split(separator: " ").first.map(String.init) ?? ""
+            if isInstalledApp(step.target), position == 0 || switching.contains(verb) || step.target.lowercased() == front {
+                current = step.target  // "Open Safari": ClickBait does that
+                continue
+            }
+            if let named = step.app.flatMap(Self.realApp) { current = named }
+            step.app = current
+            kept.append(step)
         }
+        plan.steps = kept
+        plan.app = kept.first?.app ?? (kept.isEmpty ? current : nil)
         if plan.app?.lowercased() == front { plan.app = nil }
         return plan
+    }
+
+    /// The app name as it is on today's Macs, or nil for ClickBait itself (the model sees
+    /// its chat in front and names it).
+    static func realApp(_ name: String) -> String? {
+        switch name.lowercased() {
+        case "clickbait": nil
+        case "system preferences": "System Settings"
+        default: name
+        }
+    }
+
+    /// The apps the plan uses, in order of first use.
+    public var apps: [String] {
+        var seen = Set<String>()
+        return steps.compactMap(\.app).filter { seen.insert($0.lowercased()).inserted }
     }
 
     /// What's left after `done` steps, from a follow-up plan — or nil when that plan just
@@ -147,10 +179,17 @@ public struct TutorialPlan: Equatable, Sendable {
     }
 
     /// The steps as the chat shows them, with ticks for those done.
+    /// Across apps, each app's steps start with "In Notes:".
     public func checklist(done: Int) -> String {
-        steps.enumerated().map { index, step in
-            (index < done ? "✓ " : "\(index + 1). ") + step.instruction
-        }.joined(separator: "\n")
+        let spansApps = apps.count > 1
+        var lines: [String] = []
+        for (index, step) in steps.enumerated() {
+            if spansApps, let app = step.app, index == 0 || steps[index - 1].app?.lowercased() != app.lowercased() {
+                lines.append("In \(app):")
+            }
+            lines.append((index < done ? "✓ " : "\(index + 1). ") + step.instruction)
+        }
+        return lines.joined(separator: "\n")
     }
 }
 

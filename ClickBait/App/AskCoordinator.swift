@@ -779,6 +779,13 @@ final class AskCoordinator {
         conversation?.append(user: question, assistantSpeech: plan.intro + "\n" + plan.checklist(done: 0))
         if state == .thinking { state = .idle }
         if speak, !plan.intro.isEmpty { speaker.speak(plan.intro) }
+        tutorial.isInstalledApp = { installedName($0) != nil }
+        tutorial.openApp = { [weak self] name in
+            guard let self, let installed = installedName(name) else { return false }
+            let ready = await openForTutorial(installed, url: apps[installed]) != nil
+            onSetupFinished?()
+            return ready
+        }
         tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak)
         return true
     }
@@ -822,7 +829,8 @@ final class AskCoordinator {
             show(error: "That needs \(name), which isn't installed.")
             return nil
         }
-        onActionStarted?("opening \(name)…")
+        let running = NSWorkspace.shared.runningApplications.contains { $0.bundleURL == url }
+        onActionStarted?(running ? "switching to \(name)…" : "opening \(name)…")
         Log.ask.notice("Tutorial setup: opening another app")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -843,7 +851,7 @@ final class AskCoordinator {
             try? await Task.sleep(for: .milliseconds(200))
         }
         try? await Task.sleep(for: .milliseconds(300))  // the window settles
-        onActionDone?("opened \(app.localizedName ?? name)")
+        onActionDone?("\(running ? "switched to" : "opened") \(app.localizedName ?? name)")
         frontmostPID = app.processIdentifier
         frontmostBundleID = app.bundleIdentifier
         let pid = app.processIdentifier

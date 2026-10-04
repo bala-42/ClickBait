@@ -150,7 +150,35 @@ struct TutorialSetupTests {
 
     @Test func ordinaryStepsAreUntouched() {
         let plan = TutorialPlan(intro: "", steps: [TutorialStep(target: "History", instruction: "Open History")])
-        #expect(plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: installed) == plan)
+        let split = plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: installed)
+        #expect(split.app == nil)
+        #expect(split.steps == [TutorialStep(target: "History", instruction: "Open History", app: "Safari")])
+    }
+
+    @Test func stepsAcrossAppsKnowTheirApp() {
+        // "Open Notes" mid-plan: ClickBait switches; the steps after it are in Notes.
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "Share", "instruction": "Click Share"}, {"target": "Copy Link", "instruction": "Choose Copy Link"}, {"target": "Notes", "instruction": "Open Notes"}, {"target": "New Note", "instruction": "Click New Note"}, {"target": "⌘V", "instruction": "Press ⌘V to paste"}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: installed)
+        #expect(split.app == nil)
+        #expect(split.steps.map(\.target) == ["Share", "Copy Link", "New Note", "⌘V"])
+        #expect(split.steps.map(\.app) == ["Safari", "Safari", "Notes", "Notes"])
+        #expect(split.apps == ["Safari", "Notes"])
+        #expect(split.checklist(done: 1).hasPrefix("In Safari:\n✓ Click Share\n2. Choose Copy Link\nIn Notes:\n3. Click New Note"))
+    }
+
+    @Test func clickBaitAndOldNamesAreNotApps() {
+        // Real qwen2.5vl:7b plans: "Open Notes" tagged ClickBait; System Preferences.
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"instruction": "Copy the page's link", "target": "Copy", "app": "Safari"}, {"instruction": "Open Notes", "target": "Notes", "app": "ClickBait"}, {"instruction": "Paste it", "target": "Paste", "app": "ClickBait"}, {"target": "Wallpaper", "instruction": "Choose Wallpaper", "app": "System Preferences"}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: installed)
+        #expect(split.steps.map(\.app) == ["Safari", "Notes", "System Settings"])
+    }
+
+    @Test func modelGivenAppsAreKept() {
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "History", "instruction": "Open History", "app": "Safari"}, {"target": "Clear History…", "instruction": "Choose it", "app": "Safari"}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Notes", isInstalledApp: installed)
+        #expect(split.app == "Safari")  // opened before the lesson starts
+        #expect(split.steps.count == 2)
+        #expect(split.checklist(done: 0) == "1. Open History\n2. Choose it")  // one app: no headers
     }
 }
 

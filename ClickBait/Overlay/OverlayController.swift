@@ -326,6 +326,15 @@ final class OverlayController {
         if case .working = model.bubble { model.bubble = .idle }
     }
 
+    /// A green "opened Notes" from a mid-tutorial switch is over: lavender again.
+    func clearAction() {
+        dismissTask?.cancel()
+        switch model.bubble {
+        case .working, .done: model.bubble = .idle
+        default: break
+        }
+    }
+
     // MARK: - Tutorials (lavender)
 
     /// Called with every left click anywhere (global AppKit point), for tutorials.

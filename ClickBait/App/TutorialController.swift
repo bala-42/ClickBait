@@ -21,6 +21,11 @@ final class TutorialController {
     /// Finished (`message` for the user, nil when stopped by them).
     var onFinished: ((String?) -> Void)?
     var speak: ((String) -> Void)?
+    /// Opens or switches to an app (green "opening Notes…" / "opened Notes"): true once
+    /// it's in front. For steps in another app.
+    var openApp: ((String) async -> Bool)?
+    /// Whether a name is an installed app ("Notes").
+    var isInstalledApp: (String) -> Bool = { _ in false }
 
     private(set) var isActive = false
     private let overlay: OverlayController
@@ -54,6 +59,11 @@ final class TutorialController {
     private var menuPaths: [Int: [String]] = [:]
     /// Steps whose menu search already ran (found or not): it isn't repeated every tick.
     private var menuSearched = Set<Int>()
+    /// The user clicked the menu the companion pointed at: it's open, so its items are
+    /// looked up directly (toggled by another click on it, cleared by any other click).
+    private var menuOpened = false
+    /// Steps whose app was switched to already: the user leaving it again isn't fought.
+    private var switchedFor = Set<Int>()
     /// The planned steps are all done: check the task is finished, or plan what's left.
     private var needsContinuation = false
     private var continuations = 0
@@ -90,6 +100,8 @@ final class TutorialController {
         screenChangedAt = nil
         menuPaths = [:]
         menuSearched = []
+        menuOpened = false
+        switchedFor = []
         needsContinuation = false
         continuations = 0
         isActive = true
@@ -161,6 +173,11 @@ final class TutorialController {
                 advance(to: index + 1, reason: "clicked")
                 return
             }
+            if let frame = currentFrame, pointingAtMenu, Self.contains(frame, click.point, margin: 10) {
+                menuOpened.toggle()
+            } else {
+                menuOpened = false
+            }
             if let frame = currentFrame {
                 let dx = max(frame.minX - click.point.x, 0, click.point.x - frame.maxX)
                 let dy = max(frame.minY - click.point.y, 0, click.point.y - frame.maxY)
@@ -171,6 +188,13 @@ final class TutorialController {
 
         if needsContinuation {
             await continueOrFinish()
+            return
+        }
+
+        // This step happens in another app: switch there (green), once per step.
+        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted),
+           switchedFor.insert(index).inserted, let openApp {
+            await switchApp(to: wanted, using: openApp)
             return
         }
 
@@ -218,6 +242,17 @@ final class TutorialController {
         }).value {
             menuPaths[index] = path
             Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is inside a menu (\(path.count - 1, privacy: .public) to open)")
+        }
+        // The menu holding it is open (the user just clicked it): point at the item.
+        if menuOpened, let path = menuPaths[index], let frame = await Task.detached(priority: .userInitiated, operation: {
+            AXInspector.openMenuItemFrame(path, frontmostPID: pid)
+        }).value {
+            if loggedTarget != index {
+                loggedTarget = index
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at an item in the open menu")
+            }
+            point(at: frame, label: instruction, menu: false)
+            return
         }
         if let path = menuPaths[index] {
             let opening = path.dropLast().reversed().compactMap { title in
@@ -272,6 +307,7 @@ final class TutorialController {
         lastProgress = Date()
         currentFrame = nil
         pointingAtMenu = false
+        menuOpened = false
         targetMissingSince = nil
         Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) of \(self.plan.steps.count, privacy: .public) (\(reason, privacy: .public))")
         clickedStepAt = reason == "clicked" ? Date() : nil
@@ -311,8 +347,15 @@ final class TutorialController {
             AXInspector.visibleElements(frontmostPID: pid, display: display)
         }.value
         let geometry = capture.geometry(imageWidth: encoded.width, imageHeight: encoded.height)
-        let done = plan.steps.map(\.instruction).joined(separator: "; ")
-        let question = "\(goal)\nAlready done: \(done).\nWhat are the remaining clicks from the screen as it is now? If it's finished, reply with no steps."
+        let done = plan.steps.map { step in step.app.map { "\(step.instruction) (in \($0))" } ?? step.instruction }
+            .joined(separator: "; ")
+        let here = NSWorkspace.shared.frontmostApplication?.localizedName
+        let question = """
+            \(goal)
+            Already done: \(done).
+            Now in \(here ?? "the app on screen"). What are the remaining clicks, in this app or others? \
+            If it's finished, reply with no steps.
+            """
         var next = AskRequest(question: question, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
                               screenshotHeight: encoded.height, context: context,
                               elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
@@ -328,7 +371,8 @@ final class TutorialController {
         }
         if reply == nil, isActive { reply = await Self.reply(from: provider, to: next, within: .seconds(25)) }
         guard isActive else { return }  // stopped meanwhile: stay stopped
-        guard let reply, let more = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !more.steps.isEmpty else {
+        guard let reply, let more = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+            .separatingSetup(frontmostApp: here, isInstalledApp: isInstalledApp), !more.steps.isEmpty else {
             finish()
             return
         }
@@ -345,6 +389,69 @@ final class TutorialController {
         Log.ask.notice("Tutorial: planned \(min(rest.count, room), privacy: .public) more step(s)")
         onChecklist?(checklistText)
         if speakSteps { speak?(plan.steps[index].instruction) }
+    }
+
+    /// Green between lavender steps: open the step's app, then plan this app's part from
+    /// what's really there (the steps were guesses made in another app).
+    private func switchApp(to app: String, using openApp: (String) async -> Bool) async {
+        let segmentEnd = plan.steps[index...].firstIndex { $0.app?.lowercased() != app.lowercased() } ?? plan.steps.count
+        Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is in another app; switching")
+        overlay.setTutoring(false)
+        currentFrame = nil
+        let opened = await openApp(app)
+        guard isActive else { return }
+        guard opened else {
+            stop(message: "I couldn't open \(app), so I stopped the tutorial.")
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(700))  // "opened Notes" stays a moment
+        guard isActive else { return }
+        overlay.clearAction()
+        overlay.setTutoring(true)
+        lastProgress = Date()
+        menuSearched = []
+        menuPaths = [:]
+        guard index > 0, let provider else { return }  // the first app's steps were planned there
+        overlay.tutorialHint("checking…")
+        let part = plan.steps[index..<segmentEnd].map(\.instruction).joined(separator: "; ")
+        let done = plan.steps[..<index].map(\.instruction).joined(separator: "; ")
+        let question = "\(goal)\nAlready done: \(done).\nNow in \(app): the clicks here for this part: \(part)."
+        guard let fresh = await planHere(question, provider: provider)?
+            .separatingSetup(frontmostApp: app, isInstalledApp: isInstalledApp),
+              isActive else { return }
+        let here = fresh.steps.filter { $0.app == nil || $0.app?.lowercased() == app.lowercased() }
+        guard !here.isEmpty else { return }
+        let room = TutorialPlan.maxSteps - (plan.steps.count - (segmentEnd - index))
+        plan.steps.replaceSubrange(index..<segmentEnd, with: here.prefix(max(room, 1)))
+        Log.ask.notice("Tutorial: planned \(min(here.count, max(room, 1)), privacy: .public) step(s) in the new app")
+        onChecklist?(checklistText)
+    }
+
+    /// Plans from the frontmost app's menus and elements (text only, ~1–2 s).
+    private func planHere(_ question: String, provider: any LLMProvider) async -> TutorialPlan? {
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let display = Self.displayUnderMouse()
+        let elements = await Task.detached(priority: .userInitiated) {
+            AXInspector.visibleElements(frontmostPID: pid, display: display)
+        }.value
+        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        // No screenshot: the element list is given in points (an "image" the display's size).
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        let appKit = screen?.frame ?? .zero
+        let geometry = ScreenGeometry(imageWidth: Int(appKit.width), imageHeight: Int(appKit.height),
+                                      displayFrame: Rect(x: appKit.minX, y: appKit.minY, width: appKit.width, height: appKit.height),
+                                      primaryDisplayHeight: Double(NSScreen.screens.first?.frame.height ?? appKit.height))
+        var request = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: Int(display.width),
+                                 screenshotHeight: Int(display.height), context: ScreenContext(appName: NSWorkspace.shared.frontmostApplication?.localizedName),
+                                 elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
+        request.planTutorial = true
+        request.menuOutline = MenuOutline.relevant(menus, to: goal + " " + question)
+        guard let reply = await Self.reply(from: provider, to: request, within: .seconds(15)) else { return nil }
+        return TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+    }
+
+    private static func isApp(_ name: String, _ app: NSRunningApplication?) -> Bool {
+        app?.localizedName?.caseInsensitiveCompare(name) == .orderedSame
     }
 
     private func finish() {

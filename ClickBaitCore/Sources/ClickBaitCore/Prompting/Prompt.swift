@@ -71,7 +71,7 @@ public enum Prompt {
         You turn a how-to question into the exact clicks to do it in the app on the user's screen.
 
         Reply with ONLY one JSON object:
-        {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "..."}]}
+        {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "...", "app": "..."}]}
 
         - List EVERY click from the screen as it is now to the finished task, in order — \
         usually 2 to 6. Opening a menu is a click; choosing an item in it is another; a \
@@ -88,10 +88,14 @@ public enum Prompt {
         is in it, use it: one step to open the menu (its title, e.g. "History") and one to \
         choose the item (its exact name, e.g. "Clear History…"), then any dialog buttons.
         - Between 2 and 10 steps. Use the app that's on screen, as it looks on a Mac.
-        - If it has to be done in a different Mac app than the one in front (Safari's history \
-        while Notes is in front, a setting in System Settings), add "app": that app's name \
-        ("Safari", "System Settings", "Finder") and leave "steps" empty: ClickBait opens it and \
-        plans there. Only Mac apps, never websites.
+        - "app" on each step is the Mac app that click happens in ("Safari", "Notes", "System \
+        Settings"). A task can span apps ("copy this link into a new note": steps in Safari, then \
+        in Notes). ClickBait opens and switches apps itself: NEVER make "Open Safari" or "Switch to \
+        Notes" a step. A keyboard shortcut can be a step ("Press ⌘V to paste", target "⌘V"). \
+        Steps in an app that isn't on screen are your best guess; ClickBait checks them there.
+        - If it all happens in a different Mac app than the one in front (Safari's history while \
+        Notes is in front), give that app as "app" and leave "steps" empty: ClickBait opens it \
+        and plans there. Only Mac apps, never websites.
         - If it can't be done with clicks on a Mac, reply {"speech": "<why, briefly>", "steps": []}.
         - If the user wants content rather than a task done — a poem, a summary, an explanation, \
         an answer, a translation — reply {"speech": "", "steps": []}: that's not a click task.

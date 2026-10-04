@@ -161,6 +161,21 @@ enum AXInspector {
         return best?.path
     }
 
+    /// The item at `path` (["History", "Clear History…"]) while its menu is open, read
+    /// straight from the menu bar: the open-menu scan in `visibleElements` can miss a
+    /// menu-bar menu mid-tracking. Nil when the item has no frame on screen.
+    static func openMenuItemFrame(_ path: [String], frontmostPID pid: pid_t?) -> Rect? {
+        guard isTrusted, let pid, path.count >= 2,
+              let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+        var item = bar.children(kAXChildrenAttribute).first { $0.name == path[0] }
+        for title in path.dropFirst() {
+            guard let menu = item?.children(kAXChildrenAttribute).first(where: { $0.string(kAXRoleAttribute) == "AXMenu" }) else { return nil }
+            item = menu.children(kAXChildrenAttribute).first { $0.name == title }
+        }
+        guard let frame = item?.frame, frame.width > 1, frame.height > 1, frame.y > 1 else { return nil }
+        return frame
+    }
+
     /// The frontmost app's menus as "History ▸ Clear History…" lines (two levels, no
     /// Apple menu), for planning tutorials with the app's real item names.
     static func menuOutline(frontmostPID pid: pid_t?, limit: Int = 160, budget: TimeInterval = 0.5) -> [String] {
