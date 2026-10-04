@@ -212,16 +212,23 @@ enum AXInspector {
     }
 
     /// The app whose window is under `point` (Quartz) — the one the user is looking at
-    /// when the frontmost app's windows are on another display.
+    /// when the frontmost app's windows are on another display. From the window list
+    /// (front to back, normal windows only), so ClickBait's own see-through overlays,
+    /// which cover whole screens, never count.
     static func appPID(at point: Point) -> pid_t? {
-        guard isTrusted else { return nil }
-        let systemWide = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(systemWide, timeout)
-        var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
-        var pid: pid_t = 0
-        guard AXUIElementGetPid(hit, &pid) == .success, pid != getpid() else { return nil }
-        return pid
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        let own = getpid()
+        for window in windows {
+            guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != own,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Double],
+                  let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"],
+                  point.x >= x, point.x <= x + width, point.y >= y, point.y <= y + height
+            else { continue }
+            return pid
+        }
+        return nil
     }
 
     // MARK: - Menus (tutorials)

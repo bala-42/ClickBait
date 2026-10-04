@@ -30,6 +30,9 @@ enum CursorVisibility {
 
     private static var cachedSeed: Int32?
     private static var cachedTransparent = false
+    /// Fetching the cursor image is a window-server round trip (it showed up in a sample
+    /// of the stutters): at most twice a second, even when the cursor keeps changing.
+    private static var lastImageCheck = Date.distantPast
 
     static var isAvailable: Bool { functions != nil }
 
@@ -43,6 +46,8 @@ enum CursorVisibility {
     /// function is unavailable).
     private static func isCursorImageTransparent(seed: Int32?) -> Bool {
         if let seed, seed == cachedSeed { return cachedTransparent }
+        guard Date().timeIntervalSince(lastImageCheck) >= 0.5 else { return cachedTransparent }
+        lastImageCheck = Date()
         cachedSeed = seed
         cachedTransparent = NSCursor.currentSystem.map { isTransparent($0.image) } ?? false
         return cachedTransparent

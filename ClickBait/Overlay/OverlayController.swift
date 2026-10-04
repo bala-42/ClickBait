@@ -13,8 +13,10 @@ final class OverlayController {
     /// Escape: returns true if it stopped or closed something (see AppDelegate).
     var onEscape: (() -> Bool)?
 
-    private var guideLabelPanel: NSPanel?
-    private var bubblePanel: NSPanel?
+    private var guideLabelStage: StagePanel?
+    private var bubbleStage: StagePanel?
+    private var guideLabelPanel: NSPanel? { guideLabelStage?.panel }
+    private var bubblePanel: NSPanel? { bubbleStage?.panel }
     private var bubbleHost: NSHostingView<CompanionBubbleView>?
     private var monitors: [Any] = []
     private var dismissTask: Task<Void, Never>?
@@ -92,7 +94,7 @@ final class OverlayController {
 
     // MARK: - Panels
 
-    private static func makePanel(frame: CGRect) -> NSPanel {
+    static func makePanel(frame: CGRect) -> NSPanel {
         let panel = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -112,19 +114,17 @@ final class OverlayController {
 
     private func makeBubblePanel() {
         let host = NSHostingView(rootView: CompanionBubbleView(model: model))
-        let panel = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.bubbleCanvas))
-        panel.contentView = host
+        let stage = StagePanel(content: host, size: OverlayModel.bubbleCanvas, makePanel: Self.makePanel)
         model.onBubbleSizeChange = { [weak self] in
             guard let self, guide == nil else { return }
             moveBubble(to: anchor ?? NSEvent.mouseLocation)
         }
-        panel.orderFrontRegardless()
-        bubblePanel = panel
+        stage.panel.orderFrontRegardless()
+        bubbleStage = stage
         bubbleHost = host
 
-        let label = Self.makePanel(frame: CGRect(origin: .zero, size: OverlayModel.guideLabelCanvas))
-        label.contentView = NSHostingView(rootView: GuideLabelView(model: model))
-        guideLabelPanel = label
+        guideLabelStage = StagePanel(content: NSHostingView(rootView: GuideLabelView(model: model)),
+                                     size: OverlayModel.guideLabelCanvas, makePanel: Self.makePanel)
     }
 
     // MARK: - Bubble position
@@ -164,7 +164,7 @@ final class OverlayController {
 
     private func startMotion() {
         anchor = NSEvent.mouseLocation
-        if let view = bubblePanel?.contentView {
+        if let view = bubbleHost {
             let link = view.displayLink(target: frameTarget, selector: #selector(FrameTarget.tick(_:)))
             link.add(to: .main, forMode: .common)
             link.preferredFrameRateRange = Self.restingRate
@@ -266,7 +266,7 @@ final class OverlayController {
     /// canvas with the companion drawn at its top-left, so placement uses the
     /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
     private func moveBubble(to mouse: NSPoint) {
-        guard let panel = bubblePanel else { return }
+        guard let stage = bubbleStage else { return }
         let content = model.bubbleSize
         let gap = Self.cursorClearance
         // Top-left corner of the companion, in AppKit coordinates (y up).
@@ -278,7 +278,7 @@ final class OverlayController {
             topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
             topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
         }
-        panel.setFrameOrigin(NSPoint(x: topLeft.x, y: topLeft.y - panel.frame.height))
+        stage.setOrigin(NSPoint(x: topLeft.x, y: topLeft.y - OverlayModel.bubbleCanvas.height), anchor: mouse)
     }
 
     /// Strawberry Red while the user marks part of the screen (hold ⌥⌘).
@@ -401,7 +401,7 @@ final class OverlayController {
         endGuide()
         guard !targets.isEmpty else { return }
         // Start from wherever the triangle is drawn now.
-        let frame = bubblePanel?.frame ?? .zero
+        let frame = bubbleStage?.contentFrame ?? .zero
         let start = CGPoint(x: frame.minX + Self.triangleInset, y: frame.maxY - Self.triangleInset)
         guide = Guide(targets: targets, center: start)
         model.bubble = .idle
@@ -525,8 +525,8 @@ final class OverlayController {
         // wobble as it arrived).
         wantedAngle = atan2(-guide.approach.dx, -guide.approach.dy) * 180 / .pi
 
-        bubblePanel?.setFrameOrigin(NSPoint(x: next.x - Self.triangleInset,
-                                            y: next.y + Self.triangleInset - (bubblePanel?.frame.height ?? 0)))
+        bubbleStage?.setOrigin(NSPoint(x: next.x - Self.triangleInset,
+                                       y: next.y + Self.triangleInset - OverlayModel.bubbleCanvas.height), anchor: next)
         placeGuideLabel(triangleCenter: next, awayFrom: guide.approach, elapsed: elapsed)
     }
 
@@ -586,7 +586,7 @@ final class OverlayController {
     /// Beside the triangle on the side away from the target (left of it when the target
     /// is to the left), so the label never covers what it's pointing at.
     private func placeGuideLabel(triangleCenter c: CGPoint, awayFrom approach: CGVector, elapsed: CFTimeInterval) {
-        guard let panel = guideLabelPanel else { return }
+        guard let stage = guideLabelStage else { return }
         let size = model.guideLabelSize
         // Away from the target, and always fully inside the screen's visible area (below
         // the menu bar, above the Dock): the other side, or pushed in, when it won't fit.
@@ -596,7 +596,7 @@ final class OverlayController {
         let spot = PillPlacement.beside(
             Point(x: c.x, y: c.y), width: size.width - 12, height: size.height - 12, gap: 12, preferRight: approach.dx >= 0,
             bounds: Rect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height))
-        let target = CGPoint(x: spot.x - 6, y: spot.top + 6 - panel.frame.height)
+        let target = CGPoint(x: spot.x - 6, y: spot.top + 6 - OverlayModel.guideLabelCanvas.height)
         // The label rides with the triangle; when the next stop puts it on the other
         // side it glides across instead of jumping.
         var origin = labelOrigin ?? target
@@ -607,7 +607,7 @@ final class OverlayController {
         origin = CGPoint(x: ox, y: oy)
         labelOrigin = origin
         labelVelocity = CGVector(dx: vx, dy: vy)
-        if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
+        stage.setOrigin(origin, anchor: c)
     }
 
     private static let labelSpring = Spring(period: 0.22, damping: 1)
