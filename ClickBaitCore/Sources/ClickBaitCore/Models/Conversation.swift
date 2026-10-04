@@ -43,8 +43,11 @@ public struct Conversation: Equatable, Sendable {
     public init() {}
 
     public var isEmpty: Bool { turns.isEmpty }
+    /// The last answer's words: what "add it to my notes" means.
+    public private(set) var lastAnswer: String?
 
     public mutating func append(user content: String, assistantSpeech: String, code: String? = nil, language: String? = nil) {
+        if !assistantSpeech.isEmpty { lastAnswer = code.map { assistantSpeech + "\n" + $0 } ?? assistantSpeech }
         turns.append(ChatTurn(role: .user, content: content))
         turns.append(.assistant(speech: assistantSpeech, code: code, language: language))
     }

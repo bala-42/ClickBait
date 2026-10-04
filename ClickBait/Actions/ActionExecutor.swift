@@ -1,4 +1,5 @@
 import AppKit
+import os
 import ClickBaitCore
 import AudioToolbox
 import Carbon.HIToolbox
@@ -34,6 +35,21 @@ enum ActionExecutionError: LocalizedError {
 enum ActionExecutor {
     /// Runs the action and returns a short past-tense confirmation for the bubble.
     /// `blocklist` keeps blocked apps out of screenshots ClickBait takes for the user.
+    /// The note ClickBait made last ("show me that note"). Notes' own id, in memory only.
+    static let lastNoteID = OSAllocatedUnfairLock<String?>(initialState: nil)
+
+    /// Brings Notes to the front with the note ClickBait made last.
+    static func showLastNote() async throws -> Bool {
+        guard let id = lastNoteID.withLock({ $0 }) else { return false }
+        _ = try await AppleScriptRunner.run("""
+            tell application "Notes"
+                activate
+                show note id \(AppleScriptText.quoted(id))
+            end tell
+            """, app: "Notes")
+        return true
+    }
+
     static func run(_ action: ResolvedAction, blocklist: AppBlocklist = .defaults) async throws -> String {
         switch action {
         case .openApp(let name):
@@ -104,9 +120,10 @@ enum ActionExecutor {
             return try Places.open(place)
 
         case .makeNote(let text):
-            try await AppleScriptRunner.run(
-                "tell application \"Notes\" to make new note with properties {body:\(AppleScriptText.quoted(text))}",
+            let id = try await AppleScriptRunner.run(
+                "tell application \"Notes\" to return id of (make new note with properties {body:\(AppleScriptText.quoted(NoteHTML.body(text)))})",
                 app: "Notes")
+            lastNoteID.withLock { $0 = id }
             return "Added a note"
 
         case .addReminder(let text):
@@ -218,18 +235,21 @@ enum SystemAudio {
 /// macOS permission prompt, which blocks the calling thread until answered.
 enum AppleScriptRunner {
     /// `app` names the app being controlled, for the permission message.
-    static func run(_ source: String, app: String = "System Events") async throws {
-        let failure: String? = await Task.detached(priority: .userInitiated) {
+    /// The script's result as text, when it returns one.
+    @discardableResult
+    static func run(_ source: String, app: String = "System Events") async throws -> String? {
+        let (output, failure): (String?, String?) = await Task.detached(priority: .userInitiated) {
             var error: NSDictionary?
-            NSAppleScript(source: source)?.executeAndReturnError(&error)
-            guard let error else { return nil }
+            let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+            guard let error else { return (result?.stringValue, nil) }
             let number = error[NSAppleScript.errorNumber] as? Int
             if number == -1743 {
-                return "ClickBait isn't allowed to control \(app). Turn it on in System Settings → Privacy & Security → Automation."
+                return (nil, "ClickBait isn't allowed to control \(app). Turn it on in System Settings → Privacy & Security → Automation.")
             }
-            return error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number ?? 0)"
+            return (nil, error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number ?? 0)")
         }.value
         if let failure { throw ActionExecutionError.script(failure) }
+        return output
     }
 }
 

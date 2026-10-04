@@ -185,7 +185,8 @@ struct TutorialSetupTests {
 struct NoteReferenceTests {
     @Test(arguments: [("Add this pages URL into the notes", NoteReference.pageAddress), ("Note this link", .pageAddress),
                       ("Save this page to my notes", .pageAddress), ("Make a note of the selected text", .selection),
-                      ("Jot down that the plumber comes Tuesday", nil), ("Remind me to call mum", nil)])
+                      ("Jot down that the plumber comes Tuesday", nil), ("Remind me to call mum", nil),
+                      ("add it to my notes", .previous), ("Save that as a note", .previous)])
     func references(_ order: String, _ expected: NoteReference?) {
         #expect(NoteReference.find(in: order) == expected)
     }
@@ -194,6 +195,23 @@ struct NoteReferenceTests {
                       ("www.youtube.com", "https://www.youtube.com"), ("how to cook rice", nil), ("", nil), ("notes.txt", "https://notes.txt")])
     func addressBar(_ raw: String, _ expected: String?) {
         #expect(PageAddress.fromAddressBar(raw) == expected)
+    }
+
+    @Test func addingAnAnswer() {
+        #expect(NoteReference.content(ofAnswer: "The URL of this page is https://www.google.com/search?q=hey+siri+macbook.")
+                == "https://www.google.com/search?q=hey+siri+macbook")
+        #expect(NoteReference.content(ofAnswer: "Bake at 200°C for 20 minutes.") == "Bake at 200°C for 20 minutes.")
+    }
+
+    @Test(arguments: [("show me that note?", true), ("open the note", true), ("where's the note", true), ("open it", true),
+                      ("add it to my notes", false), ("make a note", false), ("what is a note in music", false)])
+    func seeingTheNote(_ text: String, _ expected: Bool) {
+        #expect(NoteReference.asksToSeeNote(text) == expected)
+    }
+
+    @Test func noteBodies() {
+        #expect(NoteHTML.body("Apple\nhttps://apple.com/a?b=1&c=2")
+                == "<div>Apple</div><div><a href=\"https://apple.com/a?b=1&amp;c=2\">https://apple.com/a?b=1&amp;c=2</a></div>")
     }
 
     @Test func pageNotes() {

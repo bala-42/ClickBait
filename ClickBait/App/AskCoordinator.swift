@@ -187,6 +187,11 @@ final class AskCoordinator {
         context = ScreenContext(appName: frontmost?.localizedName)
 
         answerStartedAt = .now  // for the timing logs: from this message, not the last spoken one
+        if NoteReference.asksToSeeNote(text), ActionExecutor.lastNoteID.withLock({ $0 }) != nil {
+            onChatUserMessage?(text)
+            Task { if let reply = await showLastNote(speak: false) { onChatReply?(reply) } }
+            return
+        }
         // Typed orders run like spoken ones ("combine these files"), answered in the chat.
         if settings.commandsEnabled,
            let command = CommandParser.parse(text, allowedShortcuts: settings.allowedShortcuts),
@@ -482,6 +487,16 @@ final class AskCoordinator {
         }
         onTranscript?(transcript)
 
+        if NoteReference.asksToSeeNote(transcript), ActionExecutor.lastNoteID.withLock({ $0 }) != nil {
+            encoding.cancel()
+            let reply = await showLastNote(speak: true)
+            if chatShown, let reply {
+                onChatUserMessage?(transcript)
+                onChatReply?(reply)
+            }
+            return
+        }
+
         // Direct orders run right away, without the model.
         if settings.commandsEnabled,
            let command = CommandParser.parse(transcript, allowedShortcuts: settings.allowedShortcuts),
@@ -663,6 +678,12 @@ final class AskCoordinator {
         guard !isUnknownApp(proposal) else {
             Log.ask.notice("Order check: \(proposal.name, privacy: .public) doesn't apply here")
             return nil
+        }
+        var proposal = proposal
+        // "Add it to my notes": the note is resolved from the user's words (the model's
+        // detail is a guess at "it"), when they refer to the page, selection or answer.
+        if proposal.name == "make_note" || proposal.name == "add_reminder", NoteReference.find(in: text) != nil {
+            proposal.detail = text
         }
         let action: ResolvedAction
         switch ActionCatalog.resolve(proposal, allowedShortcuts: settings.allowedShortcuts) {
@@ -1366,6 +1387,23 @@ final class AskCoordinator {
     }
 
     @discardableResult
+    /// "Show me that note": Notes in front with the note ClickBait just made (green).
+    private func showLastNote(speak: Bool) async -> String? {
+        Log.ask.notice("Showing the last note")
+        onActionStarted?("opening the note…")
+        do {
+            guard try await ActionExecutor.showLastNote() else { return nil }
+            onActionDone?("opened the note")
+            if state == .thinking { state = .idle }
+            return "Here it is, in Notes."
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? "Couldn't open the note."
+            if speak { speaker.speak(message) }
+            show(error: message)
+            return message
+        }
+    }
+
     private func perform(_ request: ActionRequest, speak: Bool = true) async -> ActionOutcome {
         guard settings.commandsEnabled else { return .failure("Commands are turned off in Settings.") }
         var request = request
@@ -1384,10 +1422,21 @@ final class AskCoordinator {
                 content = page.map { NoteReference.noteText(address: $0.address, title: $0.title) }
             case .selection:
                 content = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid).selectedText }.value
+            case .previous:
+                // "Add it to my notes": the answer above in the chat, else the selection.
+                if let answer = conversation?.lastAnswer, chatShown {
+                    content = NoteReference.content(ofAnswer: answer)
+                } else {
+                    content = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid).selectedText }.value
+                }
             }
-            Log.ask.notice("Note is \(reference == .pageAddress ? "this page" : "the selection", privacy: .public): \(content == nil ? "not readable" : "read", privacy: .public)")
+            Log.ask.notice("Note is \(String(describing: reference), privacy: .public): \(content == nil ? "not readable" : "read", privacy: .public)")
             guard let content, !content.isEmpty else {
-                let message = reference == .pageAddress ? "I can't see a web page in front." : "Nothing's selected."
+                let message = switch reference {
+                case .pageAddress: "I can't see a web page in front."
+                case .selection: "Nothing's selected."
+                case .previous: "What should the note say?"
+                }
                 speaker.stop()
                 if speak { speaker.speak(message) }
                 show(error: message)
