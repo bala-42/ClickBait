@@ -1119,14 +1119,20 @@ final class AskCoordinator {
         // "… in Safari" while another app is in front: look at Safari's buttons, not the
         // front app's (the first "show me the share button in Safari" looked in the wrong app).
         var elements = elements
-        if snip == nil, selectedText == nil,
-           let named = TutorialQuestion.mentionedApp(in: question, apps: NSWorkspace.shared.runningApplications.compactMap(\.localizedName)),
-           named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
-           let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == named }) {
-            let theirs = await Self.elements(in: capture, frontmostPID: app.processIdentifier)
-            if !theirs.isEmpty {
-                elements = theirs
-                Log.ask.notice("Looking in the app the question names (\(theirs.count, privacy: .public) elements)")
+        var capture = capture
+        var encoding = encoding
+        // "Show me the Share button in Safari" with Safari closed or behind: open or switch
+        // to it first (green), take a fresh look, then point (blue).
+        if snip == nil, selectedText == nil, history.isEmpty, TutorialQuestion.isLocatingRequest(question) {
+            let apps = AppLocator.installed()
+            if let named = TutorialQuestion.mentionedApp(in: question, apps: Array(apps.keys)),
+               named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
+               let ready = await openForTutorial(named, url: apps[named]) {
+                let screenshot = ready.1
+                capture = ready.0
+                encoding = Task { screenshot }
+                elements = ready.2
+                Log.ask.notice("Opened the app the question names, then looking (\(elements.count, privacy: .public) elements)")
             }
         }
         // "Where's the Share button?" with exactly one element named Share on screen: point
