@@ -34,9 +34,13 @@ final class Speaker: NSObject {
 
     /// Stops immediately and forgets the queue (new question, Escape, dismiss).
     func stop() {
+        // Only when something was queued: asking the synthesizer `isSpeaking` is a call to
+        // the speech service that took ~100 ms on the main thread (the companion froze at
+        // every press of the talk keys).
+        guard pending > 0 || hasStarted else { return }
         pending = 0
         hasStarted = false
-        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        synthesizer.stopSpeaking(at: .immediate)
     }
 
     /// Plays a sample in Settings.

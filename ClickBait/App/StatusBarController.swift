@@ -22,23 +22,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         super.init()
 
         statusItem.menu = makeMenu()
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "ClickBait")
+            button.image?.isTemplate = true
+        }
         update(for: .idle)
     }
 
     func update(for state: AskState) {
-        let (symbol, line): (String, String) = switch state {
-        case .idle: ("cursorarrow.rays", Self.hint)
-        case .listening: ("mic.fill", "Listening…")
-        case .thinking: ("ellipsis.circle", "Thinking…")
-        case .speaking: ("speaker.wave.2.fill", "Speaking…")
-        case .error(let message): ("exclamationmark.triangle", message)
+        // Only the menu's status line changes; the menu-bar icon stays the same (the
+        // companion shows the state): changing it waited on the window server each time
+        // and froze the companion (seen in a sample).
+        statusLine.title = switch state {
+        case .idle: Self.hint
+        case .listening: "Listening…"
+        case .thinking: "Thinking…"
+        case .speaking: "Speaking…"
+        case .error(let message): message
         }
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "ClickBait: \(line)")
-            button.image?.isTemplate = true
-            button.toolTip = line
-        }
-        statusLine.title = line
     }
 
     /// Shows the last transcript until the overlay bubble exists (step 7).
