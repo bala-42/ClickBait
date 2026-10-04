@@ -33,6 +33,16 @@ public enum Websites {
             .allSatisfy { filler.contains($0) || visitWords.contains($0) || siteWords.contains($0) }
     }
 
+    /// A browser the request names ("on Chrome") as its app name, if one is listed in
+    /// `installed`; nil means the default browser.
+    public static func namedBrowser(in request: String, installed: [String]) -> String? {
+        let spoken = " " + ImpliedPointer.normalized(request) + " "
+        let browsers: [(said: String, app: String)] = [("safari", "Safari"), ("chrome", "Google Chrome"), ("firefox", "Firefox"),
+                                                       ("arc", "Arc"), ("edge", "Microsoft Edge"), ("brave", "Brave Browser"),
+                                                       ("opera", "Opera"), ("orion", "Orion")]
+        return browsers.first { spoken.contains(" " + $0.said + " ") && installed.contains($0.app) }?.app
+    }
+
     /// The site a request asks to go to, if it's a well-known one: (its name, address).
     public static func visit(in request: String) -> (name: String, address: String)? {
         let words = ImpliedPointer.normalized(request).split(separator: " ").map(String.init)

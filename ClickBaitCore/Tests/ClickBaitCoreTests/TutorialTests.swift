@@ -371,3 +371,12 @@ struct OrderCheckTests {
         #expect(fine?.detail == "budget")
     }
 }
+
+struct NamedBrowserTests {
+    @Test func browsers() {
+        #expect(Websites.namedBrowser(in: "show me how to open youtube on chrome", installed: ["Google Chrome", "Safari"]) == "Google Chrome")
+        #expect(Websites.namedBrowser(in: "open youtube on chrome", installed: ["Safari"]) == nil)
+        #expect(Websites.namedBrowser(in: "open youtube", installed: ["Google Chrome", "Safari"]) == nil)
+        #expect(Websites.visit(in: "show me how to open youtube on chrome")?.address == "youtube.com")
+    }
+}

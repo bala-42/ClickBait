@@ -665,6 +665,12 @@ final class AskCoordinator {
 
     private func understandOrder(_ text: String) async -> (UnderstoodOrder, ActionRequest)? {
         guard settings.commandsEnabled, CommandParser.looksLikeOrder(text), let provider else { return nil }
+        // "Show me how to…" and "open YouTube" are walkthroughs, not orders: reading
+        // "show me how to open youtube on chrome" as "open Chrome" just opened Chrome.
+        if TutorialQuestion.asksForTutorial(text) || Websites.visit(in: text) != nil {
+            Log.ask.notice("Order check: skipped (a walkthrough)")
+            return nil
+        }
         let start = ContinuousClock.now
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
@@ -763,7 +769,8 @@ final class AskCoordinator {
         // in the browser's address bar, with the address from ClickBait's own list — no
         // model, so it's instant and never a guessed domain. Whatever's left once the page
         // is open ("…and play lofi") is planned from there.
-        if let site = Websites.visit(in: question), let browser = AppLocator.defaultBrowserName() {
+        if let site = Websites.visit(in: question),
+           let browser = Websites.namedBrowser(in: question, installed: Array(apps.keys)) ?? AppLocator.defaultBrowserName() {
             let step = TutorialStep(target: "address bar", instruction: "Type \(site.address), then press Return",
                                     app: browser, typing: site.address)
             let plan = TutorialPlan(intro: "Type \(site.name)'s address in \(browser).", steps: [step])
