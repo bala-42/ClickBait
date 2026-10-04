@@ -114,7 +114,9 @@ enum AXInspector {
             visited += 1
             let role = node.string(kAXRoleAttribute) ?? ""
             if listedRoles.contains(role) {
-                let label = role == "AXRow" ? node.rowLabel() : node.name
+                var label = role == "AXRow" ? node.rowLabel() : node.name
+                // A field without a name ("where do I type?", "the message box") is still findable.
+                if label.isEmpty, ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"].contains(role) { label = "text box" }
                 if !label.isEmpty, let frame = node.frame, frame.width > 1, frame.height > 1,
                    frame.maxX > display.minX, frame.minX < display.maxX, frame.maxY > display.minY, frame.minY < display.maxY {
                     found.append(ScreenElement(role: role, label: label, frame: frame))
