@@ -45,6 +45,9 @@ struct LiveOllamaTests {
             request.snip = .circled
             print("LIVE size \(w)x\(h)")
         }
+        if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_TUTORIAL"] != nil {
+            request.planTutorial = true  // the tutorial planner (with the element list if CLICKBAIT_LIVE_ELEMENTS)
+        }
         if let explanation = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_PARTS"] {
             // The background "list the parts" look.
             request.listParts = true

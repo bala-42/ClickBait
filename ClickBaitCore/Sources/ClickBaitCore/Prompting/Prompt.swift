@@ -61,8 +61,36 @@ public enum Prompt {
     public static func system(for request: AskRequest) -> String {
         if request.interpretOrder { return orderSystem }
         if request.listParts { return partsSystem }
+        if request.planTutorial { return tutorialSystem }
+        if request.tutorialCheck != nil { return progressSystem }
         return request.locate == nil ? system : locateSystem
     }
+
+    /// Turns a how-to into steps ClickBait walks the user through on their own screen.
+    public static let tutorialSystem = """
+        You turn a how-to question into the exact clicks to do it in the app on the user's screen.
+
+        Reply with ONLY one JSON object:
+        {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "..."}]}
+
+        - Each step is ONE click, in order. "target" is the exact visible name of what to click \
+        (a menu, menu item, button, tab or field), as it is written in the app — prefer names \
+        from the list of on-screen elements when given. "instruction" is a short imperative \
+        ("Open the File menu", "Choose Export as PDF…").
+        - Include steps that appear only later (menu items inside a menu, buttons in a dialog).
+        - Between 2 and 10 steps. Use the app that's on screen, as it looks on a Mac.
+        - If it can't be done in this app, reply {"speech": "<why, briefly>", "steps": []}.
+        """
+
+    /// Mid-tutorial: from the screen now, which step is next (or is it done)?
+    public static let progressSystem = """
+        You check how far a user has got through a tutorial, from a screenshot of their screen.
+
+        Reply with ONLY one JSON object: {"next_step": N, "done": false}
+        - "next_step" is the number of the step they should do next, judging by what's on screen \
+        (a menu that's open, a dialog that appeared, a setting that changed).
+        - "done": true only if the whole task is clearly finished.
+        """
 
     /// A second, focused look at a snip's close-up: just the named parts and where they are.
     public static let partsSystem = """
@@ -124,6 +152,27 @@ public enum Prompt {
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
+        if request.planTutorial {
+            var lines = ["The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
+            if let app = request.context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
+            if let title = request.context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
+            if !request.elements.isEmpty {
+                lines.append("On-screen elements (id: kind \"name\" at x, y):")
+                lines.append(contentsOf: request.elements.map(\.line))
+            }
+            lines.append("")
+            lines.append("The user asked: \(request.question)")
+            return lines.joined(separator: "\n")
+        }
+        if let check = request.tutorialCheck {
+            let steps = check.plan.steps.enumerated().map { "\($0.offset + 1). \($0.element.instruction) (click \"\($0.element.target)\")" }
+            return """
+                The user is doing: \(request.question)
+                Steps:
+                \(steps.joined(separator: "\n"))
+                They were on step \(check.expected). Which step should they do next?
+                """
+        }
         if request.listParts {
             return """
                 The image is \(request.screenshotWidth)×\(request.screenshotHeight) pixels.

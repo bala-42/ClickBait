@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chat = ChatController()
     private let confirm = ConfirmController()
     private let escape = InputInterceptor()
+    private lazy var tutorial = TutorialController(overlay: overlay)
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -118,6 +119,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onTranscript = { [weak self, weak statusBar] text in
             statusBar?.showHeard(text)
             self?.overlay.show(.thinking, heard: text)
+        }
+        coordinator.tutorial = tutorial
+        overlay.onClick = { [weak self] point in self?.tutorial.noteClick(point) }
+        tutorial.speak = { [weak self] text in self?.coordinator.speaker.speak(text) }
+        tutorial.onChecklist = { [weak self] text in
+            guard let self, chat.isOpen else { return }
+            chat.model.replaceLastAssistant(text)
+            chat.model.isBusy = false
+        }
+        tutorial.onFinished = { [weak self] message in
+            guard let self, let message else { return }
+            if chat.isOpen, let last = chat.model.messages.last(where: { $0.role == .assistant }) {
+                chat.model.replaceLastAssistant(last.text + "\n\n" + message)
+            } else if message != "Done!" {
+                overlay.show(.error(message))
+            }
         }
         coordinator.onTour = { [weak self] parts in self?.overlay.tour(parts) }
         coordinator.onPointersRefined = { [weak self] pointers in self?.overlay.retarget(pointers) }

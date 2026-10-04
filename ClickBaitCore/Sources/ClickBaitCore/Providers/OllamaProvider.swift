@@ -95,6 +95,37 @@ public struct OllamaProvider: LLMProvider {
 
     /// The exact shape of a parts reply, enforced by Ollama's structured output: numbers
     /// for x and y, a name for each, at most six — no garbled positions, no endless lists.
+    /// Structured output for the requests that have a fixed shape.
+    static func schema(for ask: AskRequest) -> [String: Any]? {
+        if ask.listParts { return partsSchema }
+        if ask.planTutorial { return tutorialSchema }
+        if ask.tutorialCheck != nil { return progressSchema }
+        return nil
+    }
+
+    static var tutorialSchema: [String: Any] { [
+        "type": "object",
+        "properties": [
+            "speech": ["type": "string"],
+            "steps": [
+                "type": "array",
+                "maxItems": TutorialPlan.maxSteps,
+                "items": [
+                    "type": "object",
+                    "properties": ["target": ["type": "string"], "instruction": ["type": "string"]],
+                    "required": ["target", "instruction"],
+                ] as [String: Any],
+            ] as [String: Any],
+        ],
+        "required": ["speech", "steps"],
+    ] }
+
+    static var progressSchema: [String: Any] { [
+        "type": "object",
+        "properties": ["next_step": ["type": "integer"], "done": ["type": "boolean"]],
+        "required": ["next_step", "done"],
+    ] }
+
     static var partsSchema: [String: Any] { [
         "type": "object",
         "properties": [
@@ -118,7 +149,7 @@ public struct OllamaProvider: LLMProvider {
         return [
             "model": model,
             "stream": true,
-            "format": ask.listParts ? partsSchema as Any : "json",
+            "format": schema(for: ask) ?? "json",
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
             "options": options(for: ask),

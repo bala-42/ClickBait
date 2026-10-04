@@ -298,6 +298,9 @@ final class OverlayController {
         var targetStarted: CFTimeInterval = 0
         /// Touring the parts of a snipped thing: red, names as labels, shorter stops.
         var isTour = false
+        /// A tutorial step: lavender, the instruction as the label, no timeout, and clicks
+        /// don't move it on (the tutorial watches the screen for that).
+        var isTutorial = false
     }
 
     private var guide: Guide?
@@ -317,6 +320,45 @@ final class OverlayController {
     private static var triangleInset: CGFloat { 4 + 2 + CompanionTriangle.size * 0.85 }
 
     var isGuiding: Bool { guide != nil }
+
+    // MARK: - Tutorials (lavender)
+
+    /// Called with every left click anywhere (global AppKit point), for tutorials.
+    var onClick: ((NSPoint) -> Void)?
+
+    func setTutoring(_ on: Bool) {
+        model.isTutoring = on
+        if !on {
+            if guide?.isTutorial == true { endGuide() }
+            if case .hint = model.bubble { model.bubble = .idle }
+        }
+    }
+
+    /// Points at the current step's target, the instruction in the label. Moving
+    /// between steps glides; an unchanged step just follows its target.
+    func tutorialPoint(at target: ScreenPointer) {
+        if case .hint = model.bubble { model.bubble = .idle }
+        if var guide, guide.isTutorial {
+            guard guide.targets.first != target else { return }
+            let sameStep = guide.targets.first?.label == target.label
+            guide.targets = [target]
+            self.guide = guide
+            if !sameStep { beginTarget() }
+            return
+        }
+        guide(to: [target])
+        guard var guide else { return }
+        guide.isTutorial = true
+        self.guide = guide
+        beginTarget()
+    }
+
+    /// The current step's target isn't on screen: the instruction by the cursor instead.
+    func tutorialHint(_ text: String) {
+        if guide?.isTutorial == true { endGuide() }
+        if model.bubble != .hint(text) { model.bubble = .hint(text) }
+        setCompanionHidden(false)
+    }
 
     /// The red tour of a snip's parts: the triangle visits each, its name in the label.
     func tour(_ targets: [ScreenPointer]) {
@@ -408,7 +450,7 @@ final class OverlayController {
         self.guide = guide
 
         let label = guide.targets[guide.index].label
-        model.guideLabel = guide.isTour
+        model.guideLabel = guide.isTour || guide.isTutorial
             ? label  // the part's name ("probably supraspinatus")
             : GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
         model.guideTarget = label.isEmpty ? nil : label
@@ -418,7 +460,7 @@ final class OverlayController {
 
     private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
         guard var guide else { return }
-        if CACurrentMediaTime() - guide.targetStarted > (guide.isTour ? Self.tourDwell : Self.dwell) {
+        if !guide.isTutorial, CACurrentMediaTime() - guide.targetStarted > (guide.isTour ? Self.tourDwell : Self.dwell) {
             advanceGuide(reason: "timeout")
             return
         }
@@ -571,8 +613,10 @@ final class OverlayController {
 
     private func installMonitors() {
         // The next click anywhere dismisses the answer (the click itself goes through).
-        add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        add(global: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self else { return }
+            if event.type == .leftMouseDown { onClick?(NSEvent.mouseLocation) }
+            if guide?.isTutorial == true { return }  // the tutorial decides what a click means
             if guide != nil { advanceGuide(reason: "click") } else { dismissAnswer() }
         }
 

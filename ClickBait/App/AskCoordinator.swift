@@ -155,6 +155,7 @@ final class AskCoordinator {
 
     /// The chat bubble was closed (✕ or Escape): its memory goes with it.
     func closeChat() {
+        tutorial?.stop(message: nil)
         guard conversation != nil, chatShown else { return }
         speaker.stop()
         askTask?.cancel()
@@ -169,6 +170,7 @@ final class AskCoordinator {
     /// A message typed into the open chat bubble. Replies to typed messages are text only.
     func sendTyped(_ text: String) {
         stopRefining()
+        tutorial?.stop(message: nil)
         guard conversation != nil, !isAnswering, state != .listening else { return }
         let frontmost = NSWorkspace.shared.frontmostApplication
         if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
@@ -229,6 +231,8 @@ final class AskCoordinator {
             }
             let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
             let elements = await Self.elements(in: capture, frontmostPID: pid)
+            if await startTutorial(question: text, capture: capture, encoding: encoding, elements: elements,
+                                   speak: false, display: text) { return }
             await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
                           speak: false, display: text, elements: elements)
         }
@@ -256,7 +260,7 @@ final class AskCoordinator {
     /// Something is going on that Esc should stop (Esc is then taken from other apps).
     var isBusy: Bool {
         state == .listening || state == .thinking || state == .speaking || isAnswering || speaker.isSpeaking
-            || snipper.isActive || pendingAction != nil || isRefining
+            || snipper.isActive || pendingAction != nil || isRefining || (tutorial?.isActive ?? false)
     }
 
     /// Esc: stop whatever ClickBait is doing — listening, thinking, speaking, a snip,
@@ -268,6 +272,7 @@ final class AskCoordinator {
         if snipper.isActive { snipper.cancel(); stopped.append("snip") }
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
         if isRefining { stopRefining(); stopped.append("close-up") }
+        if tutorial?.isActive == true { tutorial?.stop(message: "Tutorial stopped."); stopped.append("tutorial") }
         if state == .listening || state == .thinking || isAnswering {
             cancelInFlight()
             onStopped?()
@@ -306,6 +311,7 @@ final class AskCoordinator {
 
     private func begin() {
         stopRefining()
+        tutorial?.stop(message: nil)  // a new question ends a tutorial
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()  // never record ClickBait talking
         errorResetTask?.cancel()
@@ -506,15 +512,21 @@ final class AskCoordinator {
             return
         }
 
+        // "How do I…" with several clicks: walk them through it on screen.
+        let elements = await elementsTask.value
+        if await startTutorial(question: transcript, capture: capture, encoding: encoding, elements: elements,
+                               speak: true, display: transcript) { return }
+
         // With a chat open, a spoken question is a follow-up in it.
         await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt,
-                      speak: true, display: transcript, elements: await elementsTask.value)
+                      speak: true, display: transcript, elements: elements)
     }
 
     // MARK: - Explain highlighted text (⌥⌘)
 
     private func explain() {
         stopRefining()
+        tutorial?.stop(message: nil)
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
         if conversation != nil {
@@ -690,6 +702,64 @@ final class AskCoordinator {
         onConfirmEnd?()
     }
 
+    // MARK: - Tutorials
+
+    /// Set by the app delegate: walks the user through multi-step how-tos.
+    @ObservationIgnored var tutorial: TutorialController?
+
+    /// "How do I…": plan the clicks. Several → a lavender tutorial on screen; one that's
+    /// visible → point at it. Returns false to answer normally instead (no plan, or a
+    /// single step that isn't on screen).
+    private func startTutorial(question: String, capture: ScreenCapture, encoding: Task<EncodedScreenshot, Error>,
+                               elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
+        guard TutorialQuestion.asksForTutorial(question), let provider, let tutorial else { return false }
+        let screenshot: EncodedScreenshot
+        do { screenshot = try await encoding.value } catch { return false }
+        let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
+        var request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg, screenshotWidth: screenshot.width,
+                                 screenshotHeight: screenshot.height, context: context,
+                                 elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
+        request.planTutorial = true
+        let start = ContinuousClock.now
+        guard let reply = await Self.reply(from: provider, to: request, within: .seconds(25)), !Task.isCancelled,
+              let plan = TutorialPlan.parse(reply)
+        else {
+            Log.ask.notice("Tutorial: no plan; answering normally")
+            return false
+        }
+        Log.ask.notice("Tutorial plan: \(plan.steps.count, privacy: .public) step(s) in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+
+        if !plan.isTutorial {
+            // One click: point at it, if it's on screen.
+            guard let step = plan.steps.first, let target = StepMatcher.find(step.target, in: elements) else { return false }
+            let center = Point(x: target.frame.x + target.frame.width / 2, y: target.frame.y + target.frame.height / 2)
+            let pointer = ScreenPointer(label: target.label, appKit: geometry.appKitPoint(fromQuartz: center), quartz: center)
+            let text = plan.intro.isEmpty ? step.instruction : plan.intro
+            if state == .thinking { state = .idle }
+            if speak { speaker.speak(text) }
+            if chatShown {
+                onChatUserMessage?(display)
+                onChatReply?(text)
+            }
+            onAnswer?(AssistantResponse(speech: text), [pointer])
+            return true
+        }
+
+        if conversation == nil || !chatShown {
+            conversation = Conversation()
+            snipMemory = nil
+            chatShown = true
+            onChatOpen?(display)
+        } else {
+            onChatUserMessage?(display)
+        }
+        conversation?.append(user: question, assistantSpeech: plan.intro + "\n" + plan.checklist(done: 0))
+        if state == .thinking { state = .idle }
+        if speak, !plan.intro.isEmpty { speaker.speak(plan.intro) }
+        tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak)
+        return true
+    }
+
     // MARK: - Element list
 
     /// Every listed element costs the local model prompt time (100 took answers to
@@ -718,6 +788,7 @@ final class AskCoordinator {
     /// a highlighted-text explanation.
     private func snip(_ kind: SnipKind, region: Rect, path: [Point]) {
         stopRefining()
+        tutorial?.stop(message: nil)
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
         if conversation != nil {

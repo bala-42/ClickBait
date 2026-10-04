@@ -88,6 +88,9 @@ When the rules don't recognise something that looks like an order (not a questio
 ### Type to ask (⌥⌘ + right-click)
 Right-clicking while holding ⌥⌘ opens an empty chat at the cursor with the text field focused (the panel takes the keyboard without activating ClickBait). The right-click (down and up) is taken by `InputInterceptor`'s event tap, so the app shows no context menu; the following ⌥⌘ release is ignored (not a tap/explain). The first typed message goes through `sendTyped` like any follow-up.
 
+### Guided tutorials (lavender)
+"How do I… / walk me through… / show me how…" (`TutorialQuestion`) is first planned (`Prompt.tutorialSystem`: screenshot + element list → `{"speech", "steps":[{"target","instruction"}]}`, structured output, ~6–9 s). Several steps → tutorial; one visible step → plain pointing; no steps or not on screen → normal answer. During a tutorial (`TutorialController`) the companion is **Lavender (#B57EDC)**, points at each step's target with the instruction as its label, and the chat shows a checklist that ticks off. Watching, cheapest first: a click on the target (¼ s); the app's element list every ¾ s (target found by name via `StepMatcher`; a later step visible → jump ahead; a target inside a closed menu → `AXInspector.menuPath` and point at the menu to open first); a 128-px screen sample ~1/s only while the target can't be found; a model check (`Prompt.progressSystem`, ≥6 s apart) only when the screen changed and nothing else explains it. Screenshots stay in memory. Ends on the last step ("done!"), Esc, closing the chat, any new question, a blocklisted app, 90 s without progress or 5 min. It only points — never clicks for the user.
+
 ### Parts tour (red, unlabelled images only)
 A snip's answer may include `parts` (named parts of what was marked, positioned in the close-up's pixels; never written into the text). The close-up is sent at 1280 px on its long edge (`SnipView`), where qwen2.5vl:7b's positions are most accurate. Apple Vision text recognition reads the close-up's printed words on-device (`TextReader`, warmed at launch, waited for ≤1.5 s): if the part names are printed (`PartsMatcher` finds at least half of them), the image is **labelled and gets no tour** — the names are already there. Otherwise the red companion always tours the parts (`PartsTour.stops`: 1–6 stops inside the marked area, each name once) with red pills reading "~ <name>": they're the model's best guesses (~46% land on the right structure, see below). ~2.4 s per stop, click to advance, Esc stops. "Where's X?" follow-ups in an unlabelled snip's chat point the same way. Nothing about parts is listed in the chat. If a first explanation names no parts at all, a background second look (`Prompt.partsSystem`, same close-up, the explanation as a hint, 20 s cap, cancelled by a new question/Esc) asks only for the parts and starts the tour when it answers.
 
@@ -118,7 +121,7 @@ Microphone, Screen Recording, Accessibility. On first launch show an onboarding 
 ## Master roadmap (from 2026-10-03; supersedes M2–M5 above)
 Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offline. Be honest about speed: local inference takes seconds, so promise "private and offline", not "zero latency".
 
-- **A. Identity & quick wins** (done): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Azure (#007FFF) idle/tracking, Burnt Orange (#E07616) input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping.
+- **A. Identity & quick wins** (done): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Azure (#007FFF) idle/tracking, Burnt Orange (#E07616) input & processing (pulsing), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping, Lavender (#B57EDC) guided tutorials.
 - **B. Companion guides you** (done): after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
 - **C. Circling & snipping** (done; Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
 - **D. Air-gapped mode**: the optional Anthropic provider is pending a decision (the user is deciding whether to remove it); Whisper model import from a local file as an alternative to the one-time download.
@@ -126,41 +129,6 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 - **F. Thought Space banner & memory**: a working-memory board beside the companion. Persistent memory is **opt-in, off by default, local only, browsable and deletable in Settings, never records blocked apps**, and samples on app switches rather than continuously.
 
 ## Kept in view (designed, not scheduled)
-
-### Guided walkthroughs ("first, this one. then, over here.")
-**Problem today:** a how-to answer plans every step from one screenshot taken before anything happens, so it can't point at things that only appear later (the menu step 1 opens, the dialog step 2 opens) and caps out at 3 pointers.
-
-**Idea:** while the chat is open, ClickBait walks the user through every step of a how-to, re-reading the screen after each click.
-
-**Flow**
-1. *Plan once.* For a how-to with 2+ steps, the model returns a short text plan, each step naming its target ("File menu", "Export as PDF…", "Save"). Text only. No pointers yet.
-2. *Find the current step, cheapest first:* (a) match the step's name in the live Accessibility element list (instant, exact, no model call; works for menus once open); (b) only if absent, a vision locate on a fresh screenshot, verified with Accessibility like the close-up.
-3. *Point* with the step label ("first, this one." / "then, over here." / "last one, right here."), green-free: guiding stays the idle colour.
-4. *Wait for the user's click* (global mouse-down), then ~0.5 s for the UI to settle (menus, sheets), and re-read. Click on the target → next step. Click elsewhere → re-check the screen: carry on if the next target is visible, otherwise re-plan once from the current screen.
-5. *Finish:* "done!" pill, the chat lists the completed steps. Esc, closing the chat, a new question or ⌃⌥ ends it immediately.
-
-**Realistic expectations (qwen2.5vl:7b, M4 Pro)**
-- Plan: ~3–5 s once (text, no image needed beyond the first screenshot).
-- Steps found in the element list: next pointer ≲1 s after the click. Native apps (Finder, Settings, Pages, Mail, Safari menus) should be mostly this.
-- Steps needing vision: ~5–7 s each, and less reliable (web apps, canvases, Electron apps without a tree, pro apps like DaVinci Resolve).
-- The plan comes from the model's memory of the app; it can be wrong or outdated for the user's version. Verification against the screen catches this; it can't always fix it.
-
-**Guardrails**
-- At most ~10 steps; never the same target twice in a row; one re-plan per walkthrough, then "I'm not sure about the next step — want to keep going yourself?"
-- Never clicks for the user: it only points. (Clicking on the user's behalf is a separate, riskier feature.)
-- Screen is read only right after the user's own clicks during a walkthrough they started; nothing in the background; blocklisted apps end the walkthrough.
-- A step whose target can't be confirmed is shown as text in the chat instead of a guessed pointer.
-
-**Building blocks that already exist:** element list (menus included), name matching (`LabelMatcher`), guide motion + friendly labels, click detection (`advanceGuide`), close-up + Accessibility verification, Esc handling, chat memory.
-
-**New pieces:** a `Walkthrough` state machine (plan, current step, history, re-plan budget) in the coordinator; a plan prompt + parser (core, testable with fixtures); step matching against element lists (core, testable); a settle-then-recheck loop after clicks; chat rendering of the step list with ticks.
-
-**Open decisions (proposed defaults)**
-- Start: automatically for how-to questions with 2+ steps while a chat is open *(proposed)*, vs only on "walk me through…".
-- Speech: speak each step's short label when the question was spoken; silent when typed *(proposed)*.
-- Wrong turns: re-plan quietly and say "looks like you went a different way" in the label *(proposed)*.
-
-**Suggested build order:** (1) plan prompt + step matcher in core with tests and live checks; (2) walkthrough loop for element-list steps only (native apps); (3) vision fallback with verification; (4) re-planning and chat step list; (5) spoken steps.
 
 ### Parts tour: measurements (2026-10-04)
 Why the tour is unlabelled-only and says "~" (built fbee451, removed f2b173c, brought back as best guesses):

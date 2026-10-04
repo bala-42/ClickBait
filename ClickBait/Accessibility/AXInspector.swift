@@ -129,6 +129,38 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
+    // MARK: - Menus (tutorials)
+
+    /// Where a menu item lives in the frontmost app's menus, even while they're closed:
+    /// ["View", "Show Path Bar"], or ["Format", "Font", "Bold"] for a submenu. Lets a
+    /// tutorial point at the menu to open when the model skipped that step.
+    static func menuPath(to label: String, frontmostPID pid: pid_t?, budget: TimeInterval = 0.4) -> [String]? {
+        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+        let deadline = Date().addingTimeInterval(budget)
+        var best: (path: [String], score: Double)?
+
+        func search(_ menu: AXElement, path: [String], depth: Int) {
+            guard depth < 3 else { return }
+            for item in menu.children(kAXChildrenAttribute) {
+                guard Date() < deadline else { return }
+                let title = item.name
+                guard !title.isEmpty else { continue }
+                let score = LabelMatcher.similarity(label, title)
+                if score >= 0.8, score > (best?.score ?? 0) { best = (path + [title], score) }
+                if let submenu = item.children(kAXChildrenAttribute).first(where: { $0.string(kAXRoleAttribute) == "AXMenu" }) {
+                    search(submenu, path: path + [title], depth: depth + 1)
+                }
+            }
+        }
+        for top in bar.children(kAXChildrenAttribute) {
+            let title = top.name
+            guard !title.isEmpty, title != "Apple", let menu = top.children(kAXChildrenAttribute).first else { continue }
+            search(menu, path: [title], depth: 0)
+            if best?.score == 1 { break }
+        }
+        return best?.path
+    }
+
     // MARK: - Finder items
 
     /// The files under `points` (Quartz) in Finder: list, column and icon view and the

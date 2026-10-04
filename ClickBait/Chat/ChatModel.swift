@@ -54,6 +54,15 @@ final class ChatModel {
         }
     }
 
+    /// Rewrites the latest reply (a tutorial's checklist ticking along).
+    func replaceLastAssistant(_ text: String) {
+        if let last = messages.indices.last(where: { messages[$0].role == .assistant }) {
+            messages[last].text = text
+        } else {
+            messages.append(Message(role: .assistant, text: text))
+        }
+    }
+
     func addError(_ text: String) {
         messages.append(Message(role: .error, text: text))
     }

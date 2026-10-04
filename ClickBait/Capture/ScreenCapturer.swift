@@ -43,7 +43,8 @@ enum ScreenCaptureError: LocalizedError {
 @MainActor
 final class ScreenCapturer {
     /// `point` (global AppKit points) picks the display; the cursor's by default.
-    func captureDisplayUnderCursor(excluding blocklist: AppBlocklist, at point: NSPoint? = nil) async throws -> ScreenCapture {
+    /// `width` captures a small copy (tutorials sample the screen to notice changes).
+    func captureDisplayUnderCursor(excluding blocklist: AppBlocklist, at point: NSPoint? = nil, width: Int? = nil) async throws -> ScreenCapture {
         let mouse = point ?? NSEvent.mouseLocation
         guard
             let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main,
@@ -68,8 +69,8 @@ final class ScreenCapturer {
 
         let filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])
         let config = SCStreamConfiguration()
-        config.width = Int(displayFrame.width * backingScale)
-        config.height = Int(displayFrame.height * backingScale)
+        config.width = width ?? Int(displayFrame.width * backingScale)
+        config.height = width.map { Int(Double($0) * displayFrame.height / displayFrame.width) } ?? Int(displayFrame.height * backingScale)
         config.showsCursor = false
         config.captureResolution = .best
 

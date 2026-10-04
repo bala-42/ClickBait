@@ -13,6 +13,8 @@ enum CompanionTone: Equatable {
     case action
     /// Strawberry Red: circling and snipping (roadmap phase C).
     case capture
+    /// Lavender (#B57EDC): a guided tutorial is running.
+    case tutorial
 
     var color: Color {
         switch self {
@@ -20,6 +22,7 @@ enum CompanionTone: Equatable {
         case .processing: Color(red: 224.0 / 255, green: 118.0 / 255, blue: 22.0 / 255)
         case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
         case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
+        case .tutorial: Color(red: 181.0 / 255, green: 126.0 / 255, blue: 220.0 / 255)
         }
     }
 }
@@ -40,12 +43,14 @@ final class OverlayModel {
         /// A spoken command was carried out.
         case done(String)
         case error(String)
+        /// A tutorial step whose target isn't on screen: its instruction by the cursor.
+        case hint(String)
 
         /// A result or a problem: shown as a tiny pill. Everything else is just the
         /// triangle's colour and pulse.
         var hasWords: Bool {
             switch self {
-            case .answer, .done, .error: true
+            case .answer, .done, .error, .hint: true
             case .thinking(let heard): heard != nil  // what was heard, so mishearing shows
             default: false
             }
@@ -60,13 +65,16 @@ final class OverlayModel {
     var isSnipping = false
     /// Touring the named parts of a snipped thing (red, like snipping).
     var isTouring = false
+    /// A guided tutorial is running: everything is lavender.
+    var isTutoring = false
     /// The guiding triangle has arrived at its target (it pulses only then).
     var isGuideSettled = false
 
     var tone: CompanionTone {
         if isSnipping || isTouring { return .capture }
+        if isTutoring { return .tutorial }
         return switch bubble {
-        case .idle, .answer, .error: .idle
+        case .idle, .answer, .error, .hint: .idle
         case .listening, .thinking, .explaining: .processing
         case .working, .done: .action
         }

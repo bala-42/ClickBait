@@ -216,6 +216,8 @@ struct CompanionBubbleView: View {
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):
             TinyPill(text: message, symbol: "exclamationmark", tone: model.tone, isProblem: true)
+        case .hint(let text):
+            TinyPill(text: text, symbol: "hand.point.up.left", tone: model.tone)
         }
     }
 }
