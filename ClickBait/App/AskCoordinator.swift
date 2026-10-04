@@ -52,8 +52,12 @@ final class AskCoordinator {
     @ObservationIgnored private var ignoreExplainRelease = false
     /// Single ⌥⌘ tap (explain) vs double tap (type to ask).
     @ObservationIgnored private var explainTaps = DoubleTapDetector()
-    /// A single tap's explanation, held back until a second tap can no longer come.
-    @ObservationIgnored private var pendingExplain: Task<Void, Never>?
+    /// A single tap explains at once but stays undoable until a second tap can no longer
+    /// come; this ends that window (`commitExplain`).
+    @ObservationIgnored private var explainCommit: Task<Void, Never>?
+    /// The chat a provisional explanation detached: still on screen, put back by
+    /// `undoExplain`, closed by `commitExplain`.
+    @ObservationIgnored private var detachedChat: (conversation: Conversation, snipMemory: SnipMemory?)?
     /// An empty chat should open, ready to type into (⌥⌘ + right-click, double-tap ⌥⌘).
     @ObservationIgnored var onChatOpenForTyping: (() -> Void)?
     /// The open chat should take the keyboard.
@@ -129,10 +133,6 @@ final class AskCoordinator {
             askTask = Task { await finish() }
         case .askCancelled: cancel(reason: "another key was pressed")
         case .explainPressed:
-            // Pressed again before a held-back tap explained: this is a double tap or a
-            // snip, never "explain, then something else".
-            pendingExplain?.cancel()
-            pendingExplain = nil
             // Busy answering: a tap still explains, but nothing to snip into.
             if state != .listening, state != .thinking, !isAnswering { snipper.begin() }
         case .explainReleased:
@@ -166,16 +166,46 @@ final class AskCoordinator {
     private func explainTapped() {
         switch explainTaps.tap(at: ProcessInfo.processInfo.systemUptime) {
         case .first:
-            pendingExplain = Task { [weak self] in
+            // Explain now (no waiting), but keep it undoable for the double-tap window.
+            explain()
+            explainCommit?.cancel()
+            explainCommit = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(DoubleTapDetector.defaultWindow))
-                guard !Task.isCancelled, let self else { return }
-                pendingExplain = nil
-                explain()
+                guard !Task.isCancelled else { return }
+                self?.commitExplain()
             }
         case .second:
-            pendingExplain?.cancel()
-            pendingExplain = nil
+            undoExplain()
             startTypedChat(trigger: "double-tap ⌥⌘")
+        }
+    }
+
+    /// The double-tap window passed: the tap really was a single one.
+    private func commitExplain() {
+        explainCommit = nil
+        if detachedChat != nil {
+            detachedChat = nil
+            onChatClose?()
+        }
+    }
+
+    /// A second tap (or Esc) inside the window: drop the explanation quietly and put back
+    /// the chat it had detached, as if the first tap never happened.
+    private func undoExplain() {
+        explainCommit?.cancel()
+        explainCommit = nil
+        if state == .thinking || isAnswering {
+            askTask?.cancel()
+            askTask = nil
+            isAnswering = false
+            state = .idle
+            Log.ask.notice("Explain undone (second tap)")
+        }
+        if let detached = detachedChat {
+            conversation = detached.conversation
+            snipMemory = detached.snipMemory
+            chatShown = true
+            detachedChat = nil
         }
     }
 
@@ -312,9 +342,8 @@ final class AskCoordinator {
     func stopActivity() -> Bool {
         var stopped: [String] = []
         if snipper.isActive { snipper.cancel(); stopped.append("snip") }
-        if let pendingExplain {
-            pendingExplain.cancel()
-            self.pendingExplain = nil
+        if explainCommit != nil {
+            undoExplain()
             stopped.append("explain")
         }
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
@@ -586,9 +615,12 @@ final class AskCoordinator {
         tutorial?.stop(message: nil)
         guard state != .listening, state != .thinking, !isAnswering else { return }
         speaker.stop()
-        if conversation != nil {
+        if let open = conversation {
+            // The explanation isn't a follow-up, so the chat is let go of now — but its
+            // window stays until the double-tap window passes (a second tap puts it back).
+            if chatShown { detachedChat = (open, snipMemory) }
             closeChat()
-            onChatClose?()
+            if detachedChat == nil { onChatClose?() }
         }
         errorResetTask?.cancel()
 
@@ -617,6 +649,9 @@ final class AskCoordinator {
         guard let (selected, method) = await SelectionReader.read(frontmostPID: pid, accessibilitySelection: snapshot.selectedText)
         else {
             Log.ask.notice("Explain: no selection found (accessibility and copy both empty)")
+            // Not while a second tap could still come: a double tap needs no selection.
+            await explainCommit?.value
+            guard !Task.isCancelled else { return }
             show(error: "Highlight text and tap ⌥⌘ — or hold ⌥⌘ and circle or drag a box around something.")
             return
         }
