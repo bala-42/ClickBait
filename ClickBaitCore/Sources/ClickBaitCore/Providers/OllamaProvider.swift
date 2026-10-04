@@ -175,6 +175,7 @@ public struct OllamaProvider: LLMProvider {
     /// Structured output for the requests that have a fixed shape.
     static func schema(for ask: AskRequest) -> [String: Any]? {
         if ask.listParts { return partsSchema }
+        if ask.pickElement { return pickSchema }
         if ask.sortRequest { return sortSchema }
         if ask.planTutorial { return tutorialSchema }
         if ask.tutorialCheck != nil { return progressSchema }
@@ -198,6 +199,12 @@ public struct OllamaProvider: LLMProvider {
             ] as [String: Any],
         ],
         "required": ["speech", "steps"],
+    ] }
+
+    static var pickSchema: [String: Any] { [
+        "type": "object",
+        "properties": ["id": ["type": "integer"]],
+        "required": ["id"],
     ] }
 
     static var sortSchema: [String: Any] { [

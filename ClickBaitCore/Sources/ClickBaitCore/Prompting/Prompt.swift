@@ -60,7 +60,8 @@ public enum Prompt {
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
         let text: String
-        if request.sortRequest { text = sortSystem }
+        if request.pickElement { text = pickSystem }
+        else if request.sortRequest { text = sortSystem }
         else if request.interpretOrder { text = orderSystem }
         else if request.listParts { text = partsSystem }
         else if request.planTutorial { text = tutorialSystem }
@@ -191,6 +192,15 @@ public enum Prompt {
         "write me a poem" → {"action": null}
         """
 
+    /// "Where's the sidebar button?" from the element list alone (no screenshot): ~2 s
+    /// instead of ~9 s, and the pointer lands on the element's real frame.
+    public static let pickSystem = """
+        The user wants to find something on their Mac screen. Below is the list of clickable elements \
+        on screen (id: kind "name"). Pick the ONE element they mean — by name, meaning or synonym \
+        ("sidebar" → "Show Sidebar", "back" → "Go Back", "settings" → a gear or "Preferences"). \
+        Reply with ONLY {"id": N}. If none of them fits, reply {"id": 0}.
+        """
+
     /// A second look to pin down where something is, on a sharp close-up.
     public static let locateSystem = """
         You find one thing in a close-up screenshot of part of a computer screen.
@@ -218,6 +228,10 @@ public enum Prompt {
 
     private static func baseUserText(for request: AskRequest) -> String {
         if request.sortRequest { return request.question }
+        if request.pickElement {
+            return (["Elements:"] + request.elements.map { "\($0.id): \($0.kind) \"\($0.label)\"" } + ["", "The user asked: \(request.question)"])
+                .joined(separator: "\n")
+        }
         if request.planTutorial {
             var lines = [request.screenshotJPEG.isEmpty
                 ? "No screenshot: plan from the app's menus and the on-screen elements below (they're what's on screen now)."

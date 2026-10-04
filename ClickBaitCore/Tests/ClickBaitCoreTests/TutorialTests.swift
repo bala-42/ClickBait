@@ -494,3 +494,23 @@ struct ShowMePointsTests {
         #expect(TutorialQuestion.asksForTutorial("walk me through exporting a PDF"))
     }
 }
+
+struct CloseElementTests {
+    private func element(_ label: String, x: Double = 10) -> ScreenElement {
+        ScreenElement(role: "AXButton", label: label, frame: Rect(x: x, y: 10, width: 20, height: 20))
+    }
+
+    @Test func clearlyOneElement() {
+        let elements = [element("Show Sidebar"), element("New Tab", x: 100), element("Share", x: 200)]
+        #expect(InstantAnswer.closeElement(named: "sidebar", in: elements)?.label == "Show Sidebar")
+        #expect(InstantAnswer.closeElement(named: "tab", in: elements)?.label == "New Tab")
+        let two = elements + [element("Close Sidebar", x: 300)]
+        #expect(InstantAnswer.closeElement(named: "sidebar", in: two) == nil)  // two candidates: ask the model
+        #expect(InstantAnswer.closeElement(named: "it", in: elements) == nil)
+    }
+
+    @Test func picks() {
+        #expect(InstantAnswer.pickedID(in: #"{"id": 7}"#) == 7)
+        #expect(InstantAnswer.pickedID(in: #"{"id": 0}"#) == nil)
+    }
+}

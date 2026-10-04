@@ -45,6 +45,28 @@ public enum InstantAnswer {
         return samePlace ? first : nil
     }
 
+    /// No exact name, but one element clearly fits: every word of the target is in its
+    /// name ("sidebar" → "Show Sidebar") and no other element's name has them all.
+    public static func closeElement(named target: String, in elements: [ScreenElement]) -> ScreenElement? {
+        let words = Set(ImpliedPointer.normalized(target).split(separator: " ").map(String.init))
+        guard !words.isEmpty, words.allSatisfy({ $0.count >= 3 }) else { return nil }
+        let matches = elements.filter { element in
+            let name = Set(ImpliedPointer.normalized(element.label).split(separator: " ").map(String.init))
+            return words.isSubset(of: name) && name.count <= words.count + 2
+        }
+        guard let first = matches.first else { return nil }
+        let samePlace = matches.allSatisfy { abs($0.frame.x - first.frame.x) < 4 && abs($0.frame.y - first.frame.y) < 4 }
+        return samePlace ? first : nil
+    }
+
+    /// The element id in a reply to `Prompt.pickSystem` (0 or nothing: none fits).
+    public static func pickedID(in reply: String) -> Int? {
+        guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"), start < end,
+              let object = (try? JSONSerialization.jsonObject(with: Data(reply[start...end].utf8))) as? [String: Any],
+              let id = (object["id"] as? NSNumber)?.intValue, id > 0 else { return nil }
+        return id
+    }
+
     // MARK: - Menu walkthroughs ("how do I clear my history?")
 
     static let taskOpeners = ["show me how to", "show me how do i", "how do i", "how can i", "how to", "how would i",

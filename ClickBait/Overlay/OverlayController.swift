@@ -106,7 +106,10 @@ final class OverlayController {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        // `.transient`, not `.stationary`: Mission Control hides the overlays. Screen-sized and
+        // staying put through it, they turned every desktop thumbnail black.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.sharingType = .none  // never in screenshots, screen sharing or thumbnails
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         return panel

@@ -675,6 +675,11 @@ final class AskCoordinator {
             Log.ask.notice("Order check: skipped (a walkthrough)")
             return nil
         }
+        // "Where's / show me / point at X" is never an order: don't spend ~1.5 s asking.
+        if TutorialQuestion.isLocatingRequest(text) {
+            Log.ask.notice("Order check: skipped (finding something)")
+            return nil
+        }
         let start = ContinuousClock.now
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
@@ -1116,7 +1121,9 @@ final class AskCoordinator {
         // pointers are only used when there was no exact, single match.
         var instant: [ScreenPointer]?
         let targets = snip == nil && selectedText == nil ? InstantAnswer.locateTargets(in: question) : []
-        let found = targets.compactMap { InstantAnswer.uniqueElement(named: $0, in: elements) }
+        let found = targets.compactMap {
+            InstantAnswer.uniqueElement(named: $0, in: elements) ?? InstantAnswer.closeElement(named: $0, in: elements)
+        }
         if !targets.isEmpty, found.count == targets.count {  // every one named exactly once, or none at all
             instant = found.map { element in
                 let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
@@ -1125,6 +1132,27 @@ final class AskCoordinator {
             }
             Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
             onInstantPointer?(instant!)
+        } else if targets.count == 1, !elements.isEmpty {
+            // Not named exactly: let the model pick from the element list as text (~1.5 s)
+            // rather than read the screenshot (~9 s). Nothing fits → the screenshot as before.
+            let listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: Int(capture.displayFrame.width),
+                                                                                   imageHeight: Int(capture.displayFrame.height)),
+                                            question: question, limit: Self.maxListedElements)
+            var pick = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                                  context: context, elements: listed)
+            pick.pickElement = true
+            let pickStart = ContinuousClock.now
+            if let reply = await Self.reply(from: provider, to: pick, within: .seconds(5)), let id = InstantAnswer.pickedID(in: reply),
+               let chosen = listed.first(where: { $0.id == id }),
+               let element = elements.first(where: { $0.label == chosen.label }) {
+                let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
+                instant = [ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
+                                         quartz: center)]
+                Log.ask.notice("Picked from the element list in \(String(describing: ContinuousClock.now - pickStart), privacy: .public)")
+                onInstantPointer?(instant!)
+            } else {
+                Log.ask.notice("Nothing in the element list fits (\(String(describing: ContinuousClock.now - pickStart), privacy: .public)); looking at the screen")
+            }
         } else if !targets.isEmpty {
             Log.ask.notice("Instant pointer: no single exact match among \(elements.count, privacy: .public) elements; asking the model")
         }
