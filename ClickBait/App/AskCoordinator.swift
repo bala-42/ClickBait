@@ -714,8 +714,8 @@ final class AskCoordinator {
     @ObservationIgnored private var pendingAction: (request: ActionRequest, speak: Bool, inChat: Bool)?
     /// A reminder waiting for its day (Today / Tomorrow / a spoken or typed day).
     @ObservationIgnored private var pendingReminder: (request: ActionRequest, speak: Bool, inChat: Bool)?
-    /// A question with buttons should be shown: the question, the buttons, a hint.
-    @ObservationIgnored var onChoiceRequest: ((String, [String], String?) -> Void)?
+    /// A reminder's "when?" card should be shown: the question, the buttons, a hint.
+    @ObservationIgnored var onReminderDayRequest: ((String, [String], String?) -> Void)?
     /// The card's buttons, in order.
     private static let reminderDayChoices: [ReminderDay] = [.inDays(0), .inDays(1)]
 
@@ -727,7 +727,7 @@ final class AskCoordinator {
         Log.ask.notice("Reminder: no day said, asking")
         if speak { speaker.speak("When should I remind you?") }
         if state == .thinking { state = .idle }
-        onChoiceRequest?(question, ["Today", "Tomorrow"], "or say a day")
+        onReminderDayRequest?(question, ["Today", "Tomorrow"], "or say a day")
         return .asked(question)
     }
 
@@ -738,6 +738,13 @@ final class AskCoordinator {
             return
         }
         Task { await resolveReminder(Self.reminderDayChoices[index]) }
+    }
+
+    /// A day picked on the card's calendar.
+    func answerReminderDate(_ date: Date) {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: .now), to: calendar.startOfDay(for: date)).day ?? 0
+        Task { await resolveReminder(.inDays(max(days, 0))) }
     }
 
     private func resolveReminder(_ day: ReminderDay) async {

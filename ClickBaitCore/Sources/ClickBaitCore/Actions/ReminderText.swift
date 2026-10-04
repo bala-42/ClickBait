@@ -115,7 +115,7 @@ public enum ReminderDay: Equatable, Sendable {
         let words = ["a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
                      "eight": 8, "nine": 9, "ten": 10]
         if let value = words[word] { return value }
-        guard let value = Int(word), (1...365).contains(value) else { return nil }
+        guard let value = Int(word), (1...400).contains(value) else { return nil }  // a calendar pick up to a year ahead
         return value
     }
 

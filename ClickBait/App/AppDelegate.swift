@@ -101,10 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirm.show(question, at: overlay.companionTopLeft)
         }
         coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
-        coordinator.onChoiceRequest = { [weak self] question, options, hint in
+        coordinator.onReminderDayRequest = { [weak self] question, options, hint in
             guard let self else { return }
-            confirm.showChoice(question, options: options, at: overlay.companionTopLeft, hint: hint) { [weak self] index in
-                self?.coordinator.answerReminderChoice(index)
+            confirm.showChoice(question, options: options, at: overlay.companionTopLeft, hint: hint,
+                               datePicker: true) { [weak self] answer in
+                switch answer {
+                case .option(let index): self?.coordinator.answerReminderChoice(index)
+                case .date(let date): self?.coordinator.answerReminderDate(date)
+                case .timedOut: self?.coordinator.answerReminderChoice(nil)
+                }
             }
         }
         coordinator.onStopped = { [weak self] in

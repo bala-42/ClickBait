@@ -36,7 +36,7 @@ struct ReminderTextTests {
         #expect(parsed.day == day)
     }
 
-    @Test(arguments: [ReminderDay.inDays(0), .inDays(1), .inDays(5), .weekday(6), .weekday(1), .dayOfMonth(1),
+    @Test(arguments: [ReminderDay.inDays(0), .inDays(1), .inDays(5), .inDays(366), .weekday(6), .weekday(1), .dayOfMonth(1),
                       .dayOfMonth(2), .dayOfMonth(13), .dayOfMonth(22)])
     func answeredDaysRoundTrip(_ day: ReminderDay) {
         let parsed = ReminderText.parse("water my plants " + day.phrase)
