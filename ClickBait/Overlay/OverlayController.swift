@@ -19,10 +19,12 @@ final class OverlayController {
     private var bubblePanel: NSPanel? { bubbleStage?.panel }
     private var bubbleHost: NSHostingView<CompanionBubbleView>?
     private var monitors: [Any] = []
+    private var spaceObserver: NSObjectProtocol?
     private var dismissTask: Task<Void, Never>?
 
     func start() {
         makeBubblePanel()
+        followSpaces()
         installMonitors()
         startMotion()
         moveBubble(to: NSEvent.mouseLocation)
@@ -106,9 +108,10 @@ final class OverlayController {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.level = .screenSaver
-        // `.transient`, not `.stationary`: Mission Control hides the overlays. Screen-sized and
-        // staying put through it, they turned every desktop thumbnail black.
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        // On the current desktop only, brought along on every desktop switch (`followSpaces`):
+        // screen-sized and on all desktops at once, the overlays turned every desktop's
+        // thumbnail in Mission Control black (gone as soon as ClickBait quit).
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.sharingType = .none  // never in screenshots, screen sharing or thumbnails
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -128,6 +131,20 @@ final class OverlayController {
 
         guideLabelStage = StagePanel(content: NSHostingView(rootView: GuideLabelView(model: model)),
                                      size: OverlayModel.guideLabelCanvas, makePanel: Self.makePanel)
+    }
+
+    /// Brings the overlays to the desktop the user just switched to.
+    private func followSpaces() {
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.bubblePanel?.orderFrontRegardless()
+                if let label = self.guideLabelPanel, label.isVisible { label.orderFrontRegardless() }
+            }
+        }
+        spaceObserver = observer
     }
 
     // MARK: - Bubble position
