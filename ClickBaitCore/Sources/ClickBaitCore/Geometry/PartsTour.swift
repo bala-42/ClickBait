@@ -4,6 +4,21 @@
 public enum PartsTour {
     public static let maxParts = 6
 
+    /// The marked area is (mostly) text — a paragraph, code, a message — rather than a
+    /// figure: no parts to point at. Prose comes back from text recognition as long lines;
+    /// diagrams and charts as short labels.
+    public static func isMostlyText(_ text: [TextBox], marked: Rect) -> Bool {
+        let slackX = marked.width * 0.1, slackY = marked.height * 0.1
+        let inside = text.filter {
+            $0.center.x >= marked.minX - slackX && $0.center.x <= marked.maxX + slackX
+                && $0.center.y >= marked.minY - slackY && $0.center.y <= marked.maxY + slackY
+        }
+        let characters = inside.reduce(0) { $0 + $1.text.count }
+        guard !inside.isEmpty else { return false }
+        let averageLine = Double(characters) / Double(inside.count)
+        return characters >= 200 || (characters >= 50 && averageLine >= 18)
+    }
+
     /// `marked` is the area the user circled or boxed, in the parts' pixels.
     public static func stops(_ parts: [Pointer], marked: Rect) -> [Pointer] {
         // Some slack: labels and edges often sit just outside what was circled.

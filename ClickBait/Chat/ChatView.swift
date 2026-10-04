@@ -19,7 +19,8 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            transcript
+            // Nothing asked yet (a chat opened to type into): no empty space above the field.
+            if !model.messages.isEmpty || model.isBusy { transcript }
             inputRow
         }
         .frame(width: Self.width)

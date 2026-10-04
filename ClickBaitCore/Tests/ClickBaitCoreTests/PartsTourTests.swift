@@ -103,3 +103,23 @@ struct PartsRequestTests {
         #expect(parsed.response.parts == [Pointer(x: 300, y: 200, label: "Supraspinatus")])
     }
 }
+
+struct MostlyTextTests {
+    private let marked = Rect(x: 0, y: 0, width: 800, height: 400)
+
+    @Test func paragraphsAreText() {
+        let lines = ["The rotator cuff is a group of four muscles", "that stabilise the shoulder joint and allow",
+                     "the arm to rotate. Injuries are common in"].enumerated().map {
+            TextBox(text: $0.element, center: Point(x: 400, y: Double(50 + $0.offset * 30)))
+        }
+        #expect(PartsTour.isMostlyText(lines, marked: marked))
+    }
+
+    @Test func figuresWithShortLabelsAreNot() {
+        let labels = ["Supraspinatus", "Infraspinatus", "Teres minor", "Subscapularis", "Q1", "Q2", "Revenue"].enumerated().map {
+            TextBox(text: $0.element, center: Point(x: Double(80 + $0.offset * 100), y: 200))
+        }
+        #expect(!PartsTour.isMostlyText(labels, marked: marked))
+        #expect(!PartsTour.isMostlyText([], marked: marked))  // an unlabelled drawing
+    }
+}

@@ -1196,7 +1196,10 @@ final class AskCoordinator {
             if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
             let candidates = parsed.response.parts + snipPointers
             let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
-            let labelled = !printed.isEmpty && printed.count * 2 >= max(candidates.count, 1)
+            // Labelled figures (names already printed) and plain text (a paragraph, code)
+            // get no tour: only unlabelled figures, diagrams, drawings and charts do.
+            let mostlyText = PartsTour.isMostlyText(text, marked: view.marked)
+            let labelled = mostlyText || (!printed.isEmpty && printed.count * 2 >= max(candidates.count, 1))
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
             if !labelled {
@@ -1205,7 +1208,7 @@ final class AskCoordinator {
             }
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
-                (\(labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) (~)
+                (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) (~)
                 """)
         }
         if !chatShown, pointers.isEmpty {
