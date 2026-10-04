@@ -43,6 +43,8 @@ public struct AskRequest: Sendable {
     public var listParts = false
     /// Plan a tutorial for `question` (`Prompt.tutorialSystem`).
     public var planTutorial = false
+    /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.
+    public var menuOutline: [String] = []
     /// Check progress on a running tutorial (`Prompt.progressSystem`).
     public var tutorialCheck: (plan: TutorialPlan, expected: Int)?
     /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.

@@ -48,6 +48,10 @@ struct LiveOllamaTests {
         if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_TUTORIAL"] != nil {
             request.planTutorial = true  // the tutorial planner (with the element list if CLICKBAIT_LIVE_ELEMENTS)
         }
+        if let app = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_APP"] { request.context.appName = app }
+        if let menus = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_MENUS"] {
+            request.menuOutline = menus.components(separatedBy: "|")  // "History ▸ Clear History…|…"
+        }
         if let explanation = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_PARTS"] {
             // The background "list the parts" look.
             request.listParts = true

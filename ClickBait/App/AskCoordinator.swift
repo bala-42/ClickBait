@@ -720,21 +720,22 @@ final class AskCoordinator {
                                  screenshotHeight: screenshot.height, context: context,
                                  elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
         request.planTutorial = true
+        let pid = frontmostPID
+        request.menuOutline = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
         let start = ContinuousClock.now
         guard let reply = await Self.reply(from: provider, to: request, within: .seconds(25)), !Task.isCancelled,
-              let plan = TutorialPlan.parse(reply)
+              let plan = TutorialPlan.parse(reply)?.expandingMenus(using: request.menuOutline)
         else {
             Log.ask.notice("Tutorial: no plan; answering normally")
             return false
         }
-        Log.ask.notice("Tutorial plan: \(plan.steps.count, privacy: .public) step(s) in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+        Log.ask.notice("Tutorial plan: \(plan.steps.count, privacy: .public) step(s) in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(request.menuOutline.count, privacy: .public) menu items offered)")
 
         // Even a one-step plan is a tutorial (the model often shortens plans; the tutorial
         // checks the screen at the end and plans the rest) — if its first click can be
         // found on screen or in the app's menus. Otherwise answer normally.
         guard let first = plan.steps.first else { return false }
         if StepMatcher.find(first.target, in: elements) == nil {
-            let pid = frontmostPID
             let inMenus = await Task.detached(priority: .userInitiated) {
                 AXInspector.menuPath(to: first.target, frontmostPID: pid) != nil
             }.value

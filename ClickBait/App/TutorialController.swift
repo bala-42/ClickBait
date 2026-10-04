@@ -187,7 +187,18 @@ final class TutorialController {
         guard isActive else { return }
 
         let step = plan.steps[index]
-        if let target = StepMatcher.find(step.target, in: elements) {
+        // A near-exact visible match wins; a looser one ("History" button for "Clear
+        // History…") only if the target isn't an item in the app's menus.
+        var visible = StepMatcher.find(step.target, in: elements, minimum: 0.95)
+        if visible == nil, let loose = StepMatcher.find(step.target, in: elements) {
+            if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
+                AXInspector.menuPath(to: step.target, frontmostPID: pid)
+            }).value {
+                menuPaths[index] = path
+            }
+            if menuPaths[index] == nil { visible = loose }
+        }
+        if let target = visible {
             if loggedTarget != index {
                 loggedTarget = index
                 Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at a \(target.kind, privacy: .public)")
@@ -306,18 +317,24 @@ final class TutorialController {
                               screenshotHeight: encoded.height, context: context,
                               elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
         next.planTutorial = true
+        next.menuOutline = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
         let reply = await Self.reply(from: provider, to: next, within: .seconds(25))
         guard isActive else { return }  // stopped meanwhile: stay stopped
-        guard let reply, let more = TutorialPlan.parse(reply), !more.steps.isEmpty else {
+        guard let reply, let more = TutorialPlan.parse(reply)?.expandingMenus(using: next.menuOutline), !more.steps.isEmpty else {
+            finish()
+            return
+        }
+        guard let rest = TutorialPlan.remaining(more, after: plan.steps) else {
+            Log.ask.notice("Tutorial: the follow-up plan starts over; treating the task as done")
             finish()
             return
         }
         continuations += 1
         let room = TutorialPlan.maxSteps - plan.steps.count
-        plan.steps += more.steps.prefix(room)
+        plan.steps += rest.prefix(room)
         lastProgress = Date()
         menuSearched = []
-        Log.ask.notice("Tutorial: planned \(min(more.steps.count, room), privacy: .public) more step(s)")
+        Log.ask.notice("Tutorial: planned \(min(rest.count, room), privacy: .public) more step(s)")
         onChecklist?(checklistText)
         if speakSteps { speak?(plan.steps[index].instruction) }
     }

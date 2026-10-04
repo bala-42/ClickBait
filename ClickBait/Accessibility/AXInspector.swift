@@ -161,6 +161,32 @@ enum AXInspector {
         return best?.path
     }
 
+    /// The frontmost app's menus as "History ▸ Clear History…" lines (two levels, no
+    /// Apple menu), for planning tutorials with the app's real item names.
+    static func menuOutline(frontmostPID pid: pid_t?, limit: Int = 160, budget: TimeInterval = 0.5) -> [String] {
+        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return [] }
+        let deadline = Date().addingTimeInterval(budget)
+        var lines: [String] = []
+        for top in bar.children(kAXChildrenAttribute) {
+            let title = top.name
+            guard !title.isEmpty, title != "Apple", let menu = top.children(kAXChildrenAttribute).first else { continue }
+            for item in menu.children(kAXChildrenAttribute) {
+                guard Date() < deadline, lines.count < limit else { return lines }
+                let name = item.name
+                guard !name.isEmpty else { continue }
+                if let submenu = item.children(kAXChildrenAttribute).first(where: { $0.string(kAXRoleAttribute) == "AXMenu" }) {
+                    for sub in submenu.children(kAXChildrenAttribute).prefix(12) {
+                        let subName = sub.name
+                        if !subName.isEmpty, lines.count < limit { lines.append("\(title) ▸ \(name) ▸ \(subName)") }
+                    }
+                } else {
+                    lines.append("\(title) ▸ \(name)")
+                }
+            }
+        }
+        return lines
+    }
+
     // MARK: - Finder items
 
     /// The files under `points` (Quartz) in Finder: list, column and icon view and the

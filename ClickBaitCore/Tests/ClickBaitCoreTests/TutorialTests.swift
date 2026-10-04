@@ -61,3 +61,43 @@ struct TutorialPaddingTests {
         #expect(TutorialPlan.parse(raw)?.steps.map(\.target) == ["History", "Clear History…", "Clear History"])
     }
 }
+
+struct TutorialMenuTests {
+    private let safari = ["History ▸ Show All History", "History ▸ Clear History…", "History ▸ Back",
+                          "File ▸ Export as PDF…", "View ▸ Show Sidebar"]
+
+    @Test func aMenuStepGetsTheItemItNames() {
+        // Real qwen2.5vl:7b plans with Safari's menus offered.
+        let one = TutorialPlan.parse(#"{"speech": "Open the History menu and choose Clear History.", "steps": [{"instruction": "Open the History menu", "target": "History"}]}"#)!
+        #expect(one.expandingMenus(using: safari).steps.map(\.target) == ["History", "Clear History…"])
+        let inline = TutorialPlan.parse(#"{"steps": [{"instruction": "History ▸ Clear History…", "target": "History"}], "speech": "Open the History menu and choose Clear History…."}"#)!
+        #expect(inline.expandingMenus(using: safari).steps.map(\.target) == ["History", "Clear History…"])
+    }
+
+    @Test func leavesCompletePlansAlone() {
+        let full = TutorialPlan(intro: "", steps: [TutorialStep(target: "History", instruction: "Open History"),
+                                                   TutorialStep(target: "Clear History…", instruction: "Choose Clear History…")])
+        #expect(full.expandingMenus(using: safari).steps.count == 2)
+        let unrelated = TutorialPlan(intro: "Zoom in.", steps: [TutorialStep(target: "View", instruction: "Open View")])
+        #expect(unrelated.expandingMenus(using: safari).steps.count == 1)
+    }
+}
+
+struct TutorialContinuationTests {
+    private let done = [TutorialStep(target: "History", instruction: "Open History"),
+                        TutorialStep(target: "Clear History…", instruction: "Choose Clear History…"),
+                        TutorialStep(target: "Clear History", instruction: "Click Clear History")]
+
+    @Test func aPlanThatStartsOverMeansFinished() {
+        // After the history was cleared, the model planned the whole task again.
+        let again = TutorialPlan(intro: "", steps: [TutorialStep(target: "History", instruction: "Open History"),
+                                                    TutorialStep(target: "Clear History…", instruction: "Choose Clear History…")])
+        #expect(TutorialPlan.remaining(again, after: done) == nil)
+    }
+
+    @Test func genuinelyNewStepsContinue() {
+        let next = TutorialPlan(intro: "", steps: [TutorialStep(target: "the last hour", instruction: "Choose the last hour"),
+                                                   TutorialStep(target: "Clear History", instruction: "Click Clear History")])
+        #expect(TutorialPlan.remaining(next, after: Array(done.prefix(2)))?.map(\.target) == ["the last hour", "Clear History"])
+    }
+}

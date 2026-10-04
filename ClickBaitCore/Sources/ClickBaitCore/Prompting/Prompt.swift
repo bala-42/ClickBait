@@ -84,6 +84,9 @@ public enum Prompt {
         from the list of on-screen elements when given. "instruction" is a short imperative \
         ("Open the File menu", "Choose Export as PDF…").
         - Include steps that appear only later (menu items inside a menu, buttons in a dialog).
+        - Most Mac tasks are in the app's menus. When the app's menu bar is listed and the task \
+        is in it, use it: one step to open the menu (its title, e.g. "History") and one to \
+        choose the item (its exact name, e.g. "Clear History…"), then any dialog buttons.
         - Between 2 and 10 steps. Use the app that's on screen, as it looks on a Mac.
         - If it can't be done in this app, reply {"speech": "<why, briefly>", "steps": []}.
         """
@@ -162,6 +165,10 @@ public enum Prompt {
             var lines = ["The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
             if let app = request.context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
             if let title = request.context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
+            if !request.menuOutline.isEmpty {
+                lines.append("The app's menu bar (menu ▸ item):")
+                lines.append(contentsOf: request.menuOutline)
+            }
             if !request.elements.isEmpty {
                 lines.append("On-screen elements (id: kind \"name\" at x, y):")
                 lines.append(contentsOf: request.elements.map(\.line))

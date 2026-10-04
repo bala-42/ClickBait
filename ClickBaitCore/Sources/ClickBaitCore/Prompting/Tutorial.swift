@@ -50,6 +50,44 @@ public struct TutorialPlan: Equatable, Sendable {
         return TutorialPlan(intro: intro, steps: Array(distinct.prefix(maxSteps)))
     }
 
+    /// A small model writes "Open the History menu and choose Clear History…" as one
+    /// step. When a step opens a menu and the plan's words name an item that really is in
+    /// that menu (`outline`: "History ▸ Clear History…"), the item becomes the next step.
+    public func expandingMenus(using outline: [String]) -> TutorialPlan {
+        guard !outline.isEmpty else { return self }
+        let entries = outline.map { $0.components(separatedBy: " ▸ ") }.filter { $0.count >= 2 }
+        let menus = Set(entries.map { $0[0].lowercased() })
+        var expanded: [TutorialStep] = []
+        for (index, step) in steps.enumerated() {
+            expanded.append(step)
+            guard menus.contains(step.target.lowercased()) else { continue }
+            let next = index + 1 < steps.count ? steps[index + 1].target.lowercased() : nil
+            let words = ImpliedPointer.normalized(step.instruction + " " + intro)
+            // The longest item of this menu that the words mention.
+            let item = entries
+                .filter { $0[0].lowercased() == step.target.lowercased() }
+                .map { $0[1] }
+                .filter { ImpliedPointer.normalized($0).count >= 3 && words.contains(ImpliedPointer.normalized($0)) }
+                .max { $0.count < $1.count }
+            if let item, item.lowercased() != next {
+                expanded.append(TutorialStep(target: item, instruction: "Choose \(item)"))
+            }
+        }
+        var plan = self
+        plan.steps = Array(expanded.prefix(Self.maxSteps))
+        return plan
+    }
+
+    /// What's left after `done` steps, from a follow-up plan — or nil when that plan just
+    /// starts the task over (its first step is one already done): the task is finished,
+    /// and walking it again would e.g. clear another hour of history.
+    public static func remaining(_ more: TutorialPlan, after done: [TutorialStep]) -> [TutorialStep]? {
+        let doneTargets = Set(done.map { $0.target.lowercased() })
+        guard let first = more.steps.first, !doneTargets.contains(first.target.lowercased()) else { return nil }
+        let rest = more.steps.filter { !doneTargets.contains($0.target.lowercased()) }
+        return rest.isEmpty ? nil : rest
+    }
+
     /// `button "New Note" at (300, 60)` → `New Note` (models copy element-list lines).
     static func cleanTarget(_ raw: String) -> String {
         var target = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,13 +130,13 @@ public enum TutorialQuestion {
 public enum StepMatcher {
     /// The best-named element for `target`: exact names first, then close ones; open
     /// menu items win ties (they're what the user is looking at mid-tutorial).
-    public static func find(_ target: String, in elements: [ScreenElement]) -> ScreenElement? {
+    public static func find(_ target: String, in elements: [ScreenElement], minimum: Double = 0.75) -> ScreenElement? {
         let scored = elements.map { element -> (ScreenElement, Double) in
             var score = LabelMatcher.similarity(target, element.label)
             if element.role == "AXMenuItem" { score += 0.01 }
             return (element, score)
         }
-        return scored.filter { $0.1 >= 0.75 }.max { $0.1 < $1.1 }?.0
+        return scored.filter { $0.1 >= minimum }.max { $0.1 < $1.1 }?.0
     }
 }
 
