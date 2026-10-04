@@ -561,21 +561,39 @@ struct SystemSettingsRoutingTests {
         #expect(TutorialQuestion.taskApp(in: "change my wallpaper", apps: ["Safari"]) == nil)
     }
 
-    @Test func appleMenuToSystemSettingsOpensTheApp() {
-        // The plan from the 4 Oct log: "Apple [Finder] → System Settings… [Finder]", which
-        // opened System Settings and then stopped instead of continuing in it.
+    @Test func appleMenuToSystemSettingsIsShownAndTheRestHappensThere() {
+        // From the 4 Oct log: "Apple [Finder] → System Settings… [Finder]". The user is
+        // walked through the Apple menu; the steps after it belong to System Settings.
         let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "Apple", "instruction": "Click the Apple menu."}, {"target": "System Settings…", "instruction": "Choose System Settings…"}, {"target": "Wallpaper", "instruction": "Click Wallpaper."}]}"#)!
         let split = plan.separatingSetup(frontmostApp: "Finder", isInstalledApp: installed)
-        #expect(split.app == "System Settings")
-        #expect(split.steps.map(\.target) == ["Wallpaper"])
-        #expect(split.steps.first?.app == "System Settings")
+        #expect(split.steps.map(\.target) == ["Apple", "System Settings…", "Wallpaper"])
+        #expect(split.steps.map(\.app) == ["Finder", "Finder", "System Settings"])
+        #expect(split.app == nil)  // nothing for ClickBait to open first
     }
 
-    @Test func onlyOpeningSystemSettingsLeavesItToPlanThere() {
-        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "Apple", "instruction": "Open the Apple menu."}, {"target": "System Settings...", "instruction": "Choose System Settings..."}]}"#)!
-        let split = plan.separatingSetup(frontmostApp: "Finder", isInstalledApp: installed)
-        #expect(split.app == "System Settings")
-        #expect(split.steps.isEmpty)
+    @Test func openStepsStillHappenForTheUser() {
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "Safari", "instruction": "Open Safari."}, {"target": "History", "instruction": "Go to the History menu."}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Notes", isInstalledApp: installed)
+        #expect(split.app == "Safari")
+        #expect(split.steps.map(\.target) == ["History"])
+    }
+
+    @Test func systemSettingsPathFromAnyApp() {
+        let plan = TutorialPlan.systemSettingsByAppleMenu(from: "Finder")
+        #expect(plan.steps.map(\.target) == ["Apple", "System Settings…"])
+        #expect(plan.steps.allSatisfy { $0.app == "Finder" })
+    }
+
+    @Test(arguments: ["System Setting", "System Settings.", "how do I open system settings?", "take me to my Mac's settings",
+                      "where is the settings app"])
+    func justGettingToSystemSettings(_ text: String) {
+        #expect(TutorialQuestion.taskApp(in: text, apps: apps) == "System Settings")
+        #expect(TutorialQuestion.onlyOpens(text, app: "System Settings"))
+    }
+
+    @Test(arguments: ["how do I change my wallpaper", "turn on night shift in system settings"])
+    func moreThanGettingThere(_ text: String) {
+        #expect(!TutorialQuestion.onlyOpens(text, app: "System Settings"))
     }
 
     @Test func aMenuItemThatIsNotAnAppStays() {

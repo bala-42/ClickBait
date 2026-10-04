@@ -913,7 +913,10 @@ final class AskCoordinator {
         // A well-known website is typed into the browser (lavender) however it's asked,
         // even "show me how to open YouTube"; other "show me…" requests point (blue).
         let visiting = Websites.visit(in: question, installedApps: Array(AppLocator.installed().keys)) != nil
-        guard asking || ordering || visiting, let provider, let tutorial else { return false }
+        // "System Setting" on its own: getting there is the task (Apple menu → System Settings…).
+        let toSystemSettings = TutorialQuestion.onlyOpens(question, app: "System Settings")
+            && TutorialQuestion.taskApp(in: question, apps: Array(AppLocator.installed().keys)) == "System Settings"
+        guard asking || ordering || visiting || toSystemSettings, let provider, let tutorial else { return false }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()
         // The installed app's own name ("Safari"), whatever case the plan wrote.
@@ -924,11 +927,21 @@ final class AskCoordinator {
         do { screenshot = try await encoding.value } catch { return false }
         tutorialReturnApp = nil
 
-        // The task's app isn't in front: open it first, then plan there. Either the request
-        // names it ("my Safari history") or it's a Mac setting (System Settings) — planning
-        // those from the app in front walked Finder's own "Settings…".
-        if let named = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys)),
-           named.lowercased() != context.appName?.lowercased() {
+        // The task's app isn't in front. Either the request names it ("my Safari history")
+        // or it's a Mac setting. Planning those from the app in front walked Finder's own
+        // "Settings…", so the app is opened first and the plan made there.
+        let taskApp = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys))
+        // System Settings is shown, not opened for the user: the Apple menu, then "System
+        // Settings…" (works from any app, no model needed); once it's open, the rest of the
+        // task is planned in there — unless getting there was the whole request.
+        if taskApp == "System Settings", context.appName?.caseInsensitiveCompare("System Settings") != .orderedSame {
+            Log.ask.notice("Tutorial: System Settings by the Apple menu")
+            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName), question: question, startedIn: startedIn,
+                                       speak: speak, display: display, installedName: installedName, apps: apps,
+                                       provider: provider, tutorial: tutorial,
+                                       continues: !TutorialQuestion.onlyOpens(question, app: "System Settings"))
+        }
+        if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
             (capture, screenshot, elements) = ready
         }

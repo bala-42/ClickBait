@@ -150,12 +150,18 @@ public struct TutorialPlan: Equatable, Sendable {
             let verb = ImpliedPointer.normalized(step.instruction).split(separator: " ").first.map(String.init) ?? ""
             // "Open the Safari menu" is the app's own menu, not opening the app.
             let isMenu = ImpliedPointer.normalized(step.instruction).split(separator: " ").contains("menu")
-            // "System Settings…" in the Apple menu names the app too, ellipsis and all.
+            // "Apple menu → System Settings…": a menu item that opens an app. The user is shown
+            // it (pointing, like any menu item); the steps after it happen in that app.
             let appTarget = Self.withoutEllipsis(step.target)
-            if isInstalledApp(appTarget), !isMenu, position == 0 || switching.contains(verb) || appTarget.lowercased() == front {
-                current = Self.realApp(appTarget) ?? appTarget  // "Open Safari": ClickBait does that
-                // Opening the Apple menu only led to that item: ClickBait opens the app instead.
-                if let last = kept.last, Self.appleMenuNames.contains(last.target.lowercased()) { kept.removeLast() }
+            let afterAppleMenu = kept.last.map { Self.appleMenuNames.contains($0.target.lowercased()) } ?? false
+            if isInstalledApp(appTarget), appTarget != step.target || afterAppleMenu {
+                step.app = current
+                kept.append(step)
+                current = Self.realApp(appTarget) ?? appTarget
+                continue
+            }
+            if isInstalledApp(step.target), !isMenu, position == 0 || switching.contains(verb) || step.target.lowercased() == front {
+                current = step.target  // "Open Safari": ClickBait does that
                 continue
             }
             if let named = step.app.flatMap(Self.realApp) { current = named }
@@ -176,6 +182,15 @@ public struct TutorialPlan: Equatable, Sendable {
         var name = target.trimmingCharacters(in: .whitespaces)
         for suffix in ["…", "..."] where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }
         return name.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The way into System Settings that works from any app: the Apple menu, then
+    /// "System Settings…". Shown (pointed at), not done for the user; no model needed.
+    public static func systemSettingsByAppleMenu(from front: String?) -> TutorialPlan {
+        TutorialPlan(intro: "Open the Apple menu, then choose System Settings.", steps: [
+            TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
+            TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
+        ])
     }
 
     /// The app name as it is on today's Macs, or nil for ClickBait itself (the model sees
@@ -351,7 +366,8 @@ public enum TutorialQuestion {
     /// Things only System Settings changes. Whole words or phrases, so "display" in
     /// "displayed" doesn't count; a request that names an app never gets here.
     static let systemSettingTopics = [
-        "system settings", "system preferences", "mac settings", "mac s settings", "macbook settings",
+        "system settings", "system setting", "system preferences", "system preference", "settings app",
+        "mac settings", "mac setting", "mac s settings", "macbook settings",
         "wallpaper", "desktop background", "desktop picture", "screen saver", "screensaver",
         "displays", "display settings", "external display", "second display", "screen resolution",
         "display resolution", "refresh rate", "brightness", "night shift", "true tone",
@@ -372,6 +388,17 @@ public enum TutorialQuestion {
         "cursor size", "pointer size", "siri", "apple intelligence", "firewall", "filevault",
         "default browser", "user account", "user accounts", "guest user", "startup disk",
     ]
+
+    /// The request is only to get to `app` ("System Setting", "how do I open System
+    /// Settings?"): nothing is left once the app's name and filler words are taken out.
+    public static func onlyOpens(_ text: String, app: String) -> Bool {
+        let filler: Set = ["how", "do", "i", "can", "you", "to", "get", "go", "open", "opening", "launch", "the", "my",
+                           "show", "me", "where", "is", "s", "find", "take", "bring", "up", "access", "a", "an", "app",
+                           "mac", "macs", "macbook", "please", "hey", "clickbait", "on", "this", "into", "in", "want",
+                           "settings", "setting", "preferences", "preference"]
+        let named = Set(ImpliedPointer.normalized(app).split(separator: " ").map(String.init))
+        return ImpliedPointer.normalized(text).split(separator: " ").allSatisfy { filler.contains(String($0)) || named.contains(String($0)) }
+    }
 
     static func isSystemSetting(_ text: String) -> Bool {
         let spoken = " " + ImpliedPointer.normalized(text) + " "
