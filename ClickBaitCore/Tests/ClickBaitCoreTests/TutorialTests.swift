@@ -581,7 +581,7 @@ struct SystemSettingsRoutingTests {
     @Test func systemSettingsPathFromAnyApp() {
         let plan = TutorialPlan.systemSettingsByAppleMenu(from: "Finder")
         #expect(plan.steps.map(\.target) == ["Apple", "System Settings…"])
-        #expect(plan.steps.allSatisfy { $0.app == "Finder" })
+        #expect(plan.steps.allSatisfy { $0.app == nil })  // the Apple menu is in every app
     }
 
     @Test(arguments: ["System Setting", "System Settings.", "how do I open system settings?", "take me to my Mac's settings",
@@ -626,7 +626,7 @@ struct SystemSettingsMapTests {
     @Test func nightShiftWalkthrough() {
         let plan = TutorialPlan.systemSettingsByAppleMenu(from: "Finder", route: ["Displays", "Night Shift"])
         #expect(plan.steps.map(\.target) == ["Apple", "System Settings…", "Displays", "Night Shift"])
-        #expect(plan.steps.map(\.app) == ["Finder", "Finder", "System Settings", "System Settings"])
+        #expect(plan.steps.map(\.app) == [nil, nil, "System Settings", "System Settings"])
     }
 
     @Test func alreadyInSystemSettings() {

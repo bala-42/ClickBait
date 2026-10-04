@@ -197,9 +197,11 @@ public struct TutorialPlan: Equatable, Sendable {
     public static func systemSettingsByAppleMenu(from front: String?, route: [String] = []) -> TutorialPlan {
         var steps: [TutorialStep] = []
         if front?.caseInsensitiveCompare("System Settings") != .orderedSame {
+            // No app: the Apple menu is the same in every app. Tied to the app in front when
+            // asked, a switch of front app mid-way made the tutorial "switch back" to it.
             steps += [
-                TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
-                TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
+                TutorialStep(target: "Apple", instruction: "Click the Apple menu"),
+                TutorialStep(target: "System Settings…", instruction: "Choose System Settings…"),
             ]
         }
         steps += route.map { TutorialStep(target: $0, instruction: "Click \($0)", app: "System Settings") }

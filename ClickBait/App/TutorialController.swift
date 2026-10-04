@@ -345,6 +345,9 @@ final class TutorialController {
             }
         }
         guard let since = targetMissingSince, !checking else { return }
+        // It's in a known menu: nothing for the model to work out (its 5 s checks froze the
+        // pointer while the user opened History three times). Keep pointing at the menu.
+        guard menuPaths[index] == nil else { return }
         let missingFor = Date().timeIntervalSince(since)
         // Right after a step's click and the next target nowhere: maybe that click
         // finished the task. Ask at once instead of waiting.
