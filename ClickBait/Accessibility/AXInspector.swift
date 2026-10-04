@@ -129,25 +129,42 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
-    /// The web page in front: its address and title, from the browser's window
-    /// (`AXDocument`) or its web area (`AXURL`). Safari, Chrome and other WebKit/Chromium
-    /// browsers expose one of them. Nil for other apps.
-    static func pageAddress(frontmostPID pid: pid_t?) -> (address: String, title: String?)? {
-        guard isTrusted, let pid, let window = element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute) else { return nil }
+    /// The web page in front: its address and title, from the browser window
+    /// (`AXDocument`) or its web area (`AXURL`, deep inside Safari's splits and tab
+    /// groups). Safari, Chrome and other WebKit/Chromium browsers expose one of them.
+    /// Nil for other apps; `trace` says what was seen (for the log).
+    static func pageAddress(frontmostPID pid: pid_t?, trace: inout String) -> (address: String, title: String?)? {
+        guard isTrusted, let pid else { trace = "no access"; return nil }
+        let app = element(AXUIElementCreateApplication(pid))
+        guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else {
+            trace = "no window"
+            return nil
+        }
         let title = window.string(kAXTitleAttribute)
-        if let document = window.string(kAXDocumentAttribute), document.hasPrefix("http") { return (document, title) }
+        if let document = window.string(kAXDocumentAttribute), document.hasPrefix("http") {
+            trace = "window document"
+            return (document, title)
+        }
+        let deadline = Date().addingTimeInterval(0.6)
         var queue = [window][...]
-        var visited = 0
-        while let node = queue.popFirst(), visited < 400 {
+        var visited = 0, webAreas = 0
+        while let node = queue.popFirst(), visited < 3000, Date() < deadline {
             visited += 1
-            if node.string(kAXRoleAttribute) == "AXWebArea" {
-                if let url = node.attribute(kAXURLAttribute) as? URL, url.scheme?.hasPrefix("http") == true {
-                    return (url.absoluteString, title)
+            let role = node.string(kAXRoleAttribute) ?? ""
+            if role == "AXWebArea" {
+                webAreas += 1
+                let value = node.attribute(kAXURLAttribute)
+                let address = (value as? URL)?.absoluteString ?? (value as? String)
+                if let address, address.hasPrefix("http") {
+                    trace = "web area after \(visited) elements"
+                    return (address, title)
                 }
                 continue  // don't walk the page itself
             }
+            if ["AXToolbar", "AXMenuBar", "AXButton", "AXStaticText", "AXImage"].contains(role) { continue }
             queue.append(contentsOf: node.children(kAXChildrenAttribute))
         }
+        trace = "\(visited) elements, \(webAreas) web area(s) without an address"
         return nil
     }
 

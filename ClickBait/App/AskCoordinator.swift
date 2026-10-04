@@ -1376,8 +1376,12 @@ final class AskCoordinator {
             let content: String?
             switch reference {
             case .pageAddress:
-                content = await Task.detached(priority: .userInitiated) { AXInspector.pageAddress(frontmostPID: pid) }.value
-                    .map { NoteReference.noteText(address: $0.address, title: $0.title) }
+                let (page, trace) = await Task.detached(priority: .userInitiated) {
+                    var trace = ""
+                    return (AXInspector.pageAddress(frontmostPID: pid, trace: &trace), trace)
+                }.value
+                Log.ask.notice("Page address: \(trace, privacy: .public)")
+                content = page.map { NoteReference.noteText(address: $0.address, title: $0.title) }
             case .selection:
                 content = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid).selectedText }.value
             }
