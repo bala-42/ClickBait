@@ -27,8 +27,7 @@ struct ChatView: View {
         // Empty parts of the card drag the window (SwiftUI content would otherwise
         // swallow the mouse-down before the window could move).
         .background(WindowDragArea())
-        // A dark, blurred, see-through panel (the macOS heads-up material) with soft
-        // glows in the companion's colours, like the Siri panel.
+        // A dark, blurred, see-through panel (the macOS heads-up material), like Siri's.
         .background(SiriPanel())
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         .environment(\.colorScheme, .dark)
@@ -102,7 +101,8 @@ struct ChatView: View {
     }
 
     private var inputRow: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        // Centred: aligned at the bottom, the taller send button left a gap above the text.
+        HStack(alignment: .center, spacing: 8) {
             TextField(model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…", text: $model.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
