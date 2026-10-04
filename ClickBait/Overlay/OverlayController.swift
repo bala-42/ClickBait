@@ -274,8 +274,6 @@ final class OverlayController {
         var center: CGPoint
         var velocity = CGVector.zero
         var targetStarted: CFTimeInterval = 0
-        /// Touring the parts of a snipped thing: red, names as labels, shorter stops.
-        var isTour = false
     }
 
     private var guide: Guide?
@@ -287,24 +285,12 @@ final class OverlayController {
     private var wantedAngle = CompanionTriangle.restingAngle
     private var angleVelocity = 0.0
     private static let dwell: CFTimeInterval = 8
-    /// Long enough to read a part's name and look at it.
-    private static let tourDwell: CFTimeInterval = 2.4
     /// Distance from the triangle's centre to its vertex (up to its pulse size), plus a gap.
     private static var tipDistance: CGFloat { CompanionTriangle.size * 3.squareRoot() / 4 * 1.2 + 3 }
     /// The triangle's centre measured from the companion panel's top-left corner.
     private static var triangleInset: CGFloat { 4 + 2 + CompanionTriangle.size * 0.85 }
 
     var isGuiding: Bool { guide != nil }
-
-    /// The red tour of a snip's parts: the triangle visits each, its name in the label.
-    func tour(_ targets: [ScreenPointer]) {
-        guide(to: targets)
-        guard var guide else { return }
-        guide.isTour = true
-        self.guide = guide
-        model.isTouring = true
-        beginTarget()
-    }
 
     func guide(to targets: [ScreenPointer]) {
         endGuide()
@@ -350,7 +336,6 @@ final class OverlayController {
         model.isGuiding = false
         model.guideLabel = nil
         model.guideTarget = nil
-        model.isTouring = false
         wantedAngle = CompanionTriangle.restingAngle  // turns back while gliding home
     }
 
@@ -384,9 +369,7 @@ final class OverlayController {
         self.guide = guide
 
         let label = guide.targets[guide.index].label
-        model.guideLabel = guide.isTour
-            ? label.lowercased()
-            : GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
+        model.guideLabel = GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
         model.guideTarget = label.isEmpty ? nil : label
         model.isGuiding = true
         guideLabelPanel?.orderFrontRegardless()
@@ -394,7 +377,7 @@ final class OverlayController {
 
     private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
         guard var guide else { return }
-        if CACurrentMediaTime() - guide.targetStarted > (guide.isTour ? Self.tourDwell : Self.dwell) {
+        if CACurrentMediaTime() - guide.targetStarted > Self.dwell {
             advanceGuide(reason: "timeout")
             return
         }

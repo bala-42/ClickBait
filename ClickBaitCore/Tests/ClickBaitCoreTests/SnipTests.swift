@@ -94,7 +94,7 @@ struct SnipPromptTests {
                                  context: ScreenContext(appName: "Safari"), snip: .circled)
         let text = Prompt.userText(for: request)
         #expect(text.contains("The image is a close-up of part of the user's screen that they want explained."))
-        #expect(text.contains("Explain it: start with what it is."))
+        #expect(text.hasSuffix("Explain it: start with what it is."))
         #expect(!text.lowercased().contains("outline"))
         // Follow-ups stay on the same snip and answer the new question.
         var followUp = request

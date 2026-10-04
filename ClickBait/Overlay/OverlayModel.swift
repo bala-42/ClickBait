@@ -58,11 +58,9 @@ final class OverlayModel {
     var waveLevel: Double = 0
     /// ⌥⌘ is held and the user is circling or boxing something.
     var isSnipping = false
-    /// Touring the named parts of a snipped thing (red, like snipping).
-    var isTouring = false
 
     var tone: CompanionTone {
-        if isSnipping || isTouring { return .capture }
+        if isSnipping { return .capture }
         return switch bubble {
         case .idle, .answer, .error: .idle
         case .listening, .thinking, .explaining: .processing

@@ -36,6 +36,15 @@ struct LiveOllamaTests {
             request.screenshotJPEG = Data()
             request.context = ScreenContext(appName: "Finder")
         }
+        if let path = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_IMAGE"] {
+            // An image file as the snip close-up, scaled to 1280 on its long edge like the app.
+            let (jpeg, w, h) = try SyntheticScreen.file(path)
+            request.screenshotJPEG = jpeg
+            request.screenshotWidth = w
+            request.screenshotHeight = h
+            request.snip = .circled
+            print("LIVE size \(w)x\(h)")
+        }
         if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_DIAGRAM"] != nil {
             // A labelled diagram as the close-up (see SyntheticScreen.diagram for positions).
             let (jpeg, w, h) = try SyntheticScreen.diagram(labelled: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_UNLABELLED"] == nil)
@@ -167,6 +176,25 @@ enum SyntheticScreen {
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
         #expect(CGImageDestinationFinalize(destination))
         return (data as Data, outWidth, outHeight)
+    }
+
+    static func file(_ path: String) throws -> (Data, Int, Int) {
+        let source = try #require(CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil))
+        let original = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let factor = 1280 / Double(max(original.width, original.height))
+        let width = Int((Double(original.width) * factor).rounded()), height = Int((Double(original.height) * factor).rounded())
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
+        context.draw(original, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let image = try #require(context.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        return (data as Data, width, height)
     }
 
     /// `baseline` is in flipped (top-left) coordinates.
