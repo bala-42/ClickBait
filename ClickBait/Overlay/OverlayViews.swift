@@ -57,15 +57,18 @@ struct CompanionTriangle: View {
 /// "Screen Recording is off…". Wraps to a few lines for longer messages.
 private struct TinyPill: View {
     let text: String
-    let symbol: String
+    /// Words only when nil (what was heard, the tutorial's "checking…").
+    var symbol: String?
     let tone: CompanionTone
     /// Problems are black and white, so they never read as one of the four states.
     var isProblem = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .bold))
+            }
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
                 .wrapped(text, maxWidth: 270)
@@ -209,7 +212,7 @@ struct CompanionBubbleView: View {
     @ViewBuilder private var card: some View {
         switch model.bubble {
         case .thinking(let heard?):
-            TinyPill(text: "“\(heard)”", symbol: "ear", tone: model.tone)
+            TinyPill(text: "“\(heard)”", tone: model.tone)
         case .working(let message):
             // A lowercase verb, names as they are: "opening Safari…", "moving to Documents…".
             TinyPill(text: message.prefix(1).lowercased() + message.dropFirst(), symbol: "gearshape.fill", tone: model.tone)
@@ -220,7 +223,7 @@ struct CompanionBubbleView: View {
         case .error(let message):
             TinyPill(text: message, symbol: "exclamationmark", tone: model.tone, isProblem: true)
         case .hint(let text):
-            TinyPill(text: text, symbol: "hand.point.up.left", tone: model.tone)
+            TinyPill(text: text, tone: model.tone)
         }
     }
 }
