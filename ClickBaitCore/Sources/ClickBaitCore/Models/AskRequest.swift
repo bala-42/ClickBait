@@ -57,6 +57,8 @@ public struct AskRequest: Sendable {
     public var menuOutline: [String] = []
     /// The user's web browser ("Safari"), for website steps in a tutorial plan.
     public var browser: String?
+    /// Sort a how-to-sounding request: a walkthrough, or a question to answer?
+    public var sortRequest = false
     /// Check progress on a running tutorial (`Prompt.progressSystem`).
     public var tutorialCheck: (plan: TutorialPlan, expected: Int)?
     /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.

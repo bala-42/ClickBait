@@ -438,3 +438,23 @@ struct InstantPluralTests {
         #expect(split.steps.map(\.target) == ["Safari", "Clear History…"])
     }
 }
+
+struct SortingTests {
+    @Test func explicitWalkthroughs() {
+        #expect(TutorialQuestion.insistsOnWalkthrough("show me how to export a PDF"))
+        #expect(TutorialQuestion.insistsOnWalkthrough("walk me through changing my wallpaper"))
+        #expect(!TutorialQuestion.insistsOnWalkthrough("how do I make this code faster"))
+    }
+
+    @Test func verdicts() {
+        #expect(TutorialQuestion.sortedAsAnswer(#"{"kind": "answer"}"#))
+        #expect(!TutorialQuestion.sortedAsAnswer(#"{"kind": "steps"}"#))
+        #expect(!TutorialQuestion.sortedAsAnswer("garbage"))  // unsure: plan as before
+    }
+
+    @Test func kindWordsAreNotTyping() {
+        // Real qwen3.5 plan: "type": "menuItem" on menu steps.
+        let plan = TutorialPlan.parse(#"{"steps": [{"target": "Refactor...", "instruction": "Choose Refactor", "type": "menuItem"}, {"target": "Name", "instruction": "Click Name", "type": "AXTextField"}]}"#)!
+        #expect(plan.steps.map(\.typing) == [nil, nil])
+    }
+}

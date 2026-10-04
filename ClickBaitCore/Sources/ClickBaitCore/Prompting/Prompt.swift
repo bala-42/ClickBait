@@ -60,13 +60,28 @@ public enum Prompt {
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
         let text: String
-        if request.interpretOrder { text = orderSystem }
+        if request.sortRequest { text = sortSystem }
+        else if request.interpretOrder { text = orderSystem }
         else if request.listParts { text = partsSystem }
         else if request.planTutorial { text = tutorialSystem }
         else if request.tutorialCheck != nil { text = progressSystem }
         else { text = request.locate == nil ? system : locateSystem }
         return text
     }
+
+    /// Is this how-to about using the Mac (walk them through it) or about content (answer
+    /// it)? qwen3.5: 23/24 and 15/16 on unseen requests, ~0.8 s; qwen2.5vl:3b called
+    /// every Mac task an answer (14/24), so it isn't used for this.
+    public static let sortSystem = """
+        Sort a Mac user's request. Reply {"kind": "steps"} or {"kind": "answer"}.
+        "steps": doing something with the Mac, an app, a setting, a file, a window, a menu or a website — anything done \
+        by clicking or typing in an app. Examples: "how do I clear my history" steps; "how can I turn on dark mode" steps; \
+        "how do I rename this file" steps; "open a new tab" steps; "how do I take a screenshot" steps; "how do I connect \
+        to wifi" steps.
+        "answer": the request is about content itself, not about using the Mac — explaining, fixing or improving code \
+        or text, translating, facts, advice, maths. Examples: "how do I make this code faster" answer; "how do I say \
+        thanks in Japanese" answer; "what does this function do" answer; "how do I fix this error" answer.
+        """
 
     /// Turns a how-to into steps ClickBait walks the user through on their own screen.
     public static let tutorialSystem = """
@@ -202,6 +217,7 @@ public enum Prompt {
     }
 
     private static func baseUserText(for request: AskRequest) -> String {
+        if request.sortRequest { return request.question }
         if request.planTutorial {
             var lines = [request.screenshotJPEG.isEmpty
                 ? "No screenshot: plan from the app's menus and the on-screen elements below (they're what's on screen now)."

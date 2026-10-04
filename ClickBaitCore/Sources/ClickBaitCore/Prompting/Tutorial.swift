@@ -76,8 +76,11 @@ public struct TutorialPlan: Equatable, Sendable {
             let app = (entry["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             var typing = (entry["type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             // "type": "menu" / "button" is the model naming the kind of thing, not text.
-            if let typed = typing, ["menu", "button", "click", "menu item", "field", "text", "tab", "keyboard", "shortcut", "key",
-                                    "press", "keypress", "type", "select", "choose"].contains(typed.lowercased()) { typing = nil }
+            // "type": "menu" / "menuItem" / "keyboard" is the model naming the kind of step, not text.
+            if let typed = typing?.lowercased().filter(\.isLetter),
+               ["menu", "button", "click", "menuitem", "field", "text", "tab", "keyboard", "shortcut", "key", "press", "keypress",
+                "type", "select", "choose", "menubar", "menubaritem", "textfield", "checkbox", "popupbutton", "link", "row",
+                "item", "option"].contains(typed) || typed.hasPrefix("ax") { typing = nil }
             if typing?.isEmpty ?? true { typing = typedText(in: instruction) }  // "Type youtube.com, then press Return"
             return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction,
                                 app: (app?.isEmpty ?? true) ? nil : app, typing: typing)
@@ -257,6 +260,20 @@ public struct TutorialPlan: Equatable, Sendable {
 public enum TutorialQuestion {
     static let phrases = ["how do i", "how can i", "how to", "how would i", "walk me through", "show me how", "teach me",
                           "guide me", "tutorial", "steps to", "what are the steps"]
+
+    /// Asking outright to be walked through it: always a walkthrough, never sorted away.
+    public static func insistsOnWalkthrough(_ question: String) -> Bool {
+        let text = " " + ImpliedPointer.normalized(question) + " "
+        return [" show me how ", " walk me through ", " guide me ", " teach me ", " step by step ", " tutorial ",
+                " show me the steps "].contains { text.contains($0) }
+    }
+
+    /// The sorter's verdict: true when it's a question to answer, not something to do.
+    public static func sortedAsAnswer(_ reply: String) -> Bool {
+        guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"), start < end,
+              let object = (try? JSONSerialization.jsonObject(with: Data(reply[start...end].utf8))) as? [String: Any] else { return false }
+        return (object["kind"] as? String)?.lowercased() == "answer"
+    }
 
     /// "I want to watch YouTube", "help me check Gmail": a task, unless it's about
     /// knowing something ("I want to know what this is").

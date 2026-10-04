@@ -87,6 +87,7 @@ Only when there's no doubt; anything less takes the normal model path (user's ru
 - Element lists read the menu bar's titles before the window (a web page could use up the 0.4 s / 150-item budget, and the "Safari" menu wasn't found for 7 s).
 - After the last planned step: if it was a dialog's button (AXButton) and that button is gone, the walkthrough finishes at once; otherwise the model is asked as before (a menu item usually opens a dialog).
 - Guide motion: glide period 0.38 s, turn 0.3 s, label 0.22 s (was 0.6 / 0.45 / 0.3: "pointing must be immediate and quick"). A finished walkthrough shows a tick ("done" with ✓; "✓ Done!" in the chat).
+- **Sorting how-tos (qwen3.5, ~0.8 s):** before planning, a request that isn't an instant website/menu walkthrough and doesn't ask outright ("show me how / walk me through / guide me / teach me / step by step": `insistsOnWalkthrough`) is sorted (`Prompt.sortSystem`, `sortRequest`): "answer" (about content — code, text, facts) skips the plan, which used to take 4–8 s and come back empty (one question took 20 s). Unsure or slower than 3 s → plan as before. qwen3.5 sorted 23/24 and 15/16 unseen; qwen2.5vl:3b called every Mac task an answer (14/24, 16/24), so it isn't used.
 - Models load at launch and stay loaded while ClickBait runs (`keep_alive: -1`, user's decision); `OllamaProvider.unload()` frees them when ClickBait quits.
 
 ### Pointing accuracy
@@ -132,7 +133,7 @@ Every answer or ⌥⌘ explanation opens a chat bubble (`ChatController`: border
 
 The chat card grows out of the companion and shrinks back into it (`ChatModel.companionAnchor`: the companion's point inside the card, recomputed after the card is pushed on screen; scale 0.08 → 1 spring, 0.18 s ease-in back).
 
-Smoothness: the companion's frame loop runs on the main thread, so main-thread work stutters it. Streamed answers update the chat at most every 80 ms (they redrew and resized it per fragment), the chat window is resized only when its size really changes, and a gap over 80 ms while the companion moves is logged ("Companion stalled N ms (state)") to trace any stutter that's left. Code blocks wrap long lines (a sideways scroll view shifted wide lines left and cut both ends); Copy gives the exact code.
+Smoothness: at rest the frame loop runs at 30–60 Hz (10 Hz made the start of a movement steppy); the stall log ignores a hidden companion. The companion's frame loop runs on the main thread, so main-thread work stutters it. Streamed answers update the chat at most every 80 ms (they redrew and resized it per fragment), the chat window is resized only when its size really changes, and a gap over 80 ms while the companion moves is logged ("Companion stalled N ms (state)") to trace any stutter that's left. Code blocks wrap long lines (a sideways scroll view shifted wide lines left and cut both ends); Copy gives the exact code.
 
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.

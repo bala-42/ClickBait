@@ -866,6 +866,21 @@ final class AskCoordinator {
             Log.ask.notice("Tutorial plan: instant, from the menus (\(instant.steps.count, privacy: .public) steps)")
             return instant
         }
+        // A how-to about content ("how do I make this code faster?") is a question: a quick
+        // sort (~0.8 s) skips the 4–8 s plan that would come back empty. Only ever skips:
+        // asked outright ("show me how…"), unsure, or slow → plan as before.
+        if !TutorialQuestion.insistsOnWalkthrough(question) {
+            var sort = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
+            sort.sortRequest = true
+            let sortStart = ContinuousClock.now
+            let verdict = await Self.reply(from: provider, to: sort, within: .seconds(3))
+            let took = String(describing: ContinuousClock.now - sortStart)
+            if let verdict, TutorialQuestion.sortedAsAnswer(verdict) {
+                Log.ask.notice("Sorted as a question in \(took, privacy: .public): answering, no plan")
+                return nil
+            }
+            Log.ask.notice("Sorted as a walkthrough in \(took, privacy: .public)\(verdict == nil ? " (no verdict)" : "", privacy: .public)")
+        }
         let start = ContinuousClock.now
         var plan: TutorialPlan?
         if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {

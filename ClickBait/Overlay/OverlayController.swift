@@ -159,7 +159,8 @@ final class OverlayController {
     private static let movingRate = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
     /// Low rate while still: the cursor is still sampled (to notice movement and hidden
     /// pointers) without keeping a ProMotion display at 120 Hz.
-    private static let restingRate = CAFrameRateRange(minimum: 10, maximum: 60, preferred: 30)
+    /// At least 30 Hz: at 10 Hz the first ~100 ms of a movement after a pause looked steppy.
+    private static let restingRate = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 30)
 
     private func startMotion() {
         anchor = NSEvent.mouseLocation
@@ -176,7 +177,7 @@ final class OverlayController {
         let now = link.targetTimestamp
         // A long gap while the companion is moving is a stutter the user sees: log it
         // with what was going on, so it can be traced (the main thread was busy).
-        if let last = lastFrame, now - last > 0.08, guide != nil || anchor != NSEvent.mouseLocation {
+        if let last = lastFrame, now - last > 0.08, companionAlpha > 0, guide != nil || anchor != NSEvent.mouseLocation {
             Log.app.notice("Companion stalled \(Int((now - last) * 1000), privacy: .public) ms (\(String(describing: self.model.bubble).prefix(20), privacy: .public)\(self.guide != nil ? ", pointing" : "", privacy: .public))")
         }
         let elapsed = min(max(now - (lastFrame ?? now - 1.0 / 60), 1.0 / 240), 0.1)
