@@ -729,20 +729,19 @@ final class AskCoordinator {
         }
         Log.ask.notice("Tutorial plan: \(plan.steps.count, privacy: .public) step(s) in \(String(describing: ContinuousClock.now - start), privacy: .public)")
 
-        if !plan.isTutorial {
-            // One click: point at it, if it's on screen.
-            guard let step = plan.steps.first, let target = StepMatcher.find(step.target, in: elements) else { return false }
-            let center = Point(x: target.frame.x + target.frame.width / 2, y: target.frame.y + target.frame.height / 2)
-            let pointer = ScreenPointer(label: target.label, appKit: geometry.appKitPoint(fromQuartz: center), quartz: center)
-            let text = plan.intro.isEmpty ? step.instruction : plan.intro
-            if state == .thinking { state = .idle }
-            if speak { speaker.speak(text) }
-            if chatShown {
-                onChatUserMessage?(display)
-                onChatReply?(text)
+        // Even a one-step plan is a tutorial (the model often shortens plans; the tutorial
+        // checks the screen at the end and plans the rest) — if its first click can be
+        // found on screen or in the app's menus. Otherwise answer normally.
+        guard let first = plan.steps.first else { return false }
+        if StepMatcher.find(first.target, in: elements) == nil {
+            let pid = frontmostPID
+            let inMenus = await Task.detached(priority: .userInitiated) {
+                AXInspector.menuPath(to: first.target, frontmostPID: pid) != nil
+            }.value
+            guard inMenus else {
+                Log.ask.notice("Tutorial: first step isn't on screen; answering normally")
+                return false
             }
-            onAnswer?(AssistantResponse(speech: text), [pointer])
-            return true
         }
 
         if conversation == nil || !chatShown {

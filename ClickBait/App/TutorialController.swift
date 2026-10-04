@@ -50,6 +50,13 @@ final class TutorialController {
     private var menuPaths: [Int: [String]] = [:]
     /// Steps whose menu search already ran (found or not): it isn't repeated every tick.
     private var menuSearched = Set<Int>()
+    /// The planned steps are all done: check the task is finished, or plan what's left.
+    private var needsContinuation = false
+    private var continuations = 0
+    private static let maxContinuations = 2
+    /// A target that vanishes briefly (a menu redrawing) keeps the pointer this long
+    /// before the companion falls back to showing the instruction.
+    private static let missingGrace: TimeInterval = 1.5
 
     private static let tick: Duration = .milliseconds(250)
     private static let maxDuration: TimeInterval = 300
@@ -79,6 +86,8 @@ final class TutorialController {
         screenChangedAt = nil
         menuPaths = [:]
         menuSearched = []
+        needsContinuation = false
+        continuations = 0
         isActive = true
         overlay.setTutoring(true)
         Log.ask.notice("Tutorial started: \(plan.steps.count, privacy: .public) steps")
@@ -149,6 +158,11 @@ final class TutorialController {
             }
         }
 
+        if needsContinuation {
+            await continueOrFinish()
+            return
+        }
+
         guard tick % 3 == 0 else { return }
         let pid = front?.processIdentifier
         let display = Self.displayUnderMouse()
@@ -184,11 +198,14 @@ final class TutorialController {
             }
         }
 
-        // Nowhere to point: show the instruction, and watch the screen for change.
-        currentFrame = nil
-        pointingAtMenu = false
-        overlay.tutorialHint(instruction)
+        // Nowhere to point. Give it a moment (menus redraw, windows animate) before
+        // the companion leaves the last spot to show the instruction instead.
         if targetMissingSince == nil { targetMissingSince = Date() }
+        if let since = targetMissingSince, Date().timeIntervalSince(since) >= Self.missingGrace {
+            currentFrame = nil
+            pointingAtMenu = false
+            overlay.tutorialHint(instruction)
+        }
         await sampleScreen()
         if let since = targetMissingSince, Date().timeIntervalSince(since) > 2, !checking,
            Date().timeIntervalSince(lastModelCheck) > Self.modelCheckInterval,
@@ -216,10 +233,62 @@ final class TutorialController {
         Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) of \(self.plan.steps.count, privacy: .public) (\(reason, privacy: .public))")
         onChecklist?(checklistText)
         if index >= plan.steps.count {
-            finish()
+            needsContinuation = true  // check it's really done; plan the rest if not
         } else if speakSteps {
             speak?(plan.steps[index].instruction)
         }
+    }
+
+    /// All planned steps are done. The model's plans are often short ("click Share" for
+    /// a longer task), so look at the screen: finished → done; otherwise plan the next
+    /// steps from here and carry on (a couple of times at most).
+    private func continueOrFinish() async {
+        needsContinuation = false
+        guard continuations < Self.maxContinuations, plan.steps.count < TutorialPlan.maxSteps, let provider else {
+            finish()
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(800))  // let the last click take effect
+        overlay.tutorialHint("checking…")
+        guard isActive, let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
+              let encoded = try? ScreenshotEncoder.encode(capture.image) else { finish(); return }
+
+        var check = AskRequest(question: goal, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
+                               screenshotHeight: encoded.height, context: context)
+        check.tutorialCheck = (plan, plan.steps.count)
+        if let reply = await Self.reply(from: provider, to: check, within: .seconds(15)),
+           TutorialProgress.parse(reply)?.done == true {
+            Log.ask.notice("Tutorial: the screen shows it's done")
+            finish()
+            return
+        }
+        guard isActive else { return }
+
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let display = Self.displayUnderMouse()
+        let elements = await Task.detached(priority: .userInitiated) {
+            AXInspector.visibleElements(frontmostPID: pid, display: display)
+        }.value
+        let geometry = capture.geometry(imageWidth: encoded.width, imageHeight: encoded.height)
+        let done = plan.steps.map(\.instruction).joined(separator: "; ")
+        let question = "\(goal)\nAlready done: \(done).\nWhat are the remaining clicks from the screen as it is now? If it's finished, reply with no steps."
+        var next = AskRequest(question: question, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
+                              screenshotHeight: encoded.height, context: context,
+                              elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
+        next.planTutorial = true
+        guard let reply = await Self.reply(from: provider, to: next, within: .seconds(25)), isActive,
+              let more = TutorialPlan.parse(reply), !more.steps.isEmpty else {
+            finish()
+            return
+        }
+        continuations += 1
+        let room = TutorialPlan.maxSteps - plan.steps.count
+        plan.steps += more.steps.prefix(room)
+        lastProgress = Date()
+        menuSearched = []
+        Log.ask.notice("Tutorial: planned \(min(more.steps.count, room), privacy: .public) more step(s)")
+        onChecklist?(checklistText)
+        if speakSteps { speak?(plan.steps[index].instruction) }
     }
 
     private func finish() {
@@ -276,7 +345,9 @@ final class TutorialController {
         Log.ask.notice("Tutorial check: next step \(progress.nextStep, privacy: .public), done \(progress.done, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
         if progress.done {
             advance(to: plan.steps.count, reason: "model: done")
-        } else if (1...plan.steps.count).contains(progress.nextStep), progress.nextStep - 1 != index {
+        } else if (1...plan.steps.count).contains(progress.nextStep), progress.nextStep - 1 > index {
+            // Only ever forward: a screenshot can't tell an undone step from one whose
+            // effect isn't visible, and going back confused users.
             advance(to: progress.nextStep - 1, reason: "model")
         }
     }
