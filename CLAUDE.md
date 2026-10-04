@@ -84,6 +84,8 @@ Only when there's no doubt; anything less takes the normal model path (user's ru
 - Pointing is always blue (`OverlayModel.tone`: guiding → idle), even while the words are still streaming.
 - "Where are the back and forward buttons?" points at both when each is named exactly once (`locateTargets`; all or nothing). When the app in front has nothing on the cursor's display, the element list comes from the app whose window is under the cursor (`AXInspector.appPID(at:)`; its main window if it has no focused one) — instant pointing found 0 elements otherwise.
 - An app menu named like its app ("Safari ▸ Clear History…") is a menu step, not an app to open (`separatingSetup` skips steps whose instruction says "menu").
+- Element lists read the menu bar's titles before the window (a web page could use up the 0.4 s / 150-item budget, and the "Safari" menu wasn't found for 7 s).
+- After the last planned step: if it was a dialog's button (AXButton) and that button is gone, the walkthrough finishes at once; otherwise the model is asked as before (a menu item usually opens a dialog).
 - Guide motion: glide period 0.38 s, turn 0.3 s, label 0.22 s (was 0.6 / 0.45 / 0.3: "pointing must be immediate and quick"). A finished walkthrough shows a tick ("done" with ✓; "✓ Done!" in the chat).
 - Models load at launch and stay loaded while ClickBait runs (`keep_alive: -1`, user's decision); `OllamaProvider.unload()` frees them when ClickBait quits.
 

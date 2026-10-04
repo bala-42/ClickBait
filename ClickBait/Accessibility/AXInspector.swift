@@ -101,9 +101,11 @@ enum AXInspector {
         for item in menuBar?.children(kAXChildrenAttribute) ?? [] where item.bool(kAXSelectedAttribute) == true {
             roots += item.children(kAXChildrenAttribute)
         }
+        // The menu bar's ~10 titles before the window: a web page can use up the whole
+        // budget, and then "Safari" (the menu) wasn't found for 7 s.
+        if let menuBar { roots.append(menuBar) }
         // An app that isn't in front may have no focused window: its main one then.
         if let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) { roots.append(window) }
-        if let menuBar { roots.append(menuBar) }
 
         var found: [ScreenElement] = []
         var queue = roots[...]

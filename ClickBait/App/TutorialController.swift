@@ -46,6 +46,9 @@ final class TutorialController {
     /// What the companion points at now (Quartz), and whether it's a menu to open first
     /// rather than the step's own target.
     private var currentFrame: Rect?
+    /// The role of what the companion points at (AXButton…), and of the last step clicked.
+    private var currentRole: String?
+    private var lastClicked: (target: String, role: String?)?
     private var pointingAtMenu = false
     private var targetMissingSince: Date?
     private var lastSample: [UInt8]?
@@ -274,6 +277,7 @@ final class TutorialController {
                 Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at a \(target.kind, privacy: .public)")
             }
             point(at: target.frame, label: instruction, menu: false)
+            currentRole = target.role
             await checkForCompletion()
             return
         }
@@ -339,6 +343,7 @@ final class TutorialController {
     }
 
     private func point(at frame: Rect, label: String, menu: Bool, keepMissing: Bool = false) {
+        if frame != currentFrame { currentRole = nil }  // set again by the caller when known
         currentFrame = frame
         pointingAtMenu = menu
         if !keepMissing { targetMissingSince = nil }
@@ -349,6 +354,7 @@ final class TutorialController {
 
     private func advance(to next: Int, reason: String) {
         guard isActive, next > index || next < index else { return }
+        lastClicked = reason == "clicked" && index < plan.steps.count ? (plan.steps[index].target, currentRole) : nil
         index = min(next, plan.steps.count)
         lastProgress = Date()
         currentFrame = nil
@@ -382,6 +388,21 @@ final class TutorialController {
         }
         try? await Task.sleep(for: .milliseconds(600))  // let the last click take effect
         guard isActive else { return }
+        // The last step was a dialog's button and the dialog is gone: finished, no need to
+        // ask (a menu item as the last step usually opens a dialog: the model plans on).
+        if let clicked = lastClicked, clicked.role == "AXButton" {
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let display = Self.displayUnderMouse()
+            let now = await Task.detached(priority: .userInitiated) {
+                AXInspector.visibleElements(frontmostPID: pid, display: display)
+            }.value
+            guard isActive else { return }
+            if !now.isEmpty, StepMatcher.find(clicked.target, in: now, minimum: 0.95) == nil {
+                Log.ask.notice("Tutorial: the last step's button and its dialog are gone; finished")
+                finish()
+                return
+            }
+        }
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
               let encoded = try? ScreenshotEncoder.encode(capture.image) else { finish(); return }
         guard isActive else { return }
