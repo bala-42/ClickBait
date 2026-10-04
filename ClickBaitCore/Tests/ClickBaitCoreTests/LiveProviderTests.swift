@@ -49,6 +49,16 @@ struct LiveOllamaTests {
             request.planTutorial = true  // the tutorial planner (with the element list if CLICKBAIT_LIVE_ELEMENTS)
         }
         if let app = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_APP"] { request.context.appName = app }
+        if let list = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ELEMENT_LIST"] {
+            // "kind|name;kind|name": an element list like Accessibility's.
+            request.elements = list.components(separatedBy: ";").enumerated().map { index, entry in
+                let parts = entry.components(separatedBy: "|")
+                return PromptElement(id: index + 1, kind: parts[0], label: parts.last ?? "", x: Double(100 + index * 40), y: 300)
+            }
+        }
+        if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_TEXT_ONLY"] != nil {
+            request.screenshotJPEG = Data()  // plan from the menus and element list alone
+        }
         if let menus = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_MENUS"] {
             request.menuOutline = menus.components(separatedBy: "|")  // "History ▸ Clear History…|…"
         }

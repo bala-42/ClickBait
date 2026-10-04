@@ -721,11 +721,25 @@ final class AskCoordinator {
                                  elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
         request.planTutorial = true
         let pid = frontmostPID
-        request.menuOutline = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        request.menuOutline = MenuOutline.relevant(menus, to: question)
         let start = ContinuousClock.now
-        guard let reply = await Self.reply(from: provider, to: request, within: .seconds(25)), !Task.isCancelled,
-              let plan = TutorialPlan.parse(reply)?.expandingMenus(using: request.menuOutline)
-        else {
+        // Native apps describe themselves through Accessibility: plan from that text
+        // (~1–2 s). Fall back to the screenshot (~10 s) if that finds nothing.
+        var plan: TutorialPlan?
+        if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
+            var textOnly = request
+            textOnly.screenshotJPEG = Data()
+            if let reply = await Self.reply(from: provider, to: textOnly, within: .seconds(15)),
+               let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty {
+                plan = parsed
+                Log.ask.notice("Tutorial: planned from text (no screenshot)")
+            }
+        }
+        if plan == nil, !Task.isCancelled, let reply = await Self.reply(from: provider, to: request, within: .seconds(25)) {
+            plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+        }
+        guard !Task.isCancelled, let plan else {
             Log.ask.notice("Tutorial: no plan; answering normally")
             return false
         }

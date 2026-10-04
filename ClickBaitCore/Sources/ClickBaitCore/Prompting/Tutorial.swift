@@ -155,3 +155,30 @@ public struct TutorialProgress: Equatable, Sendable {
         return TutorialProgress(nextStep: step, done: done)
     }
 }
+
+/// Trims an app's menu outline to what a question needs: every menu's title (so the
+/// model knows where things live) plus the items sharing a word with the question.
+/// 160 lines of Safari menus made planning slower without making it better.
+public enum MenuOutline {
+    public static func relevant(_ lines: [String], to question: String, limit: Int = 40) -> [String] {
+        let words = Set(ImpliedPointer.normalized(question).split(separator: " ").filter { $0.count >= 4 }.map(String.init))
+        var titles: [String] = []
+        var matches: [String] = []
+        for line in lines {
+            let parts = line.components(separatedBy: " ▸ ")
+            if let title = parts.first, !titles.contains(title) { titles.append(title) }
+            let itemWords = Set(ImpliedPointer.normalized(parts.dropFirst().joined(separator: " ")).split(separator: " ").map(String.init))
+            if !itemWords.isDisjoint(with: words) { matches.append(line) }
+        }
+        let shown = Set(matches.compactMap { $0.components(separatedBy: " ▸ ").first })
+        return Array((matches + titles.filter { !shown.contains($0) }).prefix(limit))
+    }
+}
+
+/// Whether Accessibility describes the app well enough to plan from text alone (no
+/// screenshot): planning that way took ~1–2 s instead of ~10–13 s with the same steps.
+public enum TutorialPlanning {
+    public static func canUseTextOnly(elements: Int, menuItems: Int) -> Bool {
+        elements >= 3 || menuItems >= 10
+    }
+}

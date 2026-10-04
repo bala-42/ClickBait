@@ -162,7 +162,9 @@ public enum Prompt {
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
         if request.planTutorial {
-            var lines = ["The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
+            var lines = [request.screenshotJPEG.isEmpty
+                ? "No screenshot: plan from the app's menus and the on-screen elements below (they're what's on screen now)."
+                : "The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
             if let app = request.context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
             if let title = request.context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
             if !request.menuOutline.isEmpty {

@@ -101,3 +101,23 @@ struct TutorialContinuationTests {
         #expect(TutorialPlan.remaining(next, after: Array(done.prefix(2)))?.map(\.target) == ["the last hour", "Clear History"])
     }
 }
+
+struct MenuOutlineTests {
+    @Test func keepsTitlesAndTheItemsTheQuestionNames() {
+        let safari = ["Safari ▸ About Safari", "Safari ▸ Clear History…", "File ▸ New Window", "File ▸ Export as PDF…",
+                      "History ▸ Back", "History ▸ Show All History", "History ▸ Clear History…", "Window ▸ Minimise"]
+        let kept = MenuOutline.relevant(safari, to: "how do I clear the last hour of my Safari history")
+        #expect(kept.contains("History ▸ Clear History…") && kept.contains("Safari ▸ Clear History…"))
+        #expect(kept.contains("History ▸ Show All History"))  // "history" matches
+        #expect(kept.contains("File") && kept.contains("Window"))  // titles of other menus only
+        #expect(!kept.contains("File ▸ New Window"))
+    }
+
+    @Test func textOnlyPromptSaysSo() {
+        var request = AskRequest(question: "q", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: ScreenContext())
+        request.planTutorial = true
+        #expect(Prompt.userText(for: request).hasPrefix("No screenshot"))
+        #expect(TutorialPlanning.canUseTextOnly(elements: 2, menuItems: 40))
+        #expect(!TutorialPlanning.canUseTextOnly(elements: 1, menuItems: 2))
+    }
+}

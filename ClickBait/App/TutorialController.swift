@@ -317,10 +317,18 @@ final class TutorialController {
                               screenshotHeight: encoded.height, context: context,
                               elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
         next.planTutorial = true
-        next.menuOutline = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
-        let reply = await Self.reply(from: provider, to: next, within: .seconds(25))
+        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        next.menuOutline = MenuOutline.relevant(menus, to: goal)
+        // From text when Accessibility describes the screen (~1 s), else the screenshot.
+        var reply: String?
+        if TutorialPlanning.canUseTextOnly(elements: next.elements.count, menuItems: menus.count) {
+            var textOnly = next
+            textOnly.screenshotJPEG = Data()
+            reply = await Self.reply(from: provider, to: textOnly, within: .seconds(15))
+        }
+        if reply == nil, isActive { reply = await Self.reply(from: provider, to: next, within: .seconds(25)) }
         guard isActive else { return }  // stopped meanwhile: stay stopped
-        guard let reply, let more = TutorialPlan.parse(reply)?.expandingMenus(using: next.menuOutline), !more.steps.isEmpty else {
+        guard let reply, let more = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !more.steps.isEmpty else {
             finish()
             return
         }
