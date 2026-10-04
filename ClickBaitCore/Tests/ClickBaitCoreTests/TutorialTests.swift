@@ -121,3 +121,51 @@ struct MenuOutlineTests {
         #expect(!TutorialPlanning.canUseTextOnly(elements: 1, menuItems: 2))
     }
 }
+
+struct TutorialAppTests {
+    @Test func aTaskInAnotherAppNamesIt() {
+        let plan = TutorialPlan.parse(#"{"speech": "That's in Safari.", "app": "Safari", "steps": []}"#)
+        #expect(plan?.app == "Safari")
+        #expect(TutorialPlan.parse(#"{"speech": "s", "app": "", "steps": []}"#)?.app == nil)
+    }
+}
+
+struct TutorialSetupTests {
+    private let apps: Set<String> = ["safari", "notes", "system settings", "finder"]
+    private func installed(_ name: String) -> Bool { apps.contains(name.lowercased()) }
+
+    @Test func openingAnotherAppBecomesSetup() {
+        // Real qwen2.5vl:7b plan with Notes in front.
+        let plan = TutorialPlan.parse(#"{"speech": "Open Safari and go to the History menu.", "steps": [{"target": "Safari", "instruction": "Open Safari."}, {"target": "History", "instruction": "Go to the History menu."}, {"target": "Clear History…", "instruction": "Choose Clear History…"}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Notes", isInstalledApp: installed)
+        #expect(split.app == "Safari")
+        #expect(split.steps.map(\.target) == ["History", "Clear History…"])
+    }
+
+    @Test func openingTheAppInFrontIsDropped() {
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"instruction": "Open the Notes app.", "target": "Notes"}]}"#)!
+        let split = plan.separatingSetup(frontmostApp: "Notes", isInstalledApp: installed)
+        #expect(split.app == nil && split.steps.isEmpty)
+    }
+
+    @Test func ordinaryStepsAreUntouched() {
+        let plan = TutorialPlan(intro: "", steps: [TutorialStep(target: "History", instruction: "Open History")])
+        #expect(plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: installed) == plan)
+    }
+}
+
+struct TutorialOrderTests {
+    @Test(arguments: [("Write me a poem about cats", true), ("Summarise this note", true), ("Please explain this error", true),
+                      ("Clear search history.", false), ("Turn on two-factor authentication", false)])
+    func contentRequests(_ text: String, _ expected: Bool) {
+        #expect(TutorialQuestion.isContentRequest(text) == expected)
+    }
+
+    @Test func namedApps() {
+        let apps = ["Safari", "Notes", "System Settings", "Mail", "Music"]
+        #expect(TutorialQuestion.mentionedApp(in: "Clear my Safari history.", apps: apps) == "Safari")
+        #expect(TutorialQuestion.mentionedApp(in: "turn off notifications in system settings", apps: apps) == "System Settings")
+        #expect(TutorialQuestion.mentionedApp(in: "send an email", apps: apps) == nil)  // "email" isn't the word "Mail"
+        #expect(TutorialQuestion.mentionedApp(in: "clear search history", apps: apps) == nil)
+    }
+}

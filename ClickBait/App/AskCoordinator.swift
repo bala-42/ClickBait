@@ -707,57 +707,63 @@ final class AskCoordinator {
     /// Set by the app delegate: walks the user through multi-step how-tos.
     @ObservationIgnored var tutorial: TutorialController?
 
-    /// "How do I…": plan the clicks. Several → a lavender tutorial on screen; one that's
-    /// visible → point at it. Returns false to answer normally instead (no plan, or a
-    /// single step that isn't on screen).
+    /// The app the user was in when a tutorial had to open another one ("back to Notes?").
+    @ObservationIgnored private(set) var tutorialReturnApp: NSRunningApplication?
+    /// Setup (opening an app for a tutorial) is over: the green "Opening…" can go.
+    @ObservationIgnored var onSetupFinished: (() -> Void)?
+
+    /// "How do I…" or an order that takes clicks ("Clear search history."): plan the
+    /// clicks and walk the user through them in lavender. If the task lives in another
+    /// app, open it first (green). Returns false to answer normally instead.
     private func startTutorial(question: String, capture: ScreenCapture, encoding: Task<EncodedScreenshot, Error>,
                                elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
-        guard TutorialQuestion.asksForTutorial(question), let provider, let tutorial else { return false }
-        let screenshot: EncodedScreenshot
+        let asking = TutorialQuestion.asksForTutorial(question)
+        let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
+        guard asking || ordering, let provider, let tutorial else { return false }
+        let startedIn = NSWorkspace.shared.frontmostApplication
+        let apps = AppLocator.installed()
+        var capture = capture
+        var elements = elements
+        var screenshot: EncodedScreenshot
         do { screenshot = try await encoding.value } catch { return false }
-        let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
-        var request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg, screenshotWidth: screenshot.width,
-                                 screenshotHeight: screenshot.height, context: context,
-                                 elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
-        request.planTutorial = true
-        let pid = frontmostPID
-        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
-        request.menuOutline = MenuOutline.relevant(menus, to: question)
-        let start = ContinuousClock.now
-        // Native apps describe themselves through Accessibility: plan from that text
-        // (~1–2 s). Fall back to the screenshot (~10 s) if that finds nothing.
+        tutorialReturnApp = nil
+
+        // The request names an app that isn't in front ("my Safari history"): open it first.
+        if let named = TutorialQuestion.mentionedApp(in: question, apps: Array(apps.keys)),
+           named.lowercased() != context.appName?.lowercased() {
+            guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
+            (capture, screenshot, elements) = ready
+        }
+
         var plan: TutorialPlan?
-        if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
-            var textOnly = request
-            textOnly.screenshotJPEG = Data()
-            if let reply = await Self.reply(from: provider, to: textOnly, within: .seconds(15)),
-               let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty {
-                plan = parsed
-                Log.ask.notice("Tutorial: planned from text (no screenshot)")
-            }
+        for _ in 0..<2 {
+            guard !Task.isCancelled else { return false }
+            plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider)?
+                .separatingSetup(frontmostApp: context.appName, isInstalledApp: { apps[$0] != nil })
+            // The plan says it happens in another app: open it (green) and plan again there.
+            guard let other = plan?.app, let url = apps[other] else { break }
+            guard let ready = await openForTutorial(other, url: url) else { return false }
+            (capture, screenshot, elements) = ready
         }
-        if plan == nil, !Task.isCancelled, let reply = await Self.reply(from: provider, to: request, within: .seconds(25)) {
-            plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
-        }
-        guard !Task.isCancelled, let plan else {
-            Log.ask.notice("Tutorial: no plan; answering normally")
+        guard !Task.isCancelled, let plan, let first = plan.steps.first else {
+            onSetupFinished?()
+            Log.ask.notice("Tutorial: no steps; answering normally")
             return false
         }
-        Log.ask.notice("Tutorial plan: \(plan.steps.count, privacy: .public) step(s) in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(request.menuOutline.count, privacy: .public) menu items offered)")
-
-        // Even a one-step plan is a tutorial (the model often shortens plans; the tutorial
-        // checks the screen at the end and plans the rest) — if its first click can be
-        // found on screen or in the app's menus. Otherwise answer normally.
-        guard let first = plan.steps.first else { return false }
+        // Its first click must be findable (on screen or in the app's menus).
         if StepMatcher.find(first.target, in: elements) == nil {
+            let pid = frontmostPID
             let inMenus = await Task.detached(priority: .userInitiated) {
                 AXInspector.menuPath(to: first.target, frontmostPID: pid) != nil
             }.value
             guard inMenus else {
+                onSetupFinished?()
                 Log.ask.notice("Tutorial: first step isn't on screen; answering normally")
                 return false
             }
         }
+        if let startedIn, startedIn.processIdentifier != frontmostPID { tutorialReturnApp = startedIn }
+        onSetupFinished?()
 
         if conversation == nil || !chatShown {
             conversation = Conversation()
@@ -772,6 +778,77 @@ final class AskCoordinator {
         if speak, !plan.intro.isEmpty { speaker.speak(plan.intro) }
         tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak)
         return true
+    }
+
+    /// Plans from the app's menus and elements alone when Accessibility describes it
+    /// (~1–2 s); otherwise (or if that finds nothing) from the screenshot (~10 s).
+    private func planTutorial(_ question: String, capture: ScreenCapture, screenshot: EncodedScreenshot,
+                              elements: [ScreenElement], provider: any LLMProvider) async -> TutorialPlan? {
+        let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
+        var request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg, screenshotWidth: screenshot.width,
+                                 screenshotHeight: screenshot.height, context: context,
+                                 elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
+        request.planTutorial = true
+        let pid = frontmostPID
+        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        request.menuOutline = MenuOutline.relevant(menus, to: question)
+        let start = ContinuousClock.now
+        var plan: TutorialPlan?
+        if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
+            var textOnly = request
+            textOnly.screenshotJPEG = Data()
+            if let reply = await Self.reply(from: provider, to: textOnly, within: .seconds(15)),
+               let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty || parsed.app != nil {
+                plan = parsed
+            }
+        }
+        if plan == nil, !Task.isCancelled, let reply = await Self.reply(from: provider, to: request, within: .seconds(25)) {
+            plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+        }
+        Log.ask.notice("""
+            Tutorial plan: \(plan?.steps.count ?? 0, privacy: .public) step(s)\(plan?.app != nil ? " in another app" : "", privacy: .public) \
+            in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(menus.count, privacy: .public) menu items)
+            """)
+        return plan
+    }
+
+    /// Green setup: open the app the task needs and wait until it's in front with its
+    /// menus readable (a cold launch takes a few seconds). Then a fresh look at the screen.
+    private func openForTutorial(_ name: String, url: URL?) async -> (ScreenCapture, EncodedScreenshot, [ScreenElement])? {
+        guard let url else {
+            show(error: "That needs \(name), which isn't installed.")
+            return nil
+        }
+        onActionStarted?("Opening \(name)…")
+        Log.ask.notice("Tutorial setup: opening another app")
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        guard let app = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration) else {
+            show(error: "Couldn't open \(name).")
+            return nil
+        }
+        let deadline = ContinuousClock.now + .seconds(8)
+        while ContinuousClock.now < deadline {
+            if Task.isCancelled { return nil }
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
+                let pid = app.processIdentifier
+                let ready = await Task.detached(priority: .userInitiated) { !AXInspector.menuOutline(frontmostPID: pid, limit: 5).isEmpty }.value
+                if ready { break }
+            } else {
+                app.activate()
+            }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        try? await Task.sleep(for: .milliseconds(300))  // the window settles
+        frontmostPID = app.processIdentifier
+        frontmostBundleID = app.bundleIdentifier
+        let pid = app.processIdentifier
+        let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
+        context = ScreenContext(appName: app.localizedName ?? name, windowTitle: snapshot.windowTitle)
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist),
+              let screenshot = try? ScreenshotEncoder.encode(capture.image) else { return nil }
+        let elements = await Self.elements(in: capture, frontmostPID: pid)
+        return (capture, screenshot, elements)
     }
 
     // MARK: - Element list

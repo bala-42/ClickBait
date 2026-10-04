@@ -128,8 +128,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.model.replaceLastAssistant(text)
             chat.model.isBusy = false
         }
+        coordinator.onSetupFinished = { [weak self] in self?.overlay.show(.idle) }
         tutorial.onFinished = { [weak self] message in
             guard let self, let message else { return }
+            // A tutorial that opened another app offers the way back (ignored = stay).
+            if message == "Done!", let home = coordinator.tutorialReturnApp, !home.isTerminated,
+               NSWorkspace.shared.frontmostApplication?.processIdentifier != home.processIdentifier {
+                confirm.show("done! back to \(home.localizedName ?? "where you were")?", at: overlay.companionTopLeft,
+                             confirm: "Back", cancel: "Stay", hint: nil, tone: .tutorial) { back in
+                    if back { home.activate() }
+                }
+            }
             if chat.isOpen, let last = chat.model.messages.last(where: { $0.role == .assistant }) {
                 chat.model.replaceLastAssistant(last.text + "\n\n" + message)
             } else if message != "Done!" {

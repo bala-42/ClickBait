@@ -88,7 +88,13 @@ public enum Prompt {
         is in it, use it: one step to open the menu (its title, e.g. "History") and one to \
         choose the item (its exact name, e.g. "Clear History…"), then any dialog buttons.
         - Between 2 and 10 steps. Use the app that's on screen, as it looks on a Mac.
-        - If it can't be done in this app, reply {"speech": "<why, briefly>", "steps": []}.
+        - If it has to be done in a different Mac app than the one in front (Safari's history \
+        while Notes is in front, a setting in System Settings), add "app": that app's name \
+        ("Safari", "System Settings", "Finder") and leave "steps" empty: ClickBait opens it and \
+        plans there. Only Mac apps, never websites.
+        - If it can't be done with clicks on a Mac, reply {"speech": "<why, briefly>", "steps": []}.
+        - If the user wants content rather than a task done — a poem, a summary, an explanation, \
+        an answer, a translation — reply {"speech": "", "steps": []}: that's not a click task.
         """
 
     /// Mid-tutorial: from the screen now, which step is next (or is it done)?

@@ -19,12 +19,16 @@ public struct TutorialPlan: Equatable, Sendable {
     /// One sentence saying what they'll do ("Here's how to export it as a PDF.").
     public var intro: String
     public var steps: [TutorialStep]
+    /// The app the task has to be done in, when it isn't the one in front ("Safari"
+    /// while in Notes). ClickBait opens it and plans the steps there.
+    public var app: String?
 
     public static let maxSteps = 10
 
-    public init(intro: String, steps: [TutorialStep]) {
+    public init(intro: String, steps: [TutorialStep], app: String? = nil) {
         self.intro = intro
         self.steps = steps
+        self.app = app
     }
 
     /// More than one click: worth walking through. A single step is answered by pointing.
@@ -47,7 +51,8 @@ public struct TutorialPlan: Equatable, Sendable {
         // again (from anywhere earlier in the plan — a loop).
         var seen = Set<String>()
         let distinct = steps.filter { seen.insert($0.target.lowercased().replacingOccurrences(of: "...", with: "…")).inserted }
-        return TutorialPlan(intro: intro, steps: Array(distinct.prefix(maxSteps)))
+        let app = (object["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TutorialPlan(intro: intro, steps: Array(distinct.prefix(maxSteps)), app: (app?.isEmpty ?? true) ? nil : app)
     }
 
     /// A small model writes "Open the History menu and choose Clear History…" as one
@@ -75,6 +80,22 @@ public struct TutorialPlan: Equatable, Sendable {
         }
         var plan = self
         plan.steps = Array(expanded.prefix(Self.maxSteps))
+        return plan
+    }
+
+    /// Separates "open that app" from the steps: a step whose target is an installed app
+    /// other than the one in front becomes `app` (ClickBait opens it — green — and the
+    /// lesson continues there); a step that "opens" the app already in front is dropped.
+    /// The model rarely uses the "app" field and writes "Open Safari" as a step instead.
+    public func separatingSetup(frontmostApp: String?, isInstalledApp: (String) -> Bool) -> TutorialPlan {
+        var plan = self
+        let front = frontmostApp?.lowercased()
+        plan.steps = steps.filter { $0.target.lowercased() != front }
+        if plan.app == nil, let first = plan.steps.first, isInstalledApp(first.target) {
+            plan.app = first.target
+            plan.steps.removeFirst()
+        }
+        if plan.app?.lowercased() == front { plan.app = nil }
         return plan
     }
 
@@ -123,6 +144,29 @@ public enum TutorialQuestion {
     public static func asksForTutorial(_ question: String) -> Bool {
         let text = ImpliedPointer.normalized(question)
         return phrases.contains { text.hasPrefix($0) || text.contains(" " + $0) }
+    }
+
+    /// Orders for content, not clicks: "write me a poem", "summarise this", "explain
+    /// that". They get a normal answer — never a tutorial.
+    static let contentVerbs: Set<String> = ["write", "summarise", "summarize", "explain", "translate", "describe", "draft",
+                                            "compose", "rewrite", "tell", "list", "define", "answer", "give", "suggest",
+                                            "brainstorm", "proofread", "paraphrase", "outline", "calculate", "convert"]
+
+    public static func isContentRequest(_ text: String) -> Bool {
+        var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
+        while let first = words.first, ["please", "can", "could", "you", "would", "will", "hey", "clickbait"].contains(first) {
+            words.removeFirst()
+        }
+        return words.first.map(contentVerbs.contains) ?? false
+    }
+
+    /// An installed app the request names ("clear my Safari history" → "Safari"): the
+    /// longest name found as whole words. `apps` are app names ("System Settings").
+    public static func mentionedApp(in text: String, apps: [String]) -> String? {
+        let spoken = " " + ImpliedPointer.normalized(text) + " "
+        return apps
+            .filter { ImpliedPointer.normalized($0).count >= 4 && spoken.contains(" " + ImpliedPointer.normalized($0) + " ") }
+            .max { $0.count < $1.count }
     }
 }
 

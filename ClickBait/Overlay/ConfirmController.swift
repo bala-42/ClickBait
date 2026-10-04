@@ -14,9 +14,12 @@ final class ConfirmController {
 
     var isShowing: Bool { panel != nil }
 
-    func show(_ question: String, at topLeft: CGPoint) {
+    /// `answer` handles this card's answer instead of `onAnswer` (e.g. "back to Notes?").
+    func show(_ question: String, at topLeft: CGPoint, confirm: String = "Do it", cancel: String = "Cancel",
+              hint: String? = "or say “yes”", tone: CompanionTone = .action, answer: ((Bool) -> Void)? = nil) {
         hide()
-        let view = ConfirmCard(question: question) { [weak self] yes in self?.answer(yes) }
+        oneOffAnswer = answer
+        let view = ConfirmCard(question: question, confirm: confirm, cancel: cancel, hint: hint, tone: tone) { [weak self] yes in self?.answer(yes) }
         let host = NSHostingView(rootView: view)
         let size = host.fittingSize
         let panel = NSPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
@@ -53,15 +56,26 @@ final class ConfirmController {
         panel = nil
     }
 
+    private var oneOffAnswer: ((Bool) -> Void)?
+
     private func answer(_ yes: Bool) {
         guard panel != nil else { return }
         hide()
-        onAnswer?(yes)
+        if let oneOff = oneOffAnswer {
+            oneOffAnswer = nil
+            oneOff(yes)
+        } else {
+            onAnswer?(yes)
+        }
     }
 }
 
 private struct ConfirmCard: View {
     let question: String
+    let confirm: String
+    let cancel: String
+    let hint: String?
+    let tone: CompanionTone
     let answer: (Bool) -> Void
 
     var body: some View {
@@ -71,23 +85,23 @@ private struct ConfirmCard: View {
                 .wrapped(question, maxWidth: 260, size: 12.5)
             HStack(spacing: 6) {
                 Button { answer(true) } label: {
-                    Text("Do it").font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(CompanionTone.action.color)
+                    Text(confirm).font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(tone.color)
                         .padding(.horizontal, 12).padding(.vertical, 4)
                         .background(.white, in: Capsule())
                 }
                 Button { answer(false) } label: {
-                    Text("Cancel").font(.system(size: 12, weight: .semibold))
+                    Text(cancel).font(.system(size: 12, weight: .semibold))
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(.white.opacity(0.2), in: Capsule())
                 }
-                Text("or say “yes”").font(.system(size: 11)).opacity(0.8)
+                if let hint { Text(hint).font(.system(size: 11)).opacity(0.8) }
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .modifier(ToneFill(fill: CompanionTone.action.color.opacity(0.92), glow: CompanionTone.action.color.opacity(0.45),
+        .modifier(ToneFill(fill: tone.color.opacity(0.92), glow: tone.color.opacity(0.45),
                            shape: RoundedRectangle(cornerRadius: 13, style: .continuous)))
         .padding(8)
         .fixedSize()

@@ -157,7 +157,8 @@ enum AppLocator {
         ].map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
-    static func url(forAppNamed name: String) -> URL? {
+    /// Installed apps by name ("System Settings" → its URL).
+    static func installed() -> [String: URL] {
         var apps: [String: URL] = [:]
         for folder in searchFolders {
             let contents = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
@@ -165,6 +166,11 @@ enum AppLocator {
                 apps[url.deletingPathExtension().lastPathComponent] = apps[url.deletingPathExtension().lastPathComponent] ?? url
             }
         }
+        return apps
+    }
+
+    static func url(forAppNamed name: String) -> URL? {
+        let apps = installed()
         guard let match = ActionCatalog.bestMatch(for: name, in: Array(apps.keys), threshold: 0.75) else { return nil }
         return apps[match]
     }
