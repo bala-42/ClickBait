@@ -36,6 +36,14 @@ struct LiveOllamaTests {
             request.screenshotJPEG = Data()
             request.context = ScreenContext(appName: "Finder")
         }
+        if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_DIAGRAM"] != nil {
+            // A labelled diagram as the close-up (see SyntheticScreen.diagram for positions).
+            let (jpeg, w, h) = try SyntheticScreen.diagram(labelled: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_UNLABELLED"] == nil)
+            request.screenshotJPEG = jpeg
+            request.screenshotWidth = w
+            request.screenshotHeight = h
+            request.snip = .circled
+        }
         if snip != nil, ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_NO_CONTEXT"] == nil {
             // The small whole-screen context picture the app sends after the close-up.
             request.contextJPEG = try SyntheticScreen.render(longEdge: 768).0
@@ -114,6 +122,51 @@ enum SyntheticScreen {
         return raw.enumerated().map { index, item in
             PromptElement(id: index + 1, kind: item.0, label: item.1, x: (item.2 * scale).rounded(), y: (item.3 * scale).rounded())
         }
+    }
+
+    /// A simple "rotator cuff" figure, 900×600: four coloured muscles around a grey
+    /// humeral head, each with a written label (unless `labelled` is false). Centers:
+    /// Supraspinatus (450, 140), Infraspinatus (690, 300), Teres minor (620, 470),
+    /// Subscapularis (220, 330).
+    static func diagram(labelled: Bool) throws -> (Data, Int, Int) {
+        let width = 900, height = 600
+        // Drawn at 900×600, sent at 1280 wide like the app's close-ups (×1.4222).
+        let outWidth = 1280, outHeight = 853
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        context.setFillColor(CGColor(gray: 0.98, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        draw("Rotator cuff (posterior and anterior view)", at: CGPoint(x: 230, y: 40), size: 24, color: CGColor(gray: 0.15, alpha: 1), in: context)
+        context.setFillColor(CGColor(gray: 0.75, alpha: 1))
+        context.fillEllipse(in: CGRect(x: 380, y: 240, width: 160, height: 160))  // humeral head
+        let muscles: [(String, CGRect, CGColor)] = [
+            ("Supraspinatus", CGRect(x: 330, y: 100, width: 240, height: 80), CGColor(red: 0.85, green: 0.35, blue: 0.35, alpha: 1)),
+            ("Infraspinatus", CGRect(x: 600, y: 230, width: 180, height: 140), CGColor(red: 0.80, green: 0.45, blue: 0.30, alpha: 1)),
+            ("Teres minor", CGRect(x: 550, y: 430, width: 140, height: 80), CGColor(red: 0.75, green: 0.30, blue: 0.45, alpha: 1)),
+            ("Subscapularis", CGRect(x: 120, y: 260, width: 200, height: 140), CGColor(red: 0.70, green: 0.40, blue: 0.40, alpha: 1)),
+        ]
+        for (name, rect, color) in muscles {
+            context.setFillColor(color)
+            context.fillEllipse(in: rect)
+            if labelled {
+                draw(name, at: CGPoint(x: rect.minX + 10, y: rect.midY + 6), size: 18, color: CGColor(gray: 1, alpha: 1), in: context)
+            }
+        }
+        let drawn = try #require(context.makeImage())
+        let scaled = try #require(CGContext(
+            data: nil, width: outWidth, height: outHeight, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        scaled.interpolationQuality = .high
+        scaled.draw(drawn, in: CGRect(x: 0, y: 0, width: outWidth, height: outHeight))
+        let image = try #require(scaled.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        return (data as Data, outWidth, outHeight)
     }
 
     /// `baseline` is in flipped (top-left) coordinates.

@@ -68,6 +68,8 @@ final class AskCoordinator {
     @ObservationIgnored var onActionStarted: ((String) -> Void)?
     /// Called after a spoken command ran, with a short confirmation.
     @ObservationIgnored var onActionDone: ((String) -> Void)?
+    /// Named parts of a snipped thing to show one by one (the red tour).
+    @ObservationIgnored var onTour: (([ScreenPointer]) -> Void)?
     /// The user started (true) or stopped marking part of the screen with ⌥⌘ held.
     @ObservationIgnored var onSnipMarking: ((Bool) -> Void)? {
         didSet { snipper.onMarkingChange = onSnipMarking }
@@ -759,9 +761,16 @@ final class AskCoordinator {
         let pid = frontmostPID
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         context.windowTitle = snapshot.windowTitle
-        let encoding = Task.detached(priority: .userInitiated) {
-            try ScreenshotEncoder.encode(SnipRenderer.closeUp(capture, region: region))
+        let view: SnipView
+        do {
+            view = try SnipRenderer.view(capture, region: region)
+        } catch {
+            show(error: "Couldn't read that part of the screen.")
+            return
         }
+        let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(view.image) }
+        // Printed labels, read on this Mac while the model answers (for the parts tour).
+        pendingSnipView = (view, Task { await TextReader.read(view.image) })
         // No whole-screen context picture: with qwen2.5vl:7b it doubled the wait (8–13 s)
         // and made answers worse; the window title gives the context instead.
         let contextImage: Data? = nil
@@ -788,7 +797,17 @@ final class AskCoordinator {
     // MARK: - Answering
 
     /// The snip a chat started from: follow-ups resend its close-up and context picture.
-    @ObservationIgnored private var snipMemory: (kind: SnipKind, closeUp: EncodedScreenshot, context: Data?)?
+    @ObservationIgnored private var snipMemory: SnipMemory?
+    /// The close-up's geometry and text recognition, handed from `finishSnip` to `respond`.
+    @ObservationIgnored private var pendingSnipView: (view: SnipView, text: Task<[TextBox], Never>)?
+
+    struct SnipMemory {
+        var kind: SnipKind
+        var closeUp: EncodedScreenshot
+        var context: Data?
+        var view: SnipView?
+        var text: Task<[TextBox], Never>?
+    }
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
     /// its answer is in — and not at all when the answer points somewhere: the
@@ -842,8 +861,10 @@ final class AskCoordinator {
             } else {
                 screenshot = try await encoding.value
             }
-            if snip != nil, history.isEmpty {
-                snipMemory = (snip!, screenshot, snipContext)
+            if let snip, history.isEmpty {
+                snipMemory = SnipMemory(kind: snip, closeUp: screenshot, context: snipContext,
+                                        view: pendingSnipView?.view, text: pendingSnipView?.text)
+                pendingSnipView = nil
             }
             // Only "where/how/click…" questions need something to point at; for the rest
             // the list would just slow the local model down. Never for snips.
@@ -936,6 +957,9 @@ final class AskCoordinator {
         if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
         // An ⌥⌘ explanation is about the text or area, never about where to click (and a
         // snip's close-up has no screen coordinates anyway).
+        // A snip's "where is X?" may come back as pointers: treat them as parts (they're in
+        // the close-up's pixels, not the screen's).
+        let snipPointers = snip != nil ? parsed.response.pointers : []
         if selectedText != nil || snip != nil, !parsed.response.pointers.isEmpty {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
@@ -995,11 +1019,26 @@ final class AskCoordinator {
                              code: parsed.response.code, language: parsed.response.language)
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
         if state == .thinking || state == .speaking { state = .idle }
+        // Snips: name and place the parts of what was marked, by their printed labels.
+        var tour: [ScreenPointer] = []
+        if snip != nil, let memory = snipMemory, let view = memory.view {
+            var text: [TextBox] = []
+            if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
+            let match = PartsMatcher.match(parts: parsed.response.parts + snipPointers, speech: parsed.response.speech, text: text)
+            parsed.response.parts = match.verified + match.unverified
+            let verified = history.isEmpty ? (PartsTour.plan(match.verified, marked: view.marked) ?? []) : Array(match.verified.prefix(PartsTour.maxParts))
+            tour = verified.map(view.screenPointer)
+            Log.ask.notice("""
+                Parts: \(match.verified.count, privacy: .public) placed by printed labels, \(match.unverified.count, privacy: .public) unverified \
+                (\(text.count, privacy: .public) text boxes); touring \(tour.count, privacy: .public)
+                """)
+        }
         if !chatShown, pointers.isEmpty {
             chatShown = true
             onChatOpen?(display)
         }
         onAnswer?(parsed.response, pointers)
+        if !tour.isEmpty { onTour?(tour) }
 
         // Pointers no accessibility element backs up: the triangle is already on its
         // way to the rough spot; take a sharp, zoomed-in look and nudge it if needed.

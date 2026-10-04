@@ -51,14 +51,19 @@ public enum ResponseParser {
             pointers = Array(pointers.prefix(maxPointers))
         }
 
+        var response = AssistantResponse(
+            speech: speech.isEmpty ? fallbackSpeech : speech,
+            pointers: pointers,
+            code: code(in: object),
+            language: (object["language"] ?? object["lang"]) as? String,
+            action: action(in: object)
+        )
+        // Parts of a snipped thing: positions in the image, no element list involved.
+        response.parts = (object["parts"].map(asArray) ?? []).compactMap { entry in
+            (entry as? [String: Any]).flatMap { pointer(from: $0, imageWidth: imageWidth, imageHeight: imageHeight) }
+        }.filter { !$0.label.isEmpty }
         return Result(
-            response: AssistantResponse(
-                speech: speech.isEmpty ? fallbackSpeech : speech,
-                pointers: pointers,
-                code: code(in: object),
-                language: (object["language"] ?? object["lang"]) as? String,
-                action: action(in: object)
-            ),
+            response: response,
             usedFallback: speech.isEmpty,
             droppedPointers: dropped
         )
