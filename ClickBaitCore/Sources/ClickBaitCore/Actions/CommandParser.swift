@@ -182,7 +182,11 @@ public enum CommandParser {
             let place = placeAfterPreposition(words)
             return ActionRequest(name: "make_folder", argument: place?.rawValue, detail: name)
         }
-        if ["put", "move", "group"].contains(verb), refersToSelection, rest.contains("new") || rest.contains("folder"),
+        // "a (new) folder" makes one; "the new folder" / "the receipts folder" is an existing one.
+        let text = words.joined(separator: " ")
+        let intoAFolder = text.contains("a new folder") || text.contains("a folder") || text.contains("new folder called")
+            || text.contains("new folder named")
+        if ["put", "move", "group"].contains(verb), refersToSelection, intoAFolder,
            placeAfterPreposition(words) == nil, !rest.contains("trash"), !rest.contains("bin") {
             return ActionRequest(name: "new_folder", detail: name)
         }
@@ -200,9 +204,16 @@ public enum CommandParser {
         }
 
         // "move these to Documents", "copy this to the Desktop"
-        if ["move", "copy", "put", "send"].contains(verb), refersToSelection, !rest.contains("trash"), !rest.contains("bin"),
-           let place = placeAfterPreposition(words) {
-            return ActionRequest(name: verb == "copy" ? "copy_to" : "move_to", argument: place.rawValue)
+        if ["move", "copy", "put", "send"].contains(verb), refersToSelection, !rest.contains("trash"), !rest.contains("bin") {
+            let name = verb == "copy" ? "copy_to" : "move_to"
+            if let place = placeAfterPreposition(words) { return ActionRequest(name: name, argument: place.rawValue) }
+            // "move these into Receipts", "put them in the new folder" — a folder next to them.
+            if let target = SpokenName.after(["into", "inside", "to", "in"], in: transcript) {
+                let folder = FolderReference.clean(target)
+                if !folder.isEmpty, !["a folder", "folder"].contains(folder.lowercased()) {
+                    return ActionRequest(name: name, argument: folder)
+                }
+            }
         }
         return nil
     }

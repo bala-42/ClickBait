@@ -51,6 +51,10 @@ public enum FileAction: Equatable, Sendable {
     /// Into a named place; nothing is ever overwritten (clashing names get a number).
     case moveTo(Place)
     case copyTo(Place)
+    /// Into a folder next to the selected files, by name ("Receipts", or "new folder"
+    /// for the one ClickBait just made).
+    case moveToFolder(String)
+    case copyToFolder(String)
     /// Exactly one selected item; its extension is kept if the new name has none.
     case rename(to: String)
     /// Recoverable: Finder's Trash, never a permanent delete.
@@ -161,8 +165,13 @@ public enum ActionCatalog {
             guard let place else { return .failure(.missingArgument("open")) }
             return .success(.openPlace(place))
         case "move_to", "copy_to":
-            guard let place else { return .failure(.missingArgument(name == "move_to" ? "move them to" : "copy them to")) }
-            return .success(.file(name == "move_to" ? .moveTo(place) : .copyTo(place)))
+            let moving = name == "move_to"
+            if let place { return .success(.file(moving ? .moveTo(place) : .copyTo(place))) }
+            guard !argument.isEmpty else { return .failure(.missingArgument(moving ? "move them to" : "copy them to")) }
+            guard let folder = SpokenName.validated(FolderReference.clean(argument)) else {
+                return .failure(.invalidArgument("“\(argument)” isn't a folder name I can use"))
+            }
+            return .success(.file(moving ? .moveToFolder(folder) : .copyToFolder(folder)))
         case "make_note", "add_reminder":
             // Note and reminder text is content, not a file name: only needs to be there.
             guard let text = request.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
@@ -204,8 +213,8 @@ public enum ActionCatalog {
         case .quitApp, .runShortcut, .setWiFi(false), .lockScreen, .sleepDisplay: true
         case .file(let file):
             switch file {
-            case .moveToTrash, .moveTo, .rename, .moveIntoNewFolder: true
-            case .compress, .merge, .convertImages, .shrink, .copyTo: false  // only make new files
+            case .moveToTrash, .moveTo, .moveToFolder, .rename, .moveIntoNewFolder: true
+            case .compress, .merge, .convertImages, .shrink, .copyTo, .copyToFolder: false  // only make new files
             }
         default: false
         }
@@ -222,6 +231,7 @@ public enum ActionCatalog {
         case .sleepDisplay: "Turn off the display?"
         case .file(.moveToTrash): "Move \(files) to the Trash?"
         case .file(.moveTo(let place)): "Move \(files) to \(place.displayName)?"
+        case .file(.moveToFolder(let folder)): "Move \(files) into “\(folder)”?"
         case .file(.rename(let name)): "Rename \(files) to “\(name)”?"
         case .file(.moveIntoNewFolder(let name)): "Move \(files) into a new folder\(name.map { " called “\($0)”" } ?? "")?"
         default: "Go ahead?"

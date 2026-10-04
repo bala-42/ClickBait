@@ -61,3 +61,30 @@ struct PlaceCommandTests {
         #expect(resolve(ActionRequest(name: "make_folder", argument: "narnia")) == .failure(.invalidArgument("I don't know the folder “narnia”")))
     }
 }
+
+struct FolderCommandTests {
+    private func parse(_ text: String) -> ActionRequest? {
+        CommandParser.parse(text, allowedShortcuts: [])
+    }
+
+    @Test(arguments: [
+        ("Move these into Receipts.", ActionRequest(name: "move_to", argument: "Receipts")),
+        ("Move these into the receipts folder", ActionRequest(name: "move_to", argument: "receipts")),
+        ("Put them in the new folder", ActionRequest(name: "move_to", argument: "new folder")),
+        ("Copy this into Tax 2026", ActionRequest(name: "copy_to", argument: "Tax 2026")),
+        ("Move these to Documents", ActionRequest(name: "move_to", argument: "documents")),
+        ("Put these in a new folder", ActionRequest(name: "new_folder")),
+        ("Move these to the Trash", ActionRequest(name: "trash")),
+    ])
+    func intoFolders(_ text: String, _ expected: ActionRequest) {
+        #expect(parse(text) == expected)
+    }
+
+    @Test func resolution() {
+        let resolve = { (request: ActionRequest) in ActionCatalog.resolve(request, allowedShortcuts: []) }
+        #expect(resolve(ActionRequest(name: "move_to", argument: "Receipts")) == .success(.file(.moveToFolder("Receipts"))))
+        #expect(resolve(ActionRequest(name: "move_to", argument: "the untitled folder")) == .success(.file(.moveToFolder("new folder"))))
+        #expect(resolve(ActionRequest(name: "copy_to", argument: "downloads")) == .success(.file(.copyTo(.downloads))))
+        #expect(resolve(ActionRequest(name: "move_to", argument: "../secret")) == .failure(.invalidArgument("“../secret” isn't a folder name I can use")))
+    }
+}

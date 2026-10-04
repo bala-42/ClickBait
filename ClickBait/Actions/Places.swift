@@ -1,8 +1,16 @@
 import AppKit
+import os
 import ClickBaitCore
 
 /// Where named places are on this Mac, and the place-level actions.
 enum Places {
+    /// The folder ClickBait made most recently, so "move these into the new folder" works.
+    /// Set and read from file actions running off the main thread, hence the lock.
+    static var lastCreatedFolder: URL? {
+        get { lastCreated.withLock { $0 } }
+        set { lastCreated.withLock { $0 = newValue } }
+    }
+    private static let lastCreated = OSAllocatedUnfairLock<URL?>(initialState: nil)
     static func url(for place: Place) throws -> URL {
         let manager = FileManager.default
         let home = manager.homeDirectoryForCurrentUser
@@ -43,6 +51,7 @@ enum Places {
         let folderName = OutputName.unique(base: name ?? "untitled folder", extension: "", existing: existing)
         let folder = parent.appending(path: folderName, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        lastCreatedFolder = folder
         NSWorkspace.shared.activateFileViewerSelecting([folder])
         return "Made “\(folderName)” in \(whereName)"
     }

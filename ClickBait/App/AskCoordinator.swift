@@ -182,6 +182,7 @@ final class AskCoordinator {
         frontmostBundleID = frontmost?.bundleIdentifier
         context = ScreenContext(appName: frontmost?.localizedName)
 
+        answerStartedAt = .now  // for the timing logs: from this message, not the last spoken one
         // Typed orders run like spoken ones ("combine these files"), answered in the chat.
         if settings.commandsEnabled,
            let command = CommandParser.parse(text, allowedShortcuts: settings.allowedShortcuts),
@@ -204,11 +205,14 @@ final class AskCoordinator {
         let blocklist = settings.blocklist
         askTask = Task {
             let startedAt = ContinuousClock.now
-            if let (action, proposal) = await understandOrder(text) {
+            if let (order, proposal) = await understandOrder(text) {
                 onChatUserMessage?(text)
                 isAnswering = true
                 defer { isAnswering = false }
-                onChatReply?(await handleProposal(action, request: proposal, speak: false))
+                switch order {
+                case .ready(let action): onChatReply?(await handleProposal(action, request: proposal, speak: false))
+                case .failed(let reason): onChatError?(reason)
+                }
                 return
             }
             let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
@@ -483,9 +487,16 @@ final class AskCoordinator {
         // An order in other words: ask the model which action it is (text only, ~1 s).
         let understood = await understandOrder(transcript)
         guard !Task.isCancelled else { return }  // Esc while checking
-        if let (action, proposal) = understood {
+        if let (order, proposal) = understood {
             encoding.cancel()
-            let message = await handleProposal(action, request: proposal, speak: true)
+            let message: String
+            switch order {
+            case .ready(let action): message = await handleProposal(action, request: proposal, speak: true)
+            case .failed(let reason):
+                message = reason
+                speaker.speak(reason)
+                show(error: reason)
+            }
             if chatShown {
                 onChatUserMessage?(transcript)
                 onChatReply?(message)
@@ -617,7 +628,13 @@ final class AskCoordinator {
     /// For orders the rules don't recognise ("stash these in my documents"): a quick,
     /// text-only request asking which known action it is. Nil if none (or no answer in
     /// time); the result still has to pass the catalog and the Finder check.
-    private func understandOrder(_ text: String) async -> (ResolvedAction, ActionRequest)? {
+    enum UnderstoodOrder {
+        case ready(ResolvedAction)
+        /// Understood, but can't be done (the reason, for the user).
+        case failed(String)
+    }
+
+    private func understandOrder(_ text: String) async -> (UnderstoodOrder, ActionRequest)? {
         guard settings.commandsEnabled, CommandParser.looksLikeOrder(text), let provider else { return nil }
         let start = ContinuousClock.now
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
@@ -627,14 +644,23 @@ final class AskCoordinator {
             Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
             return nil
         }
-        guard !isUnknownApp(proposal),
-              case .success(let action) = ActionCatalog.resolve(proposal, allowedShortcuts: settings.allowedShortcuts)
-        else {
+        // Not Finder in front, or an app name that isn't installed: maybe it wasn't an
+        // order after all ("open the File menu") — answer it normally.
+        guard !isUnknownApp(proposal) else {
             Log.ask.notice("Order check: \(proposal.name, privacy: .public) doesn't apply here")
             return nil
         }
+        let action: ResolvedAction
+        switch ActionCatalog.resolve(proposal, allowedShortcuts: settings.allowedShortcuts) {
+        case .success(let resolved): action = resolved
+        case .failure(let error):
+            // An order ClickBait understood but can't carry out: say why, don't quietly
+            // turn it into a how-to.
+            Log.ask.notice("Order check: \(proposal.name, privacy: .public) can't be done (\(String(describing: error), privacy: .private))")
+            return (.failed(error.message), proposal)
+        }
         Log.ask.notice("Order check: \(proposal.name, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
-        return (action, proposal)
+        return (.ready(action), proposal)
     }
 
     /// The user's answer to a pending question (Do it / Cancel, "yes" / "cancel", Esc).
@@ -1108,6 +1134,8 @@ final class AskCoordinator {
             case .moveIntoNewFolder: "Making a new folder…"
             case .moveTo(let place): "Moving to \(place.displayName)…"
             case .copyTo(let place): "Copying to \(place.displayName)…"
+            case .moveToFolder(let name): "Moving into “\(name)”…"
+            case .copyToFolder(let name): "Copying into “\(name)”…"
             case .rename: "Renaming…"
             case .moveToTrash: "Moving to the Trash…"
             case .shrink: "Making smaller copies…"

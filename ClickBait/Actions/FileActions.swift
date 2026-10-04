@@ -49,6 +49,8 @@ enum FileActions {
         case .moveIntoNewFolder(let name): return try moveIntoNewFolder(files, name: name)
         case .moveTo(let place): return try transfer(files, to: place, copying: false)
         case .copyTo(let place): return try transfer(files, to: place, copying: true)
+        case .moveToFolder(let name): return try transfer(files, intoFolderNamed: name, copying: false)
+        case .copyToFolder(let name): return try transfer(files, intoFolderNamed: name, copying: true)
         case .rename(let name): return try rename(files, to: name)
         case .moveToTrash: return try moveToTrash(files)
         case .shrink: return try await shrink(files)
@@ -135,6 +137,7 @@ enum FileActions {
         let parent = try commonFolder(of: files)
         let folder = parent.appending(path: try uniqueName(base: name ?? "New Folder", extension: "", in: parent), directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        Places.lastCreatedFolder = folder
         for file in files {
             try FileManager.default.moveItem(at: file, to: folder.appending(path: file.lastPathComponent))
         }
@@ -144,7 +147,38 @@ enum FileActions {
     /// Moves or copies into a named place. Clashing names get a number ("Report 2.pdf");
     /// nothing is ever overwritten. Items already there are left alone.
     private static func transfer(_ files: [URL], to place: Place, copying: Bool) throws -> (String, [URL]) {
-        let destination = try Places.url(for: place)
+        try transfer(files, to: try Places.url(for: place), named: place.displayName, copying: copying)
+    }
+
+    /// Into a folder next to the files: "new folder" is the one ClickBait just made (or
+    /// the newest untitled one); otherwise matched by name, ignoring case.
+    private static func transfer(_ files: [URL], intoFolderNamed name: String, copying: Bool) throws -> (String, [URL]) {
+        let parent = try commonFolder(of: files)
+        let selected = Set(files.map(\.standardizedFileURL))
+        let folders = ((try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: [.isDirectoryKey, .creationDateKey])) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && !selected.contains($0.standardizedFileURL) }
+        let target: URL?
+        if FolderReference.meansJustMade(name) {
+            if let made = Places.lastCreatedFolder, folders.contains(where: { $0.standardizedFileURL == made.standardizedFileURL }) {
+                target = made
+            } else {
+                target = folders
+                    .filter { ["untitled folder", "new folder"].contains(where: $0.lastPathComponent.lowercased().hasPrefix) }
+                    .max { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+            }
+        } else {
+            target = folders.first { $0.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame }
+                ?? ActionCatalog.bestMatch(for: name, in: folders.map(\.lastPathComponent)).flatMap { match in
+                    folders.first { $0.lastPathComponent == match }
+                }
+        }
+        guard let target else {
+            throw FileActionError.unsupported("There's no folder called “\(name)” next to these files.")
+        }
+        return try transfer(files, to: target, named: "“\(target.lastPathComponent)”", copying: copying)
+    }
+
+    private static func transfer(_ files: [URL], to destination: URL, named placeName: String, copying: Bool) throws -> (String, [URL]) {
         var results: [URL] = []
         var alreadyThere = 0
         for file in files {
@@ -162,9 +196,9 @@ enum FileActions {
             }
             results.append(target)
         }
-        guard !results.isEmpty else { return ("Already in \(place.displayName)", []) }
+        guard !results.isEmpty else { return ("Already in \(placeName)", []) }
         let note = alreadyThere > 0 ? " (\(alreadyThere) already there)" : ""
-        return ("\(copying ? "Copied" : "Moved") \(count(results)) to \(place.displayName)\(note)", results)
+        return ("\(copying ? "Copied" : "Moved") \(count(results)) to \(placeName)\(note)", results)
     }
 
     /// Renames the one selected item, keeping its extension unless the new name has one.
@@ -386,4 +420,8 @@ enum FinderSelection {
             .split(whereSeparator: \.isNewline)
             .map { URL(fileURLWithPath: String($0)) }
     }
+}
+
+private extension URL {
+    var creationDate: Date? { try? resourceValues(forKeys: [.creationDateKey]).creationDate }
 }

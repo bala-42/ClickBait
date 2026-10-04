@@ -66,7 +66,8 @@ public enum Prompt {
         - open_app (argument: app name), quit_app (argument: app name)
         - open_place (argument: desktop, downloads, documents, home, applications, icloud_drive, pictures, music, movies)
         - make_folder (argument: one of those places, or empty for the current folder; detail: folder name or empty)
-        - move_to, copy_to (argument: a place) — the files selected in Finder
+        - move_to, copy_to (argument: a place, or the name of a folder next to the files, \
+        like "receipts"; "new folder" for one just made) — the files selected in Finder
         - rename (detail: the new name), trash, compress, merge, shrink — the files selected in Finder
         - convert_images (argument: jpeg or png)
         - make_note (detail: the note's text), add_reminder (detail: what to be reminded of)
@@ -79,6 +80,7 @@ public enum Prompt {
         "jot down that the plumber comes Tuesday" → {"action": {"name": "make_note", "detail": "The plumber comes Tuesday"}}
         "crank the volume up to 70" → {"action": {"name": "set_volume", "argument": "70"}}
         "bin these" → {"action": {"name": "trash"}}
+        "shove these into the folder I just made" → {"action": {"name": "move_to", "argument": "new folder"}}
         "skip this song" → {"action": {"name": "media", "argument": "next"}}
         "write me a poem" → {"action": null}
         """

@@ -134,3 +134,26 @@ public enum SpokenContent {
         return cleaned
     }
 }
+
+/// A folder the user names by speaking about it: "the receipts folder" → "receipts".
+public enum FolderReference {
+    /// Words that mean "the folder ClickBait just made".
+    public static let justMade: Set<String> = ["new folder", "the new folder", "untitled folder", "that folder", "the folder",
+                                               "this folder", "it", "the one i just made", "the folder i just made"]
+
+    public static func clean(_ text: String) -> String {
+        var name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = name.lowercased()
+        if justMade.contains(lower) { return "new folder" }
+        for prefix in ["the ", "my ", "a ", "that "] where name.lowercased().hasPrefix(prefix) {
+            name = String(name.dropFirst(prefix.count))
+        }
+        if justMade.contains(name.lowercased()) { return "new folder" }
+        if name.lowercased().hasSuffix(" folder") { name = String(name.dropLast(" folder".count)) }
+        return SpokenName.clean(name) ?? name
+    }
+
+    public static func meansJustMade(_ name: String) -> Bool {
+        name.lowercased() == "new folder"
+    }
+}
