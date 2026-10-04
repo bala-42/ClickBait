@@ -98,8 +98,12 @@ final class OverlayController {
         dismissTask?.cancel()
         dismissTask = nil
         let wasShowing = model.bubble.isAnswer
+        // Only an answer going away stops what produced it. A green "opened Safari" pill
+        // timing out (3 s) used to cancel the tutorial still being planned in Safari:
+        // green setup, then no lavender walkthrough.
+        let wasAnswer = if case .answer = model.bubble { true } else { false }
         if model.bubble.isAnswer { model.bubble = .idle }
-        if wasShowing { onDismiss?() }
+        if wasShowing, wasAnswer { onDismiss?() }
     }
 
     // MARK: - Panels
