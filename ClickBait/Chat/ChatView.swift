@@ -8,7 +8,7 @@ import SwiftUI
 struct ChatView: View {
     @Bindable var model: ChatModel
 
-    static let width: CGFloat = 380
+    static let width: CGFloat = 520
     static let corner: CGFloat = 26
     private static let maxTranscriptHeight: CGFloat = 380
     @State private var transcriptHeight: CGFloat = 0
@@ -26,8 +26,11 @@ struct ChatView: View {
         // Empty parts of the card drag the window (SwiftUI content would otherwise
         // swallow the mouse-down before the window could move).
         .background(WindowDragArea())
-        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: Self.corner, style: .continuous)))
+        // A dark, blurred, see-through panel (the macOS heads-up material) with soft
+        // glows in the companion's colours, like the Siri panel.
+        .background(SiriPanel(glow: model.isBusy ? CompanionTone.processing.color : CompanionTone.idle.color))
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
+        .environment(\.colorScheme, .dark)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
         // Springs out of the companion (it opens at the companion's corner) and shrinks
@@ -226,6 +229,43 @@ private struct CodeBlock: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.08)))
         .environment(\.colorScheme, .dark)
     }
+}
+
+/// The panel behind the chat: the dark heads-up blur, darkened a touch, with two soft
+/// glows — the companion's current colour top-right (orange while thinking), a cooler
+/// one low in the middle.
+private struct SiriPanel: View {
+    let glow: Color
+
+    var body: some View {
+        ZStack {
+            HUDBlur()
+            Color.black.opacity(0.28)
+            GeometryReader { proxy in
+                let size = proxy.size
+                // Soft by construction (radial fades), so they look the same everywhere.
+                RadialGradient(colors: [glow.opacity(0.42), glow.opacity(0)], center: UnitPoint(x: 0.9, y: 0.05),
+                               startRadius: 0, endRadius: size.width * 0.45)
+                RadialGradient(colors: [Color(red: 0.36, green: 0.30, blue: 0.85).opacity(0.3), .clear],
+                               center: UnitPoint(x: 0.5, y: 1.05), startRadius: 0, endRadius: size.width * 0.42)
+            }
+            .animation(.easeInOut(duration: 0.6), value: glow)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// `NSVisualEffectView` with the heads-up window material, blurring what's behind the window.
+private struct HUDBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 /// An AppKit view that moves its window when dragged. Sits behind the card's content,
