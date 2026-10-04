@@ -43,10 +43,10 @@ public struct TutorialPlan: Equatable, Sendable {
         else { return nil }
         let steps = rawSteps.compactMap { entry -> TutorialStep? in
             guard let target = (entry["target"] as? String).map(cleanTarget), !target.isEmpty else { return nil }
-            let instruction = (entry["instruction"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let instruction = cleanInstruction(entry["instruction"] as? String ?? "")
             return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction)
         }
-        let intro = (object["speech"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let intro = cleanInstruction(object["speech"] as? String ?? "")
         // Padding a small model adds when it runs out of real steps: the same target
         // again (from anywhere earlier in the plan — a loop).
         var seen = Set<String>()
@@ -107,6 +107,24 @@ public struct TutorialPlan: Equatable, Sendable {
         guard let first = more.steps.first, !doneTargets.contains(first.target.lowercased()) else { return nil }
         let rest = more.steps.filter { !doneTargets.contains($0.target.lowercased()) }
         return rest.isEmpty ? nil : rest
+    }
+
+    /// What the lavender pill and the chat show: no positions or element-list leftovers.
+    /// `Click button "Share" at (980, 52)` → `Click Share`.
+    static func cleanInstruction(_ raw: String) -> String {
+        var text = raw
+        for pattern in [#"\s*\bat\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)"#,  // at (980, 52)
+                        #"\s*\(\s*(?:id|element)\s*:?\s*\d+\s*\)"#,                       // (id: 7)
+                        #"\s*\b(?:element|id)\s+#?\d+\b"#] {                              // element 7
+            text = text.replacingOccurrences(of: pattern, with: "", options: [.regularExpression, .caseInsensitive])
+        }
+        text = CoordinateScrubber.scrub(text).text
+        // `button "Share"` / `menu item "Clear History…"` → the name alone.
+        text = text.replacingOccurrences(
+            of: #"\b(?:button|menu item|menu|pop-up menu|checkbox|radio button|text field|tab|link|row)\s+["“]([^"”]+)["”]"#,
+            with: "$1", options: [.regularExpression, .caseInsensitive])
+        return text.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// `button "New Note" at (300, 60)` → `New Note` (models copy element-list lines).

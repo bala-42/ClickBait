@@ -169,3 +169,23 @@ struct TutorialOrderTests {
         #expect(TutorialQuestion.mentionedApp(in: "clear search history", apps: apps) == nil)
     }
 }
+
+struct TutorialLabelTests {
+    @Test(arguments: [
+        (#"Click button "Share" at (980, 52)"#, "Click Share"),
+        ("Click the Clear History button at (640, 400).", "Click the Clear History button."),
+        (#"Choose menu item "Clear History…" (id: 7)"#, "Choose Clear History…"),
+        ("Click element 12 to open the File menu", "Click to open the File menu"),
+        ("Open the History menu (x: 541, y: 16)", "Open the History menu"),
+        ("Open the History menu", "Open the History menu"),
+    ])
+    func instructionsLoseCoordinates(_ raw: String, _ expected: String) {
+        #expect(TutorialPlan.cleanInstruction(raw) == expected)
+    }
+
+    @Test func parsedPlansAreClean() {
+        let raw = #"{"speech": "Here's how (see 980, 52).", "steps": [{"target": "Share", "instruction": "Click button \"Share\" at (980, 52)"}, {"target": "Copy Link", "instruction": "Choose Copy Link"}]}"#
+        let plan = TutorialPlan.parse(raw)
+        #expect(plan?.steps.first?.instruction == "Click Share")
+    }
+}
