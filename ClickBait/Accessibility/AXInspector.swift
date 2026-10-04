@@ -256,9 +256,11 @@ enum AXInspector {
                 }
             }
         }
+        // The Apple menu too: without it, "System Settings…" matched Finder ▸ Settings… (a
+        // loose 0.8) and the walkthrough pointed at the Finder menu instead.
         for top in bar.children(kAXChildrenAttribute) {
             let title = top.name
-            guard !title.isEmpty, title != "Apple", let menu = top.children(kAXChildrenAttribute).first else { continue }
+            guard !title.isEmpty, let menu = top.children(kAXChildrenAttribute).first else { continue }
             search(menu, path: [title], depth: 0)
             if best?.score == 1 { break }
         }
