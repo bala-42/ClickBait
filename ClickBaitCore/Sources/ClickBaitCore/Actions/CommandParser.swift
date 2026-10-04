@@ -120,6 +120,8 @@ public enum CommandParser {
         if words.contains("note") || (verb == "jot" && words.dropFirst().first == "down") {
             let noteVerbs: Set<String> = ["make", "create", "add", "take", "write", "new", "note", "jot", "start"]
             guard noteVerbs.contains(verb) else { return nil }
+            // "Add it / this page to my notes": the whole order, resolved when it runs.
+            if NoteReference.find(in: transcript) != nil { return ActionRequest(name: "make_note", detail: transcript) }
             return ActionRequest(name: "make_note", detail: SpokenContent.after(["note", "jot down"], in: transcript))
         }
         // "remind me to send the invoice", "add a reminder to call Sam", "set a reminder: dentist"

@@ -121,5 +121,9 @@ struct MostlyTextTests {
         }
         #expect(!PartsTour.isMostlyText(labels, marked: marked))
         #expect(!PartsTour.isMostlyText([], marked: marked))  // an unlabelled drawing
+        // A labelled figure with a caption: lots of characters, mostly short labels.
+        let captioned = labels + [TextBox(text: "Figure 3. The rotator cuff muscles seen from behind.", center: Point(x: 400, y: 380))]
+            + (0..<14).map { TextBox(text: "Label \($0)", center: Point(x: Double(40 + $0 * 50), y: 300)) }
+        #expect(!PartsTour.isMostlyText(captioned, marked: marked))
     }
 }

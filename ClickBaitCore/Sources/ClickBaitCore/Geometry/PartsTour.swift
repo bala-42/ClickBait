@@ -16,7 +16,9 @@ public enum PartsTour {
         let characters = inside.reduce(0) { $0 + $1.text.count }
         guard !inside.isEmpty else { return false }
         let averageLine = Double(characters) / Double(inside.count)
-        return characters >= 200 || (characters >= 50 && averageLine >= 18)
+        // Prose: long lines. A figure with a caption has many short labels and a few long
+        // lines, so the length of the lines decides, not how much text there is.
+        return characters >= 50 && averageLine >= 18
     }
 
     /// `marked` is the area the user circled or boxed, in the parts' pixels.

@@ -347,3 +347,11 @@ struct JustAVisitTests {
         #expect(Websites.isJustAVisit(text, site: Websites.visit(in: text)!.name) == expected)
     }
 }
+
+struct NoteOrderRuleTests {
+    @Test func referringNotesKeepTheWholeOrder() {
+        #expect(CommandParser.parse("add it to my note", allowedShortcuts: [])?.detail == "add it to my note")
+        #expect(CommandParser.parse("make a note of this page", allowedShortcuts: [])?.detail == "make a note of this page")
+        #expect(CommandParser.parse("make a note: call the dentist", allowedShortcuts: [])?.detail?.lowercased().contains("dentist") == true)
+    }
+}
