@@ -34,6 +34,10 @@ final class ChatController {
     private var panel: NSPanel?
 
     var isOpen: Bool { panel != nil }
+    /// The companion's point now (AppKit): the card shrinks back into it on closing.
+    var companionPoint: (() -> CGPoint)?
+    /// Where the companion was when the chat opened.
+    private var origin: CGPoint?
 
     /// `topLeft` in global AppKit points (where the companion's card was).
     func open(at topLeft: CGPoint) {
@@ -63,6 +67,7 @@ final class ChatController {
 
         model.onCardSizeChange = { [weak self] in self?.fitToCard() }
         self.panel = panel
+        origin = companionPoint?() ?? topLeft
         place(topLeft: topLeft)
         panel.orderFrontRegardless()
     }
@@ -85,10 +90,11 @@ final class ChatController {
     /// Shrinks back into the companion, then goes.
     func close() {
         guard let closing = panel else { return }
+        aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: closing.frame)
         model.isClosing = true
         panel = nil
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(170))
+            try? await Task.sleep(for: .milliseconds(200))  // the shrink (0.18 s) plays out
             closing.orderOut(nil)
             closing.close()
         }
@@ -107,12 +113,22 @@ final class ChatController {
         panel.setFrame(CGRect(x: panel.frame.minX, y: top - model.cardSize.height,
                               width: model.cardSize.width, height: model.cardSize.height), display: true)
         keepOnScreen()
+        if let origin, !model.isClosing { aim(at: origin, in: panel.frame) }
     }
 
     private func place(topLeft: CGPoint) {
         guard let panel else { return }
         panel.setFrameTopLeftPoint(topLeft)
         keepOnScreen()
+    }
+
+    /// Points the grow/shrink animation at `point` (the companion), wherever the card
+    /// ended up (it's pushed back on screen near edges).
+    private func aim(at point: CGPoint, in frame: CGRect) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let x = min(max((point.x - frame.minX) / frame.width, 0), 1)
+        let y = min(max((frame.maxY - point.y) / frame.height, 0), 1)
+        model.companionAnchor = UnitPoint(x: x, y: y)
     }
 
     private func keepOnScreen() {

@@ -758,6 +758,20 @@ final class AskCoordinator {
             (capture, screenshot, elements) = ready
         }
 
+        // A well-known website ("open YouTube", "I want to watch YouTube"): one typing step
+        // in the browser's address bar, with the address from ClickBait's own list — no
+        // model, so it's instant and never a guessed domain. Whatever's left once the page
+        // is open ("…and play lofi") is planned from there.
+        if let site = Websites.visit(in: question), let browser = AppLocator.defaultBrowserName() {
+            let step = TutorialStep(target: "address bar", instruction: "Type \(site.address), then press Return",
+                                    app: browser, typing: site.address)
+            let plan = TutorialPlan(intro: "Type \(site.name)'s address in \(browser).", steps: [step])
+            Log.ask.notice("Tutorial: website \(site.address, privacy: .public) in the browser")
+            return await beginTutorial(plan, question: question, startedIn: startedIn, speak: speak, display: display,
+                                       installedName: installedName, apps: apps, provider: provider, tutorial: tutorial,
+                                       continues: !Websites.isJustAVisit(question, site: site.name))
+        }
+
         var plan: TutorialPlan?
         for _ in 0..<2 {
             guard !Task.isCancelled else { return false }
@@ -773,6 +787,7 @@ final class AskCoordinator {
             Log.ask.notice("Tutorial: no steps; answering normally")
             return false
         }
+        Log.ask.notice("Tutorial steps: \(plan.steps.map { "\($0.target) [\($0.app ?? "-")]\($0.typing.map { " type " + $0 } ?? "")" }.joined(separator: " → "), privacy: .public)")
         // Its first click must be findable (on screen or in the app's menus).
         if StepMatcher.find(first.target, in: elements) == nil, !first.isShortcut {
             let pid = frontmostPID
@@ -781,10 +796,18 @@ final class AskCoordinator {
             }.value
             guard inMenus else {
                 onSetupFinished?()
-                Log.ask.notice("Tutorial: first step isn't on screen; answering normally")
+                Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
                 return false
             }
         }
+        return await beginTutorial(plan, question: question, startedIn: startedIn, speak: speak, display: display,
+                                   installedName: installedName, apps: apps, provider: provider, tutorial: tutorial)
+    }
+
+    /// Shows the plan in the chat and starts walking it.
+    private func beginTutorial(_ plan: TutorialPlan, question: String, startedIn: NSRunningApplication?, speak: Bool,
+                               display: String, installedName: @escaping (String) -> String?, apps: [String: URL],
+                               provider: any LLMProvider, tutorial: TutorialController, continues: Bool = true) async -> Bool {
         if let startedIn, startedIn.processIdentifier != frontmostPID { tutorialReturnApp = startedIn }
         onSetupFinished?()
 
@@ -806,7 +829,8 @@ final class AskCoordinator {
             onSetupFinished?()
             return ready
         }
-        tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak)
+        tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak,
+                       continues: continues)
         return true
     }
 
@@ -817,12 +841,12 @@ final class AskCoordinator {
         let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
         var request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg, screenshotWidth: screenshot.width,
                                  screenshotHeight: screenshot.height, context: context,
-                                 elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
+                                 elements: PromptElement.list(elements, geometry: geometry, question: question, limit: 25))
         request.planTutorial = true
         request.browser = AppLocator.defaultBrowserName()
         let pid = frontmostPID
         let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
-        request.menuOutline = MenuOutline.relevant(menus, to: question)
+        request.menuOutline = MenuOutline.relevant(menus, to: question, limit: 25)
         let start = ContinuousClock.now
         var plan: TutorialPlan?
         if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {

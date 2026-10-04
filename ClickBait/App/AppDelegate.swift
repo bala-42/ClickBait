@@ -75,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             closeChat()
             return true
         }
+        chat.companionPoint = { NSEvent.mouseLocation }  // the companion rides the cursor
         chat.model.onSend = { [weak self] text in self?.coordinator.sendTyped(text) }
         chat.model.onClose = { [weak self] in self?.closeChat() }
         coordinator.onChatOpen = { [weak self] firstMessage in

@@ -86,8 +86,9 @@ final class TutorialController {
         self.overlay = overlay
     }
 
+    /// `continues`: plan more once the steps run out (off when the steps are the whole task).
     func start(_ plan: TutorialPlan, goal: String, provider: any LLMProvider, context: ScreenContext,
-               blocklist: AppBlocklist, speak speakSteps: Bool) {
+               blocklist: AppBlocklist, speak speakSteps: Bool, continues: Bool = true) {
         stop(message: nil)
         self.plan = plan
         self.goal = goal
@@ -108,7 +109,7 @@ final class TutorialController {
         menuOpened = false
         switchedFor = []
         needsContinuation = false
-        continuations = 0
+        continuations = continues ? 0 : Self.maxContinuations
         isActive = true
         overlay.setTutoring(true)
         Log.ask.notice("Tutorial started: \(plan.steps.count, privacy: .public) steps")
@@ -245,6 +246,17 @@ final class TutorialController {
         }.value
         guard isActive else { return }
 
+        // Typing a web address: the address bar, found by its shape.
+        if step.typedHost != nil, let bar = await Task.detached(priority: .userInitiated, operation: {
+            AXInspector.addressBarFrame(frontmostPID: pid)
+        }).value {
+            if loggedTarget != index {
+                loggedTarget = index
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at the address bar")
+            }
+            point(at: bar, label: instruction, menu: false)
+            return
+        }
         // A near-exact visible match wins; a looser one ("History" button for "Clear
         // History…") only if the target isn't an item in the app's menus.
         var visible = StepMatcher.find(step.target, in: elements, minimum: 0.95)
@@ -392,11 +404,11 @@ final class TutorialController {
             """
         var next = AskRequest(question: question, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
                               screenshotHeight: encoded.height, context: context,
-                              elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
+                              elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 25))
         next.planTutorial = true
         next.browser = AppLocator.defaultBrowserName()
         let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
-        next.menuOutline = MenuOutline.relevant(menus, to: goal)
+        next.menuOutline = MenuOutline.relevant(menus, to: goal, limit: 25)
         // From text when Accessibility describes the screen (~1 s), else the screenshot.
         var reply: String?
         if TutorialPlanning.canUseTextOnly(elements: next.elements.count, menuItems: menus.count) {
@@ -478,10 +490,10 @@ final class TutorialController {
                                       primaryDisplayHeight: Double(NSScreen.screens.first?.frame.height ?? appKit.height))
         var request = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: Int(display.width),
                                  screenshotHeight: Int(display.height), context: ScreenContext(appName: NSWorkspace.shared.frontmostApplication?.localizedName),
-                                 elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
+                                 elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 25))
         request.planTutorial = true
         request.browser = AppLocator.defaultBrowserName()
-        request.menuOutline = MenuOutline.relevant(menus, to: goal + " " + question)
+        request.menuOutline = MenuOutline.relevant(menus, to: goal + " " + question, limit: 25)
         guard let reply = await Self.reply(from: provider, to: request, within: .seconds(15)) else { return nil }
         return TutorialPlan.parse(reply)?.expandingMenus(using: menus)
     }

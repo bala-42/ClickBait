@@ -326,3 +326,24 @@ struct RambleGuardTests {
         #expect(plan.steps[0].typing == nil)
     }
 }
+
+struct WebsiteTests {
+    @Test(arguments: [("open YouTube", "youtube.com"), ("I want to watch YouTube", "youtube.com"), ("take me to my Gmail", "mail.google.com"),
+                      ("Open Google Drive", "drive.google.com"), ("go to google", "google.com"), ("check reddit", "reddit.com")])
+    func visits(_ text: String, _ address: String) {
+        #expect(Websites.visit(in: text)?.address == address)
+    }
+
+    @Test(arguments: ["what is YouTube?", "explain how Reddit works", "open Safari", "Clear my Safari history", "how does github work"])
+    func notVisits(_ text: String) {
+        #expect(Websites.visit(in: text) == nil)
+    }
+}
+
+struct JustAVisitTests {
+    @Test(arguments: [("open YouTube", true), ("I want to watch YouTube", true), ("take me to my Gmail please", true),
+                      ("watch lofi on YouTube", false), ("open YouTube and search for cats", false)])
+    func visits(_ text: String, _ expected: Bool) {
+        #expect(Websites.isJustAVisit(text, site: Websites.visit(in: text)!.name) == expected)
+    }
+}

@@ -33,14 +33,16 @@ struct ChatView: View {
         .environment(\.colorScheme, .dark)
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
-        // Springs out of the companion (it opens at the companion's corner) and shrinks
-        // back into it when closing.
-        .scaleEffect(shown && !model.isClosing ? 1 : (reduceMotion ? 1 : 0.82), anchor: .topLeading)
+        // Grows out of the companion, and shrinks back into it.
+        .scaleEffect(shown && !model.isClosing ? 1 : (reduceMotion ? 1 : 0.08), anchor: model.companionAnchor)
         .opacity(shown && !model.isClosing ? 1 : 0)
         .onAppear {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.36, dampingFraction: 0.82)) { shown = true }
+            // A beat later: the card has measured itself and knows where the companion is.
+            DispatchQueue.main.async {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.8)) { shown = true }
+            }
         }
-        .animation(.easeIn(duration: 0.16), value: model.isClosing)
+        .animation(.easeIn(duration: 0.18), value: model.isClosing)
     }
 
     private var header: some View {

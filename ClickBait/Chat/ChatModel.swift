@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 import Observation
 
@@ -24,6 +25,9 @@ final class ChatModel {
     var isBusy = false
     /// The chat is shrinking away (then its window closes).
     var isClosing = false
+    /// Where the companion is, as a point in the card (0…1 each way): the card grows out
+    /// of it on opening and shrinks back into it on closing.
+    var companionAnchor = UnitPoint.topLeading
     /// Bumped to put the cursor in the text field (a chat opened to type into).
     var focusRequest = 0
 

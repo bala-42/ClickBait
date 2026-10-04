@@ -86,6 +86,9 @@ public enum Prompt {
         from the list of on-screen elements when given. "instruction" is a short imperative \
         ("Open the File menu", "Choose Export as PDF…").
         - Include steps that appear only later (menu items inside a menu, buttons in a dialog).
+        - Doing something to a file, folder or item (move, rename, delete, share it): the first \
+        step clicks that item to select it (its name as listed), then the command — e.g. "test \
+        folder" → File → "Move to Bin". Clicking a sidebar place (Bin, Downloads) only opens it.
         - Most Mac tasks are in the app's menus. When the app's menu bar is listed and the task \
         is in it, use it: one step to open the menu (its title, e.g. "History") and one to \
         choose the item (its exact name, e.g. "Clear History…"), then any dialog buttons.

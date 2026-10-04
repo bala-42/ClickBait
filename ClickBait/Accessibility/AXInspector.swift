@@ -181,6 +181,33 @@ enum AXInspector {
         return nil
     }
 
+    /// The browser's address bar (Quartz frame): the widest text field in the top part of
+    /// the front window, outside the page. Found by shape, not name — Safari and Chrome
+    /// name it differently, and the name a model guesses rarely matches.
+    static func addressBarFrame(frontmostPID pid: pid_t?) -> Rect? {
+        guard isTrusted, let pid else { return nil }
+        let app = element(AXUIElementCreateApplication(pid))
+        guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute),
+              let windowFrame = window.frame else { return nil }
+        let deadline = Date().addingTimeInterval(0.4)
+        var queue = [window][...]
+        var visited = 0
+        var best: Rect?
+        while let node = queue.popFirst(), visited < 2000, Date() < deadline {
+            visited += 1
+            let role = node.string(kAXRoleAttribute) ?? ""
+            if role == "AXWebArea" { continue }
+            if ["AXTextField", "AXSearchField", "AXComboBox"].contains(role), let frame = node.frame,
+               frame.y < windowFrame.y + 140, frame.width > 200, frame.width > (best?.width ?? 0) {
+                best = frame
+                continue
+            }
+            if ["AXButton", "AXStaticText", "AXImage"].contains(role) { continue }
+            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+        }
+        return best
+    }
+
     // MARK: - Menus (tutorials)
 
     /// Where a menu item lives in the frontmost app's menus, even while they're closed:
