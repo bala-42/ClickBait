@@ -26,7 +26,9 @@ public enum ResponseParser {
     static let fallbackSpeech = "Sorry, I couldn't work that out. Try asking again."
 
     /// `elements` is the numbered list the prompt offered: a pointer may name one by id.
-    public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int, elements: [PromptElement] = []) -> Result {
+    /// `scale`: how the model writes positions; they come back in image pixels either way.
+    public static func parse(_ raw: String, imageWidth: Int, imageHeight: Int, elements: [PromptElement] = [],
+                             scale: CoordinateScale = .pixels) -> Result {
         guard let object = firstJSONObject(in: raw) else {
             return Result(response: AssistantResponse(speech: salvageSpeech(from: raw)), usedFallback: true, droppedPointers: 0)
         }
@@ -41,7 +43,7 @@ public enum ResponseParser {
         var dropped = 0
         for entry in rawPointers {
             guard let dict = entry as? [String: Any],
-                  let pointer = pointer(from: dict, imageWidth: imageWidth, imageHeight: imageHeight, elements: elements)
+                  let pointer = pointer(from: dict, imageWidth: imageWidth, imageHeight: imageHeight, elements: elements, scale: scale)
             else {
                 dropped += 1
                 continue
@@ -62,10 +64,13 @@ public enum ResponseParser {
         )
         // Parts of a snipped thing: positions in the image, no element list involved.
         response.parts = (object["parts"].map(asArray) ?? []).compactMap { entry in
-            (entry as? [String: Any]).flatMap { pointer(from: $0, imageWidth: imageWidth, imageHeight: imageHeight) }
+            (entry as? [String: Any]).flatMap { pointer(from: $0, imageWidth: imageWidth, imageHeight: imageHeight, scale: scale) }
         }.filter { !$0.label.isEmpty }
         if response.parts.isEmpty {
-            response.parts = partsInText.filter { $0.x >= 0 && $0.y >= 0 && $0.x <= Double(imageWidth) && $0.y <= Double(imageHeight) }
+            response.parts = partsInText.map { part in
+                guard scale == .thousandths else { return part }
+                return Pointer(x: part.x / 1000 * Double(imageWidth), y: part.y / 1000 * Double(imageHeight), label: part.label)
+            }.filter { $0.x >= 0 && $0.y >= 0 && $0.x <= Double(imageWidth) && $0.y <= Double(imageHeight) }
         }
         return Result(
             response: response,
@@ -111,15 +116,17 @@ public enum ResponseParser {
 
     // MARK: - Pointers
 
-    static func pointer(from dict: [String: Any], imageWidth: Int, imageHeight: Int, elements: [PromptElement] = []) -> Pointer? {
+    static func pointer(from dict: [String: Any], imageWidth: Int, imageHeight: Int, elements: [PromptElement] = [],
+                        scale: CoordinateScale = .pixels) -> Pointer? {
         // {"element": 7}: exact position from the app's own accessibility data.
         if let id = number(dict["element"] ?? dict["element_id"] ?? dict["id"]),
            let element = elements.first(where: { Double($0.id) == id }) {
             let label = (dict["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return Pointer(x: element.x, y: element.y, label: (label?.isEmpty ?? true) ? element.label : label!)
         }
-        guard let (x, y) = coordinates(in: dict) else { return nil }
+        guard var (x, y) = coordinates(in: dict) else { return nil }
         let width = Double(imageWidth), height = Double(imageHeight)
+        if scale == .thousandths { (x, y) = (x / 1000 * width, y / 1000 * height) }
         let slackX = width * edgeTolerance, slackY = height * edgeTolerance
         guard x.isFinite, y.isFinite,
               x >= -slackX, x <= width + slackX,

@@ -25,9 +25,15 @@ struct ProviderSettingsSection: View {
 
         switch settings.provider {
         case .ollama:
-            TextField("Ollama model", text: $settings.ollamaModel, prompt: Text(OllamaProvider.defaultModel))
+            TextField("Main model", text: $settings.ollamaModel, prompt: Text(OllamaProvider.defaultModel))
                 .onChange(of: settings.ollamaModel) { testResult = nil }
-            Text("Runs on this Mac via Ollama. Install a vision model with `ollama pull \(OllamaProvider.defaultModel)`.")
+            TextField("Quick orders", text: $settings.ollamaFastModel, prompt: Text(OllamaProvider.defaultFastModel))
+                .onChange(of: settings.ollamaFastModel) { testResult = nil }
+            Text("""
+                Runs on this Mac via Ollama. The main model looks at the screen, points and plans \
+                walkthroughs; a faster one reads orders like "move these to Documents". Install them with `ollama pull \(OllamaProvider.defaultModel)` and \
+                `ollama pull \(OllamaProvider.defaultFastModel)`.
+                """)
                 .font(.callout)
                 .foregroundStyle(.secondary)
         case .anthropic:

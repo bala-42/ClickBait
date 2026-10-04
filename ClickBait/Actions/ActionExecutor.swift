@@ -186,6 +186,12 @@ enum AppLocator {
         return apps
     }
 
+    /// The app that opens web links ("Safari", "Google Chrome").
+    static func defaultBrowserName() -> String? {
+        guard let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!) else { return nil }
+        return url.deletingPathExtension().lastPathComponent
+    }
+
     static func url(forAppNamed name: String) -> URL? {
         let apps = installed()
         guard let match = ActionCatalog.bestMatch(for: name, in: Array(apps.keys), threshold: 0.75) else { return nil }

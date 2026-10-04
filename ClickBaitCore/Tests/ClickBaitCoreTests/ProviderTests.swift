@@ -227,3 +227,37 @@ struct ConversationTests {
         #expect(anthropic[0]["content"] as? String == "How do I share this?")
     }
 }
+
+struct TwoModelTests {
+    @Test func textJobsGoToTheFastModel() throws {
+        let provider = OllamaProvider(model: "qwen3.5:9b", fastModel: "qwen2.5vl:7b")
+        var ask = AskRequest(question: "q", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: ScreenContext())
+        #expect(provider.model(for: ask) == "qwen3.5:9b")
+        ask.planTutorial = true
+        #expect(provider.model(for: ask) == "qwen3.5:9b")  // plans: quality matters more
+        ask.planTutorial = false
+        ask.interpretOrder = true
+        #expect(provider.model(for: ask) == "qwen2.5vl:7b")
+        #expect(OllamaProvider(model: "m").model(for: ask) == "m")
+        #expect(OllamaProvider(model: "m", fastModel: "").fastModel == nil)
+    }
+
+    @Test func qwen3SpeaksThousandths() throws {
+        #expect(OllamaProvider(model: "qwen3.5:9b").coordinateScale == .thousandths)
+        #expect(OllamaProvider(model: "qwen2.5vl:7b").coordinateScale == .pixels)
+        // The body sent to Qwen 3.5 lists elements and asks for positions in 0–1000.
+        var ask = AskRequest(question: "where's Share", screenshotJPEG: Data([1]), screenshotWidth: 1280, screenshotHeight: 800,
+                             context: ScreenContext(), elements: [PromptElement(id: 1, kind: "button", label: "Share", x: 640, y: 400)])
+        ask.coordinateScale = .thousandths
+        let text = Prompt.userText(for: ask)
+        #expect(text.contains("1: button \"Share\" at (500, 500)"))
+        #expect(!text.contains("in screenshot pixels"))
+    }
+
+    @Test func thousandthsComeBackAsPixels() {
+        let parsed = ResponseParser.parse(#"{"speech": "There.", "pointers": [{"x": 569, "y": 493, "label": "Jupiter"}], "parts": [{"x": 500, "y": 500, "label": "Sun"}]}"#,
+                                          imageWidth: 1280, imageHeight: 887, scale: .thousandths).response
+        #expect(abs(parsed.pointers[0].x - 728.3) < 0.5 && abs(parsed.pointers[0].y - 437.3) < 0.5)
+        #expect(parsed.parts[0].x == 640 && parsed.parts[0].y == 443.5)
+    }
+}

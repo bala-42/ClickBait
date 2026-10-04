@@ -13,6 +13,7 @@ final class AppSettings {
         static let speechModel = "settings.speechModel"
         static let provider = "settings.provider"
         static let ollamaModel = "settings.ollamaModel"
+        static let ollamaFastModel = "settings.ollamaFastModel"
         static let anthropicModel = "settings.anthropicModel"
         static let speakAnswers = "settings.speakAnswers"
         static let voiceIdentifier = "settings.voiceIdentifier"
@@ -45,6 +46,11 @@ final class AppSettings {
 
     var ollamaModel: String {
         didSet { defaults.set(ollamaModel, forKey: Key.ollamaModel) }
+    }
+
+    /// Reads orders ("move these to Documents"): a text job where speed matters most.
+    var ollamaFastModel: String {
+        didSet { defaults.set(ollamaFastModel, forKey: Key.ollamaFastModel) }
     }
 
     var anthropicModel: String {
@@ -85,6 +91,7 @@ final class AppSettings {
         speechModel = defaults.string(forKey: Key.speechModel).flatMap(SpeechModel.init(rawValue:)) ?? .default
         provider = defaults.string(forKey: Key.provider).flatMap(ProviderKind.init(rawValue:)) ?? .ollama
         ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
+        ollamaFastModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaFastModel)) ?? OllamaProvider.defaultFastModel
         anthropicModel = Self.nonEmpty(defaults.string(forKey: Key.anthropicModel)) ?? AnthropicProvider.defaultModel
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true
         voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
@@ -98,7 +105,8 @@ final class AppSettings {
     func makeProvider() -> any LLMProvider {
         switch provider {
         case .ollama:
-            OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces))
+            OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces),
+                           fastModel: ollamaFastModel.trimmingCharacters(in: .whitespaces))
         case .anthropic:
             AnthropicProvider(
                 model: anthropicModel.trimmingCharacters(in: .whitespaces),

@@ -86,9 +86,17 @@ public struct PromptElement: Equatable, Sendable {
     }
 
     /// One prompt line: `7: menu item "Show Path Bar" at (412, 300)`.
-    var line: String {
+    var line: String { line(for: nil) }
+
+    /// The line in the request's scale (0–1000 of the image for Qwen 3.5).
+    func line(for request: AskRequest?) -> String {
         let name = label.replacingOccurrences(of: "\"", with: "'").split(whereSeparator: \.isNewline).joined(separator: " ")
         let short = name.count > 50 ? String(name.prefix(49)) + "…" : name
-        return "\(id): \(kind) \"\(short)\" at (\(Int(x)), \(Int(y)))"
+        var (px, py) = (x, y)
+        if let request, request.coordinateScale == .thousandths, request.screenshotWidth > 0, request.screenshotHeight > 0 {
+            px = x / Double(request.screenshotWidth) * 1000
+            py = y / Double(request.screenshotHeight) * 1000
+        }
+        return "\(id): \(kind) \"\(short)\" at (\(Int(px)), \(Int(py)))"
     }
 }

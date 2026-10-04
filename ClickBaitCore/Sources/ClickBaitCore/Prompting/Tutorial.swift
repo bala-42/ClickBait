@@ -10,11 +10,33 @@ public struct TutorialStep: Codable, Equatable, Sendable {
     /// The app the click happens in ("Notes"), when the task spans apps. ClickBait
     /// switches to it (green) before pointing.
     public var app: String?
+    /// What to type into `target` ("youtube.com"), for a typing step; nil for a click.
+    public var typing: String?
 
-    public init(target: String, instruction: String, app: String? = nil) {
+    public init(target: String, instruction: String, app: String? = nil, typing: String? = nil) {
         self.target = target
         self.instruction = instruction
         self.app = app
+        self.typing = typing
+    }
+
+    /// A keyboard shortcut to press ("⌘C", "Command+V") rather than something to click.
+    public var isShortcut: Bool {
+        target.range(of: #"^\s*(?:[⌘⌥⌃⇧]+\s*\S{1,6}|(?:cmd|command|ctrl|control|option|shift)\s*[+-]\s*\S{1,6})\s*$"#,
+                     options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// A copy or cut shortcut: done once the clipboard changes.
+    public var copiesToClipboard: Bool {
+        isShortcut && target.range(of: #"[+⌘\s-](?:c|x)\s*$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// A typing step whose text is a web address ("youtube.com"): its host, to recognise
+    /// the page once it's open. Nil for search text.
+    public var typedHost: String? {
+        guard let typing, let address = PageAddress.fromAddressBar(typing),
+              let host = URL(string: address)?.host?.lowercased() else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
@@ -28,6 +50,7 @@ public struct TutorialPlan: Equatable, Sendable {
     public var app: String?
 
     public static let maxSteps = 10
+    static let maxInstructionLength = 160
 
     public init(intro: String, steps: [TutorialStep], app: String? = nil) {
         self.intro = intro
@@ -48,15 +71,36 @@ public struct TutorialPlan: Equatable, Sendable {
         let steps = rawSteps.compactMap { entry -> TutorialStep? in
             guard let target = (entry["target"] as? String).map(cleanTarget), !target.isEmpty else { return nil }
             let instruction = cleanInstruction(entry["instruction"] as? String ?? "")
+            // A model reasoning inside a step ("Wait, the instruction says…") broke the plan.
+            guard instruction.count <= maxInstructionLength, target.count <= 80 else { return nil }
             let app = (entry["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            var typing = (entry["type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            // "type": "menu" / "button" is the model naming the kind of thing, not text.
+            if let typed = typing, ["menu", "button", "click", "menu item", "field", "text", "tab", "keyboard", "shortcut", "key",
+                                    "press", "keypress", "type", "select", "choose"].contains(typed.lowercased()) { typing = nil }
+            if typing?.isEmpty ?? true { typing = typedText(in: instruction) }  // "Type youtube.com, then press Return"
             return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction,
-                                app: (app?.isEmpty ?? true) ? nil : app)
+                                app: (app?.isEmpty ?? true) ? nil : app, typing: typing)
+        }
+        // "Bookmarks ▸ Add Bookmark…" as one target: open the menu, then choose the item.
+        let split = steps.flatMap { step -> [TutorialStep] in
+            let path = step.target.components(separatedBy: "▸").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard path.count >= 2 else { return [step] }
+            var opened = path.dropLast().map { TutorialStep(target: $0, instruction: "Open \($0)", app: step.app) }
+            opened[0].instruction = "Open the \(path[0]) menu"
+            var item = step
+            item.target = path.last!
+            if item.instruction.range(of: "▸") != nil || item.instruction.isEmpty { item.instruction = "Choose \(item.target)" }
+            return opened + [item]
         }
         let intro = cleanInstruction(object["speech"] as? String ?? "")
         // Padding a small model adds when it runs out of real steps: the same target
         // again (from anywhere earlier in the plan — a loop).
         var seen = Set<String>()
-        let distinct = steps.filter { seen.insert($0.target.lowercased().replacingOccurrences(of: "...", with: "…")).inserted }
+        // Typing different things into the same field isn't a repeat.
+        let distinct = split.filter {
+            seen.insert($0.target.lowercased().replacingOccurrences(of: "...", with: "…") + "|" + ($0.typing ?? "")).inserted
+        }
         let app = (object["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return TutorialPlan(intro: intro, steps: Array(distinct.prefix(maxSteps)), app: (app?.isEmpty ?? true) ? nil : app)
     }
@@ -141,6 +185,20 @@ public struct TutorialPlan: Equatable, Sendable {
         return rest.isEmpty ? nil : rest
     }
 
+    /// "Type youtube.com, then press Return" → "youtube.com"; "Type 'lofi beats'" → "lofi
+    /// beats". Nil when the instruction isn't about typing.
+    static func typedText(in instruction: String) -> String? {
+        guard let match = instruction.range(of: #"^\s*(?:type|enter)\s+(.+?)(?:\s*,?\s*(?:then|and)\s+press\s+return.*|\s+(?:in|into)\s+the\s+.*)?\.?$"#,
+                                            options: [.regularExpression, .caseInsensitive]) else { return nil }
+        var text = String(instruction[match])
+        text = text.replacingOccurrences(of: #"^\s*(?:type|enter)\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
+        text = text.replacingOccurrences(of: #"(?:\s*,?\s*(?:then|and)\s+press\s+return.*|\s+(?:in|into)\s+the\s+.*)?\.?$"#, with: "",
+                                         options: [.regularExpression, .caseInsensitive])
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: "'\"“”‘’ "))
+        let vague: Set<String> = ["it", "the link", "the address", "the url", "the page's link", "your search", "the text"]
+        return text.isEmpty || vague.contains(text.lowercased()) ? nil : text
+    }
+
     /// What the lavender pill and the chat show: no positions or element-list leftovers.
     /// `Click button "Share" at (980, 52)` → `Click Share`.
     static func cleanInstruction(_ raw: String) -> String {
@@ -198,9 +256,17 @@ public enum TutorialQuestion {
     static let phrases = ["how do i", "how can i", "how to", "how would i", "walk me through", "show me how", "teach me",
                           "guide me", "tutorial", "steps to", "what are the steps"]
 
+    /// "I want to watch YouTube", "help me check Gmail": a task, unless it's about
+    /// knowing something ("I want to know what this is").
+    static let wishes = ["i want to", "i wanna", "i would like to", "i d like to", "help me", "take me to"]
+    static let knowing: Set<String> = ["know", "understand", "learn", "see what", "find out"]
+
     public static func asksForTutorial(_ question: String) -> Bool {
         let text = ImpliedPointer.normalized(question)
-        return phrases.contains { text.hasPrefix($0) || text.contains(" " + $0) }
+        if phrases.contains(where: { text.hasPrefix($0) || text.contains(" " + $0) }) { return true }
+        guard let wish = wishes.first(where: { text.hasPrefix($0 + " ") }) else { return false }
+        let rest = String(text.dropFirst(wish.count + 1))
+        return !knowing.contains { rest.hasPrefix($0) }
     }
 
     /// "Where's the refresh button?", "show me the refresh button", "point at Share":

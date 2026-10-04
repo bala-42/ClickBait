@@ -64,6 +64,11 @@ final class TutorialController {
     private var menuOpened = false
     /// Steps whose app was switched to already: the user leaving it again isn't fought.
     private var switchedFor = Set<Int>()
+    /// The page that was open when a typing step began: a different one means it's done.
+    private var addressAtStep: (index: Int, address: String?)?
+    /// When a shortcut step began, and the clipboard then: ⌘C is done when it changes,
+    /// other shortcuts when the screen does. Keys themselves are never read.
+    private var shortcutStart: (index: Int, at: Date, clipboard: Int)?
     /// The planned steps are all done: check the task is finished, or plan what's left.
     private var needsContinuation = false
     private var continuations = 0
@@ -169,7 +174,8 @@ final class TutorialController {
         var refreshNow = false
         if let click = pendingClick, Date().timeIntervalSince(click.at) >= 0.35 {
             pendingClick = nil
-            if let frame = currentFrame, Self.contains(frame, click.point, margin: 10), !pointingAtMenu {
+            if let frame = currentFrame, Self.contains(frame, click.point, margin: 10), !pointingAtMenu,
+               plan.steps[index].typing == nil {  // clicking into a field isn't typing in it
                 advance(to: index + 1, reason: "clicked")
                 return
             }
@@ -202,15 +208,43 @@ final class TutorialController {
         // up the moment it happens rather than after a fresh baseline.
         if tick % 4 == 0 { await sampleScreen() }
 
+        // A shortcut to press (⌘C, ⌘V): nothing to point at; the instruction by the cursor.
+        let step = plan.steps[index]
+        if step.isShortcut {
+            if shortcutStart?.index != index {
+                shortcutStart = (index, Date(), NSPasteboard.general.changeCount)
+                currentFrame = nil
+                overlay.tutorialHint(instruction)
+            }
+            guard let start = shortcutStart else { return }
+            let pressed = step.copiesToClipboard
+                ? NSPasteboard.general.changeCount != start.clipboard
+                : screenChangedAt.map { $0.timeIntervalSince(start.at) > 1.2 } ?? false
+            if pressed { advance(to: index + 1, reason: "shortcut") }
+            return
+        }
+
         guard refreshNow || tick % 2 == 0 else { return }
         let pid = front?.processIdentifier
+        // A typing step in a browser is done once the page changes (to the typed site).
+        if plan.steps[index].typing != nil {
+            let page = await Task.detached(priority: .userInitiated) { () -> String? in
+                var trace = ""
+                return AXInspector.pageAddress(frontmostPID: pid, trace: &trace)?.address
+            }.value
+            guard isActive else { return }
+            if addressAtStep?.index != index { addressAtStep = (index, page) }
+            if let page, Self.typingDone(plan.steps[index], page: page, before: addressAtStep?.address) {
+                advance(to: index + 1, reason: "typed")
+                return
+            }
+        }
         let display = Self.displayUnderMouse()
         let elements = await Task.detached(priority: .userInitiated) {
             AXInspector.visibleElements(frontmostPID: pid, display: display)
         }.value
         guard isActive else { return }
 
-        let step = plan.steps[index]
         // A near-exact visible match wins; a looser one ("History" button for "Clear
         // History…") only if the target isn't an item in the app's menus.
         var visible = StepMatcher.find(step.target, in: elements, minimum: 0.95)
@@ -360,6 +394,7 @@ final class TutorialController {
                               screenshotHeight: encoded.height, context: context,
                               elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
         next.planTutorial = true
+        next.browser = AppLocator.defaultBrowserName()
         let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
         next.menuOutline = MenuOutline.relevant(menus, to: goal)
         // From text when Accessibility describes the screen (~1 s), else the screenshot.
@@ -445,9 +480,18 @@ final class TutorialController {
                                  screenshotHeight: Int(display.height), context: ScreenContext(appName: NSWorkspace.shared.frontmostApplication?.localizedName),
                                  elements: PromptElement.list(elements, geometry: geometry, question: goal, limit: 40))
         request.planTutorial = true
+        request.browser = AppLocator.defaultBrowserName()
         request.menuOutline = MenuOutline.relevant(menus, to: goal + " " + question)
         guard let reply = await Self.reply(from: provider, to: request, within: .seconds(15)) else { return nil }
         return TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+    }
+
+    /// The typed site is open (youtube.com → www.youtube.com/…), or for search text, any
+    /// new page has opened.
+    private static func typingDone(_ step: TutorialStep, page: String, before: String?) -> Bool {
+        guard let host = URL(string: page)?.host?.lowercased() else { return false }
+        if let typed = step.typedHost { return host == typed || host.hasSuffix("." + typed) }
+        return before != nil && page != before
     }
 
     private static func isApp(_ name: String, _ app: NSRunningApplication?) -> Bool {

@@ -273,3 +273,56 @@ struct FindVersusDoTests {
         #expect(CommandParser.looksLikeOrder("Refresh the page.") && !TutorialQuestion.isContentRequest("Refresh the page."))
     }
 }
+
+struct TypingStepTests {
+    @Test func typingStepsKeepTheirText() {
+        let plan = TutorialPlan.parse(#"{"speech": "s", "steps": [{"target": "Search or enter website name", "instruction": "Type youtube.com, then press Return", "app": "Safari", "type": "youtube.com"}, {"target": "Search", "instruction": "Click Search"}]}"#)!
+        #expect(plan.steps[0].typing == "youtube.com")
+        #expect(plan.steps[0].typedHost == "youtube.com")
+        #expect(plan.steps[1].typing == nil)
+        #expect(TutorialStep(target: "a", instruction: "b", typing: "www.YouTube.com/feed").typedHost == "youtube.com")
+        #expect(TutorialStep(target: "a", instruction: "b", typing: "lofi beats").typedHost == nil)
+    }
+
+    @Test(arguments: [("I want to watch YouTube", true), ("help me check my Gmail", true), ("I'd like to open a new tab", true),
+                      ("I want to know what this is", false), ("I want to understand this chart", false), ("what is YouTube", false)])
+    func wishes(_ text: String, _ expected: Bool) {
+        #expect(TutorialQuestion.asksForTutorial(text) == expected)
+    }
+}
+
+struct TypingFallbackTests {
+    @Test func typedTextComesFromTheInstruction() {
+        // Real qwen2.5vl:7b plans left "type" out.
+        let plan = TutorialPlan.parse(#"{"steps": [{"target": "Search or enter website name", "instruction": "Type youtube.com, then press Return"}, {"target": "File ▸ New Tab", "instruction": "Choose New Tab", "type": "menu"}, {"target": "Search or enter website name", "instruction": "Type mail.google.com", "app": "Safari"}, {"target": "Search or enter website name", "instruction": "Type the page's link"}]}"#)!
+        #expect(plan.steps.map(\.typing) == ["youtube.com", nil, nil, "mail.google.com", nil])  // File ▸ New Tab is two steps
+        #expect(TutorialPlan.typedText(in: "Type 'lofi beats' into the search field.") == "lofi beats")
+    }
+
+    @Test func shortcuts() {
+        #expect(TutorialStep(target: "⌘C", instruction: "").isShortcut)
+        #expect(TutorialStep(target: "⌘C", instruction: "").copiesToClipboard)
+        #expect(TutorialStep(target: "Command+V", instruction: "").isShortcut)
+        #expect(!TutorialStep(target: "Command+V", instruction: "").copiesToClipboard)
+        #expect(!TutorialStep(target: "New Note", instruction: "").isShortcut)
+        #expect(!TutorialStep(target: "Copy", instruction: "").isShortcut)
+    }
+}
+
+struct MenuPathTargetTests {
+    @Test func menuPathsBecomeSteps() {
+        let plan = TutorialPlan.parse(#"{"steps": [{"target": "Bookmarks ▸ Add Bookmark…", "instruction": "Click Add Bookmark…", "app": "Safari"}, {"target": "Format ▸ Font ▸ Bold", "instruction": "Format ▸ Font ▸ Bold"}]}"#)!
+        #expect(plan.steps.map(\.target) == ["Bookmarks", "Add Bookmark…", "Format", "Font", "Bold"])
+        #expect(plan.steps.map(\.instruction) == ["Open the Bookmarks menu", "Click Add Bookmark…", "Open the Format menu", "Open Font", "Choose Bold"])
+        #expect(plan.steps[0].app == "Safari")
+    }
+}
+
+struct RambleGuardTests {
+    @Test func reasoningInAStepDropsIt() {
+        let long = String(repeating: "Wait, the instruction says to copy it. ", count: 6)
+        let plan = TutorialPlan.parse(#"{"steps": [{"target": "Copy", "instruction": "Press ⌘C", "type": "keyboard"}, {"target": "⌘N", "instruction": "\#(long)"}]}"#)!
+        #expect(plan.steps.map(\.target) == ["Copy"])
+        #expect(plan.steps[0].typing == nil)
+    }
+}

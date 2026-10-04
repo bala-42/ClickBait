@@ -16,6 +16,13 @@ public protocol LLMProvider: Sendable {
     /// Called when the user starts talking, so slow-to-load models are ready by the
     /// time the question arrives. Must never send user content.
     func warmUp() async
+
+    /// How the model that answers questions about the screen writes positions.
+    var coordinateScale: CoordinateScale { get }
+}
+
+extension LLMProvider {
+    public var coordinateScale: CoordinateScale { .pixels }
 }
 
 public enum LLMError: LocalizedError, Equatable {

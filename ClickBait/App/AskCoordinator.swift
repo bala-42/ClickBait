@@ -774,7 +774,7 @@ final class AskCoordinator {
             return false
         }
         // Its first click must be findable (on screen or in the app's menus).
-        if StepMatcher.find(first.target, in: elements) == nil {
+        if StepMatcher.find(first.target, in: elements) == nil, !first.isShortcut {
             let pid = frontmostPID
             let inMenus = await Task.detached(priority: .userInitiated) {
                 AXInspector.menuPath(to: first.target, frontmostPID: pid) != nil
@@ -819,6 +819,7 @@ final class AskCoordinator {
                                  screenshotHeight: screenshot.height, context: context,
                                  elements: PromptElement.list(elements, geometry: geometry, question: question, limit: Self.maxListedElements))
         request.planTutorial = true
+        request.browser = AppLocator.defaultBrowserName()
         let pid = frontmostPID
         let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
         request.menuOutline = MenuOutline.relevant(menus, to: question)
@@ -1147,7 +1148,8 @@ final class AskCoordinator {
             DebugCaptureStore.saveReply(reply)
         }
 
-        var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed)
+        var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
+                                         scale: provider.coordinateScale)
         if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
         // An ⌥⌘ explanation is about the text or area, never about where to click (and a
         // snip's close-up has no screen coordinates anyway).
@@ -1258,7 +1260,8 @@ final class AskCoordinator {
             partsRequest.listParts = true
             let start = ContinuousClock.now
             guard let reply = await Self.reply(from: provider, to: partsRequest, within: .seconds(20)), !Task.isCancelled else { return }
-            let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height).response.parts
+            let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
+                                             scale: provider.coordinateScale).response.parts
             let stops = PartsTour.stops(parts, marked: view.marked)
             Log.ask.notice("Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
             guard !stops.isEmpty else { return }
@@ -1338,7 +1341,8 @@ final class AskCoordinator {
                                      screenshotHeight: encoded.height, context: context, locate: target)
             var reply = ""
             for try await chunk in provider.stream(request) { reply += chunk }
-            let found = ResponseParser.parse(reply, imageWidth: encoded.width, imageHeight: encoded.height).response.pointers.first
+            let found = ResponseParser.parse(reply, imageWidth: encoded.width, imageHeight: encoded.height,
+                                             scale: provider.coordinateScale).response.pointers.first
             guard let found else {
                 // Not in the close-up. Where Accessibility can see the rough spot (and it
                 // didn't match before), the guess was wrong; elsewhere keep it.

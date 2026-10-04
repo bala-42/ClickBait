@@ -15,8 +15,18 @@ public struct ScreenContext: Equatable, Sendable {
 }
 
 /// Everything a provider needs for one ask.
+/// How a model writes positions in an image. Qwen 2.5-VL uses the image's pixels;
+/// Qwen 3 / 3.5 use 0–1000 of its width and height whatever the prompt says.
+public enum CoordinateScale: Sendable, Equatable {
+    case pixels
+    case thousandths
+}
+
 public struct AskRequest: Sendable {
     public var question: String
+    /// Set by the provider for the model that answers: prompts describe positions (and
+    /// the element list) in this scale, and replies are converted back to pixels.
+    public var coordinateScale: CoordinateScale = .pixels
     /// JPEG of the downscaled screenshot (long edge ≤ 1280 px).
     public var screenshotJPEG: Data
     /// Pixel size of `screenshotJPEG`; pointer coordinates come back in this space.
@@ -45,6 +55,8 @@ public struct AskRequest: Sendable {
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.
     public var menuOutline: [String] = []
+    /// The user's web browser ("Safari"), for website steps in a tutorial plan.
+    public var browser: String?
     /// Check progress on a running tutorial (`Prompt.progressSystem`).
     public var tutorialCheck: (plan: TutorialPlan, expected: Int)?
     /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.

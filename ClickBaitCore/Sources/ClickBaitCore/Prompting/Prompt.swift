@@ -59,11 +59,13 @@ public enum Prompt {
 
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
-        if request.interpretOrder { return orderSystem }
-        if request.listParts { return partsSystem }
-        if request.planTutorial { return tutorialSystem }
-        if request.tutorialCheck != nil { return progressSystem }
-        return request.locate == nil ? system : locateSystem
+        let text: String
+        if request.interpretOrder { text = orderSystem }
+        else if request.listParts { text = partsSystem }
+        else if request.planTutorial { text = tutorialSystem }
+        else if request.tutorialCheck != nil { text = progressSystem }
+        else { text = request.locate == nil ? system : locateSystem }
+        return text
     }
 
     /// Turns a how-to into steps ClickBait walks the user through on their own screen.
@@ -71,7 +73,7 @@ public enum Prompt {
         You turn a how-to question into the exact clicks to do it in the app on the user's screen.
 
         Reply with ONLY one JSON object:
-        {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "...", "app": "..."}]}
+        {"speech": "One short sentence saying what they'll do.", "steps": [{"target": "...", "instruction": "...", "app": "...", "type": "..."}]}
 
         - List EVERY click from the screen as it is now to the finished task, in order — \
         usually 2 to 6. Opening a menu is a click; choosing an item in it is another; a \
@@ -95,7 +97,24 @@ public enum Prompt {
         Steps in an app that isn't on screen are your best guess; ClickBait checks them there.
         - If it all happens in a different Mac app than the one in front (Safari's history while \
         Notes is in front), give that app as "app" and leave "steps" empty: ClickBait opens it \
-        and plans there. Only Mac apps, never websites.
+        and plans there. "app" is always a Mac app, never a website.
+        - Typing is a step: "target" is the field to type in, "type" is exactly what to type, and \
+        the instruction says it ("Type youtube.com, then press Return"). Leave "type" out for clicks.
+        - Websites ("open YouTube", "I want to check Gmail"): the step is typing the address into \
+        the address bar of the user's web browser — "target" is that bar as named in the element \
+        list (Safari: "Search or enter website name"; Chrome: "Address and search bar"), "app" is \
+        the browser. Give an address only for a well-known site you're sure of (youtube.com, \
+        mail.google.com, wikipedia.org); otherwise "type" is the site's name, to search for it. \
+        ClickBait never opens websites or types for the user.
+
+        Examples (Safari in front):
+        "open YouTube" → {"speech": "Type YouTube's address.", "steps": [{"target": "Search or enter website name", \
+        "instruction": "Type youtube.com, then press Return", "app": "Safari", "type": "youtube.com"}]}
+        "copy this page's link into a new note" → {"speech": "Copy the link, then paste it into a new note.", "steps": [\
+        {"target": "Search or enter website name", "instruction": "Click the address bar", "app": "Safari"}, \
+        {"target": "⌘C", "instruction": "Press ⌘C to copy the link", "app": "Safari"}, \
+        {"target": "New Note", "instruction": "Click New Note", "app": "Notes"}, \
+        {"target": "⌘V", "instruction": "Press ⌘V to paste", "app": "Notes"}]}
         - If it can't be done with clicks on a Mac, reply {"speech": "<why, briefly>", "steps": []}.
         - If the user wants content rather than a task done — a poem, a summary, an explanation, \
         an answer, a translation — reply {"speech": "", "steps": []}: that's not a click task.
@@ -171,11 +190,21 @@ public enum Prompt {
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
+        let text = baseUserText(for: request)
+        // Qwen 3.5 answers on its 0–1000 scale whatever it's told; saying so made it
+        // refuse to point (19/39 vs 27/39). Only the element list is in its scale, and
+        // its header doesn't name a unit.
+        guard request.coordinateScale == .thousandths else { return text }
+        return text.replacingOccurrences(of: "at center x, y in screenshot pixels):", with: "at center x, y):")
+    }
+
+    private static func baseUserText(for request: AskRequest) -> String {
         if request.planTutorial {
             var lines = [request.screenshotJPEG.isEmpty
                 ? "No screenshot: plan from the app's menus and the on-screen elements below (they're what's on screen now)."
                 : "The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
             if let app = request.context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
+            if let browser = request.browser, !browser.isEmpty { lines.append("The user's web browser: \(browser)") }
             if let title = request.context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
             if !request.menuOutline.isEmpty {
                 lines.append("The app's menu bar (menu ▸ item):")
@@ -183,7 +212,7 @@ public enum Prompt {
             }
             if !request.elements.isEmpty {
                 lines.append("On-screen elements (id: kind \"name\" at x, y):")
-                lines.append(contentsOf: request.elements.map(\.line))
+                lines.append(contentsOf: request.elements.map { $0.line(for: request) })
             }
             lines.append("")
             lines.append("The user asked: \(request.question)")
@@ -226,7 +255,7 @@ public enum Prompt {
         if !request.elements.isEmpty {
             lines.append("")
             lines.append("Clickable elements on screen (id: kind \"name\" at center x, y in screenshot pixels):")
-            lines.append(contentsOf: request.elements.map(\.line))
+            lines.append(contentsOf: request.elements.map { $0.line(for: request) })
         }
         lines.append("")
         if !request.history.isEmpty {

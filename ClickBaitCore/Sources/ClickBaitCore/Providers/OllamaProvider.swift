@@ -2,19 +2,39 @@ import Foundation
 
 /// Local, private default: Ollama's `/api/chat` on this Mac.
 public struct OllamaProvider: LLMProvider {
-    public static let defaultModel = "qwen2.5vl:7b"
+    /// Looks at the screen, points, explains and plans walkthroughs: the more accurate
+    /// pointer (69% vs 46% on the parts benchmark) and the better planner (cross-app plans
+    /// Qwen 2.5-VL got wrong, in ~3–8 s).
+    public static let defaultModel = "qwen3.5:9b"
+    /// Reads orders ("stash these in my documents"): the same answers, ~0.4 s instead of ~1.8 s.
+    public static let defaultFastModel = "qwen2.5vl:7b"
     /// Privacy rule: Ollama is only ever reached on localhost.
     public static let baseURL = URL(string: "http://localhost:11434")!
 
     public let model: String
+    /// For order checks; nil uses `model` for everything.
+    public let fastModel: String?
     private let session: URLSession
 
-    public init(model: String, session: URLSession = .shared) {
+    public init(model: String, fastModel: String? = nil, session: URLSession = .shared) {
         self.model = model
+        self.fastModel = (fastModel?.isEmpty ?? true) || fastModel == model ? nil : fastModel
         self.session = session
     }
 
-    public var displayName: String { "Ollama (\(model))" }
+    public var displayName: String { fastModel.map { "Ollama (\(model) + \($0))" } ?? "Ollama (\(model))" }
+
+    public var coordinateScale: CoordinateScale { Self.coordinateScale(forModel: model) }
+
+    /// Qwen 3 and 3.5 (Qwen3-VL's grounding) give positions as 0–1000 of the image.
+    static func coordinateScale(forModel name: String) -> CoordinateScale {
+        name.lowercased().hasPrefix("qwen3") ? .thousandths : .pixels
+    }
+
+    /// Which model answers: order checks go to the fast one.
+    func model(for ask: AskRequest) -> String {
+        ask.interpretOrder ? (fastModel ?? model) : model
+    }
 
     private static let unreachable = "Ollama isn't running. Open the Ollama app, then try again."
 
@@ -48,20 +68,24 @@ public struct OllamaProvider: LLMProvider {
         guard status == 200 else { throw LLMError.http(status: status, message: "Ollama didn't list its models") }
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         let names = (json?["models"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
-        guard Self.isInstalled(model, among: names) else { throw LLMError.modelNotFound(model) }
+        for wanted in [model] + (fastModel.map { [$0] } ?? []) where !Self.isInstalled(wanted, among: names) {
+            throw LLMError.modelNotFound(wanted)
+        }
     }
 
     /// Loads the model into memory (an empty generate request), which can take ~10 s
     /// cold. Errors are ignored: the real request reports them properly.
     public func warmUp() async {
-        var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: 60)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // Same context size as real requests, or Ollama reloads the model for the first one.
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "model": model, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
-        ])
-        _ = try? await session.data(for: request)
+        for name in [model] + (fastModel.map { [$0] } ?? []) {
+            var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: 60)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // Same context size as real requests, or Ollama reloads the model for the first one.
+            request.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "model": name, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
+            ])
+            _ = try? await session.data(for: request)
+        }
     }
 
     /// `llava` matches `llava:latest`; tagged names must match exactly.
@@ -74,7 +98,10 @@ public struct OllamaProvider: LLMProvider {
         var request = URLRequest(url: Self.baseURL.appending(path: "api/chat"), timeoutInterval: 120)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: Self.chatBody(for: ask, model: model))
+        let answering = model(for: ask)
+        var ask = ask
+        ask.coordinateScale = Self.coordinateScale(forModel: answering)
+        request.httpBody = try JSONSerialization.data(withJSONObject: Self.chatBody(for: ask, model: answering))
         return request
     }
 
@@ -113,7 +140,8 @@ public struct OllamaProvider: LLMProvider {
                 "maxItems": TutorialPlan.maxSteps,
                 "items": [
                     "type": "object",
-                    "properties": ["target": ["type": "string"], "instruction": ["type": "string"], "app": ["type": "string"]],
+                    "properties": ["target": ["type": "string"], "instruction": ["type": "string"], "app": ["type": "string"],
+                                   "type": ["type": "string"]],
                     "required": ["target", "instruction"],
                 ] as [String: Any],
             ] as [String: Any],

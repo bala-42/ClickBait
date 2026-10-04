@@ -47,6 +47,7 @@ struct LiveOllamaTests {
         }
         if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_TUTORIAL"] != nil {
             request.planTutorial = true  // the tutorial planner (with the element list if CLICKBAIT_LIVE_ELEMENTS)
+            request.browser = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_BROWSER"]
         }
         if let app = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_APP"] { request.context.appName = app }
         if let list = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_ELEMENT_LIST"] {
