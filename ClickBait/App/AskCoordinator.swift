@@ -808,8 +808,10 @@ final class AskCoordinator {
         do { screenshot = try await encoding.value } catch { return false }
         tutorialReturnApp = nil
 
-        // The request names an app that isn't in front ("my Safari history"): open it first.
-        if let named = TutorialQuestion.mentionedApp(in: question, apps: Array(apps.keys)),
+        // The task's app isn't in front: open it first, then plan there. Either the request
+        // names it ("my Safari history") or it's a Mac setting (System Settings) — planning
+        // those from the app in front walked Finder's own "Settings…".
+        if let named = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys)),
            named.lowercased() != context.appName?.lowercased() {
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
             (capture, screenshot, elements) = ready
@@ -1163,7 +1165,7 @@ final class AskCoordinator {
         // to it first (green), take a fresh look, then point (blue).
         if snip == nil, selectedText == nil, history.isEmpty, TutorialQuestion.isLocatingRequest(question) {
             let apps = AppLocator.installed()
-            if let named = TutorialQuestion.mentionedApp(in: question, apps: Array(apps.keys)),
+            if let named = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys)),
                named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
                let ready = await openForTutorial(named, url: apps[named]) {
                 let screenshot = ready.1

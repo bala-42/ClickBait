@@ -150,8 +150,12 @@ public struct TutorialPlan: Equatable, Sendable {
             let verb = ImpliedPointer.normalized(step.instruction).split(separator: " ").first.map(String.init) ?? ""
             // "Open the Safari menu" is the app's own menu, not opening the app.
             let isMenu = ImpliedPointer.normalized(step.instruction).split(separator: " ").contains("menu")
-            if isInstalledApp(step.target), !isMenu, position == 0 || switching.contains(verb) || step.target.lowercased() == front {
-                current = step.target  // "Open Safari": ClickBait does that
+            // "System Settings…" in the Apple menu names the app too, ellipsis and all.
+            let appTarget = Self.withoutEllipsis(step.target)
+            if isInstalledApp(appTarget), !isMenu, position == 0 || switching.contains(verb) || appTarget.lowercased() == front {
+                current = Self.realApp(appTarget) ?? appTarget  // "Open Safari": ClickBait does that
+                // Opening the Apple menu only led to that item: ClickBait opens the app instead.
+                if let last = kept.last, Self.appleMenuNames.contains(last.target.lowercased()) { kept.removeLast() }
                 continue
             }
             if let named = step.app.flatMap(Self.realApp) { current = named }
@@ -162,6 +166,16 @@ public struct TutorialPlan: Equatable, Sendable {
         plan.app = kept.first?.app ?? (kept.isEmpty ? current : nil)
         if plan.app?.lowercased() == front { plan.app = nil }
         return plan
+    }
+
+    /// The Apple menu as plans name it.
+    static let appleMenuNames: Set = ["apple", "apple menu", "", "apple logo"]
+
+    /// "System Settings…" → "System Settings".
+    static func withoutEllipsis(_ target: String) -> String {
+        var name = target.trimmingCharacters(in: .whitespaces)
+        for suffix in ["…", "..."] where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }
+        return name.trimmingCharacters(in: .whitespaces)
     }
 
     /// The app name as it is on today's Macs, or nil for ClickBait itself (the model sees
@@ -323,6 +337,45 @@ public enum TutorialQuestion {
             words.removeFirst()
         }
         return words.first.map(contentVerbs.contains) ?? false
+    }
+
+    /// The app a walkthrough happens in, before any planning: the app the request names,
+    /// else System Settings for a Mac setting ("change my wallpaper", "turn on Night
+    /// Shift"). Planning from the app in front instead walked Finder's own "Settings…".
+    public static func taskApp(in text: String, apps: [String]) -> String? {
+        if let named = mentionedApp(in: text, apps: apps) { return named }
+        guard isSystemSetting(text) else { return nil }
+        return apps.first { $0.caseInsensitiveCompare("System Settings") == .orderedSame }
+    }
+
+    /// Things only System Settings changes. Whole words or phrases, so "display" in
+    /// "displayed" doesn't count; a request that names an app never gets here.
+    static let systemSettingTopics = [
+        "system settings", "system preferences", "mac settings", "mac s settings", "macbook settings",
+        "wallpaper", "desktop background", "desktop picture", "screen saver", "screensaver",
+        "displays", "display settings", "external display", "second display", "screen resolution",
+        "display resolution", "refresh rate", "brightness", "night shift", "true tone",
+        "bluetooth", "wi fi", "wifi", "vpn", "network settings", "personal hotspot",
+        "sound output", "sound input", "output device", "input device", "alert sound", "alert volume",
+        "startup sound", "notifications", "notification settings", "focus mode", "focus modes", "do not disturb",
+        "battery", "low power mode", "energy saver", "trackpad", "tap to click", "scroll direction",
+        "tracking speed", "mouse speed", "mouse settings", "key repeat", "keyboard brightness",
+        "keyboard backlight", "keyboard layout", "keyboard settings", "input source", "input sources",
+        "dark mode", "light mode", "appearance", "accent color", "accent colour", "highlight color",
+        "desktop and dock", "dock size", "hide the dock", "dock position", "dock magnification",
+        "menu bar", "hot corners", "mission control", "stage manager", "control center", "control centre",
+        "lock screen", "login items", "login password", "touch id", "apple account", "apple id", "icloud",
+        "privacy settings", "location services", "screen time", "software update", "macos update",
+        "update macos", "update my mac", "storage", "file sharing", "screen sharing", "family sharing",
+        "printers", "add a printer", "time machine", "date and time", "date time", "time zone",
+        "system language", "preferred language", "region settings", "accessibility", "voiceover",
+        "cursor size", "pointer size", "siri", "apple intelligence", "firewall", "filevault",
+        "default browser", "user account", "user accounts", "guest user", "startup disk",
+    ]
+
+    static func isSystemSetting(_ text: String) -> Bool {
+        let spoken = " " + ImpliedPointer.normalized(text) + " "
+        return systemSettingTopics.contains { spoken.contains(" " + $0 + " ") }
     }
 
     /// An installed app the request names ("clear my Safari history" → "Safari"): the
