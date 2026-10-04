@@ -60,8 +60,22 @@ public enum Prompt {
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
         if request.interpretOrder { return orderSystem }
+        if request.listParts { return partsSystem }
         return request.locate == nil ? system : locateSystem
     }
+
+    /// A second, focused look at a snip's close-up: just the named parts and where they are.
+    public static let partsSystem = """
+        You point out the named parts of what's in an image.
+
+        Reply with ONLY one JSON object, no other text:
+        {"parts": [{"x": X, "y": Y, "label": "name"}]}
+
+        - Up to 6 parts you can actually see, in a sensible order (big to small, or top to bottom).
+        - x and y are the CENTER of that part in this image's pixels, origin at the top-left.
+        - "label" is the part's proper name, 1–3 words (e.g. "Supraspinatus", "Optic chiasm", "Jupiter").
+        - If nothing in it has named parts, reply {"parts": []}.
+        """
 
     /// Text-only: map an order the rules didn't recognise onto one known action.
     public static let orderSystem = """
@@ -110,6 +124,13 @@ public enum Prompt {
 
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
+        if request.listParts {
+            return """
+                The image is \(request.screenshotWidth)×\(request.screenshotHeight) pixels.
+                It was just explained like this: "\(request.question)"
+                List its visible named parts with their positions.
+                """
+        }
         if request.interpretOrder {
             let app = request.context.appName.map { " (frontmost app: \($0))" } ?? ""
             return "The user said\(app): \"\(request.question)\""

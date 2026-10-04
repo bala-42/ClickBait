@@ -45,6 +45,11 @@ struct LiveOllamaTests {
             request.snip = .circled
             print("LIVE size \(w)x\(h)")
         }
+        if let explanation = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_PARTS"] {
+            // The background "list the parts" look.
+            request.listParts = true
+            request.question = explanation
+        }
         if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_DIAGRAM"] != nil {
             // A labelled diagram as the close-up (see SyntheticScreen.diagram for positions).
             let (jpeg, w, h) = try SyntheticScreen.diagram(labelled: ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_UNLABELLED"] == nil)

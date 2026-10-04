@@ -91,3 +91,15 @@ struct ScrubbedParsingTests {
         #expect(CoordinateScrubber.partial(#"The optic chiasm. Parts: {"x": 40"#) == "The optic chiasm.")
     }
 }
+
+struct PartsRequestTests {
+    @Test func partsRequestUsesTheFocusedPrompt() {
+        var request = AskRequest(question: "The rotator cuff, four muscles around the shoulder.", screenshotJPEG: .init(),
+                                 screenshotWidth: 1280, screenshotHeight: 870, context: ScreenContext())
+        request.listParts = true
+        #expect(Prompt.system(for: request) == Prompt.partsSystem)
+        #expect(Prompt.userText(for: request).contains("It was just explained like this: \"The rotator cuff"))
+        let parsed = ResponseParser.parse(#"{"parts": [{"x": 300, "y": 200, "label": "Supraspinatus"}]}"#, imageWidth: 1280, imageHeight: 870)
+        #expect(parsed.response.parts == [Pointer(x: 300, y: 200, label: "Supraspinatus")])
+    }
+}

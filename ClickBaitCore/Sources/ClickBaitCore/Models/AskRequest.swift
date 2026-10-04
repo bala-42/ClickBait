@@ -38,6 +38,9 @@ public struct AskRequest: Sendable {
     /// For snips: a small picture of the whole screen sent after the close-up, so the
     /// model knows what app and what surroundings the marked thing is in.
     public var contextJPEG: Data?
+    /// For snips whose explanation came back without parts: list them (`Prompt.partsSystem`).
+    /// `question` then holds the explanation, as a hint to what the image shows.
+    public var listParts = false
     /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.
     public var interpretOrder = false
 

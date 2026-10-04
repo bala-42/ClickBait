@@ -84,6 +84,32 @@ public struct OllamaProvider: LLMProvider {
     /// Replies are a few sentences plus maybe some code. A cap stops a runaway reply
     /// (one ran to 10,000 characters and 2 minutes) from blocking the next question.
     static let maxReplyTokens = 800
+    /// Six parts fit easily; the 7B model otherwise repeats "Optic chiasm" until the cap.
+    static let partsReplyTokens = 320
+
+    static func options(for ask: AskRequest) -> [String: Any] {
+        var options: [String: Any] = ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens]
+        if ask.listParts { options["num_predict"] = partsReplyTokens }
+        return options
+    }
+
+    /// The exact shape of a parts reply, enforced by Ollama's structured output: numbers
+    /// for x and y, a name for each, at most six — no garbled positions, no endless lists.
+    static var partsSchema: [String: Any] { [
+        "type": "object",
+        "properties": [
+            "parts": [
+                "type": "array",
+                "maxItems": 6,
+                "items": [
+                    "type": "object",
+                    "properties": ["x": ["type": "number"], "y": ["type": "number"], "label": ["type": "string"]],
+                    "required": ["x", "y", "label"],
+                ] as [String: Any],
+            ] as [String: Any],
+        ],
+        "required": ["parts"],
+    ] }
 
     static func chatBody(for ask: AskRequest, model: String) -> [String: Any] {
         var message: [String: Any] = ["role": "user", "content": Prompt.userText(for: ask)]
@@ -92,10 +118,10 @@ public struct OllamaProvider: LLMProvider {
         return [
             "model": model,
             "stream": true,
-            "format": "json",
+            "format": ask.listParts ? partsSchema as Any : "json",
             // Keep the model in memory between questions; loading takes seconds.
             "keep_alive": "15m",
-            "options": ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens],
+            "options": options(for: ask),
             "messages": [["role": "system", "content": Prompt.system(for: ask)]]
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
                 + [message],

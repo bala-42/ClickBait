@@ -1024,12 +1024,15 @@ final class AskCoordinator {
         // model alone, right only about half the time on such images, so every pill is
         // marked approximate: "~ supraspinatus".
         var tour: [ScreenPointer] = []
+        var needsPartsLook = false
         if snip != nil, let memory = snipMemory, let view = memory.view {
             var text: [TextBox] = []
             if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
             let candidates = parsed.response.parts + snipPointers
             let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
             let labelled = !printed.isEmpty && printed.count * 2 >= max(candidates.count, 1)
+            // Nothing named at all in a first explanation: a focused second look follows.
+            needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
             if !labelled {
                 let stops = PartsTour.stops(candidates, marked: view.marked)
                 tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) }
@@ -1045,6 +1048,25 @@ final class AskCoordinator {
         }
         onAnswer?(parsed.response, pointers)
         if !tour.isEmpty { onTour?(tour) }
+
+        // The explanation came back without parts (a 7B model often forgets them while
+        // writing): ask once more, just for the parts, while the user reads.
+        if needsPartsLook, let memory = snipMemory, let view = memory.view, let provider = self.provider {
+            isAnswering = false
+            isRefining = true
+            defer { isRefining = false }
+            var partsRequest = AskRequest(question: parsed.response.speech, screenshotJPEG: memory.closeUp.jpeg,
+                                          screenshotWidth: memory.closeUp.width, screenshotHeight: memory.closeUp.height,
+                                          context: context)
+            partsRequest.listParts = true
+            let start = ContinuousClock.now
+            guard let reply = await Self.reply(from: provider, to: partsRequest, within: .seconds(20)), !Task.isCancelled else { return }
+            let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height).response.parts
+            let stops = PartsTour.stops(parts, marked: view.marked)
+            Log.ask.notice("Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
+            guard !stops.isEmpty else { return }
+            onTour?(stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) })
+        }
 
         // Pointers no accessibility element backs up: the triangle is already on its
         // way to the rough spot; take a sharp, zoomed-in look and nudge it if needed.
