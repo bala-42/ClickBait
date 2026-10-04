@@ -514,3 +514,11 @@ struct CloseElementTests {
         #expect(InstantAnswer.pickedID(in: #"{"id": 0}"#) == nil)
     }
 }
+
+struct WhereToLookTests {
+    @Test(arguments: [("Show me the share button in Safari", "share"), ("where's the refresh button on the toolbar", "refresh"),
+                      ("point at the close button at the top", "close"), ("where is sign in", "sign in")])
+    func dropsWhereToLook(_ question: String, _ expected: String) {
+        #expect(InstantAnswer.locateTarget(in: question) == expected)
+    }
+}

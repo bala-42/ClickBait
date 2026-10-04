@@ -30,6 +30,10 @@ public enum InstantAnswer {
               let opener = locatingOpeners.first(where: { text.hasPrefix($0 + " ") }) else { return nil }
         var words = text.dropFirst(opener.count + 1).split(separator: " ").map(String.init)
         if words.first == "how" { return nil }  // "show me how to…" is a walkthrough
+        // "… in Safari", "… on the toolbar", "… at the top": where to look, not the name.
+        if let cut = words.lastIndex(where: { ["in", "on", "at"].contains($0) }), cut > 0, (2...4).contains(words.count - cut) {
+            words = Array(words[..<cut])
+        }
         while let last = words.last, thingWords.contains(last) { words.removeLast() }
         let target = words.joined(separator: " ")
         return target.isEmpty || words.count > 5 ? nil : target

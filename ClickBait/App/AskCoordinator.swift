@@ -1116,6 +1116,19 @@ final class AskCoordinator {
         }
         isAnswering = true
         defer { isAnswering = false }
+        // "… in Safari" while another app is in front: look at Safari's buttons, not the
+        // front app's (the first "show me the share button in Safari" looked in the wrong app).
+        var elements = elements
+        if snip == nil, selectedText == nil,
+           let named = TutorialQuestion.mentionedApp(in: question, apps: NSWorkspace.shared.runningApplications.compactMap(\.localizedName)),
+           named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
+           let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == named }) {
+            let theirs = await Self.elements(in: capture, frontmostPID: app.processIdentifier)
+            if !theirs.isEmpty {
+                elements = theirs
+                Log.ask.notice("Looking in the app the question names (\(theirs.count, privacy: .public) elements)")
+            }
+        }
         // "Where's the Share button?" with exactly one element named Share on screen: point
         // now (~0.1 s), not after the model (~8 s). The model still answers in words; its own
         // pointers are only used when there was no exact, single match.
