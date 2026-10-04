@@ -34,13 +34,15 @@ final class ChatController {
     private var panel: NSPanel?
 
     var isOpen: Bool { panel != nil }
-    /// The companion's point now (AppKit): the card shrinks back into it on closing.
+    /// The centre of the companion's triangle now (AppKit): the card shrinks back into it
+    /// on closing.
     var companionPoint: (() -> CGPoint)?
-    /// Where the companion was when the chat opened.
+    /// Where the logo opened: the card grows and shrinks around it.
     private var origin: CGPoint?
 
-    /// `topLeft` in global AppKit points (where the companion's card was).
-    func open(at topLeft: CGPoint) {
+    /// Opens with the header logo centred on `logoCenter` (global AppKit points): the
+    /// centre of the companion's triangle, so the two line up exactly.
+    func open(logoAt logoCenter: CGPoint) {
         closeNow()
         model.messages = []
         model.draft = ""
@@ -67,15 +69,16 @@ final class ChatController {
 
         model.onCardSizeChange = { [weak self] in self?.fitToCard() }
         self.panel = panel
-        origin = companionPoint?() ?? topLeft
-        place(topLeft: topLeft)
+        origin = logoCenter
+        place(topLeft: CGPoint(x: logoCenter.x - ChatView.logoCenter.x, y: logoCenter.y + ChatView.logoCenter.y))
+        aim(at: logoCenter, in: panel.frame)
         panel.orderFrontRegardless()
     }
 
-    /// Opens an empty chat at `topLeft` with the cursor in the text field, ready to
-    /// type. Takes the keyboard without activating ClickBait, like Spotlight.
-    func openForTyping(at topLeft: CGPoint) {
-        open(at: topLeft)
+    /// Opens an empty chat (logo on `logoCenter`) with the cursor in the text field,
+    /// ready to type. Takes the keyboard without activating ClickBait, like Spotlight.
+    func openForTyping(logoAt logoCenter: CGPoint) {
+        open(logoAt: logoCenter)
         panel?.makeKeyAndOrderFront(nil)
         model.focusRequest += 1
     }

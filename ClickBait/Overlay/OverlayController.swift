@@ -57,7 +57,15 @@ final class OverlayController {
         model.bubble = .explaining(excerpt: selectedText)
     }
 
-    /// Where a chat bubble should open: where the companion's card sits now.
+    /// The centre of the companion's triangle at rest beside the cursor (global AppKit),
+    /// using the same placement as the companion itself, edge flips included. The chat's
+    /// logo opens exactly here.
+    var companionTriangleCenter: CGPoint {
+        let topLeft = restingTopLeft(for: NSEvent.mouseLocation)
+        return CGPoint(x: topLeft.x + Self.triangleInset, y: topLeft.y - Self.triangleInset)
+    }
+
+    /// Where a confirmation should open: where the companion's card sits now.
     var companionTopLeft: CGPoint {
         let mouse = anchor ?? NSEvent.mouseLocation
         return CGPoint(x: mouse.x + Self.cursorClearance.width + 4, y: mouse.y - Self.cursorClearance.height - 4)
@@ -287,9 +295,14 @@ final class OverlayController {
     /// companion's real size and the rest of the canvas can hang off-screen harmlessly.
     private func moveBubble(to mouse: NSPoint) {
         guard let stage = bubbleStage else { return }
+        let topLeft = restingTopLeft(for: mouse)
+        stage.setOrigin(NSPoint(x: topLeft.x, y: topLeft.y - OverlayModel.bubbleCanvas.height), anchor: mouse)
+    }
+
+    /// Top-left corner of the companion beside `mouse`, in AppKit coordinates (y up).
+    private func restingTopLeft(for mouse: NSPoint) -> NSPoint {
         let content = model.bubbleSize
         let gap = Self.cursorClearance
-        // Top-left corner of the companion, in AppKit coordinates (y up).
         var topLeft = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height)
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
             let bounds = screen.visibleFrame
@@ -298,7 +311,7 @@ final class OverlayController {
             topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
             topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
         }
-        stage.setOrigin(NSPoint(x: topLeft.x, y: topLeft.y - OverlayModel.bubbleCanvas.height), anchor: mouse)
+        return topLeft
     }
 
     /// Strawberry Red while the user marks part of the screen (hold ⌥⌘).

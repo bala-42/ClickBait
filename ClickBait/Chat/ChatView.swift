@@ -10,6 +10,15 @@ struct ChatView: View {
 
     static let width: CGFloat = 520
     static let corner: CGFloat = 26
+    /// Header layout, shared with ChatController so the logo can open exactly on the
+    /// companion's triangle.
+    private static let headerLeading: CGFloat = 16
+    private static let headerTop: CGFloat = 12
+    private static let headerRowHeight: CGFloat = 20
+    /// The logo's centre, measured from the card's top-left (y down).
+    static var logoCenter: CGPoint {
+        CGPoint(x: headerLeading + headerRowHeight / 2, y: headerTop + headerRowHeight / 2)
+    }
     private static let maxTranscriptHeight: CGFloat = 380
     @State private var transcriptHeight: CGFloat = 0
     @State private var shown = false
@@ -47,10 +56,10 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            // Same colour state as the companion: orange while answering, blue otherwise.
+            // Same colour state as the companion: marigold while answering, blue
+            // otherwise. Full size and resting angle, so it sits exactly on the companion.
             CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: model.isBusy)
-                .scaleEffect(0.8)
-                .frame(width: 20, height: 20)
+                .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
             Text("ClickBait")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -69,8 +78,9 @@ struct ChatView: View {
             .help("Close (Esc)")
             .accessibilityLabel("Close chat")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .frame(height: Self.headerRowHeight)
+        .padding(.horizontal, Self.headerLeading)
+        .padding(.top, Self.headerTop)
         .padding(.bottom, 4)
     }
 

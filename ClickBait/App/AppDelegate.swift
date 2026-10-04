@@ -59,8 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatOpenForTyping = { [weak self] in
             guard let self else { return }
             overlay.endGuide()
-            let mouse = NSEvent.mouseLocation
-            chat.openForTyping(at: CGPoint(x: mouse.x + 12, y: mouse.y - 12))
+            chat.openForTyping(logoAt: overlay.companionTriangleCenter)
         }
         coordinator.onChatFocus = { [weak self] in self?.chat.focus() }
         escape.start()
@@ -81,13 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             closeChat()
             return true
         }
-        chat.companionPoint = { NSEvent.mouseLocation }  // the companion rides the cursor
+        chat.companionPoint = { [weak self] in self?.overlay.companionTriangleCenter ?? NSEvent.mouseLocation }
         chat.model.onSend = { [weak self] text in self?.coordinator.sendTyped(text) }
         chat.model.onClose = { [weak self] in self?.closeChat() }
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
-            chat.open(at: overlay.companionTopLeft)
+            chat.open(logoAt: overlay.companionTriangleCenter)
             chat.model.addUser(firstMessage)
             chat.model.isBusy = true
         }

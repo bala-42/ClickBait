@@ -507,7 +507,7 @@ final class AskCoordinator {
            !isUnknownApp(command) {
             Log.ask.notice("Command recognised: \(command.name, privacy: .public)")
             encoding.cancel()
-            await perform(command)
+            _ = await perform(command)  // the outcome is already shown and spoken
             return
         }
 
