@@ -1137,7 +1137,7 @@ final class AskCoordinator {
             // rather than read the screenshot (~9 s). Nothing fits → the screenshot as before.
             let listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: Int(capture.displayFrame.width),
                                                                                    imageHeight: Int(capture.displayFrame.height)),
-                                            question: question, limit: Self.maxListedElements)
+                                            question: question, limit: 80)  // text only: a longer list is cheap
             var pick = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
                                   context: context, elements: listed)
             pick.pickElement = true
@@ -1151,7 +1151,7 @@ final class AskCoordinator {
                 Log.ask.notice("Picked from the element list in \(String(describing: ContinuousClock.now - pickStart), privacy: .public)")
                 onInstantPointer?(instant!)
             } else {
-                Log.ask.notice("Nothing in the element list fits (\(String(describing: ContinuousClock.now - pickStart), privacy: .public)); looking at the screen")
+                Log.ask.notice("Nothing among \(listed.count, privacy: .public) listed elements fits (\(String(describing: ContinuousClock.now - pickStart), privacy: .public)); looking at the screen")
             }
         } else if !targets.isEmpty {
             Log.ask.notice("Instant pointer: no single exact match among \(elements.count, privacy: .public) elements; asking the model")

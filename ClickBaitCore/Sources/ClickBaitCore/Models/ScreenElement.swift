@@ -67,7 +67,10 @@ public struct PromptElement: Equatable, Sendable {
             guard seen.insert("\(element.label)|\(Int(center.x / 4))|\(Int(center.y / 4))").inserted else { continue }
             let labelWords = ImpliedPointer.normalized(element.label).split(separator: " ").filter { $0.count >= 3 }
             let overlap = labelWords.isEmpty ? 0 : Double(labelWords.filter(questionWords.contains).count) / Double(labelWords.count)
-            let tier = overlap > 0 ? 0 : element.role == "AXMenuItem" ? 1 : 2
+            // Open menus and text boxes come right after name matches: "where do I type?"
+            // names neither, and a message box low in the window was cut off by the limit.
+            let textBox = ["AXTextArea", "AXTextField", "AXSearchField", "AXComboBox"].contains(element.role)
+            let tier = overlap > 0 ? 0 : element.role == "AXMenuItem" || textBox ? 1 : 2
             ranked.append((element, center, tier, overlap, order))
         }
         let chosen = ranked
