@@ -719,6 +719,7 @@ final class AskCoordinator {
                                elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
         let asking = TutorialQuestion.asksForTutorial(question)
         let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
+            && !TutorialQuestion.isLocatingRequest(question)  // "show me the refresh button": blue pointing
         guard asking || ordering, let provider, let tutorial else { return false }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()

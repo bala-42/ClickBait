@@ -164,6 +164,20 @@ public enum TutorialQuestion {
         return phrases.contains { text.hasPrefix($0) || text.contains(" " + $0) }
     }
 
+    /// "Where's the refresh button?", "show me the refresh button", "point at Share":
+    /// finding a thing (blue, one pointer) — not doing a task (lavender). "Show me how
+    /// to…" is a task and is caught by `asksForTutorial` first.
+    public static func isLocatingRequest(_ text: String) -> Bool {
+        var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
+        while let first = words.first, ["please", "can", "could", "you", "would", "will", "hey", "clickbait"].contains(first) {
+            words.removeFirst()
+        }
+        let joined = words.joined(separator: " ")
+        if joined.hasPrefix("show me how") || joined.hasPrefix("show me the steps") { return false }
+        let starts = ["where", "wheres", "show me", "point", "find", "highlight", "locate", "which one is", "which is"]
+        return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
+    }
+
     /// Orders for content, not clicks: "write me a poem", "summarise this", "explain
     /// that". They get a normal answer — never a tutorial.
     static let contentVerbs: Set<String> = ["write", "summarise", "summarize", "explain", "translate", "describe", "draft",

@@ -189,3 +189,21 @@ struct TutorialLabelTests {
         #expect(plan?.steps.first?.instruction == "Click Share")
     }
 }
+
+struct FindVersusDoTests {
+    @Test(arguments: [
+        // Finding a thing → blue pointing.
+        ("Where is the refresh button?", true, false), ("Show me the refresh button.", true, false),
+        ("Point at the share button", true, false), ("Find the bookmarks bar", true, false),
+        // Doing a task → lavender tutorial.
+        ("Refresh the page.", false, false), ("How do I refresh?", false, true), ("Show me how to refresh this", false, true),
+    ])
+    func findingVersusDoing(_ text: String, _ locating: Bool, _ tutorial: Bool) {
+        #expect(TutorialQuestion.isLocatingRequest(text) == locating)
+        #expect(TutorialQuestion.asksForTutorial(text) == tutorial)
+    }
+
+    @Test func refreshThePageIsAnOrder() {
+        #expect(CommandParser.looksLikeOrder("Refresh the page.") && !TutorialQuestion.isContentRequest("Refresh the page."))
+    }
+}
