@@ -1021,8 +1021,8 @@ final class AskCoordinator {
         if state == .thinking || state == .speaking { state = .idle }
         // Snips: tour the named parts of what was marked — but only when the names aren't
         // already printed in the image (then a tour adds nothing). Positions come from the
-        // model alone, which is right only about half the time on such images, so every
-        // stop says "probably …".
+        // model alone, right only about half the time on such images, so every pill is
+        // marked approximate: "~supraspinatus".
         var tour: [ScreenPointer] = []
         if snip != nil, let memory = snipMemory, let view = memory.view {
             var text: [TextBox] = []
@@ -1031,13 +1031,12 @@ final class AskCoordinator {
             let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
             let labelled = !printed.isEmpty && printed.count * 2 >= max(candidates.count, 1)
             if !labelled {
-                let stops = history.isEmpty ? (PartsTour.plan(candidates, marked: view.marked) ?? [])
-                                            : Array(candidates.prefix(PartsTour.maxParts))
-                tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "probably " + $0.label.lowercased())) }
+                let stops = PartsTour.stops(candidates, marked: view.marked)
+                tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~" + $0.label.lowercased())) }
             }
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
-                (\(labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) as best guesses
+                (\(labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) (~)
                 """)
         }
         if !chatShown, pointers.isEmpty {

@@ -1,39 +1,19 @@
-/// Decides whether the named parts of a snipped thing are trustworthy enough for the
-/// companion to tour them. There's nothing to check positions inside an image against
-/// (Accessibility doesn't see into pictures), so this keeps only plausible layouts:
-/// inside the marked area, distinct names, not piled on top of each other.
+/// The stops of a snip's parts tour: the parts inside (or just outside) the marked
+/// area, each name once, at most `maxParts`. There's nothing to check positions inside
+/// an image against, so the pills mark them as approximate ("~…").
 public enum PartsTour {
     public static let maxParts = 6
-    /// Parts closer than this fraction of the marked area's diagonal count as piled up.
-    static let minSpacingFraction = 0.06
 
-    /// `marked` is the area the user circled or boxed, in the same pixels as the parts
-    /// (the close-up's). Returns the parts to tour in order, or nil for "list only".
-    public static func plan(_ parts: [Pointer], marked: Rect) -> [Pointer]? {
-        // A little slack: labels often sit just outside what was circled.
+    /// `marked` is the area the user circled or boxed, in the parts' pixels.
+    public static func stops(_ parts: [Pointer], marked: Rect) -> [Pointer] {
+        // Some slack: labels and edges often sit just outside what was circled.
         let slackX = marked.width * 0.1, slackY = marked.height * 0.1
         var seen = Set<String>()
-        let usable = parts.filter { part in
+        return Array(parts.filter { part in
             let inside = part.x >= marked.minX - slackX && part.x <= marked.maxX + slackX
                 && part.y >= marked.minY - slackY && part.y <= marked.maxY + slackY
             return inside && seen.insert(part.label.lowercased()).inserted
-        }.prefix(maxParts)
-        guard usable.count >= 2 else { return nil }
-
-        let diagonal = (marked.width * marked.width + marked.height * marked.height).squareRoot()
-        let minSpacing = diagonal * minSpacingFraction
-        var crowded = 0
-        let list = Array(usable)
-        for i in list.indices {
-            let tooClose = list.indices.contains { j in
-                j != i && ((list[i].x - list[j].x) * (list[i].x - list[j].x) + (list[i].y - list[j].y) * (list[i].y - list[j].y)).squareRoot() < minSpacing
-            }
-            if tooClose { crowded += 1 }
-        }
-        // A model that can't really place the parts tends to stack them: tour only when
-        // most of them stand apart.
-        guard crowded * 2 <= list.count else { return nil }
-        return list
+        }.prefix(maxParts))
     }
 }
 

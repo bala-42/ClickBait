@@ -11,23 +11,16 @@ struct PartsTourTests {
         #expect(response.displayText == "The rotator cuff, four muscles that hold the shoulder.")  // pointed at, not listed
     }
 
-    @Test func toursSpreadOutPartsInsideTheMarkedArea() {
+    @Test func stopsAreThePartsInsideTheMarkedArea() {
         let parts = [Pointer(x: 200, y: 150, label: "Subscapularis"), Pointer(x: 400, y: 200, label: "Supraspinatus"),
-                     Pointer(x: 550, y: 350, label: "Infraspinatus"), Pointer(x: 650, y: 450, label: "Teres minor")]
-        #expect(PartsTour.plan(parts, marked: marked)?.count == 4)
+                     Pointer(x: 900, y: 150, label: "Far away"), Pointer(x: 410, y: 205, label: "supraspinatus")]
+        #expect(PartsTour.stops(parts, marked: marked).map(\.label) == ["Subscapularis", "Supraspinatus"])
     }
 
-    @Test func dropsOutsidersAndDuplicates() {
-        let parts = [Pointer(x: 200, y: 150, label: "A"), Pointer(x: 900, y: 150, label: "Far away"),
-                     Pointer(x: 500, y: 400, label: "B"), Pointer(x: 520, y: 380, label: "b")]
-        #expect(PartsTour.plan(parts, marked: marked)?.map(\.label) == ["A", "B"])
-    }
-
-    @Test func pileUpsAreListedNotToured() {
-        // Real failure mode: a model that can't place parts stacks them in one spot.
-        let parts = (0..<5).map { Pointer(x: 400 + Double($0) * 5, y: 300, label: "Part \($0)") }
-        #expect(PartsTour.plan(parts, marked: marked) == nil)
-        #expect(PartsTour.plan([Pointer(x: 300, y: 300, label: "Only one")], marked: marked) == nil)
+    @Test func evenOnePartIsPointedAt() {
+        #expect(PartsTour.stops([Pointer(x: 300, y: 300, label: "Liver")], marked: marked).count == 1)
+        let many = (0..<9).map { Pointer(x: 150 + Double($0) * 50, y: 300, label: "Part \($0)") }
+        #expect(PartsTour.stops(many, marked: marked).count == PartsTour.maxParts)
     }
 }
 

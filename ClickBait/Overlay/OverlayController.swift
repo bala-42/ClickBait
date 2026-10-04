@@ -280,9 +280,9 @@ final class OverlayController {
 
     private var guide: Guide?
     /// Gliding to a target: eases in, slows down and settles softly (about half a second).
-    private static let glideSpring = Spring(period: 0.55, damping: 0.88)
+    private static let glideSpring = Spring(period: 0.6, damping: 1)  // critically damped: no overshoot
     /// Turning: a little quicker than the glide so the tip leads.
-    private static let turnSpring = Spring(period: 0.4, damping: 0.85)
+    private static let turnSpring = Spring(period: 0.45, damping: 1)
     /// The angle the triangle is turning toward, and how fast it's turning.
     private var wantedAngle = CompanionTriangle.restingAngle
     private var angleVelocity = 0.0
@@ -426,9 +426,10 @@ final class OverlayController {
         if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
 
         // Point the vertex at the target (0° = up, clockwise; AppKit's y points up).
-        if hypot(point.x - next.x, point.y - next.y) > 1 {
-            wantedAngle = atan2(point.x - next.x, point.y - next.y) * 180 / .pi
-        }
+        // One heading per stop — from where the triangle will rest toward the target —
+        // so it turns once and holds still (aiming from its moving position made the tip
+        // wobble as it arrived).
+        wantedAngle = atan2(-guide.approach.dx, -guide.approach.dy) * 180 / .pi
 
         bubblePanel?.setFrameOrigin(NSPoint(x: next.x - Self.triangleInset,
                                             y: next.y + Self.triangleInset - (bubblePanel?.frame.height ?? 0)))
