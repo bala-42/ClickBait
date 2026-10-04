@@ -52,3 +52,12 @@ struct TutorialTests {
         #expect(OllamaProvider.schema(for: planning) != nil)
     }
 }
+
+struct TutorialPaddingTests {
+    @Test func repeatedStepsAreDropped() {
+        let raw = #"{"speech": "s", "steps": [{"target": "History", "instruction": "Open History"}, {"target": "Clear History…", "instruction": "Choose Clear History…"}, {"target": "Clear History", "instruction": "Click Clear History"}, {"target": "History", "instruction": "Open History again"}]}"#
+        // "Clear History…" (the menu item) and "Clear History" (the dialog's button) are two
+        // real steps in Safari; only the repeated "History" is padding.
+        #expect(TutorialPlan.parse(raw)?.steps.map(\.target) == ["History", "Clear History…", "Clear History"])
+    }
+}

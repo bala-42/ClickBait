@@ -77,6 +77,8 @@ public enum Prompt {
         usually 2 to 6. Opening a menu is a click; choosing an item in it is another; a \
         button in the dialog that then appears is another. Example for "export this as a \
         PDF" in an editor: File → Export as PDF… → Save (three steps).
+        - Stop at the click that finishes the task. Never add steps after it, and never \
+        repeat a step.
         - Each step is ONE click. "target" is the exact visible name of what to click \
         (a menu, menu item, button, tab or field), as it is written in the app — prefer names \
         from the list of on-screen elements when given. "instruction" is a short imperative \

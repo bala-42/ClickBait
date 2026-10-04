@@ -80,6 +80,7 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
     }
     let taken = MainActor.assumeIsolated { () -> Bool in
         guard interceptor.isBusy() else { return false }
+        Log.input.notice("Esc taken from the front app (ClickBait busy)")
         DispatchQueue.main.async { interceptor.onEscape() }
         return true
     }

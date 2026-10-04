@@ -43,7 +43,11 @@ public struct TutorialPlan: Equatable, Sendable {
             return TutorialStep(target: target, instruction: instruction.isEmpty ? "Click \(target)" : instruction)
         }
         let intro = (object["speech"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return TutorialPlan(intro: intro, steps: Array(steps.prefix(maxSteps)))
+        // Padding a small model adds when it runs out of real steps: the same target
+        // again (from anywhere earlier in the plan — a loop).
+        var seen = Set<String>()
+        let distinct = steps.filter { seen.insert($0.target.lowercased().replacingOccurrences(of: "...", with: "…")).inserted }
+        return TutorialPlan(intro: intro, steps: Array(distinct.prefix(maxSteps)))
     }
 
     /// `button "New Note" at (300, 60)` → `New Note` (models copy element-list lines).

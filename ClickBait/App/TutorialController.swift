@@ -46,6 +46,9 @@ final class TutorialController {
     private var lastSample: [UInt8]?
     private var screenChangedAt: Date?
     private var lastModelCheck = Date.distantPast
+    /// When the user last completed a step by clicking: if the next target doesn't show
+    /// up right after, the click may have finished the task (a dialog closing).
+    private var clickedStepAt: Date?
     private var checking = false
     private var menuPaths: [Int: [String]] = [:]
     /// Steps whose menu search already ran (found or not): it isn't repeated every tick.
@@ -165,6 +168,10 @@ final class TutorialController {
             return
         }
 
+        // Keep a recent screen sample at all times, so a change (a dialog closing) shows
+        // up the moment it happens rather than after a fresh baseline.
+        if tick % 4 == 0 { await sampleScreen() }
+
         guard refreshNow || tick % 2 == 0 else { return }
         let pid = front?.processIdentifier
         let display = Self.displayUnderMouse()
@@ -208,10 +215,17 @@ final class TutorialController {
             pointingAtMenu = false
             overlay.tutorialHint(instruction)
         }
-        await sampleScreen()
-        if let since = targetMissingSince, Date().timeIntervalSince(since) > 2, !checking,
-           Date().timeIntervalSince(lastModelCheck) > Self.modelCheckInterval,
-           screenChangedAt.map({ Date().timeIntervalSince($0) < 10 }) ?? false || Date().timeIntervalSince(since) > 8 {
+        guard let since = targetMissingSince, !checking else { return }
+        let missingFor = Date().timeIntervalSince(since)
+        // Right after a step's click and the next target nowhere: maybe that click
+        // finished the task. Ask at once instead of waiting.
+        if let clicked = clickedStepAt, Date().timeIntervalSince(clicked) < 4, missingFor > 1.2 {
+            clickedStepAt = nil
+            await askModel()
+            return
+        }
+        if missingFor > 2, Date().timeIntervalSince(lastModelCheck) > Self.modelCheckInterval,
+           screenChangedAt.map({ Date().timeIntervalSince($0) < 10 }) ?? false || missingFor > 8 {
             await askModel()
         }
     }
@@ -233,6 +247,7 @@ final class TutorialController {
         pointingAtMenu = false
         targetMissingSince = nil
         Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) of \(self.plan.steps.count, privacy: .public) (\(reason, privacy: .public))")
+        clickedStepAt = reason == "clicked" ? Date() : nil
         onChecklist?(checklistText)
         if index >= plan.steps.count {
             needsContinuation = true  // check it's really done; plan the rest if not
