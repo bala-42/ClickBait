@@ -159,6 +159,14 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 
 **Suggested build order:** (1) plan prompt + step matcher in core with tests and live checks; (2) walkthrough loop for element-list steps only (native apps); (3) vision fallback with verification; (4) re-planning and chat step list; (5) spoken steps.
 
+### Parts tour for snips (tried, removed 2026-10-04)
+Idea: after a red snip explanation, the companion tours the marked thing's named parts ("subscapularis", "supraspinatus"…). Built once (fbee451) and reverted (f2b173c):
+- Labelled diagrams: placing parts by their printed labels (Apple Vision text recognition) was accurate, but a tour of names already on screen is useless.
+- Unlabelled images (where a tour would teach something): scored on five real images (shoulder anatomy, a circuit, the visual pathway, an Ohm's-law worksheet, the solar system), one "find X" locate per part, a part counted right if its point fell on the right structure:
+  - qwen2.5vl:7b: 18/39 (46%), ~3 s per part. One-call variant: mis-recognised the shoulder as the ear.
+  - gemma3:12b: 7/39 (18%), ~5–6 s per part; it answers the image centre when unsure (no pixel grounding).
+- Bar for building it: ~80%. Revisit only with a model trained for grounding that fits in 24 GB (e.g. a newer Qwen-VL); `LiveOllamaTests` takes `CLICKBAIT_LIVE_IMAGE=<file>` + `CLICKBAIT_LIVE_LOCATE=<part>` (+ `CLICKBAIT_OLLAMA_MODEL`) to re-run the comparison.
+
 ## Working conventions for Claude Code
 - Plan before large changes; keep commits small and descriptive.
 - After every meaningful change: `xcodegen generate` (if project.yml changed) then build with
