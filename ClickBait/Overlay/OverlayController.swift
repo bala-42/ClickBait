@@ -307,12 +307,20 @@ final class OverlayController {
 
     /// Better positions for the targets being shown (same order): the triangle glides
     /// on to the corrected spot, and the current target's wait starts over.
+    /// Fewer targets than before means some were withdrawn (they matched nothing).
     func retarget(_ targets: [ScreenPointer]) {
-        guard var guide, guide.targets.count == targets.count else { return }
-        let moved = guide.targets[guide.index] != targets[guide.index]
+        guard var guide else { return }
+        guard !targets.isEmpty else {
+            endGuide()
+            show(.error("I couldn't find that on screen."))
+            return
+        }
+        let current = guide.targets[guide.index]
+        guide.index = min(targets.firstIndex(where: { $0.label == current.label }) ?? guide.index, targets.count - 1)
+        if targets[guide.index] != current { guide.targetStarted = CACurrentMediaTime() }
         guide.targets = targets
-        if moved { guide.targetStarted = CACurrentMediaTime() }
         self.guide = guide
+        beginTarget()
         Log.ask.notice("Guide: targets corrected by the close-up")
     }
 

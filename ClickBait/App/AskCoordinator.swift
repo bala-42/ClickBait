@@ -940,6 +940,12 @@ final class AskCoordinator {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
         }
+        // Only "where / how / show me / click / open" questions get pointed at; the model
+        // sometimes adds a pointer to anything (a corner of the screen for a general question).
+        if snip == nil, selectedText == nil, !parsed.response.pointers.isEmpty, !ImpliedPointer.isLocating(question) {
+            Log.ask.notice("Dropped \(parsed.response.pointers.count, privacy: .public) pointer(s): not a where/how question")
+            parsed.response.pointers = []
+        }
         // Asked where something is, the answer names a listed element but doesn't point.
         if snip == nil, selectedText == nil, parsed.response.pointers.isEmpty,
            let implied = ImpliedPointer.find(question: question, speech: parsed.response.speech, elements: listed) {
@@ -1002,15 +1008,45 @@ final class AskCoordinator {
         isAnswering = false
         isRefining = true
         defer { isRefining = false }
-        var refined = pointers
+        var refined: [ScreenPointer?] = pointers
         for (index, item) in snapped.enumerated() where !item.confirmed {
             guard !Task.isCancelled else { return }
-            if let better = await refine(item.pointer, question: question, capture: capture, geometry: geometry, provider: provider) {
-                refined[index] = better
+            switch await refine(item.pointer, question: question, capture: capture, geometry: geometry, provider: provider) {
+            case .keep: break
+            case .moved(let better): refined[index] = better
+            case .rejected: refined[index] = nil
             }
         }
-        guard !Task.isCancelled, refined != pointers else { return }
-        onPointersRefined?(refined)
+        let kept = refined.compactMap { $0 }
+        guard !Task.isCancelled, kept != pointers else { return }
+        if kept.count < pointers.count {
+            Log.ask.notice("Close-up: withdrew \(pointers.count - kept.count, privacy: .public) pointer(s) that matched nothing on screen")
+        }
+        onPointersRefined?(kept)
+    }
+
+    enum RefineResult {
+        /// Leave the rough pointer (nothing to check it against).
+        case keep
+        case moved(ScreenPointer)
+        /// It points at something that isn't what was asked for: take it away.
+        case rejected
+    }
+
+    /// Checks a point with Accessibility: snaps onto an element whose name matches the
+    /// label. `rejected` when Accessibility can see what's there and it's something
+    /// else; nil when Accessibility can't see the area (no way to check).
+    private func verify(_ point: Point, label: String, geometry: ScreenGeometry) async -> RefineResult? {
+        guard AXInspector.isTrusted, !label.isEmpty else { return nil }
+        let pid = frontmostPID
+        let (candidates, probe) = await Task.detached(priority: .userInitiated) {
+            AXInspector.candidates(around: point, frontmostPID: pid)
+        }.value
+        let decision = Snapper.decide(target: point, label: label, candidates: candidates)
+        if decision.reason == .labelMatch {
+            return .moved(ScreenPointer(label: label, appKit: geometry.appKitPoint(fromQuartz: decision.point), quartz: decision.point))
+        }
+        return probe.seesContent ? .rejected : nil
     }
 
     /// A close-up look is running after an answer (it can be dropped at any time).
@@ -1028,7 +1064,7 @@ final class AskCoordinator {
     /// A second look at a pointer on a 2× close-up around it. Nil when the model can't
     /// find the thing there (the rough pointer stays).
     private func refine(_ pointer: ScreenPointer, question: String, capture: ScreenCapture, geometry: ScreenGeometry,
-                        provider: any LLMProvider) async -> ScreenPointer? {
+                        provider: any LLMProvider) async -> RefineResult {
         let start = ContinuousClock.now
         let target = pointer.label.isEmpty ? question : pointer.label
         do {
@@ -1040,19 +1076,30 @@ final class AskCoordinator {
             for try await chunk in provider.stream(request) { reply += chunk }
             let found = ResponseParser.parse(reply, imageWidth: encoded.width, imageHeight: encoded.height).response.pointers.first
             guard let found else {
-                Log.ask.notice("Close-up: not found (\(String(describing: ContinuousClock.now - start), privacy: .public)); keeping the rough pointer")
-                return nil
+                // Not in the close-up. Where Accessibility can see the rough spot (and it
+                // didn't match before), the guess was wrong; elsewhere keep it.
+                let check = await verify(pointer.quartz, label: pointer.label, geometry: geometry)
+                Log.ask.notice("Close-up: not found (\(String(describing: ContinuousClock.now - start), privacy: .public)); \(check == nil ? "keeping the rough pointer" : "checked on screen", privacy: .public)")
+                return check ?? .keep
             }
             let quartz = closeUp.quartzPoint(fromPixel: found.x * encoded.downscale, found.y * encoded.downscale)
             let shift = ((quartz.x - pointer.quartz.x) * (quartz.x - pointer.quartz.x) + (quartz.y - pointer.quartz.y) * (quartz.y - pointer.quartz.y)).squareRoot()
+            // The close-up can "find" something wrong next to a wrong guess: check what's
+            // really there before moving the triangle onto it.
+            let check = await verify(quartz, label: pointer.label, geometry: geometry)
+            let verdict = switch check {
+            case .moved: "matches"
+            case .rejected: "something else is there, withdrawn"
+            default: "unchecked"
+            }
             Log.ask.notice("""
-                Close-up: moved \(shift, format: .fixed(precision: 0), privacy: .public) pt \
+                Close-up: \(shift, format: .fixed(precision: 0), privacy: .public) pt away, \(verdict, privacy: .public) \
                 (\(String(describing: ContinuousClock.now - start), privacy: .public))
                 """)
-            return ScreenPointer(label: pointer.label, appKit: geometry.appKitPoint(fromQuartz: quartz), quartz: quartz)
+            return check ?? .moved(ScreenPointer(label: pointer.label, appKit: geometry.appKitPoint(fromQuartz: quartz), quartz: quartz))
         } catch {
             Log.ask.error("Close-up failed: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return .keep
         }
     }
 
