@@ -50,7 +50,7 @@ final class OverlayModel {
         /// triangle's colour and pulse.
         var hasWords: Bool {
             switch self {
-            case .answer, .done, .error, .hint: true
+            case .answer, .done, .error, .hint, .working: true  // working: "opening safari…"
             case .thinking(let heard): heard != nil  // what was heard, so mishearing shows
             default: false
             }

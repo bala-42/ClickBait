@@ -210,7 +210,9 @@ struct CompanionBubbleView: View {
         switch model.bubble {
         case .thinking(let heard?):
             TinyPill(text: "“\(heard)”", symbol: "ear", tone: model.tone)
-        case .idle, .listening, .thinking, .explaining, .working:
+        case .working(let message):
+            TinyPill(text: message.lowercased(), symbol: "gearshape.fill", tone: model.tone)
+        case .idle, .listening, .thinking, .explaining:
             EmptyView()
         case .answer(let text), .done(let text):
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)

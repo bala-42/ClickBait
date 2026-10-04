@@ -820,7 +820,7 @@ final class AskCoordinator {
             show(error: "That needs \(name), which isn't installed.")
             return nil
         }
-        onActionStarted?("Opening \(name)…")
+        onActionStarted?("opening \(name)…")
         Log.ask.notice("Tutorial setup: opening another app")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -841,6 +841,7 @@ final class AskCoordinator {
             try? await Task.sleep(for: .milliseconds(200))
         }
         try? await Task.sleep(for: .milliseconds(300))  // the window settles
+        onActionDone?("opened \((app.localizedName ?? name).lowercased())")
         frontmostPID = app.processIdentifier
         frontmostBundleID = app.bundleIdentifier
         let pid = app.processIdentifier

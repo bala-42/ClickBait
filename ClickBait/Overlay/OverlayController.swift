@@ -321,6 +321,11 @@ final class OverlayController {
 
     var isGuiding: Bool { guide != nil }
 
+    /// Clears a green "working" pill (setup over) without touching other pills.
+    func clearWorking() {
+        if case .working = model.bubble { model.bubble = .idle }
+    }
+
     // MARK: - Tutorials (lavender)
 
     /// Called with every left click anywhere (global AppKit point), for tutorials.

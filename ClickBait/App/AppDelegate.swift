@@ -128,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.model.replaceLastAssistant(text)
             chat.model.isBusy = false
         }
-        coordinator.onSetupFinished = { [weak self] in self?.overlay.show(.idle) }
+        coordinator.onSetupFinished = { [weak self] in self?.overlay.clearWorking() }
         tutorial.onFinished = { [weak self] message in
             guard let self, let message else { return }
             // A tutorial that opened another app offers the way back (ignored = stay).
