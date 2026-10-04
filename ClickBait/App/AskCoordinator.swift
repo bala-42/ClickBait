@@ -1132,7 +1132,11 @@ final class AskCoordinator {
             }
             Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
             onInstantPointer?(instant!)
-        } else if targets.count == 1, !elements.isEmpty {
+        } else if !elements.isEmpty, snip == nil, selectedText == nil,
+                  targets.count == 1 || (targets.isEmpty && ImpliedPointer.isLocating(question)
+                                         && !ImpliedPointer.normalized(question).hasPrefix("show me how")) {
+            // Any "where / which / what do I click" question, not only "where's the X": the
+            // answer is usually something in the list ("where do I type my message?").
             // Not named exactly: let the model pick from the element list as text (~1.5 s)
             // rather than read the screenshot (~9 s). Nothing fits → the screenshot as before.
             let listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: Int(capture.displayFrame.width),

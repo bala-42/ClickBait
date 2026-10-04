@@ -30,7 +30,7 @@ public enum ImpliedPointer {
     }
 
     /// Lowercase words separated by single spaces, punctuation dropped.
-    static func normalized(_ text: String) -> String {
+    public static func normalized(_ text: String) -> String {
         String(text.lowercased().map { $0.isLetter || $0.isNumber ? $0 : " " })
             .split(separator: " ")
             .joined(separator: " ")
