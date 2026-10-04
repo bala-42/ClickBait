@@ -7,10 +7,10 @@ public struct OllamaProvider: LLMProvider {
     /// pointer (69% vs 46% on the parts benchmark) and the better planner (cross-app plans
     /// Qwen 2.5-VL got wrong, in ~3–8 s).
     public static let defaultModel = "qwen3.5:9b"
-    /// Reads orders ("stash these in my documents") in ~0.1–0.7 s instead of ~1.8 s. The
-    /// 3b, because the 7b didn't fit in memory beside the main model on a 24 GB Mac with apps
-    /// open: Ollama unloaded one to load the other (~3 s each way).
-    public static let defaultFastModel = "qwen2.5vl:3b"
+    /// A second, faster model for order checks; empty by default (one model). On a 24 GB
+    /// Mac with apps open, keeping qwen2.5vl:3b loaded too (4.6 GB) pushed macOS into
+    /// swapping, and both models ran at half speed (a 20 s answer). Settable in Settings.
+    public static let defaultFastModel = ""
 
     /// Models stay loaded while ClickBait runs (user's decision, 2026-10-04): no 3–5 s
     /// reload after a break. `unload()` lets them go when ClickBait quits.

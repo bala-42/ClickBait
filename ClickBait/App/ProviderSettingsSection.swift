@@ -27,12 +27,12 @@ struct ProviderSettingsSection: View {
         case .ollama:
             TextField("Main model", text: $settings.ollamaModel, prompt: Text(OllamaProvider.defaultModel))
                 .onChange(of: settings.ollamaModel) { testResult = nil }
-            TextField("Quick orders", text: $settings.ollamaFastModel, prompt: Text(OllamaProvider.defaultFastModel))
+            TextField("Quick orders (optional)", text: $settings.ollamaFastModel, prompt: Text("none — the main model"))
                 .onChange(of: settings.ollamaFastModel) { testResult = nil }
             Text("""
-                Runs on this Mac via Ollama. The main model looks at the screen, points and plans \
-                walkthroughs; a faster one reads orders like "move these to Documents". Install them with `ollama pull \(OllamaProvider.defaultModel)` and \
-                `ollama pull \(OllamaProvider.defaultFastModel)`.
+                Runs on this Mac via Ollama. The main model looks at the screen, points and plans walkthroughs. \
+                A second, smaller model can read orders faster, but it stays in memory too: leave it empty \
+                unless your Mac has memory to spare. Install the main one with `ollama pull \(OllamaProvider.defaultModel)`.
                 """)
                 .font(.callout)
                 .foregroundStyle(.secondary)
