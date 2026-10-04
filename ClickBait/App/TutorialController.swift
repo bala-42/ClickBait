@@ -49,6 +49,7 @@ final class TutorialController {
     /// When the user last completed a step by clicking: if the next target doesn't show
     /// up right after, the click may have finished the task (a dialog closing).
     private var clickedStepAt: Date?
+    private var loggedTarget: Int?
     private var checking = false
     private var menuPaths: [Int: [String]] = [:]
     /// Steps whose menu search already ran (found or not): it isn't repeated every tick.
@@ -160,6 +161,11 @@ final class TutorialController {
                 advance(to: index + 1, reason: "clicked")
                 return
             }
+            if let frame = currentFrame {
+                let dx = max(frame.minX - click.point.x, 0, click.point.x - frame.maxX)
+                let dy = max(frame.minY - click.point.y, 0, click.point.y - frame.maxY)
+                Log.ask.notice("Tutorial: click \(Int((dx * dx + dy * dy).squareRoot()), privacy: .public) pt from the target\(self.pointingAtMenu ? " (a menu to open)" : "", privacy: .public)")
+            }
             refreshNow = true  // something else was clicked (a menu opened?): look again now
         }
 
@@ -182,7 +188,12 @@ final class TutorialController {
 
         let step = plan.steps[index]
         if let target = StepMatcher.find(step.target, in: elements) {
+            if loggedTarget != index {
+                loggedTarget = index
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at a \(target.kind, privacy: .public)")
+            }
             point(at: target.frame, label: instruction, menu: false)
+            await checkForCompletion()
             return
         }
         // The user may have gone ahead (a later step's target is showing).
@@ -203,6 +214,7 @@ final class TutorialController {
             }.first
             if let (title, element) = opening {
                 point(at: element.frame, label: "open \(title.lowercased()) first", menu: true)
+                await checkForCompletion()
                 return
             }
         }
@@ -211,9 +223,13 @@ final class TutorialController {
         // the companion leaves the last spot to show the instruction instead.
         if targetMissingSince == nil { targetMissingSince = Date() }
         if let since = targetMissingSince, Date().timeIntervalSince(since) >= Self.missingGrace {
-            currentFrame = nil
-            pointingAtMenu = false
-            overlay.tutorialHint(instruction)
+            if let frame = currentFrame {
+                // Stay where it was (lists come back incomplete while a menu is open);
+                // flying home and back out looked jumpy. The label shows what to do.
+                point(at: frame, label: instruction, menu: pointingAtMenu, keepMissing: true)
+            } else {
+                overlay.tutorialHint(instruction)  // never had a target this step
+            }
         }
         guard let since = targetMissingSince, !checking else { return }
         let missingFor = Date().timeIntervalSince(since)
@@ -230,10 +246,10 @@ final class TutorialController {
         }
     }
 
-    private func point(at frame: Rect, label: String, menu: Bool) {
+    private func point(at frame: Rect, label: String, menu: Bool, keepMissing: Bool = false) {
         currentFrame = frame
         pointingAtMenu = menu
-        targetMissingSince = nil
+        if !keepMissing { targetMissingSince = nil }
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let center = Point(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
         overlay.tutorialPoint(at: ScreenPointer(label: label, appKit: Point(x: center.x, y: primaryHeight - center.y), quartz: center))
@@ -342,6 +358,16 @@ final class TutorialController {
             if difference > 4 { screenChangedAt = Date() }
         }
         lastSample = pixels
+    }
+
+    /// The task can be finished without ClickBait seeing the step's click (the user went
+    /// their own way, or the plan was off). When the screen has changed since the last
+    /// step and nothing has happened for a few seconds, ask whether it's done.
+    private func checkForCompletion() async {
+        guard !checking, let changed = screenChangedAt, changed > lastProgress,
+              Date().timeIntervalSince(lastProgress) > 5,
+              Date().timeIntervalSince(lastModelCheck) > Self.modelCheckInterval else { return }
+        await askModel()
     }
 
     /// The model looks at the screen: which step is next, or is it done?
