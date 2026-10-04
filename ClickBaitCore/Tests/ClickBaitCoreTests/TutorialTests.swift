@@ -602,3 +602,46 @@ struct SystemSettingsRoutingTests {
         #expect(split.steps.map(\.target).contains("Settings…"))
     }
 }
+
+struct SystemSettingsMapTests {
+    @Test(arguments: [
+        ("how do I turn on Night Shift", ["Displays", "Night Shift"]),
+        ("change my wallpaper", ["Wallpaper"]),
+        ("how do I switch to dark mode", ["Appearance"]),
+        ("connect to wifi", ["Wi‑Fi"]),
+        ("show the battery percentage", ["Menu Bar"]),       // longest phrase beats "battery"
+        ("turn up the keyboard brightness", ["Keyboard"]),    // beats "brightness" → Displays
+        ("how do I update my Mac", ["General", "Software Update"]),
+        ("set up hot corners", ["Desktop & Dock", "Hot Corners…"]),
+    ])
+    func knownSettings(_ request: String, _ route: [String]) {
+        #expect(SystemSettingsMap.route(for: request) == route)
+    }
+
+    @Test(arguments: ["System Setting", "how do I clear my history", "what's the weather"])
+    func unknown(_ request: String) {
+        #expect(SystemSettingsMap.route(for: request) == nil)
+    }
+
+    @Test func nightShiftWalkthrough() {
+        let plan = TutorialPlan.systemSettingsByAppleMenu(from: "Finder", route: ["Displays", "Night Shift"])
+        #expect(plan.steps.map(\.target) == ["Apple", "System Settings…", "Displays", "Night Shift"])
+        #expect(plan.steps.map(\.app) == ["Finder", "Finder", "System Settings", "System Settings"])
+    }
+
+    @Test func alreadyInSystemSettings() {
+        let plan = TutorialPlan.systemSettingsByAppleMenu(from: "System Settings", route: ["Displays", "Night Shift"])
+        #expect(plan.steps.map(\.target) == ["Displays", "Night Shift"])
+    }
+
+    @Test func everyPageIsARealSidebarName() {
+        // macOS 26/27 sidebar names (from System Settings' extensions on 5 Oct 2026).
+        let pages: Set = ["Accessibility", "Appearance", "Battery", "Bluetooth", "Desktop & Dock", "Displays", "Family",
+                          "Focus", "General", "Keyboard", "Lock Screen", "Menu Bar", "Mouse", "Network", "Notifications",
+                          "Printers & Scanners", "Privacy & Security", "Screen Time", "Sound", "Touch ID & Password",
+                          "Trackpad", "Users & Groups", "VPN", "Wallpaper", "Wi‑Fi"]
+        for (_, path) in SystemSettingsMap.routes {
+            #expect(pages.contains(path[0]), "\(path[0]) isn't a sidebar page")
+        }
+    }
+}

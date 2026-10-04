@@ -201,8 +201,11 @@ final class TutorialController {
             return
         }
 
-        // This step happens in another app: switch there (green), once per step.
-        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted),
+        // This step happens in another app: switch there (green), once per step — unless
+        // the step just clicked opens that app ("System Settings…"): give it time to come.
+        let opening = index > 0 && plan.steps[index].app.map { plan.steps[index - 1].opensApp($0) } == true
+            && Date().timeIntervalSince(lastProgress) < 4
+        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted), !opening,
            switchedFor.insert(index).inserted, let openApp {
             await switchApp(to: wanted, using: openApp)
             return
@@ -281,8 +284,11 @@ final class TutorialController {
             await checkForCompletion()
             return
         }
-        // The user may have gone ahead (a later step's target is showing).
-        for later in (index + 1)..<min(index + 3, plan.steps.count) where StepMatcher.find(plan.steps[later].target, in: elements) != nil {
+        // The user may have gone ahead (a later step's target is showing) — only in the app
+        // that step belongs to: Finder's own search field once "skipped" System Settings.
+        for later in (index + 1)..<min(index + 3, plan.steps.count)
+        where plan.steps[later].app.map({ Self.isApp($0, front) }) ?? true
+            && StepMatcher.find(plan.steps[later].target, in: elements) != nil {
             advance(to: later, reason: "went ahead")
             return
         }
@@ -291,7 +297,7 @@ final class TutorialController {
             AXInspector.menuPath(to: step.target, frontmostPID: pid)
         }).value {
             menuPaths[index] = path
-            Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is inside a menu (\(path.count - 1, privacy: .public) to open)")
+            Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is inside a menu (\(path.count - 1, privacy: .public) to open): \(path.joined(separator: " ▸ "), privacy: .public)")
         }
         // The menu holding it is open (the user just clicked it): point at the item.
         if menuOpened, let path = menuPaths[index], let frame = await Task.detached(priority: .userInitiated, operation: {

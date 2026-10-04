@@ -10,6 +10,12 @@ public struct TutorialStep: Codable, Equatable, Sendable {
     /// The app the click happens in ("Notes"), when the task spans apps. ClickBait
     /// switches to it (green) before pointing.
     public var app: String?
+    /// This step is the menu item that opens `app` ("System Settings…" for System
+    /// Settings): after clicking it, the app is on its way — no need to switch there.
+    public func opensApp(_ app: String) -> Bool {
+        TutorialPlan.withoutEllipsis(target).caseInsensitiveCompare(app) == .orderedSame
+    }
+
     /// What to type into `target` ("youtube.com"), for a typing step; nil for a click.
     public var typing: String?
 
@@ -186,11 +192,21 @@ public struct TutorialPlan: Equatable, Sendable {
 
     /// The way into System Settings that works from any app: the Apple menu, then
     /// "System Settings…". Shown (pointed at), not done for the user; no model needed.
-    public static func systemSettingsByAppleMenu(from front: String?) -> TutorialPlan {
-        TutorialPlan(intro: "Open the Apple menu, then choose System Settings.", steps: [
-            TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
-            TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
-        ])
+    /// `route` (from `SystemSettingsMap`) continues inside System Settings: the page in
+    /// the sidebar, then what to click on it.
+    public static func systemSettingsByAppleMenu(from front: String?, route: [String] = []) -> TutorialPlan {
+        var steps: [TutorialStep] = []
+        if front?.caseInsensitiveCompare("System Settings") != .orderedSame {
+            steps += [
+                TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
+                TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
+            ]
+        }
+        steps += route.map { TutorialStep(target: $0, instruction: "Click \($0)", app: "System Settings") }
+        let intro = route.isEmpty
+            ? "Open the Apple menu, then choose System Settings."
+            : "In System Settings: " + route.joined(separator: " → ") + "."
+        return TutorialPlan(intro: intro, steps: steps)
     }
 
     /// The app name as it is on today's Macs, or nil for ClickBait itself (the model sees

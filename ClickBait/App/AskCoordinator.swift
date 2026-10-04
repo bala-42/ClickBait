@@ -935,8 +935,11 @@ final class AskCoordinator {
         // Settings…" (works from any app, no model needed); once it's open, the rest of the
         // task is planned in there — unless getting there was the whole request.
         if taskApp == "System Settings", context.appName?.caseInsensitiveCompare("System Settings") != .orderedSame {
-            Log.ask.notice("Tutorial: System Settings by the Apple menu")
-            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName), question: question, startedIn: startedIn,
+            // Known settings go on to their page and control (`SystemSettingsMap`): facts,
+            // where the model sent Night Shift to General.
+            let route = SystemSettingsMap.route(for: question) ?? []
+            Log.ask.notice("Tutorial: System Settings by the Apple menu\(route.isEmpty ? "" : " → " + route.joined(separator: " → "), privacy: .public)")
+            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName, route: route), question: question, startedIn: startedIn,
                                        speak: speak, display: display, installedName: installedName, apps: apps,
                                        provider: provider, tutorial: tutorial,
                                        continues: !TutorialQuestion.onlyOpens(question, app: "System Settings"))
