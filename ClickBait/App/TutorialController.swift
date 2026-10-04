@@ -515,10 +515,10 @@ final class TutorialController {
         isActive = false
         loop?.cancel()
         loop = nil
-        overlay.tutorialHint("done!")
+        overlay.tutorialDone("done")
         if speakSteps { speak?("Done!") }
         Log.ask.notice("Tutorial finished")
-        onFinished?("Done!")
+        onFinished?("✓ Done!")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, !isActive else { return }

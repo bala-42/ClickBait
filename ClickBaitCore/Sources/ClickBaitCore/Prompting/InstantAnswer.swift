@@ -6,10 +6,22 @@ public enum InstantAnswer {
     // MARK: - Pointing ("where's the share button?")
 
     static let locatingOpeners = ["where is the", "where is", "wheres the", "wheres", "where s the", "where s",
+                                  "where are the", "where are", "where re the",
                                   "show me the", "show me", "point at the", "point to the", "point at", "point to",
                                   "find the", "find", "locate the", "locate", "which is the", "highlight the"]
-    static let thingWords: Set<String> = ["button", "menu", "icon", "tab", "field", "link", "option", "item", "box",
+    static let thingWords: Set<String> = ["button", "buttons", "menu", "menus", "icon", "icons", "tab", "tabs", "field",
+                                          "fields", "link", "links", "option", "options", "item", "items", "box", "boxes",
                                           "checkbox", "toggle", "switch", "on", "screen", "the", "here", "please"]
+
+    /// The things a locating question names: "where are the back and forward buttons?" →
+    /// ["back", "forward"]. Empty when it isn't one.
+    public static func locateTargets(in question: String) -> [String] {
+        guard let whole = locateTarget(in: question) else { return [] }
+        let parts = whole.components(separatedBy: " and ").map {
+            $0.split(separator: " ").filter { !thingWords.contains(String($0)) }.joined(separator: " ")
+        }
+        return parts.contains(where: \.isEmpty) || parts.count > 3 ? [] : parts
+    }
 
     /// The thing a locating question names ("where's the Share button?" → "share"), or nil.
     public static func locateTarget(in question: String) -> String? {

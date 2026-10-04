@@ -145,7 +145,9 @@ public struct TutorialPlan: Equatable, Sendable {
         for (position, var step) in steps.enumerated() {
             let switching = ["open", "launch", "switch", "go", "return", "back", "start", "click", "choose"]
             let verb = ImpliedPointer.normalized(step.instruction).split(separator: " ").first.map(String.init) ?? ""
-            if isInstalledApp(step.target), position == 0 || switching.contains(verb) || step.target.lowercased() == front {
+            // "Open the Safari menu" is the app's own menu, not opening the app.
+            let isMenu = ImpliedPointer.normalized(step.instruction).split(separator: " ").contains("menu")
+            if isInstalledApp(step.target), !isMenu, position == 0 || switching.contains(verb) || step.target.lowercased() == front {
                 current = step.target  // "Open Safari": ClickBait does that
                 continue
             }

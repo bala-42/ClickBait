@@ -82,6 +82,9 @@ Only when there's no doubt; anything less takes the normal model path (user's ru
 - **Pointing:** "where's / show me / point at / find the X" (`InstantAnswer.locateTarget`) with exactly one on-screen element named exactly X (`uniqueElement`; two of them in different places → the model decides) points at once (blue, ~0.1 s). The model still answers in words; its own pointers are ignored that time (`AskCoordinator.pointedInstantly`).
 - **Menu walkthroughs:** a how-to or order whose task words (`taskPhrase`: openers, "my/the/this", the app's name stripped) equal exactly one menu item (`menuPlan`: "clear history" → History ▸ Clear History…) starts at once with open-the-menu + choose-the-item; what follows (a dialog's button) is planned by the model once the item is chosen.
 - Pointing is always blue (`OverlayModel.tone`: guiding → idle), even while the words are still streaming.
+- "Where are the back and forward buttons?" points at both when each is named exactly once (`locateTargets`; all or nothing). When the app in front has nothing on the cursor's display, the element list comes from the app whose window is under the cursor (`AXInspector.appPID(at:)`; its main window if it has no focused one) — instant pointing found 0 elements otherwise.
+- An app menu named like its app ("Safari ▸ Clear History…") is a menu step, not an app to open (`separatingSetup` skips steps whose instruction says "menu").
+- Guide motion: glide period 0.38 s, turn 0.3 s, label 0.22 s (was 0.6 / 0.45 / 0.3: "pointing must be immediate and quick"). A finished walkthrough shows a tick ("done" with ✓; "✓ Done!" in the chat).
 - Models load at launch and stay loaded while ClickBait runs (`keep_alive: -1`, user's decision); `OllamaProvider.unload()` frees them when ClickBait quits.
 
 ### Pointing accuracy

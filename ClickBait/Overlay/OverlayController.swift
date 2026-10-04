@@ -305,9 +305,9 @@ final class OverlayController {
 
     private var guide: Guide?
     /// Gliding to a target: eases in, slows down and settles softly (about half a second).
-    private static let glideSpring = Spring(period: 0.6, damping: 1)  // critically damped: no overshoot
+    private static let glideSpring = Spring(period: 0.38, damping: 1)  // critically damped: no overshoot
     /// Turning: a little quicker than the glide so the tip leads.
-    private static let turnSpring = Spring(period: 0.45, damping: 1)
+    private static let turnSpring = Spring(period: 0.3, damping: 1)
     /// The angle the triangle is turning toward, and how fast it's turning.
     private var wantedAngle = CompanionTriangle.restingAngle
     private var angleVelocity = 0.0
@@ -365,6 +365,13 @@ final class OverlayController {
         guide.isTutorial = true
         self.guide = guide
         beginTarget()
+    }
+
+    /// The walkthrough is finished: a tick by the cursor.
+    func tutorialDone(_ text: String) {
+        if guide?.isTutorial == true { endGuide() }
+        model.bubble = .done(text)
+        setCompanionHidden(false)
     }
 
     /// The current step's target isn't on screen: the instruction by the cursor instead.
@@ -597,7 +604,7 @@ final class OverlayController {
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
     }
 
-    private static let labelSpring = Spring(period: 0.3, damping: 1)
+    private static let labelSpring = Spring(period: 0.22, damping: 1)
     private var labelOrigin: CGPoint?
     private var labelVelocity = CGVector.zero
     /// Set while the triangle comes home after pointing (see the follow in `frame`).

@@ -416,3 +416,25 @@ struct InstantAnswerTests {
         #expect(InstantAnswer.menuPlan(for: "how do I bold", app: "Pages", outline: menus)?.steps.map(\.target) == ["Format", "Font", "Bold"])
     }
 }
+
+struct InstantPlanSetupTests {
+    @Test func menuStepsSurviveSetup() {
+        let plan = InstantAnswer.menuPlan(for: "How do I clear my history?", app: "Safari", outline: ["History ▸ Clear History…"])!
+        let split = plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: { _ in false })
+        #expect(split.steps.map(\.target) == ["History", "Clear History…"])
+    }
+}
+
+struct InstantPluralTests {
+    @Test func pluralsAndPairs() {
+        #expect(InstantAnswer.locateTargets(in: "where are the back and forward buttons?") == ["back", "forward"])
+        #expect(InstantAnswer.locateTargets(in: "where's the share button") == ["share"])
+        #expect(InstantAnswer.locateTargets(in: "what is this") == [])
+    }
+
+    @Test func theAppMenuIsNotTheApp() {
+        let plan = InstantAnswer.menuPlan(for: "clear history", app: "Safari", outline: ["Safari ▸ Clear History…"])!
+        let split = plan.separatingSetup(frontmostApp: "Safari", isInstalledApp: { $0 == "Safari" })
+        #expect(split.steps.map(\.target) == ["Safari", "Clear History…"])
+    }
+}

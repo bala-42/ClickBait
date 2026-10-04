@@ -938,8 +938,13 @@ final class AskCoordinator {
         let frame = capture.displayFrame
         let display = Rect(x: frame.minX, y: capture.primaryDisplayHeight - frame.maxY, width: frame.width, height: frame.height)
         let start = ContinuousClock.now
-        let elements = await Task.detached(priority: .userInitiated) {
-            AXInspector.visibleElements(frontmostPID: pid, display: display)
+        let mouse = NSEvent.mouseLocation
+        let pointer = Point(x: mouse.x, y: capture.primaryDisplayHeight - mouse.y)
+        let elements = await Task.detached(priority: .userInitiated) { () -> [ScreenElement] in
+            let front = AXInspector.visibleElements(frontmostPID: pid, display: display)
+            guard front.isEmpty, let under = AXInspector.appPID(at: pointer), under != pid else { return front }
+            // The app in front has nothing on this display: read the one under the cursor.
+            return AXInspector.visibleElements(frontmostPID: under, display: display)
         }.value
         let menus = elements.filter { $0.role == "AXMenuItem" }.count
         Log.ask.notice("""
@@ -1091,14 +1096,19 @@ final class AskCoordinator {
         // "Where's the Share button?" with exactly one element named Share on screen: point
         // now (~0.1 s), not after the model (~8 s). The model still answers in words; its own
         // pointers are only used when there was no exact, single match.
-        var instant: ScreenPointer?
-        if snip == nil, selectedText == nil, let target = InstantAnswer.locateTarget(in: question),
-           let element = InstantAnswer.uniqueElement(named: target, in: elements) {
-            let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
-            instant = ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
-                                    quartz: center)
-            Log.ask.notice("Instant pointer: one \(element.kind, privacy: .public) named exactly that")
-            onInstantPointer?([instant!])
+        var instant: [ScreenPointer]?
+        let targets = snip == nil && selectedText == nil ? InstantAnswer.locateTargets(in: question) : []
+        let found = targets.compactMap { InstantAnswer.uniqueElement(named: $0, in: elements) }
+        if !targets.isEmpty, found.count == targets.count {  // every one named exactly once, or none at all
+            instant = found.map { element in
+                let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
+                return ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
+                                     quartz: center)
+            }
+            Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
+            onInstantPointer?(instant!)
+        } else if !targets.isEmpty {
+            Log.ask.notice("Instant pointer: no single exact match among \(elements.count, privacy: .public) elements; asking the model")
         }
         pointedInstantly = instant != nil
         let reply: String
@@ -1248,7 +1258,7 @@ final class AskCoordinator {
         if fromList.contains(true) {
             Log.ask.notice("\(fromList.filter { $0 }.count, privacy: .public) pointer(s) on a listed element: exact")
         }
-        let pointers = instant.map { [$0] } ?? snapped.map(\.pointer)
+        let pointers = instant ?? snapped.map(\.pointer)
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
             \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped

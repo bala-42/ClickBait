@@ -101,7 +101,8 @@ enum AXInspector {
         for item in menuBar?.children(kAXChildrenAttribute) ?? [] where item.bool(kAXSelectedAttribute) == true {
             roots += item.children(kAXChildrenAttribute)
         }
-        if let window = app.element(kAXFocusedWindowAttribute) { roots.append(window) }
+        // An app that isn't in front may have no focused window: its main one then.
+        if let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) { roots.append(window) }
         if let menuBar { roots.append(menuBar) }
 
         var found: [ScreenElement] = []
@@ -206,6 +207,19 @@ enum AXInspector {
             queue.append(contentsOf: node.children(kAXChildrenAttribute))
         }
         return best
+    }
+
+    /// The app whose window is under `point` (Quartz) — the one the user is looking at
+    /// when the frontmost app's windows are on another display.
+    static func appPID(at point: Point) -> pid_t? {
+        guard isTrusted else { return nil }
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, timeout)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(hit, &pid) == .success, pid != getpid() else { return nil }
+        return pid
     }
 
     // MARK: - Menus (tutorials)
