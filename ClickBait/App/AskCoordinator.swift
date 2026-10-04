@@ -1368,6 +1368,29 @@ final class AskCoordinator {
     @discardableResult
     private func perform(_ request: ActionRequest, speak: Bool = true) async -> ActionOutcome {
         guard settings.commandsEnabled else { return .failure("Commands are turned off in Settings.") }
+        var request = request
+        // "Add this page's URL to my notes": the note is the page (or the selection), not
+        // the order's words — which is what the note said before.
+        if request.name == "make_note" || request.name == "add_reminder", let reference = NoteReference.find(in: request.detail ?? "") {
+            let pid = frontmostPID
+            let content: String?
+            switch reference {
+            case .pageAddress:
+                content = await Task.detached(priority: .userInitiated) { AXInspector.pageAddress(frontmostPID: pid) }.value
+                    .map { NoteReference.noteText(address: $0.address, title: $0.title) }
+            case .selection:
+                content = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid).selectedText }.value
+            }
+            Log.ask.notice("Note is \(reference == .pageAddress ? "this page" : "the selection", privacy: .public): \(content == nil ? "not readable" : "read", privacy: .public)")
+            guard let content, !content.isEmpty else {
+                let message = reference == .pageAddress ? "I can't see a web page in front." : "Nothing's selected."
+                speaker.stop()
+                if speak { speaker.speak(message) }
+                show(error: message)
+                return .failure(message)
+            }
+            request.detail = content
+        }
         switch ActionCatalog.resolve(request, allowedShortcuts: settings.allowedShortcuts) {
         case .failure(let error):
             Log.ask.notice("Action refused: \(request.name, privacy: .public) (\(String(describing: error), privacy: .private))")

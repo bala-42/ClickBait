@@ -29,7 +29,7 @@ struct ChatView: View {
         .background(WindowDragArea())
         // A dark, blurred, see-through panel (the macOS heads-up material) with soft
         // glows in the companion's colours, like the Siri panel.
-        .background(SiriPanel(glow: model.isBusy ? CompanionTone.processing.color : CompanionTone.idle.color))
+        .background(SiriPanel())
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         .environment(\.colorScheme, .dark)
         .fixedSize(horizontal: false, vertical: true)
@@ -236,21 +236,10 @@ private struct CodeBlock: View {
 /// glows — the companion's current colour top-right (orange while thinking), a cooler
 /// one low in the middle.
 private struct SiriPanel: View {
-    let glow: Color
-
     var body: some View {
         ZStack {
             HUDBlur()
             Color.black.opacity(0.28)
-            GeometryReader { proxy in
-                let size = proxy.size
-                // Soft by construction (radial fades), so they look the same everywhere.
-                RadialGradient(colors: [glow.opacity(0.42), glow.opacity(0)], center: UnitPoint(x: 0.9, y: 0.05),
-                               startRadius: 0, endRadius: size.width * 0.45)
-                RadialGradient(colors: [Color(red: 0.36, green: 0.30, blue: 0.85).opacity(0.3), .clear],
-                               center: UnitPoint(x: 0.5, y: 1.05), startRadius: 0, endRadius: size.width * 0.42)
-            }
-            .animation(.easeInOut(duration: 0.6), value: glow)
         }
         .allowsHitTesting(false)
     }

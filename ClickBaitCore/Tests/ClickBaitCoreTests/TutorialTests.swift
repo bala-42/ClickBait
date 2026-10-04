@@ -182,6 +182,20 @@ struct TutorialSetupTests {
     }
 }
 
+struct NoteReferenceTests {
+    @Test(arguments: [("Add this pages URL into the notes", NoteReference.pageAddress), ("Note this link", .pageAddress),
+                      ("Save this page to my notes", .pageAddress), ("Make a note of the selected text", .selection),
+                      ("Jot down that the plumber comes Tuesday", nil), ("Remind me to call mum", nil)])
+    func references(_ order: String, _ expected: NoteReference?) {
+        #expect(NoteReference.find(in: order) == expected)
+    }
+
+    @Test func pageNotes() {
+        #expect(NoteReference.noteText(address: "https://apple.com", title: "Apple") == "Apple\nhttps://apple.com")
+        #expect(NoteReference.noteText(address: "https://apple.com", title: nil) == "https://apple.com")
+    }
+}
+
 struct TutorialOrderTests {
     @Test(arguments: [("Write me a poem about cats", true), ("Summarise this note", true), ("Please explain this error", true),
                       ("Clear search history.", false), ("Turn on two-factor authentication", false)])

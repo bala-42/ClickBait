@@ -129,6 +129,28 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
+    /// The web page in front: its address and title, from the browser's window
+    /// (`AXDocument`) or its web area (`AXURL`). Safari, Chrome and other WebKit/Chromium
+    /// browsers expose one of them. Nil for other apps.
+    static func pageAddress(frontmostPID pid: pid_t?) -> (address: String, title: String?)? {
+        guard isTrusted, let pid, let window = element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute) else { return nil }
+        let title = window.string(kAXTitleAttribute)
+        if let document = window.string(kAXDocumentAttribute), document.hasPrefix("http") { return (document, title) }
+        var queue = [window][...]
+        var visited = 0
+        while let node = queue.popFirst(), visited < 400 {
+            visited += 1
+            if node.string(kAXRoleAttribute) == "AXWebArea" {
+                if let url = node.attribute(kAXURLAttribute) as? URL, url.scheme?.hasPrefix("http") == true {
+                    return (url.absoluteString, title)
+                }
+                continue  // don't walk the page itself
+            }
+            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+        }
+        return nil
+    }
+
     // MARK: - Menus (tutorials)
 
     /// Where a menu item lives in the frontmost app's menus, even while they're closed:
