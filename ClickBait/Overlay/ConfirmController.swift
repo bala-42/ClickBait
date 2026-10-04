@@ -146,17 +146,17 @@ private struct ConfirmCard: View {
                 .wrapped(question, maxWidth: 260, size: 12.5)
             HStack(spacing: 6) {
                 Button { answer(true) } label: {
-                    Text(confirm).font(.system(size: 12, weight: .bold))
+                    Text(confirm).font(.system(size: 12, weight: .bold)).oneLine()
                         .foregroundStyle(tone.color)
                         .padding(.horizontal, 12).padding(.vertical, 4)
                         .background(.white, in: Capsule())
                 }
                 Button { answer(false) } label: {
-                    Text(cancel).font(.system(size: 12, weight: .semibold))
+                    Text(cancel).font(.system(size: 12, weight: .semibold)).oneLine()
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(.white.opacity(0.2), in: Capsule())
                 }
-                if let hint { Text(hint).font(.system(size: 11)).opacity(0.8) }
+                if let hint { Text(hint).font(.system(size: 11)).oneLine().opacity(0.8) }
             }
             .buttonStyle(.plain)
         }
@@ -215,7 +215,7 @@ private struct ChoiceCard: View {
                     .help("Pick a day")
                     .accessibilityLabel("Pick a day on a calendar")
                 }
-                if let hint, !showsCalendar { Text(hint).font(.system(size: 11)).opacity(0.8) }
+                if let hint, !showsCalendar { Text(hint).font(.system(size: 11)).oneLine().opacity(0.8) }
             }
             if showsCalendar {
                 VStack(alignment: .trailing, spacing: 6) {
@@ -245,8 +245,17 @@ private struct ChoiceCard: View {
     private func pill(_ text: String, primary: Bool) -> some View {
         Text(text)
             .font(.system(size: 12, weight: primary ? .bold : .semibold))
+            .oneLine()
             .foregroundStyle(primary ? tone.color : .white)
             .padding(.horizontal, 11).padding(.vertical, 4)
             .background(primary ? .white : .white.opacity(0.2), in: Capsule())
+    }
+}
+
+private extension Text {
+    /// Buttons and hints never wrap ("Tomorrow" broke onto two lines when the question
+    /// above set the card's width): the card grows to fit them instead.
+    func oneLine() -> some View {
+        lineLimit(1).fixedSize(horizontal: true, vertical: false)
     }
 }
