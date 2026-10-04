@@ -566,10 +566,15 @@ final class OverlayController {
     private func placeGuideLabel(triangleCenter c: CGPoint, awayFrom approach: CGVector, elapsed: CFTimeInterval) {
         guard let panel = guideLabelPanel else { return }
         let size = model.guideLabelSize
-        let gap: CGFloat = 12
-        let x = approach.dx >= 0 ? c.x + gap - 6 : c.x - gap - size.width + 6  // 6 = the view's shadow padding
-        let top = c.y + size.height / 2
-        let target = CGPoint(x: x, y: top - panel.frame.height)
+        // Away from the target, and always fully inside the screen's visible area (below
+        // the menu bar, above the Dock): the other side, or pushed in, when it won't fit.
+        // The view pads the pill by 6 pt for its shadow; that padding may overhang.
+        let screen = NSScreen.screens.first { NSMouseInRect(c, $0.frame, false) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? .zero
+        let spot = PillPlacement.beside(
+            Point(x: c.x, y: c.y), width: size.width - 12, height: size.height - 12, gap: 12, preferRight: approach.dx >= 0,
+            bounds: Rect(x: visible.minX, y: visible.minY, width: visible.width, height: visible.height))
+        let target = CGPoint(x: spot.x - 6, y: spot.top + 6 - panel.frame.height)
         // The label rides with the triangle; when the next stop puts it on the other
         // side it glides across instead of jumping.
         var origin = labelOrigin ?? target
