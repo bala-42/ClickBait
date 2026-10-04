@@ -669,7 +669,7 @@ final class AskCoordinator {
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
         let reply = await Self.reply(from: provider, to: request, within: .seconds(8))
-        guard let reply, let proposal = ResponseParser.action(inReply: reply) else {
+        guard let reply, var proposal = ResponseParser.action(inReply: reply) else {
             Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
             return nil
         }
@@ -679,7 +679,6 @@ final class AskCoordinator {
             Log.ask.notice("Order check: \(proposal.name, privacy: .public) doesn't apply here")
             return nil
         }
-        var proposal = proposal
         // "Add it to my notes": the note is resolved from the user's words (the model's
         // detail is a guess at "it"), when they refer to the page, selection or answer.
         if proposal.name == "make_note" || proposal.name == "add_reminder", NoteReference.find(in: text) != nil {
