@@ -129,8 +129,8 @@ enum ActionExecutor {
         case .addReminder(let text):
             // Name the list: a reminder that "didn't show up" is usually in a list the
             // Reminders widget isn't showing.
-            let list = try await ReminderStore.add(text)
-            return "Added to \(list)"
+            let (list, due) = try await ReminderStore.add(text)
+            return "Added to \(list) for \(due)"
 
         case .media(let key):
             MediaKeys.press(key)
@@ -393,9 +393,12 @@ enum ReminderStore {
         }
     }
 
-    /// Adds the reminder (no date) to the default list; returns that list's name.
+    /// Adds the reminder to the default list, its title in small letters, due on the day
+    /// said in `text` (AskCoordinator asks for one when none was said). Returns the list's
+    /// name and the day as words ("today", "Fri 10 Oct").
     @discardableResult
-    static func add(_ title: String) async throws -> String {
+    static func add(_ text: String) async throws -> (list: String, due: String) {
+        let (title, day) = ReminderText.parse(text)
         let store = EKEventStore()
         // macOS asks once ("ClickBait would like to access your reminders"). Adding
         // needs full access; ClickBait never reads existing reminders.
@@ -404,6 +407,9 @@ enum ReminderStore {
         let reminder = EKReminder(eventStore: store)
         reminder.title = title
         reminder.calendar = list
+        // All-day (no hour): it shows in Today on that day, with no alert at an odd time.
+        let calendar = Calendar.current
+        reminder.dueDateComponents = day?.dueDate(from: .now, calendar: calendar)
         try store.save(reminder, commit: true)
         let source = switch list.source.sourceType {
         case .local: "On My Mac"
@@ -411,7 +417,18 @@ enum ReminderStore {
         case .exchange: "Exchange"
         default: "other"
         }
-        Log.ask.notice("Reminder saved to list \(list.title, privacy: .private) (\(source, privacy: .public)), no due date")
-        return list.title
+        let due = describe(reminder.dueDateComponents, calendar: calendar)
+        Log.ask.notice("Reminder saved to list \(list.title, privacy: .private) (\(source, privacy: .public)), due \(due, privacy: .public)")
+        return (list.title, due)
+    }
+
+    /// "today", "tomorrow", else "Fri 10 Oct"; "no date" if there's none.
+    private static func describe(_ parts: DateComponents?, calendar: Calendar) -> String {
+        guard let parts, let date = calendar.date(from: parts) else { return "no date" }
+        if calendar.isDateInToday(date) { return "today" }
+        if calendar.isDateInTomorrow(date) { return "tomorrow" }
+        let format = DateFormatter()
+        format.setLocalizedDateFormatFromTemplate("EEE d MMM")
+        return format.string(from: date)
     }
 }

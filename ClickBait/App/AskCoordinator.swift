@@ -259,6 +259,19 @@ final class AskCoordinator {
             Task { if let reply = await showLastNote(speak: false) { onChatReply?(reply) } }
             return
         }
+        // A typed day answers a reminder's "when?" in the chat.
+        if pendingReminder != nil {
+            if let day = ReminderDay.parse(text) {
+                onChatUserMessage?(text)
+                isAnswering = true
+                askTask = Task {
+                    defer { isAnswering = false }
+                    await resolveReminder(day)
+                }
+                return
+            }
+            dropPendingReminder()
+        }
         // Typed orders run like spoken ones ("combine these files"), answered in the chat.
         if settings.commandsEnabled,
            let command = CommandParser.parse(text, allowedShortcuts: settings.allowedShortcuts),
@@ -271,6 +284,7 @@ final class AskCoordinator {
                 switch await perform(command, speak: false) {
                 case .success(let confirmation): onChatReply?(confirmation + ".")
                 case .failure(let message): onChatError?(message)
+                case .asked(let question): onChatReply?(question)
                 }
             }
             return
@@ -332,7 +346,7 @@ final class AskCoordinator {
     /// Something is going on that Esc should stop (Esc is then taken from other apps).
     var isBusy: Bool {
         state == .listening || state == .thinking || state == .speaking || isAnswering || speaker.isSpeaking
-            || snipper.isActive || pendingAction != nil || isRefining || (tutorial?.isActive ?? false)
+            || snipper.isActive || pendingAction != nil || pendingReminder != nil || isRefining || (tutorial?.isActive ?? false)
     }
 
     /// Esc: stop whatever ClickBait is doing — listening, thinking, speaking, a snip,
@@ -347,6 +361,7 @@ final class AskCoordinator {
             stopped.append("explain")
         }
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
+        if pendingReminder != nil { dropPendingReminder(); stopped.append("reminder") }
         if isRefining { stopRefining(); stopped.append("close-up") }
         if tutorial?.isActive == true { tutorial?.stop(message: "Tutorial stopped."); stopped.append("tutorial") }
         if state == .listening || state == .thinking || isAnswering {
@@ -547,6 +562,20 @@ final class AskCoordinator {
             show(error: "I didn't catch that. Hold Control+Option and try again.")
             return
         }
+        // A day answers a reminder's "when?"; "cancel" drops it; anything else replaces it.
+        if pendingReminder != nil {
+            if let day = ReminderDay.parse(transcript) {
+                encoding.cancel()
+                await resolveReminder(day)
+                return
+            }
+            let cancelled = CommandParser.confirmation(transcript) == false
+            dropPendingReminder()
+            if cancelled {
+                encoding.cancel()
+                return
+            }
+        }
         // "yes" / "cancel" answers a pending question; anything else replaces it.
         if pendingAction != nil {
             if let answer = CommandParser.confirmation(transcript) {
@@ -683,6 +712,50 @@ final class AskCoordinator {
 
     /// A risky action the model proposed, waiting for the user's yes.
     @ObservationIgnored private var pendingAction: (request: ActionRequest, speak: Bool, inChat: Bool)?
+    /// A reminder waiting for its day (Today / Tomorrow / a spoken or typed day).
+    @ObservationIgnored private var pendingReminder: (request: ActionRequest, speak: Bool, inChat: Bool)?
+    /// A question with buttons should be shown: the question, the buttons, a hint.
+    @ObservationIgnored var onChoiceRequest: ((String, [String], String?) -> Void)?
+    /// The card's buttons, in order.
+    private static let reminderDayChoices: [ReminderDay] = [.inDays(0), .inDays(1)]
+
+    private func askReminderDay(_ request: ActionRequest, speak: Bool) -> ActionOutcome {
+        dropPending()
+        pendingReminder = (request, speak, chatShown)
+        let title = ReminderText.parse(request.detail ?? "").title
+        let question = "“\(title)” — when?"
+        Log.ask.notice("Reminder: no day said, asking")
+        if speak { speaker.speak("When should I remind you?") }
+        if state == .thinking { state = .idle }
+        onChoiceRequest?(question, ["Today", "Tomorrow"], "or say a day")
+        return .asked(question)
+    }
+
+    /// The card's answer: a button's index, or nil when it timed out.
+    func answerReminderChoice(_ index: Int?) {
+        guard let index, Self.reminderDayChoices.indices.contains(index) else {
+            dropPendingReminder(timedOut: true)
+            return
+        }
+        Task { await resolveReminder(Self.reminderDayChoices[index]) }
+    }
+
+    private func resolveReminder(_ day: ReminderDay) async {
+        guard var pending = pendingReminder else { return }
+        pendingReminder = nil
+        onConfirmEnd?()
+        pending.request.detail = (pending.request.detail ?? "") + " " + day.phrase
+        let outcome = await perform(pending.request, speak: pending.speak)
+        if pending.inChat, chatShown, case .success(let confirmation) = outcome { onChatReply?(confirmation + ".") }
+    }
+
+    private func dropPendingReminder(timedOut: Bool = false) {
+        guard pendingReminder != nil else { return }
+        pendingReminder = nil
+        onConfirmEnd?()
+        Log.ask.notice("Reminder: no day given, not added\(timedOut ? " (timed out)" : "", privacy: .public)")
+        if timedOut { show(error: "Reminder not added — no day was picked.") }
+    }
 
     /// An order the rules didn't catch but the model understood: safe actions run now;
     /// ones that move, rename, bin or quit something are asked about first.
@@ -710,6 +783,7 @@ final class AskCoordinator {
         switch await perform(proposal, speak: speak) {
         case .success(let confirmation): return confirmation + "."
         case .failure(let message): return message
+        case .asked(let question): return question
         }
     }
 
@@ -1616,6 +1690,8 @@ final class AskCoordinator {
     enum ActionOutcome {
         case success(String)
         case failure(String)
+        /// Nothing done yet: a question was asked (a reminder's day).
+        case asked(String)
     }
 
     @discardableResult
@@ -1639,6 +1715,9 @@ final class AskCoordinator {
     private func perform(_ request: ActionRequest, speak: Bool = true) async -> ActionOutcome {
         guard settings.commandsEnabled else { return .failure("Commands are turned off in Settings.") }
         var request = request
+        // A day said with a reminder ("…by Friday"), read before a page or selection
+        // replaces the words.
+        let saidDay = request.name == "add_reminder" ? ReminderText.parse(request.detail ?? "").day : nil
         // "Add this page's URL to my notes": the note is the page (or the selection), not
         // the order's words — which is what the note said before.
         if request.name == "make_note" || request.name == "add_reminder", let reference = NoteReference.find(in: request.detail ?? "") {
@@ -1674,7 +1753,11 @@ final class AskCoordinator {
                 show(error: message)
                 return .failure(message)
             }
-            request.detail = content
+            request.detail = content + (saidDay.map { " " + $0.phrase } ?? "")
+        }
+        // No day said: ask ("when?"), so it lands on a day the Today list shows.
+        if request.name == "add_reminder", ReminderText.parse(request.detail ?? "").day == nil {
+            return askReminderDay(request, speak: speak)
         }
         switch ActionCatalog.resolve(request, allowedShortcuts: settings.allowedShortcuts) {
         case .failure(let error):

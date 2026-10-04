@@ -101,6 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirm.show(question, at: overlay.companionTopLeft)
         }
         coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
+        coordinator.onChoiceRequest = { [weak self] question, options, hint in
+            guard let self else { return }
+            confirm.showChoice(question, options: options, at: overlay.companionTopLeft, hint: hint) { [weak self] index in
+                self?.coordinator.answerReminderChoice(index)
+            }
+        }
         coordinator.onStopped = { [weak self] in
             guard let self, chat.isOpen, chat.model.isBusy else { return }
             chat.model.setAssistant(chat.model.messages.last?.role == .assistant ? (chat.model.messages.last?.text ?? "") + " …(stopped)" : "Stopped.")
