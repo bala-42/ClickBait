@@ -76,6 +76,10 @@ final class AskCoordinator {
     }
     /// A second, zoomed-in look corrected where some pointers are (same order).
     @ObservationIgnored var onPointersRefined: (([ScreenPointer]) -> Void)?
+    /// Pointing before the model answers: the question names exactly one thing on screen.
+    @ObservationIgnored var onInstantPointer: (([ScreenPointer]) -> Void)?
+    /// The current answer already pointed instantly: its own pointers don't move the companion.
+    @ObservationIgnored private(set) var pointedInstantly = false
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
 
@@ -855,6 +859,13 @@ final class AskCoordinator {
         let pid = frontmostPID
         let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
         request.menuOutline = MenuOutline.relevant(menus, to: question, limit: 25)
+        // The request names exactly one menu item ("clear history" → History ▸ Clear
+        // History…): start at once from the app's own menus; whatever follows (a dialog's
+        // button) is planned by the model after the item is chosen.
+        if let instant = InstantAnswer.menuPlan(for: question, app: context.appName, outline: menus) {
+            Log.ask.notice("Tutorial plan: instant, from the menus (\(instant.steps.count, privacy: .public) steps)")
+            return instant
+        }
         let start = ContinuousClock.now
         var plan: TutorialPlan?
         if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
@@ -1077,6 +1088,19 @@ final class AskCoordinator {
         }
         isAnswering = true
         defer { isAnswering = false }
+        // "Where's the Share button?" with exactly one element named Share on screen: point
+        // now (~0.1 s), not after the model (~8 s). The model still answers in words; its own
+        // pointers are only used when there was no exact, single match.
+        var instant: ScreenPointer?
+        if snip == nil, selectedText == nil, let target = InstantAnswer.locateTarget(in: question),
+           let element = InstantAnswer.uniqueElement(named: target, in: elements) {
+            let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
+            instant = ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
+                                    quartz: center)
+            Log.ask.notice("Instant pointer: one \(element.kind, privacy: .public) named exactly that")
+            onInstantPointer?([instant!])
+        }
+        pointedInstantly = instant != nil
         let reply: String
         let screenshot: EncodedScreenshot
         var request: AskRequest
@@ -1224,7 +1248,7 @@ final class AskCoordinator {
         if fromList.contains(true) {
             Log.ask.notice("\(fromList.filter { $0 }.count, privacy: .public) pointer(s) on a listed element: exact")
         }
-        let pointers = snapped.map(\.pointer)
+        let pointers = instant.map { [$0] } ?? snapped.map(\.pointer)
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
             \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped

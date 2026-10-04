@@ -12,6 +12,24 @@ public struct OllamaProvider: LLMProvider {
     /// open: Ollama unloaded one to load the other (~3 s each way).
     public static let defaultFastModel = "qwen2.5vl:3b"
 
+    /// Models stay loaded while ClickBait runs (user's decision, 2026-10-04): no 3–5 s
+    /// reload after a break. `unload()` lets them go when ClickBait quits.
+    static let keepAlive = -1
+
+    /// Frees both models (ClickBait is quitting). Waits at most `within`.
+    public func unload(within limit: TimeInterval = 1.5) {
+        let group = DispatchGroup()
+        for name in [model] + (fastModel.map { [$0] } ?? []) {
+            var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: limit)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: ["model": name, "keep_alive": 0])
+            group.enter()
+            session.dataTask(with: request) { _, _, _ in group.leave() }.resume()
+        }
+        _ = group.wait(timeout: .now() + limit)
+    }
+
     /// Set once loading the fast model pushed the main one out of memory: from then on
     /// (this run of the app) the main model answers everything.
     static let fastModelEvictsMain = OSAllocatedUnfairLock(initialState: false)
@@ -115,7 +133,7 @@ public struct OllamaProvider: LLMProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // Same context size as real requests, or Ollama reloads the model for the first one.
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "model": name, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
+            "model": name, "keep_alive": Self.keepAlive, "options": ["num_ctx": Self.contextTokens],
         ])
         _ = try? await session.data(for: request)
     }
@@ -216,7 +234,7 @@ public struct OllamaProvider: LLMProvider {
             // Models that can't think ignore it.
             "think": false,
             // Keep the model in memory between questions; loading takes seconds.
-            "keep_alive": "15m",
+            "keep_alive": Self.keepAlive,
             "options": options(for: ask),
             "messages": [["role": "system", "content": Prompt.system(for: ask)]]
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }

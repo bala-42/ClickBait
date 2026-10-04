@@ -73,6 +73,7 @@ final class OverlayModel {
     var tone: CompanionTone {
         if isSnipping || isTouring { return .capture }
         if isTutoring { return .tutorial }
+        if isGuiding { return .idle }  // pointing is blue, even while the words are still coming
         return switch bubble {
         case .idle, .answer, .error, .hint: .idle
         case .listening, .thinking, .explaining: .processing

@@ -1,3 +1,4 @@
+import ClickBaitCore
 import AppKit
 
 @main
@@ -27,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
         app.run()
+    }
+
+    /// Lets Ollama free the models it kept loaded for ClickBait.
+    func applicationWillTerminate(_ notification: Notification) {
+        (settings.makeProvider() as? OllamaProvider)?.unload()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -148,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.onTour = { [weak self] parts in self?.overlay.tour(parts) }
         coordinator.onPointersRefined = { [weak self] pointers in self?.overlay.retarget(pointers) }
+        coordinator.onInstantPointer = { [weak self] pointers in self?.overlay.guide(to: pointers) }
         overlay.levelSource = { [weak coordinator] in coordinator?.microphoneLevel ?? 0 }
         coordinator.onSnipMarking = { [weak self] marking in self?.overlay.setSnipping(marking) }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
@@ -161,10 +168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 chat.model.setAssistant(response.displayText)  // final text, with any code as a block
                 chat.model.isBusy = false
             }
-            overlay.guide(to: pointers)
+            // Already pointing (instantly, before the model): don't start over.
+            if !coordinator.pointedInstantly { overlay.guide(to: pointers) }
         }
         hotkey.start()
         TextReader.warmUp()
+        // Models load now and stay loaded while ClickBait runs (no reload after a break).
+        let provider = settings.makeProvider()
+        Task.detached(priority: .utility) { await provider.warmUp() }
         speech.loadIfInstalled()
 
         logPermissions()

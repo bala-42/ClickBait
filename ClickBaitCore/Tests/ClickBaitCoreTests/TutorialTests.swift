@@ -380,3 +380,39 @@ struct NamedBrowserTests {
         #expect(Websites.visit(in: "show me how to open youtube on chrome")?.address == "youtube.com")
     }
 }
+
+struct InstantAnswerTests {
+    private func element(_ label: String, x: Double = 10, y: Double = 10) -> ScreenElement {
+        ScreenElement(role: "AXButton", label: label, frame: Rect(x: x, y: y, width: 20, height: 20))
+    }
+
+    @Test(arguments: [("Where's the Share button?", "share"), ("show me the refresh button", "refresh"), ("point at Reload", "reload"),
+                      ("where is New Note", "new note"), ("find the search field", "search")])
+    func targets(_ question: String, _ expected: String) {
+        #expect(InstantAnswer.locateTarget(in: question) == expected)
+    }
+
+    @Test(arguments: ["show me how to export a PDF", "how do I share this", "what is this", "where do I click to share"])
+    func notTargets(_ question: String) {
+        #expect(InstantAnswer.locateTarget(in: question) == nil)
+    }
+
+    @Test func onlyOneExactMatchCounts() {
+        let one = [element("Share"), element("Shared Links", x: 200)]
+        #expect(InstantAnswer.uniqueElement(named: "share", in: one)?.label == "Share")
+        let two = [element("Share"), element("Share", x: 300)]
+        #expect(InstantAnswer.uniqueElement(named: "share", in: two) == nil)  // ambiguous: the model decides
+        #expect(InstantAnswer.uniqueElement(named: "shar", in: one) == nil)   // only exact names
+    }
+
+    @Test func menuItemsBecomeWalkthroughs() {
+        let menus = ["History ▸ Show All History", "History ▸ Clear History…", "File ▸ Export as PDF…", "File ▸ Close Window", "File ▸ Close Tab",
+                     "Format ▸ Font ▸ Bold"]
+        let clear = InstantAnswer.menuPlan(for: "How do I clear my Safari history?", app: "Safari", outline: menus)
+        #expect(clear?.steps.map(\.target) == ["History", "Clear History…"])
+        #expect(InstantAnswer.menuPlan(for: "Export this as a PDF", app: "Safari", outline: menus)?.steps.map(\.target) == ["File", "Export as PDF…"])
+        #expect(InstantAnswer.menuPlan(for: "how do I make it bold", app: "Pages", outline: menus) == nil)  // not an exact item
+        #expect(InstantAnswer.menuPlan(for: "how do I close", app: "Safari", outline: menus) == nil)  // no single item
+        #expect(InstantAnswer.menuPlan(for: "how do I bold", app: "Pages", outline: menus)?.steps.map(\.target) == ["Format", "Font", "Bold"])
+    }
+}
