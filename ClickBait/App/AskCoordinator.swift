@@ -751,7 +751,10 @@ final class AskCoordinator {
         let asking = TutorialQuestion.asksForTutorial(question)
         let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
             && !TutorialQuestion.isLocatingRequest(question)  // "show me the refresh button": blue pointing
-        guard asking || ordering, let provider, let tutorial else { return false }
+        // A well-known website is typed into the browser (lavender) however it's asked,
+        // even "show me how to open YouTube"; other "show me…" requests point (blue).
+        let visiting = Websites.visit(in: question, installedApps: Array(AppLocator.installed().keys)) != nil
+        guard asking || ordering || visiting, let provider, let tutorial else { return false }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()
         // The installed app's own name ("Safari"), whatever case the plan wrote.
@@ -1126,6 +1129,19 @@ final class AskCoordinator {
             Log.ask.notice("Instant pointer: no single exact match among \(elements.count, privacy: .public) elements; asking the model")
         }
         pointedInstantly = instant != nil
+        // Pointed already: the model would only add a sentence (~8 s of the GPU, and the
+        // next question waited behind it). Say so ourselves and stop here.
+        if let instant {
+            encoding.cancel()
+            let names = instant.map(\.label).joined(separator: " and ")
+            let response = AssistantResponse(speech: "Here's \(names).")
+            if speak { speaker.speak(response.speech) }
+            conversation?.append(user: question, assistantSpeech: response.speech)
+            if state == .thinking { state = .idle }
+            Log.ask.notice("Answered instantly, without the model")
+            onAnswer?(response, instant)
+            return
+        }
         let reply: String
         let screenshot: EncodedScreenshot
         var request: AskRequest

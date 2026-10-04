@@ -258,14 +258,23 @@ public struct TutorialPlan: Equatable, Sendable {
 
 /// Questions that ask to be shown how to do something with more than one click.
 public enum TutorialQuestion {
-    static let phrases = ["how do i", "how can i", "how to", "how would i", "walk me through", "show me how", "teach me",
+    static let phrases = ["how do i", "how can i", "how to", "how would i", "walk me through", "teach me",
                           "guide me", "tutorial", "steps to", "what are the steps"]
+
+    /// "Show me …" — the thing, or even how to do something — asks to be shown where to
+    /// click: blue pointing, never a lavender walkthrough (user's rule, 2026-10-04).
+    public static func asksToBeShown(_ text: String) -> Bool {
+        var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
+        while let first = words.first, ["please", "can", "could", "you", "would", "will", "hey", "clickbait", "just"].contains(first) {
+            words.removeFirst()
+        }
+        return words.starts(with: ["show", "me"])
+    }
 
     /// Asking outright to be walked through it: always a walkthrough, never sorted away.
     public static func insistsOnWalkthrough(_ question: String) -> Bool {
         let text = " " + ImpliedPointer.normalized(question) + " "
-        return [" show me how ", " walk me through ", " guide me ", " teach me ", " step by step ", " tutorial ",
-                " show me the steps "].contains { text.contains($0) }
+        return [" walk me through ", " guide me ", " teach me ", " step by step ", " tutorial "].contains { text.contains($0) }
     }
 
     /// The sorter's verdict: true when it's a question to answer, not something to do.
@@ -281,6 +290,7 @@ public enum TutorialQuestion {
     static let knowing: Set<String> = ["know", "understand", "learn", "see what", "find out"]
 
     public static func asksForTutorial(_ question: String) -> Bool {
+        if asksToBeShown(question) { return false }
         let text = ImpliedPointer.normalized(question)
         if phrases.contains(where: { text.hasPrefix($0) || text.contains(" " + $0) }) { return true }
         guard let wish = wishes.first(where: { text.hasPrefix($0 + " ") }) else { return false }
@@ -297,7 +307,6 @@ public enum TutorialQuestion {
             words.removeFirst()
         }
         let joined = words.joined(separator: " ")
-        if joined.hasPrefix("show me how") || joined.hasPrefix("show me the steps") { return false }
         let starts = ["where", "wheres", "show me", "point", "find", "highlight", "locate", "which one is", "which is"]
         return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
     }
