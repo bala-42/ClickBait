@@ -213,6 +213,37 @@ enum AXInspector {
         return best
     }
 
+    /// A search box to type into and what's in it (tutorials' search steps): the one in
+    /// the open Help menu, or else the front window's (System Settings' sidebar search).
+    /// Nil when none is on screen (the Help menu is closed, say).
+    static func searchField(frontmostPID pid: pid_t?, inHelpMenu: Bool) -> (frame: Rect, value: String)? {
+        guard isTrusted, let pid else { return nil }
+        let app = element(AXUIElementCreateApplication(pid))
+        let root: AXElement?
+        if inHelpMenu {
+            // "Help" in English; it's always the last menu, whatever the language.
+            let menus = app.element(kAXMenuBarAttribute)?.children(kAXChildrenAttribute) ?? []
+            root = menus.last { $0.name == "Help" } ?? menus.last
+        } else {
+            root = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute)
+        }
+        guard let root else { return nil }
+        let deadline = Date().addingTimeInterval(0.3)
+        var queue = [root][...]
+        var visited = 0
+        while let node = queue.popFirst(), visited < 1500, Date() < deadline {
+            visited += 1
+            let role = node.string(kAXRoleAttribute) ?? ""
+            if role == "AXSearchField" || (role == "AXTextField" && node.string(kAXSubroleAttribute) == "AXSearchField"),
+               let frame = node.frame, frame.width > 1, frame.height > 1, frame.y > 1 {
+                return (frame, node.string(kAXValueAttribute) ?? "")
+            }
+            if ["AXWebArea", "AXStaticText", "AXImage", "AXButton"].contains(role) { continue }
+            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+        }
+        return nil
+    }
+
     /// The app whose window is under `point` (Quartz) — the one the user is looking at
     /// when the frontmost app's windows are on another display. From the window list
     /// (front to back, normal windows only), so ClickBait's own see-through overlays,

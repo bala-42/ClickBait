@@ -201,8 +201,11 @@ final class TutorialController {
             return
         }
 
-        // This step happens in another app: switch there (green), once per step.
-        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted),
+        // This step happens in another app: switch there (green), once per step — unless
+        // the step just clicked opens that app ("System Settings…"): give it time to come.
+        let opening = index > 0 && plan.steps[index].app.map { plan.steps[index - 1].opensApp($0) } == true
+            && Date().timeIntervalSince(lastProgress) < 4
+        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted), !opening,
            switchedFor.insert(index).inserted, let openApp {
             await switchApp(to: wanted, using: openApp)
             return
@@ -230,6 +233,12 @@ final class TutorialController {
 
         guard refreshNow || tick % 2 == 0 else { return }
         let pid = front?.processIdentifier
+        // Typing into Apple's own search (System Settings, an app's Help menu): point at the
+        // box, and move on once the words are in it. The user types; ClickBait only points.
+        if step.isSearchTyping {
+            await checkSearchTyping(step, pid: pid)
+            return
+        }
         // A typing step in a browser is done once the page changes (to the typed site).
         if plan.steps[index].typing != nil {
             let page = await Task.detached(priority: .userInitiated) { () -> String? in
@@ -340,6 +349,38 @@ final class TutorialController {
            screenChangedAt.map({ Date().timeIntervalSince($0) < 10 }) ?? false || missingFor > 8 {
             await askModel()
         }
+    }
+
+    private func checkSearchTyping(_ step: TutorialStep, pid: pid_t?) async {
+        let inHelp = step.target == TutorialStep.helpSearchTarget
+        let field = await Task.detached(priority: .userInitiated) {
+            AXInspector.searchField(frontmostPID: pid, inHelpMenu: inHelp)
+        }.value
+        guard isActive else { return }
+        if let field {
+            if step.typingShows(field.value) {
+                advance(to: index + 1, reason: "typed")
+                return
+            }
+            if loggedTarget != index {
+                loggedTarget = index
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at the \(inHelp ? "Help menu's" : "window's", privacy: .public) search box")
+            }
+            point(at: field.frame, label: instruction, menu: false)
+            return
+        }
+        // The Help menu was closed again: point at it so it can be reopened.
+        if inHelp {
+            let display = Self.displayUnderMouse()
+            let elements = await Task.detached(priority: .userInitiated) {
+                AXInspector.visibleElements(frontmostPID: pid, display: display)
+            }.value
+            if isActive, let help = StepMatcher.find("Help", in: elements, minimum: 0.95) {
+                point(at: help.frame, label: "Open the Help menu", menu: false)
+                return
+            }
+        }
+        overlay.tutorialHint(instruction)
     }
 
     private func point(at frame: Rect, label: String, menu: Bool, keepMissing: Bool = false) {
