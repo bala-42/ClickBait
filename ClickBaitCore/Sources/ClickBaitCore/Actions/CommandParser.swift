@@ -279,6 +279,13 @@ public enum CommandParser {
     }
 
     private static func app(_ words: [String]) -> ActionRequest? {
+        var words = words
+        // "go back to Claude", "switch to Notes", "return to Safari": open (bring forward).
+        for lead in [["go", "back", "to"], ["get", "back", "to"], ["back", "to"], ["switch", "to"], ["return", "to"], ["go", "to"]]
+        where words.count > lead.count && Array(words.prefix(lead.count)) == lead {
+            words = ["open"] + words.dropFirst(lead.count)
+            break
+        }
         guard let verb = words.first, words.count > 1 else { return nil }
         let action: String
         switch verb {

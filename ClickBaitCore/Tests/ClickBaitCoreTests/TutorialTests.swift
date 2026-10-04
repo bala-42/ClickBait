@@ -458,3 +458,24 @@ struct SortingTests {
         #expect(plan.steps.map(\.typing) == [nil, nil])
     }
 }
+
+struct AppOverWebsiteTests {
+    private let apps = ["Claude", "Safari", "Google Chrome", "Spotify"]
+
+    @Test func installedAppsWin() {
+        #expect(Websites.visit(in: "open Claude", installedApps: apps) == nil)
+        #expect(Websites.visit(in: "go back to Claude", installedApps: apps) == nil)
+        #expect(Websites.visit(in: "open claude.ai", installedApps: apps)?.address == "claude.ai")
+        #expect(Websites.visit(in: "open the Claude website", installedApps: apps)?.address == "claude.ai")
+        #expect(Websites.visit(in: "open Claude in Chrome", installedApps: apps)?.address == "claude.ai")
+        #expect(Websites.visit(in: "open YouTube", installedApps: apps)?.address == "youtube.com")  // no YouTube app
+    }
+}
+
+struct BackToAppTests {
+    @Test func backToApps() {
+        #expect(CommandParser.parse("go back to Claude", allowedShortcuts: [])?.argument == "claude")
+        #expect(CommandParser.parse("switch to Notes", allowedShortcuts: [])?.argument == "notes")
+        #expect(CommandParser.parse("switch to dark mode", allowedShortcuts: [])?.name == "dark_mode")
+    }
+}
