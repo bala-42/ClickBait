@@ -211,7 +211,8 @@ struct CompanionBubbleView: View {
         case .thinking(let heard?):
             TinyPill(text: "“\(heard)”", symbol: "ear", tone: model.tone)
         case .working(let message):
-            TinyPill(text: message.lowercased(), symbol: "gearshape.fill", tone: model.tone)
+            // A lowercase verb, names as they are: "opening Safari…", "moving to Documents…".
+            TinyPill(text: message.prefix(1).lowercased() + message.dropFirst(), symbol: "gearshape.fill", tone: model.tone)
         case .idle, .listening, .thinking, .explaining:
             EmptyView()
         case .answer(let text), .done(let text):

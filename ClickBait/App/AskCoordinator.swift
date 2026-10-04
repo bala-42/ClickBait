@@ -723,6 +723,8 @@ final class AskCoordinator {
         guard asking || ordering, let provider, let tutorial else { return false }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()
+        // The installed app's own name ("Safari"), whatever case the plan wrote.
+        let installedName = { (name: String) in apps.keys.first { $0.caseInsensitiveCompare(name) == .orderedSame } }
         var capture = capture
         var elements = elements
         var screenshot: EncodedScreenshot
@@ -740,9 +742,9 @@ final class AskCoordinator {
         for _ in 0..<2 {
             guard !Task.isCancelled else { return false }
             plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider)?
-                .separatingSetup(frontmostApp: context.appName, isInstalledApp: { apps[$0] != nil })
+                .separatingSetup(frontmostApp: context.appName, isInstalledApp: { installedName($0) != nil })
             // The plan says it happens in another app: open it (green) and plan again there.
-            guard let other = plan?.app, let url = apps[other] else { break }
+            guard let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
             guard let ready = await openForTutorial(other, url: url) else { return false }
             (capture, screenshot, elements) = ready
         }
@@ -841,7 +843,7 @@ final class AskCoordinator {
             try? await Task.sleep(for: .milliseconds(200))
         }
         try? await Task.sleep(for: .milliseconds(300))  // the window settles
-        onActionDone?("opened \((app.localizedName ?? name).lowercased())")
+        onActionDone?("opened \(app.localizedName ?? name)")
         frontmostPID = app.processIdentifier
         frontmostBundleID = app.bundleIdentifier
         let pid = app.processIdentifier
