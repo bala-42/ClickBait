@@ -235,6 +235,9 @@ enum AXInspector {
 
     // MARK: - Menus (tutorials)
 
+    /// Submenus of recently used apps, documents and servers (never searched for steps).
+    private static let recentItemsMenus: Set = ["recent items", "open recent", "recent documents", "recent places"]
+
     /// Where a menu item lives in the frontmost app's menus, even while they're closed:
     /// ["View", "Show Path Bar"], or ["Format", "Font", "Bold"] for a submenu. Lets a
     /// tutorial point at the menu to open when the model skipped that step.
@@ -249,8 +252,13 @@ enum AXInspector {
                 guard Date() < deadline else { return }
                 let title = item.name
                 guard !title.isEmpty else { continue }
-                let score = LabelMatcher.similarity(label, title)
+                // Deeper matches count a little less: the real "System Settings…" in the
+                // Apple menu beats a near-identical entry a submenu down.
+                let score = LabelMatcher.similarity(label, title) - 0.05 * Double(depth)
                 if score >= 0.8, score > (best?.score ?? 0) { best = (path + [title], score) }
+                // Recent apps and files aren't commands: Apple ▸ Recent Items lists "System
+                // Settings" too, and the walkthrough sent people into Recent Items for it.
+                guard !Self.recentItemsMenus.contains(title.lowercased()) else { continue }
                 if let submenu = item.children(kAXChildrenAttribute).first(where: { $0.string(kAXRoleAttribute) == "AXMenu" }) {
                     search(submenu, path: path + [title], depth: depth + 1)
                 }

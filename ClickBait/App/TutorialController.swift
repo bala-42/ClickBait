@@ -269,7 +269,9 @@ final class TutorialController {
         // A near-exact visible match wins; a looser one ("History" button for "Clear
         // History…") only if the target isn't an item in the app's menus.
         var visible = StepMatcher.find(step.target, in: elements, minimum: 0.95)
-        if visible == nil, let loose = StepMatcher.find(step.target, in: elements) {
+        // Loose still means nearly the same name ("Night Shift" for "Night Shift…"); a
+        // different thing that merely shares a word is never pointed at in its place.
+        if visible == nil, let loose = StepMatcher.find(step.target, in: elements, minimum: 0.85) {
             if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
                 AXInspector.menuPath(to: step.target, frontmostPID: pid)
             }).value {
@@ -291,7 +293,7 @@ final class TutorialController {
         // that step belongs to: Finder's own search field once "skipped" System Settings.
         for later in (index + 1)..<min(index + 3, plan.steps.count)
         where plan.steps[later].app.map({ Self.isApp($0, front) }) ?? true
-            && StepMatcher.find(plan.steps[later].target, in: elements) != nil {
+            && StepMatcher.find(plan.steps[later].target, in: elements, minimum: 0.9) != nil {
             advance(to: later, reason: "went ahead")
             return
         }
@@ -321,7 +323,8 @@ final class TutorialController {
                 StepMatcher.find(title, in: elements).map { (title, $0) }
             }.first
             if let (title, element) = opening {
-                point(at: element.frame, label: "open \(title.lowercased()) first", menu: true)
+                // The step's own words, plus where it is: never a label the chat doesn't show.
+                point(at: element.frame, label: "\(instruction) — in the \(title.lowercased()) menu", menu: true)
                 await checkForCompletion()
                 return
             }
@@ -336,7 +339,9 @@ final class TutorialController {
                 // flying home and back out looked jumpy. The label shows what to do.
                 point(at: frame, label: instruction, menu: pointingAtMenu, keepMissing: true)
             } else {
-                overlay.tutorialHint(instruction)  // never had a target this step
+                // Never had a target this step: say so, rather than point at something else.
+                let place = menuPaths[index].flatMap(\.first).map { " — look in the \($0.lowercased()) menu" } ?? ""
+                overlay.tutorialHint(place.isEmpty ? "can't see it yet: \(instruction)" : instruction + place)
             }
         }
         guard let since = targetMissingSince, !checking else { return }
