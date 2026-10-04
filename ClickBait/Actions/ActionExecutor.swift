@@ -127,8 +127,10 @@ enum ActionExecutor {
             return "Added a note"
 
         case .addReminder(let text):
-            try await ReminderStore.add(text)
-            return "Added a reminder"
+            // Name the list: a reminder that "didn't show up" is usually in a list the
+            // Reminders widget isn't showing.
+            let list = try await ReminderStore.add(text)
+            return "Added to \(list)"
 
         case .media(let key):
             MediaKeys.press(key)
@@ -391,7 +393,9 @@ enum ReminderStore {
         }
     }
 
-    static func add(_ title: String) async throws {
+    /// Adds the reminder (no date) to the default list; returns that list's name.
+    @discardableResult
+    static func add(_ title: String) async throws -> String {
         let store = EKEventStore()
         // macOS asks once ("ClickBait would like to access your reminders"). Adding
         // needs full access; ClickBait never reads existing reminders.
@@ -401,5 +405,13 @@ enum ReminderStore {
         reminder.title = title
         reminder.calendar = list
         try store.save(reminder, commit: true)
+        let source = switch list.source.sourceType {
+        case .local: "On My Mac"
+        case .calDAV: "iCloud/CalDAV"
+        case .exchange: "Exchange"
+        default: "other"
+        }
+        Log.ask.notice("Reminder saved to list \(list.title, privacy: .private) (\(source, privacy: .public)), no due date")
+        return list.title
     }
 }
