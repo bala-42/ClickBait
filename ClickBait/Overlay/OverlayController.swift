@@ -383,6 +383,19 @@ final class OverlayController {
     /// Called with every left click anywhere (global AppKit point), for tutorials.
     var onClick: ((NSPoint) -> Void)?
 
+    /// Planning a walkthrough right after green setup: lavender and pulsing at once,
+    /// instead of idle blue until the plan arrives. Off again if no tutorial starts.
+    func tutorialPlanning(_ on: Bool) {
+        if on {
+            dismissTask?.cancel()
+            setCompanionHidden(false)
+            model.bubble = .thinking(heard: nil)
+            setTutoring(true)
+        } else {
+            setTutoring(false)
+        }
+    }
+
     func setTutoring(_ on: Bool) {
         model.isTutoring = on
         if !on {

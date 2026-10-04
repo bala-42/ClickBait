@@ -901,12 +901,20 @@ final class AskCoordinator {
     @ObservationIgnored private(set) var tutorialReturnApp: NSRunningApplication?
     /// Setup (opening an app for a tutorial) is over: the green "Opening…" can go.
     @ObservationIgnored var onSetupFinished: (() -> Void)?
+    /// A walkthrough is being planned in the app just opened (true), or won't happen (false).
+    @ObservationIgnored var onTutorialPlanning: ((Bool) -> Void)?
 
     /// "How do I…" or an order that takes clicks ("Clear search history."): plan the
     /// clicks and walk the user through them in lavender. If the task lives in another
     /// app, open it first (green). Returns false to answer normally instead.
     private func startTutorial(question: String, capture: ScreenCapture, encoding: Task<EncodedScreenshot, Error>,
                                elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
+        // Lavender while planning, once an app was opened for the walkthrough (green →
+        // lavender, not green → idle blue → lavender). Dropped again if no tutorial starts.
+        var planningShown = false
+        defer {
+            if planningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
+        }
         let asking = TutorialQuestion.asksForTutorial(question)
         let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
             && !TutorialQuestion.isLocatingRequest(question)  // "show me the refresh button": blue pointing
@@ -946,6 +954,8 @@ final class AskCoordinator {
         }
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
+            planningShown = true
+            onTutorialPlanning?(true)
             (capture, screenshot, elements) = ready
         }
 
@@ -972,6 +982,8 @@ final class AskCoordinator {
             // The plan says it happens in another app: open it (green) and plan again there.
             guard let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
             guard let ready = await openForTutorial(other, url: url) else { return false }
+            planningShown = true
+            onTutorialPlanning?(true)
             (capture, screenshot, elements) = ready
         }
         guard !Task.isCancelled, let plan, let first = plan.steps.first else {
