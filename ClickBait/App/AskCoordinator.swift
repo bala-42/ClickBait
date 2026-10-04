@@ -935,11 +935,8 @@ final class AskCoordinator {
         // Settings…" (works from any app, no model needed); once it's open, the rest of the
         // task is planned in there — unless getting there was the whole request.
         if taskApp == "System Settings", context.appName?.caseInsensitiveCompare("System Settings") != .orderedSame {
-            // Then System Settings' own search finds the setting (it knows every one), rather
-            // than a model guessing which pane it's in.
-            let search = TutorialQuestion.systemSettingsSearchTerm(in: question)
-            Log.ask.notice("Tutorial: System Settings by the Apple menu\(search == nil ? "" : ", then its search", privacy: .public)")
-            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName, search: search), question: question, startedIn: startedIn,
+            Log.ask.notice("Tutorial: System Settings by the Apple menu")
+            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName), question: question, startedIn: startedIn,
                                        speak: speak, display: display, installedName: installedName, apps: apps,
                                        provider: provider, tutorial: tutorial,
                                        continues: !TutorialQuestion.onlyOpens(question, app: "System Settings"))
@@ -988,14 +985,6 @@ final class AskCoordinator {
             }.value
             guard inMenus else {
                 onSetupFinished?()
-                // The plan named something that isn't there. The app's Help menu search finds
-                // its real menu items (macOS points at the one picked); else answer in words.
-                if let phrase = TutorialQuestion.helpSearchPhrase(for: question, app: context.appName) {
-                    Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; Help search instead")
-                    return await beginTutorial(.helpSearch(for: phrase, in: context.appName), question: question, startedIn: startedIn,
-                                               speak: speak, display: display, installedName: installedName, apps: apps,
-                                               provider: provider, tutorial: tutorial)
-                }
                 Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
                 return false
             }

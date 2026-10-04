@@ -10,31 +10,6 @@ public struct TutorialStep: Codable, Equatable, Sendable {
     /// The app the click happens in ("Notes"), when the task spans apps. ClickBait
     /// switches to it (green) before pointing.
     public var app: String?
-    /// Targets for typing into a search box rather than a named element: the window's
-    /// search field (System Settings), or the search field in an open Help menu.
-    public static let searchFieldTarget = "search box"
-    public static let helpSearchTarget = "Help search"
-
-    /// This step is the menu item that opens `app` ("System Settings…" for System
-    /// Settings): after clicking it, the app is on its way — no need to switch there.
-    public func opensApp(_ app: String) -> Bool {
-        TutorialPlan.withoutEllipsis(target).caseInsensitiveCompare(app) == .orderedSame
-    }
-
-    /// Typing into a search box (not a web address): done once the box holds the text.
-    public var isSearchTyping: Bool {
-        typing != nil && (target == Self.searchFieldTarget || target == Self.helpSearchTarget)
-    }
-
-    /// What's in a search box shows `typing` was typed: the words are there, in any case
-    /// (macOS may already have suggested a longer name).
-    public func typingShows(_ value: String) -> Bool {
-        guard let typing else { return false }
-        let wanted = ImpliedPointer.normalized(typing)
-        let have = ImpliedPointer.normalized(value)
-        return !wanted.isEmpty && (have.contains(wanted) || (have.count >= 3 && wanted.hasPrefix(have) && have.count >= wanted.count - 2))
-    }
-
     /// What to type into `target` ("youtube.com"), for a typing step; nil for a click.
     public var typing: String?
 
@@ -211,36 +186,10 @@ public struct TutorialPlan: Equatable, Sendable {
 
     /// The way into System Settings that works from any app: the Apple menu, then
     /// "System Settings…". Shown (pointed at), not done for the user; no model needed.
-    /// With `search` (a setting's name), it goes on with System Settings' own search —
-    /// which knows every setting — instead of a model guessing the pane.
-    public static func systemSettingsByAppleMenu(from front: String?, search: String? = nil) -> TutorialPlan {
-        var steps: [TutorialStep] = []
-        if front?.caseInsensitiveCompare("System Settings") != .orderedSame {
-            steps += [
-                TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
-                TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
-            ]
-        }
-        guard let search else {
-            return TutorialPlan(intro: "Open the Apple menu, then choose System Settings.", steps: steps)
-        }
-        steps += [
-            TutorialStep(target: TutorialStep.searchFieldTarget, instruction: "Type “\(search)” in the search box",
-                         app: "System Settings", typing: search),
-            TutorialStep(target: TutorialQuestion.titleCased(search), instruction: "Click \(TutorialQuestion.titleCased(search))",
-                         app: "System Settings"),
-        ]
-        let intro = steps.count > 2 ? "Open System Settings from the Apple menu, then search for \(search)." : "Search System Settings for \(search)."
-        return TutorialPlan(intro: intro, steps: steps)
-    }
-
-    /// Any app's Help menu search finds its menu items (hovering a result makes macOS
-    /// point at the real item). The fallback when a planned step can't be found.
-    public static func helpSearch(for phrase: String, in app: String?) -> TutorialPlan {
-        TutorialPlan(intro: "Search the Help menu for “\(phrase)”.", steps: [
-            TutorialStep(target: "Help", instruction: "Click the Help menu", app: app),
-            TutorialStep(target: TutorialStep.helpSearchTarget, instruction: "Type “\(phrase)”, then pick the result",
-                         app: app, typing: phrase),
+    public static func systemSettingsByAppleMenu(from front: String?) -> TutorialPlan {
+        TutorialPlan(intro: "Open the Apple menu, then choose System Settings.", steps: [
+            TutorialStep(target: "Apple", instruction: "Click the Apple menu", app: front),
+            TutorialStep(target: "System Settings…", instruction: "Choose System Settings…", app: front),
         ])
     }
 
@@ -449,68 +398,6 @@ public enum TutorialQuestion {
                            "settings", "setting", "preferences", "preference"]
         let named = Set(ImpliedPointer.normalized(app).split(separator: " ").map(String.init))
         return ImpliedPointer.normalized(text).split(separator: " ").allSatisfy { filler.contains(String($0)) || named.contains(String($0)) }
-    }
-
-    /// What to type into System Settings' search for this request: the setting it names,
-    /// in System Settings' own words ("update my mac" → "software update"). Nil when it
-    /// names no particular setting ("open system settings").
-    public static func systemSettingsSearchTerm(in text: String) -> String? {
-        let spoken = " " + ImpliedPointer.normalized(text) + " "
-        guard let topic = systemSettingTopics
-            .filter({ spoken.contains(" " + $0 + " ") })
-            .max(by: { $0.count < $1.count }) else { return nil }
-        return systemSettingsSearchNames[topic, default: topic].isEmpty ? nil : systemSettingsSearchNames[topic, default: topic]
-    }
-
-    /// Topics whose search word differs from how people say it ("" = no particular setting).
-    static let systemSettingsSearchNames: [String: String] = [
-        "system settings": "", "system setting": "", "system preferences": "", "system preference": "",
-        "settings app": "", "mac settings": "", "mac setting": "", "mac s settings": "", "macbook settings": "",
-        "wi fi": "wi-fi", "wifi": "wi-fi", "network settings": "network",
-        "date time": "date & time", "date and time": "date & time", "time zone": "date & time",
-        "update my mac": "software update", "update macos": "software update", "macos update": "software update",
-        "add a printer": "printers", "hide the dock": "desktop & dock", "dock size": "desktop & dock",
-        "dock position": "desktop & dock", "dock magnification": "desktop & dock", "desktop and dock": "desktop & dock",
-        "focus modes": "focus", "focus mode": "focus", "privacy settings": "privacy & security",
-        "region settings": "language & region", "system language": "language & region", "preferred language": "language & region",
-        "keyboard settings": "keyboard", "keyboard layout": "input sources", "mouse settings": "mouse", "mouse speed": "mouse",
-        "notification settings": "notifications", "display settings": "displays", "external display": "displays",
-        "second display": "displays", "screen resolution": "displays", "display resolution": "displays",
-        "desktop background": "wallpaper", "desktop picture": "wallpaper", "screensaver": "screen saver",
-        "user accounts": "users & groups", "user account": "users & groups", "guest user": "users & groups",
-        "apple id": "apple account", "low power mode": "battery", "energy saver": "battery",
-        "tap to click": "trackpad", "scroll direction": "trackpad", "tracking speed": "trackpad",
-        "keyboard backlight": "keyboard brightness", "cursor size": "pointer size",
-    ]
-
-    /// What to type into an app's Help search for this request: its key words, without
-    /// the question's filler or the app's own name ("how do I show the path bar in Finder"
-    /// → "show path bar").
-    public static func helpSearchPhrase(for text: String, app: String?) -> String? {
-        let filler: Set = ["how", "do", "i", "can", "could", "you", "to", "the", "a", "an", "my", "this", "that", "these",
-                           "in", "on", "of", "for", "with", "it", "is", "please", "want", "would", "like", "me", "show",
-                           "how's", "where", "what", "way", "way", "walk", "through", "help", "hey", "clickbait", "go",
-                           "make", "let", "tell", "app", "s", "using", "use"]
-        let appWords = Set(ImpliedPointer.normalized(app ?? "").split(separator: " ").map(String.init))
-        var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
-            .filter { !filler.contains($0) && !appWords.contains($0) }
-        // "show" is filler as a request ("show me how") but can be the action ("show path
-        // bar"): keep it when it was followed by something other than "me".
-        let raw = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
-        if let index = raw.firstIndex(of: "show"), index + 1 < raw.count, raw[index + 1] != "me", raw[index + 1] != "how" {
-            words.insert("show", at: 0)
-        }
-        words = Array(words.prefix(4))
-        return words.isEmpty ? nil : words.joined(separator: " ")
-    }
-
-    /// "night shift" → "Night Shift"; "wi-fi" → "Wi-Fi"; "&" kept.
-    public static func titleCased(_ text: String) -> String {
-        text.split(separator: " ").map { word in
-            word.split(separator: "-", omittingEmptySubsequences: false)
-                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-                .joined(separator: "-")
-        }.joined(separator: " ")
     }
 
     static func isSystemSetting(_ text: String) -> Bool {
