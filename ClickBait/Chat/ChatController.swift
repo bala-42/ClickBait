@@ -66,6 +66,21 @@ final class ChatController {
         panel.orderFrontRegardless()
     }
 
+    /// Opens an empty chat at `topLeft` with the cursor in the text field, ready to
+    /// type. Takes the keyboard without activating ClickBait, like Spotlight.
+    func openForTyping(at topLeft: CGPoint) {
+        open(at: topLeft)
+        panel?.makeKeyAndOrderFront(nil)
+        model.focusRequest += 1
+    }
+
+    /// Puts the cursor back in an open chat's text field.
+    func focus() {
+        guard let panel else { return }
+        panel.makeKeyAndOrderFront(nil)
+        model.focusRequest += 1
+    }
+
     func close() {
         panel?.orderOut(nil)
         panel?.close()

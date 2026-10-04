@@ -48,6 +48,12 @@ final class AskCoordinator {
     @ObservationIgnored var onConfirmRequest: ((String) -> Void)?
     /// The question is no longer pending (answered, replaced or dropped).
     @ObservationIgnored var onConfirmEnd: (() -> Void)?
+    /// Set by ⌥⌘ + right-click so the following release of ⌥⌘ doesn't count as a tap.
+    @ObservationIgnored private var ignoreExplainRelease = false
+    /// An empty chat should open, ready to type into (⌥⌘ + right-click).
+    @ObservationIgnored var onChatOpenForTyping: (() -> Void)?
+    /// The open chat should take the keyboard.
+    @ObservationIgnored var onChatFocus: (() -> Void)?
     /// Esc stopped an answer that was coming in (the chat stops showing it as busy).
     @ObservationIgnored var onStopped: (() -> Void)?
     /// A typed order was carried out: its confirmation, as the chat's reply.
@@ -116,13 +122,21 @@ final class AskCoordinator {
             // Busy answering: a tap still explains, but nothing to snip into.
             if state != .listening, state != .thinking, !isAnswering { snipper.begin() }
         case .explainReleased:
+            // Letting go of ⌥⌘ after a right-click (type to ask) isn't a tap.
+            if ignoreExplainRelease {
+                ignoreExplainRelease = false
+                snipper.cancel()
+                return
+            }
             let armed = snipper.isArmed
             switch snipper.isActive ? snipper.end() : .tap {
             case .snip(let kind, let region, let path): snip(kind, region: region, path: path)
             case .tap where armed: Log.ask.notice("Snip armed but nothing marked; ignoring")
             case .tap: explain()
             }
-        case .explainCancelled: snipper.cancel()
+        case .explainCancelled:
+            snipper.cancel()
+            ignoreExplainRelease = false
         }
     }
 
@@ -215,6 +229,24 @@ final class AskCoordinator {
     }
 
     /// Escape while listening or thinking abandons the question.
+    /// ⌥⌘ + right-click: an empty chat to type the first question into. Sent messages go
+    /// through `sendTyped` like any typed follow-up (screen, pointing, actions).
+    func startTypedChat() {
+        if snipper.isActive { snipper.cancel() }
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.option), flags.contains(.command) { ignoreExplainRelease = true }
+        if conversation != nil, chatShown {
+            onChatFocus?()  // already open: just type into it
+            return
+        }
+        stopActivity()
+        conversation = Conversation()
+        snipMemory = nil
+        chatShown = true
+        Log.ask.notice("Chat opened for typing (⌥⌘ right-click)")
+        onChatOpenForTyping?()
+    }
+
     /// Something is going on that Esc should stop (Esc is then taken from other apps).
     var isBusy: Bool {
         state == .listening || state == .thinking || state == .speaking || isAnswering || speaker.isSpeaking

@@ -1,16 +1,21 @@
 import AppKit
 
-/// Takes Esc away from the app in front while ClickBait is busy, so pressing it stops
-/// ClickBait without also closing a dialog, leaving full screen or stopping something
-/// in that app. A global key monitor can only watch; this is a key-event tap (allowed
-/// by the Accessibility permission). While ClickBait is idle every key passes through
-/// untouched.
+/// Input ClickBait has to *take* rather than just watch (a global monitor can only
+/// watch), through an event tap allowed by the Accessibility permission:
+/// - Esc, only while ClickBait is busy, so it stops ClickBait without also closing a
+///   dialog or leaving full screen in the app in front.
+/// - ⌥⌘ + right-click: opens a chat to type into, without the app's context menu.
+/// Everything else passes through untouched.
 @MainActor
-final class EscapeInterceptor {
+final class InputInterceptor {
     /// Whether Esc belongs to ClickBait right now.
     var isBusy: () -> Bool = { false }
     /// Called (on the main thread) for an Esc that was taken.
     var onEscape: () -> Void = {}
+    /// ⌥⌘ + right-click: ask by typing.
+    var onTypeToAsk: () -> Void = {}
+    /// The matching right-mouse-up is taken too, so the app never sees half a click.
+    fileprivate var swallowRightMouseUp = false
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -20,6 +25,8 @@ final class EscapeInterceptor {
     func start() -> Bool {
         guard tap == nil else { return true }
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+            | CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
+            | CGEventMask(1 << CGEventType.rightMouseUp.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: escapeTapCallback,
@@ -47,10 +54,26 @@ final class EscapeInterceptor {
 private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                                userInfo: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     guard let userInfo else { return Unmanaged.passUnretained(event) }
-    let interceptor = Unmanaged<EscapeInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
+    let interceptor = Unmanaged<InputInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         MainActor.assumeIsolated { interceptor.reenable() }
         return Unmanaged.passUnretained(event)
+    }
+    if type == .rightMouseDown || type == .rightMouseUp {
+        let flags = event.flags
+        let chord = flags.contains(.maskAlternate) && flags.contains(.maskCommand)
+            && !flags.contains(.maskControl) && !flags.contains(.maskShift)
+        let taken = MainActor.assumeIsolated { () -> Bool in
+            if type == .rightMouseUp {
+                defer { interceptor.swallowRightMouseUp = false }
+                return interceptor.swallowRightMouseUp
+            }
+            guard chord else { return false }
+            interceptor.swallowRightMouseUp = true
+            DispatchQueue.main.async { interceptor.onTypeToAsk() }
+            return true
+        }
+        return taken ? nil : Unmanaged.passUnretained(event)
     }
     guard type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == 53 else {
         return Unmanaged.passUnretained(event)

@@ -485,7 +485,7 @@ final class OverlayController {
         }
 
         // Escape in ClickBait's own windows (typing in the chat). Esc in other apps is
-        // handled by EscapeInterceptor, which takes it only while ClickBait is busy.
+        // handled by InputInterceptor, which takes it only while ClickBait is busy.
         add(local: .keyDown) { [weak self] event in
             guard event.keyCode == 53, let self else { return }
             if self.onEscape?() != true { self.dismissAnswer() }

@@ -86,12 +86,14 @@ struct ChatView: View {
 
     private var inputRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Ask a follow-up…", text: $model.draft, axis: .vertical)
+            TextField(model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…", text: $model.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .lineLimit(1...4)
                 .focused($fieldFocused)
                 .onSubmit { model.send() }
+                .onChange(of: model.focusRequest) { _, _ in fieldFocused = true }
+                .onAppear { if model.focusRequest > 0 { fieldFocused = true } }
             Button {
                 model.send()
             } label: {

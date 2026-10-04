@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private let chat = ChatController()
     private let confirm = ConfirmController()
-    private let escape = EscapeInterceptor()
+    private let escape = InputInterceptor()
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
@@ -48,6 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return coordinator.isBusy || overlay.isGuiding || confirm.isShowing
         }
         escape.onEscape = { [weak self] in _ = self?.overlay.onEscape?() }
+        escape.onTypeToAsk = { [weak self] in self?.coordinator.startTypedChat() }
+        coordinator.onChatOpenForTyping = { [weak self] in
+            guard let self else { return }
+            overlay.endGuide()
+            let mouse = NSEvent.mouseLocation
+            chat.openForTyping(at: CGPoint(x: mouse.x + 12, y: mouse.y - 12))
+        }
+        coordinator.onChatFocus = { [weak self] in self?.chat.focus() }
         escape.start()
 
         // Esc, in layers: stop what's happening; else stop pointing; else close the chat.

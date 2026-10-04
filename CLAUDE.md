@@ -85,6 +85,9 @@ Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips si
 ### Orders in other words (phase E, step 4)
 When the rules don't recognise something that looks like an order (not a question), a text-only request (`Prompt.orderSystem`, no screenshot, ~1.3 s on qwen2.5vl:7b, 8 s timeout) asks which catalog action it is, or none. The proposal must pass `ActionCatalog.resolve` and the Finder check. Safe actions run at once; `ActionCatalog.needsConfirmation` ones (trash, move, rename, move into folder, quit, shortcuts, Wi-Fi off, lock, sleep display) show a green confirm card (Do it / Cancel, "yes"/"cancel" by voice, Esc; 20 s timeout). Rule-recognised orders still run directly.
 
+### Type to ask (⌥⌘ + right-click)
+Right-clicking while holding ⌥⌘ opens an empty chat at the cursor with the text field focused (the panel takes the keyboard without activating ClickBait). The right-click (down and up) is taken by `InputInterceptor`'s event tap, so the app shows no context menu; the following ⌥⌘ release is ignored (not a tap/explain). The first typed message goes through `sendTyped` like any follow-up.
+
 ### Snips (phase C)
 Hold ⌥⌘ for 0.4 s to arm (companion turns red, trackpad tick); only then a transparent layer covers every screen (below the companion, which turns Strawberry Red). Moving traces a red line; click-drag draws a box (the click never reaches the app). Release decides (`SnipTracker`): a box ≥ 12 pt or a trace ≥ 60 pt long is a snip, anything else is a tap → explain highlighted text. The screenshot is cropped around the region (`SnipLayout`) with the shape drawn in red (`SnipRenderer`), sent with `AskRequest.snip`, answered in a chat bubble like an explanation (no pointers, no speech). Failsafe: the layer cancels itself if ⌥⌘ is no longer held or after 60 s. Trade-off: ⌥⌘-click/drag in other apps (e.g. Finder alias drag) is captured while the chord is held.
 

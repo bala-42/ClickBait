@@ -125,3 +125,5 @@ project.yml         XcodeGen spec
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+**Type instead of talking:** hold ⌥⌘ and right-click anywhere to open a ClickBait chat right there, then type your question.
