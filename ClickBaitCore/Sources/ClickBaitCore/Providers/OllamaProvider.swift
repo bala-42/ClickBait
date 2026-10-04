@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Local, private default: Ollama's `/api/chat` on this Mac.
 public struct OllamaProvider: LLMProvider {
@@ -6,8 +7,14 @@ public struct OllamaProvider: LLMProvider {
     /// pointer (69% vs 46% on the parts benchmark) and the better planner (cross-app plans
     /// Qwen 2.5-VL got wrong, in ~3–8 s).
     public static let defaultModel = "qwen3.5:9b"
-    /// Reads orders ("stash these in my documents"): the same answers, ~0.4 s instead of ~1.8 s.
-    public static let defaultFastModel = "qwen2.5vl:7b"
+    /// Reads orders ("stash these in my documents") in ~0.1–0.7 s instead of ~1.8 s. The
+    /// 3b, because the 7b didn't fit in memory beside the main model on a 24 GB Mac with apps
+    /// open: Ollama unloaded one to load the other (~3 s each way).
+    public static let defaultFastModel = "qwen2.5vl:3b"
+
+    /// Set once loading the fast model pushed the main one out of memory: from then on
+    /// (this run of the app) the main model answers everything.
+    static let fastModelEvictsMain = OSAllocatedUnfairLock(initialState: false)
     /// Privacy rule: Ollama is only ever reached on localhost.
     public static let baseURL = URL(string: "http://localhost:11434")!
 
@@ -31,9 +38,27 @@ public struct OllamaProvider: LLMProvider {
         name.lowercased().hasPrefix("qwen3") ? .thousandths : .pixels
     }
 
-    /// Which model answers: order checks go to the fast one.
+    /// Which model answers: order checks go to the fast one (unless it doesn't fit).
     func model(for ask: AskRequest) -> String {
-        ask.interpretOrder ? (fastModel ?? model) : model
+        guard ask.interpretOrder, let fastModel, !Self.fastModelEvictsMain.withLock({ $0 }) else { return model }
+        return fastModel
+    }
+
+    /// The models Ollama has in memory now.
+    func loadedModels() async -> [String] {
+        let request = URLRequest(url: Self.baseURL.appending(path: "api/ps"), timeoutInterval: 2)
+        guard let (data, _) = try? await session.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        return (json["models"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+    }
+
+    /// After the fast model answered: is the main one still loaded? If not, stop using
+    /// the fast one (every switch would reload a model).
+    func checkBothFit() async {
+        guard fastModel != nil, !Self.fastModelEvictsMain.withLock({ $0 }) else { return }
+        let loaded = await loadedModels()
+        guard !loaded.isEmpty, !Self.isInstalled(model, among: loaded) else { return }
+        Self.fastModelEvictsMain.withLock { $0 = true }
     }
 
     private static let unreachable = "Ollama isn't running. Open the Ollama app, then try again."
@@ -54,6 +79,7 @@ public struct OllamaProvider: LLMProvider {
                         if chunk.done { break }
                     }
                     continuation.finish()
+                    if request.interpretOrder { await checkBothFit() }
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -76,16 +102,22 @@ public struct OllamaProvider: LLMProvider {
     /// Loads the model into memory (an empty generate request), which can take ~10 s
     /// cold. Errors are ignored: the real request reports them properly.
     public func warmUp() async {
-        for name in [model] + (fastModel.map { [$0] } ?? []) {
-            var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: 60)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            // Same context size as real requests, or Ollama reloads the model for the first one.
-            request.httpBody = try? JSONSerialization.data(withJSONObject: [
-                "model": name, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
-            ])
-            _ = try? await session.data(for: request)
-        }
+        await load(model)
+        guard let fastModel, !Self.fastModelEvictsMain.withLock({ $0 }) else { return }
+        await load(fastModel)
+        await checkBothFit()
+        if Self.fastModelEvictsMain.withLock({ $0 }) { await load(model) }  // it pushed the main one out
+    }
+
+    private func load(_ name: String) async {
+        var request = URLRequest(url: Self.baseURL.appending(path: "api/generate"), timeoutInterval: 60)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Same context size as real requests, or Ollama reloads the model for the first one.
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": name, "keep_alive": "15m", "options": ["num_ctx": Self.contextTokens],
+        ])
+        _ = try? await session.data(for: request)
     }
 
     /// `llava` matches `llava:latest`; tagged names must match exactly.

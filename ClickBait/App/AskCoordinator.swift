@@ -669,7 +669,8 @@ final class AskCoordinator {
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
         let reply = await Self.reply(from: provider, to: request, within: .seconds(8))
-        guard let reply, var proposal = ResponseParser.action(inReply: reply) else {
+        guard let reply, let parsed = ResponseParser.action(inReply: reply),
+              var proposal = OrderCheck.sanitized(parsed, order: text) else {
             Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
             return nil
         }

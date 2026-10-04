@@ -355,3 +355,19 @@ struct NoteOrderRuleTests {
         #expect(CommandParser.parse("make a note: call the dentist", allowedShortcuts: [])?.detail?.lowercased().contains("dentist") == true)
     }
 }
+
+struct OrderCheckTests {
+    @Test func appsMustBeNamed() {
+        // Real qwen2.5vl:3b replies.
+        #expect(OrderCheck.sanitized(ActionRequest(name: "open_app", argument: "Finder"), order: "open the File menu") == nil)
+        #expect(OrderCheck.sanitized(ActionRequest(name: "quit_app", argument: "Safari"), order: "quit Safari")?.argument == "Safari")
+        #expect(OrderCheck.sanitized(ActionRequest(name: "open_app", argument: "System Settings"), order: "open system settings") != nil)
+    }
+
+    @Test func renameTakesTheNewName() {
+        let fixed = OrderCheck.sanitized(ActionRequest(name: "rename", argument: "budget", detail: "this file"), order: "rename this file to budget")
+        #expect(fixed?.detail == "budget")
+        let fine = OrderCheck.sanitized(ActionRequest(name: "rename", detail: "budget"), order: "rename this file to budget")
+        #expect(fine?.detail == "budget")
+    }
+}

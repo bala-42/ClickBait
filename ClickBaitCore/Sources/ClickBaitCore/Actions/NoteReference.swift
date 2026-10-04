@@ -88,3 +88,27 @@ public enum NoteHTML {
         }
     }
 }
+
+/// Checks on what a model made of an order, before it can run. A small model mistook
+/// "open the File menu" for opening Finder and put "this file" where a new name goes.
+public enum OrderCheck {
+    public static func sanitized(_ proposal: ActionRequest, order: String) -> ActionRequest? {
+        var proposal = proposal
+        let spoken = " " + ImpliedPointer.normalized(order) + " "
+        switch proposal.name {
+        case "open_app", "quit_app":
+            // The app has to be named in the order.
+            guard let app = proposal.argument.map(ImpliedPointer.normalized), !app.isEmpty,
+                  spoken.contains(" " + app + " ") else { return nil }
+        case "rename":
+            let vague: Set<String> = ["", "it", "this", "these", "that", "this file", "that file", "the file", "this folder", "them"]
+            if vague.contains(ImpliedPointer.normalized(proposal.detail ?? "")), let name = proposal.argument, !vague.contains(ImpliedPointer.normalized(name)) {
+                proposal.detail = name
+                proposal.argument = nil
+            }
+        default:
+            break
+        }
+        return proposal
+    }
+}
