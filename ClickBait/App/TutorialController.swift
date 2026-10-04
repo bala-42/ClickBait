@@ -386,6 +386,17 @@ final class TutorialController {
             finish()
             return
         }
+        // The last step was a menu item without "…": by macOS convention it acts at once
+        // ("Show All History"), so the task is done — no 5 s "anything left?" call. Items
+        // with "…" open a dialog that still needs a click, so those are checked.
+        let lastIndex = plan.steps.count - 1
+        if let clicked = lastClicked, lastIndex >= 0,
+           clicked.role == "AXMenuItem" || menuPaths[lastIndex] != nil,
+           !clicked.target.hasSuffix("…"), !clicked.target.hasSuffix("...") {
+            Log.ask.notice("Tutorial: the last step was a menu item that acts at once; finished")
+            finish()
+            return
+        }
         // The companion stays where it is while ClickBait looks (no flying back and forth).
         if let frame = currentFrame {
             point(at: frame, label: "checking…", menu: pointingAtMenu)

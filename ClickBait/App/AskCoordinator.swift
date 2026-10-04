@@ -1047,37 +1047,55 @@ final class AskCoordinator {
             return instant
         }
         // A how-to about content ("how do I make this code faster?") is a question: a quick
-        // sort (~0.8 s) skips the 4–8 s plan that would come back empty. Only ever skips:
-        // asked outright ("show me how…"), unsure, or slow → plan as before.
-        if !TutorialQuestion.insistsOnWalkthrough(question) {
-            var sort = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
-            sort.sortRequest = true
-            let sortStart = ContinuousClock.now
-            let verdict = await Self.reply(from: provider, to: sort, within: .seconds(3))
-            let took = String(describing: ContinuousClock.now - sortStart)
-            if let verdict, TutorialQuestion.sortedAsAnswer(verdict) {
+        // sort (~1 s) spots it. It runs alongside the plan instead of before it, so a real
+        // walkthrough doesn't wait for it; a "question" verdict drops the plan. Skipped when
+        // asked outright ("show me how…") or when a how-to names an app ("how do I open
+        // Safari history"): that is clearly about doing something in it.
+        let namesApp = TutorialQuestion.asksForTutorial(question)
+            && TutorialQuestion.mentionedApp(in: question, apps: Array(AppLocator.installed().keys)) != nil
+        let sorting = !TutorialQuestion.insistsOnWalkthrough(question) && !namesApp
+        var sort = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
+        sort.sortRequest = true
+        let start = ContinuousClock.now
+        let planRequest = request
+        // Both are child tasks: cancelled with the ask (Esc), and the plan is dropped when
+        // this returns early on a "question" verdict.
+        async let verdict: String? = sorting ? Self.reply(from: provider, to: sort, within: .seconds(3)) : nil
+        async let planned = Self.planSteps(planRequest, menus: menus, provider: provider)
+        if sorting {
+            let answer = await verdict
+            let took = String(describing: ContinuousClock.now - start)
+            if let answer, TutorialQuestion.sortedAsAnswer(answer) {
                 Log.ask.notice("Sorted as a question in \(took, privacy: .public): answering, no plan")
                 return nil
             }
-            Log.ask.notice("Sorted as a walkthrough in \(took, privacy: .public)\(verdict == nil ? " (no verdict)" : "", privacy: .public)")
+            Log.ask.notice("Sorted as a walkthrough in \(took, privacy: .public)\(answer == nil ? " (no verdict)" : "", privacy: .public)")
+        } else {
+            Log.ask.notice("Tutorial: no sort needed (\(namesApp ? "a how-to naming an app" : "asked outright", privacy: .public))")
         }
-        let start = ContinuousClock.now
-        var plan: TutorialPlan?
-        if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
-            var textOnly = request
-            textOnly.screenshotJPEG = Data()
-            if let reply = await Self.reply(from: provider, to: textOnly, within: .seconds(15)),
-               let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty || parsed.app != nil {
-                plan = parsed
-            }
-        }
-        if plan == nil, !Task.isCancelled, let reply = await Self.reply(from: provider, to: request, within: .seconds(25)) {
-            plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
-        }
+        let plan = await planned
         Log.ask.notice("""
             Tutorial plan: \(plan?.steps.count ?? 0, privacy: .public) step(s)\(plan?.app != nil ? " in another app" : "", privacy: .public) \
             in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(menus.count, privacy: .public) menu items)
             """)
+        return plan
+    }
+
+    /// The model's plan: text-only first when Accessibility describes the app (~1–2 s),
+    /// else with the screenshot.
+    private nonisolated static func planSteps(_ request: AskRequest, menus: [String], provider: any LLMProvider) async -> TutorialPlan? {
+        var plan: TutorialPlan?
+        if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
+            var textOnly = request
+            textOnly.screenshotJPEG = Data()
+            if let reply = await reply(from: provider, to: textOnly, within: .seconds(15)),
+               let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty || parsed.app != nil {
+                plan = parsed
+            }
+        }
+        if plan == nil, !Task.isCancelled, let reply = await reply(from: provider, to: request, within: .seconds(25)) {
+            plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
+        }
         return plan
     }
 
