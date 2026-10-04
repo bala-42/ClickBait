@@ -132,6 +132,8 @@ Every answer or ⌥⌘ explanation opens a chat bubble (`ChatController`: border
 
 The chat card grows out of the companion and shrinks back into it (`ChatModel.companionAnchor`: the companion's point inside the card, recomputed after the card is pushed on screen; scale 0.08 → 1 spring, 0.18 s ease-in back).
 
+Smoothness: the companion's frame loop runs on the main thread, so main-thread work stutters it. Streamed answers update the chat at most every 80 ms (they redrew and resized it per fragment), the chat window is resized only when its size really changes, and a gap over 80 ms while the companion moves is logged ("Companion stalled N ms (state)") to trace any stutter that's left. Code blocks wrap long lines (a sideways scroll view shifted wide lines left and cut both ends); Copy gives the exact code.
+
 ### Overlay rules
 - `NSPanel`, borderless, non-activating, `isOpaque = false`, clear background, `ignoresMouseEvents = true`, level `.screenSaver`, `collectionBehavior` includes `.canJoinAllSpaces`, `.fullScreenAuxiliary`, `.stationary`.
 - Companion follows the cursor (display-link driven): a small equilateral triangle in the state colour, vertex aimed up-left at the cursor; a Liquid Glass card beside it for listening / thinking / explaining / errors (material fallback before macOS 26).

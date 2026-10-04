@@ -216,17 +216,17 @@ private struct CodeBlock: View {
             .padding(.top, 7)
             .padding(.bottom, 4)
 
-            ScrollView(.horizontal) {
-                Text(code)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color(white: 0.9))
-                    .lineSpacing(3)
-                    .fixedSize()
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
-            }
-            .scrollIndicators(.automatic)
+            // Long lines wrap: in a sideways scroll view a line wider than the card was shifted
+            // left and cut off at both ends. Copy still gives the exact code.
+            Text(code)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(white: 0.9))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
         }
         .background(Self.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.08)))

@@ -1162,13 +1162,19 @@ final class AskCoordinator {
             // Explanations shouldn't open with "The highlighted text refers to…".
             let explaining = selectedText != nil || snip != nil
             let tidy: (String) -> String = { explaining ? ExplanationCleaner.clean($0) : $0 }
+            // The chat shows the words as they come, but at most ~12 times a second: redrawing
+            // and resizing it for every fragment made the companion stutter while answering.
+            var lastPartial = ContinuousClock.now - .seconds(1)
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
                 let newSpeech = extractor.feed(chunk)
                 if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
-                    if chatShown { onPartialAnswer?(CoordinateScrubber.partial(tidy(spokenSoFar))) }
+                    if chatShown, ContinuousClock.now - lastPartial >= .milliseconds(80) {
+                        lastPartial = .now
+                        onPartialAnswer?(CoordinateScrubber.partial(tidy(spokenSoFar)))
+                    }
                     for sentence in sentences.feed(codeFilter.feed(newSpeech)) where speak {
                         speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
                         isFirstSentence = false

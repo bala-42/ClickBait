@@ -174,6 +174,11 @@ final class OverlayController {
 
     fileprivate func frame(_ link: CADisplayLink) {
         let now = link.targetTimestamp
+        // A long gap while the companion is moving is a stutter the user sees: log it
+        // with what was going on, so it can be traced (the main thread was busy).
+        if let last = lastFrame, now - last > 0.08, guide != nil || anchor != NSEvent.mouseLocation {
+            Log.app.notice("Companion stalled \(Int((now - last) * 1000), privacy: .public) ms (\(String(describing: self.model.bubble).prefix(20), privacy: .public)\(self.guide != nil ? ", pointing" : "", privacy: .public))")
+        }
         let elapsed = min(max(now - (lastFrame ?? now - 1.0 / 60), 1.0 / 240), 0.1)
         lastFrame = now
 

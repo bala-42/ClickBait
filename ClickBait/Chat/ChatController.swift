@@ -109,9 +109,10 @@ final class ChatController {
     /// Keeps the window exactly the card's size, growing downward from a fixed top edge.
     private func fitToCard() {
         guard let panel, model.cardSize.width > 0 else { return }
+        let size = CGSize(width: model.cardSize.width.rounded(.up), height: model.cardSize.height.rounded(.up))
+        guard size != panel.frame.size else { return }  // a resize forces a redraw: only when it changed
         let top = panel.frame.maxY
-        panel.setFrame(CGRect(x: panel.frame.minX, y: top - model.cardSize.height,
-                              width: model.cardSize.width, height: model.cardSize.height), display: true)
+        panel.setFrame(CGRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
         keepOnScreen()
         if let origin, !model.isClosing { aim(at: origin, in: panel.frame) }
     }
