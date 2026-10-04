@@ -122,6 +122,43 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 - **E. File management** beyond the Finder selection: inspect/organize/clean up across folders. Clear orders stay rule-based; bulk changes the model proposes are shown for confirmation. Trash only, never permanent deletes.
 - **F. Thought Space banner & memory**: a working-memory board beside the companion. Persistent memory is **opt-in, off by default, local only, browsable and deletable in Settings, never records blocked apps**, and samples on app switches rather than continuously.
 
+## Kept in view (designed, not scheduled)
+
+### Guided walkthroughs ("first, this one. then, over here.")
+**Problem today:** a how-to answer plans every step from one screenshot taken before anything happens, so it can't point at things that only appear later (the menu step 1 opens, the dialog step 2 opens) and caps out at 3 pointers.
+
+**Idea:** while the chat is open, ClickBait walks the user through every step of a how-to, re-reading the screen after each click.
+
+**Flow**
+1. *Plan once.* For a how-to with 2+ steps, the model returns a short text plan, each step naming its target ("File menu", "Export as PDF…", "Save"). Text only. No pointers yet.
+2. *Find the current step, cheapest first:* (a) match the step's name in the live Accessibility element list (instant, exact, no model call; works for menus once open); (b) only if absent, a vision locate on a fresh screenshot, verified with Accessibility like the close-up.
+3. *Point* with the step label ("first, this one." / "then, over here." / "last one, right here."), green-free: guiding stays the idle colour.
+4. *Wait for the user's click* (global mouse-down), then ~0.5 s for the UI to settle (menus, sheets), and re-read. Click on the target → next step. Click elsewhere → re-check the screen: carry on if the next target is visible, otherwise re-plan once from the current screen.
+5. *Finish:* "done!" pill, the chat lists the completed steps. Esc, closing the chat, a new question or ⌃⌥ ends it immediately.
+
+**Realistic expectations (qwen2.5vl:7b, M4 Pro)**
+- Plan: ~3–5 s once (text, no image needed beyond the first screenshot).
+- Steps found in the element list: next pointer ≲1 s after the click. Native apps (Finder, Settings, Pages, Mail, Safari menus) should be mostly this.
+- Steps needing vision: ~5–7 s each, and less reliable (web apps, canvases, Electron apps without a tree, pro apps like DaVinci Resolve).
+- The plan comes from the model's memory of the app; it can be wrong or outdated for the user's version. Verification against the screen catches this; it can't always fix it.
+
+**Guardrails**
+- At most ~10 steps; never the same target twice in a row; one re-plan per walkthrough, then "I'm not sure about the next step — want to keep going yourself?"
+- Never clicks for the user: it only points. (Clicking on the user's behalf is a separate, riskier feature.)
+- Screen is read only right after the user's own clicks during a walkthrough they started; nothing in the background; blocklisted apps end the walkthrough.
+- A step whose target can't be confirmed is shown as text in the chat instead of a guessed pointer.
+
+**Building blocks that already exist:** element list (menus included), name matching (`LabelMatcher`), guide motion + friendly labels, click detection (`advanceGuide`), close-up + Accessibility verification, Esc handling, chat memory.
+
+**New pieces:** a `Walkthrough` state machine (plan, current step, history, re-plan budget) in the coordinator; a plan prompt + parser (core, testable with fixtures); step matching against element lists (core, testable); a settle-then-recheck loop after clicks; chat rendering of the step list with ticks.
+
+**Open decisions (proposed defaults)**
+- Start: automatically for how-to questions with 2+ steps while a chat is open *(proposed)*, vs only on "walk me through…".
+- Speech: speak each step's short label when the question was spoken; silent when typed *(proposed)*.
+- Wrong turns: re-plan quietly and say "looks like you went a different way" in the label *(proposed)*.
+
+**Suggested build order:** (1) plan prompt + step matcher in core with tests and live checks; (2) walkthrough loop for element-list steps only (native apps); (3) vision fallback with verification; (4) re-planning and chat step list; (5) spoken steps.
+
 ## Working conventions for Claude Code
 - Plan before large changes; keep commits small and descriptive.
 - After every meaningful change: `xcodegen generate` (if project.yml changed) then build with
