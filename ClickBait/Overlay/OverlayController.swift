@@ -207,9 +207,22 @@ final class OverlayController {
             return
         }
         if link.preferredFrameRateRange != Self.movingRate { link.preferredFrameRateRange = Self.movingRate }
-        let pull = 1 - exp(-elapsed / Self.followTime)
-        var next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
-        if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
+        var next: CGPoint
+        if let velocity = returnVelocity {
+            // Coming home after pointing: the same spring as the trip out, carrying its
+            // speed, instead of the follow's fast start (which looked like a snap back).
+            var vx = Double(velocity.dx), vy = Double(velocity.dy)
+            var x = Double(previous.x), y = Double(previous.y)
+            Self.glideSpring.step(&x, velocity: &vx, toward: mouse.x, dt: elapsed)
+            Self.glideSpring.step(&y, velocity: &vy, toward: mouse.y, dt: elapsed)
+            next = CGPoint(x: x, y: y)
+            returnVelocity = CGVector(dx: vx, dy: vy)
+            if hypot(mouse.x - next.x, mouse.y - next.y) < 4 { returnVelocity = nil }  // the follow takes over
+        } else {
+            let pull = 1 - exp(-elapsed / Self.followTime)
+            next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
+            if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
+        }
         anchor = next
         moveBubble(to: next)
     }
@@ -227,11 +240,20 @@ final class OverlayController {
         setCompanionHidden(hiddenByTyping || systemHidden)
     }
 
+    /// Where the companion's fade is heading (the panel's own alpha lags while animating).
+    private var companionAlpha: CGFloat = 1
+
     private func setCompanionHidden(_ hidden: Bool) {
         guard let panel = bubblePanel else { return }
         // While guiding, the triangle is the answer: it never hides.
         let alpha: CGFloat = hidden && model.bubble == .idle && guide == nil && !model.isSnipping ? 0 : 1
-        if panel.alphaValue != alpha { panel.alphaValue = alpha }
+        guard alpha != companionAlpha else { return }
+        companionAlpha = alpha
+        // A quick fade rather than vanishing in one frame.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = alpha == 0 ? 0.12 : 0.18
+            panel.animator().alphaValue = alpha
+        }
     }
 
     /// Bottom-right of the cursor, kept on the cursor's screen. The panel is a fixed
@@ -345,9 +367,11 @@ final class OverlayController {
         // then glides it back from here.
         anchor = CGPoint(x: guide.center.x - Self.cursorClearance.width - Self.triangleInset,
                          y: guide.center.y + Self.cursorClearance.height + Self.triangleInset)
+        returnVelocity = guide.velocity
         self.guide = nil
-        guideLabelPanel?.orderOut(nil)
+        hideGuideLabel()
         model.isGuiding = false
+        model.isGuideSettled = false
         model.guideLabel = nil
         model.guideTarget = nil
         model.isTouring = false
@@ -389,7 +413,7 @@ final class OverlayController {
             : GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
         model.guideTarget = label.isEmpty ? nil : label
         model.isGuiding = true
-        guideLabelPanel?.orderFrontRegardless()
+        showGuideLabel()
     }
 
     private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
@@ -421,6 +445,7 @@ final class OverlayController {
         let moving = next != guide.center
         guide.center = next
         self.guide = guide
+        if model.isGuideSettled == moving { model.isGuideSettled = !moving }  // pulse once arrived
 
         let wanted: CAFrameRateRange = moving || isTurning ? Self.movingRate : Self.restingRate
         if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
@@ -433,7 +458,7 @@ final class OverlayController {
 
         bubblePanel?.setFrameOrigin(NSPoint(x: next.x - Self.triangleInset,
                                             y: next.y + Self.triangleInset - (bubblePanel?.frame.height ?? 0)))
-        placeGuideLabel(triangleCenter: next, awayFrom: guide.approach)
+        placeGuideLabel(triangleCenter: next, awayFrom: guide.approach, elapsed: elapsed)
     }
 
     /// Whether the triangle is still turning toward `wantedAngle`.
@@ -491,14 +516,55 @@ final class OverlayController {
 
     /// Beside the triangle on the side away from the target (left of it when the target
     /// is to the left), so the label never covers what it's pointing at.
-    private func placeGuideLabel(triangleCenter c: CGPoint, awayFrom approach: CGVector) {
+    private func placeGuideLabel(triangleCenter c: CGPoint, awayFrom approach: CGVector, elapsed: CFTimeInterval) {
         guard let panel = guideLabelPanel else { return }
         let size = model.guideLabelSize
         let gap: CGFloat = 12
         let x = approach.dx >= 0 ? c.x + gap - 6 : c.x - gap - size.width + 6  // 6 = the view's shadow padding
         let top = c.y + size.height / 2
-        let origin = NSPoint(x: x, y: top - panel.frame.height)
+        let target = CGPoint(x: x, y: top - panel.frame.height)
+        // The label rides with the triangle; when the next stop puts it on the other
+        // side it glides across instead of jumping.
+        var origin = labelOrigin ?? target
+        var vx = Double(labelVelocity.dx), vy = Double(labelVelocity.dy)
+        var ox = Double(origin.x), oy = Double(origin.y)
+        Self.labelSpring.step(&ox, velocity: &vx, toward: target.x, dt: elapsed)
+        Self.labelSpring.step(&oy, velocity: &vy, toward: target.y, dt: elapsed)
+        origin = CGPoint(x: ox, y: oy)
+        labelOrigin = origin
+        labelVelocity = CGVector(dx: vx, dy: vy)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
+    }
+
+    private static let labelSpring = Spring(period: 0.3, damping: 1)
+    private var labelOrigin: CGPoint?
+    private var labelVelocity = CGVector.zero
+    /// Set while the triangle comes home after pointing (see the follow in `frame`).
+    private var returnVelocity: CGVector?
+
+    private func showGuideLabel() {
+        guard let panel = guideLabelPanel, !panel.isVisible || panel.alphaValue < 1 else { return }
+        if !panel.isVisible { panel.alphaValue = 0 }
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    private func hideGuideLabel() {
+        guard let panel = guideLabelPanel, panel.isVisible else { return }
+        labelOrigin = nil
+        labelVelocity = .zero
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            panel.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                // A new guide may have started meanwhile: only hide if still unused.
+                if self?.guide == nil { panel.orderOut(nil) }
+            }
+        })
     }
 
     // MARK: - Input

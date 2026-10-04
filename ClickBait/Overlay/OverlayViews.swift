@@ -126,8 +126,10 @@ struct GuideLabelView: View {
                     .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(0.45),
                                        shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
                     .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
+                    .contentTransition(.opacity)  // names crossfade between stops
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: model.guideLabel)
         .padding(6)  // room for the glass shadow
         .fixedSize()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.guideLabelSize = $0 }

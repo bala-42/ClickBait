@@ -60,6 +60,8 @@ final class OverlayModel {
     var isSnipping = false
     /// Touring the named parts of a snipped thing (red, like snipping).
     var isTouring = false
+    /// The guiding triangle has arrived at its target (it pulses only then).
+    var isGuideSettled = false
 
     var tone: CompanionTone {
         if isSnipping || isTouring { return .capture }
@@ -75,7 +77,7 @@ final class OverlayModel {
         if isSnipping { return true }
         return switch bubble {
         case .thinking, .explaining, .working: true  // listening shows the waveform instead
-        default: isGuiding  // a gentle beat draws the eye to the target
+        default: isGuiding && isGuideSettled  // a gentle beat once it's there, not while gliding
         }
     }
     /// The triangle's rotation in degrees (0 = vertex up, clockwise). Aimed up-left at
