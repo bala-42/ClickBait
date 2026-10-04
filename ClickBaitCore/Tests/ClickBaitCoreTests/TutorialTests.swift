@@ -190,6 +190,12 @@ struct NoteReferenceTests {
         #expect(NoteReference.find(in: order) == expected)
     }
 
+    @Test(arguments: [("https://github.com/x", "https://github.com/x"), ("github.com/apple/swift", "https://github.com/apple/swift"),
+                      ("www.youtube.com", "https://www.youtube.com"), ("how to cook rice", nil), ("", nil), ("notes.txt", "https://notes.txt")])
+    func addressBar(_ raw: String, _ expected: String?) {
+        #expect(PageAddress.fromAddressBar(raw) == expected)
+    }
+
     @Test func pageNotes() {
         #expect(NoteReference.noteText(address: "https://apple.com", title: "Apple") == "Apple\nhttps://apple.com")
         #expect(NoteReference.noteText(address: "https://apple.com", title: nil) == "https://apple.com")

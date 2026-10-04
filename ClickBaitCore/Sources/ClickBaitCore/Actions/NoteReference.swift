@@ -23,3 +23,19 @@ public enum NoteReference: Equatable, Sendable {
         return title + "\n" + address
     }
 }
+
+/// Reading a web address out of a browser's address bar.
+public enum PageAddress {
+    /// "https://github.com/x" or Chrome's shortened "github.com/x" → a full address;
+    /// nil for search text or an empty bar ("how to cook rice").
+    public static func fromAddressBar(_ raw: String) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.contains(" ") else { return nil }
+        if value.hasPrefix("http://") || value.hasPrefix("https://") { return value }
+        let host = value.split(separator: "/").first.map(String.init) ?? value
+        guard host.contains("."), host.range(of: #"^[A-Za-z0-9.-]+(:\d+)?$"#, options: .regularExpression) != nil,
+              let last = host.split(separator: ".").last, last.count >= 2, last.allSatisfy(\.isLetter) || host.hasPrefix("localhost")
+        else { return nil }
+        return "https://" + value
+    }
+}

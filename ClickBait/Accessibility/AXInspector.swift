@@ -135,36 +135,49 @@ enum AXInspector {
     /// Nil for other apps; `trace` says what was seen (for the log).
     static func pageAddress(frontmostPID pid: pid_t?, trace: inout String) -> (address: String, title: String?)? {
         guard isTrusted, let pid else { trace = "no access"; return nil }
+        requestAccessibilityTree(pid: pid)  // Chromium builds its page tree only when asked
         let app = element(AXUIElementCreateApplication(pid))
-        guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else {
-            trace = "no window"
-            return nil
-        }
-        let title = window.string(kAXTitleAttribute)
-        if let document = window.string(kAXDocumentAttribute), document.hasPrefix("http") {
-            trace = "window document"
-            return (document, title)
-        }
-        let deadline = Date().addingTimeInterval(0.6)
-        var queue = [window][...]
-        var visited = 0, webAreas = 0
-        while let node = queue.popFirst(), visited < 3000, Date() < deadline {
-            visited += 1
-            let role = node.string(kAXRoleAttribute) ?? ""
-            if role == "AXWebArea" {
-                webAreas += 1
-                let value = node.attribute(kAXURLAttribute)
-                let address = (value as? URL)?.absoluteString ?? (value as? String)
-                if let address, address.hasPrefix("http") {
-                    trace = "web area after \(visited) elements"
-                    return (address, title)
-                }
-                continue  // don't walk the page itself
+        for attempt in 0..<2 {
+            guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else {
+                trace = "no window"
+                return nil
             }
-            if ["AXToolbar", "AXMenuBar", "AXButton", "AXStaticText", "AXImage"].contains(role) { continue }
-            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+            let title = window.string(kAXTitleAttribute)
+            if let document = window.string(kAXDocumentAttribute), document.hasPrefix("http") {
+                trace = "window document"
+                return (document, title)
+            }
+            let deadline = Date().addingTimeInterval(0.6)
+            var queue = [window][...]
+            var visited = 0, webAreas = 0
+            var addressBar: String?
+            while let node = queue.popFirst(), visited < 3000, Date() < deadline {
+                visited += 1
+                let role = node.string(kAXRoleAttribute) ?? ""
+                if role == "AXWebArea" {
+                    webAreas += 1
+                    let value = node.attribute(kAXURLAttribute)
+                    if let address = (value as? URL)?.absoluteString ?? (value as? String), address.hasPrefix("http") {
+                        trace = "web area after \(visited) elements"
+                        return (address, title)
+                    }
+                    continue  // don't walk the page itself
+                }
+                // Chrome's address bar ("Address and search bar"), in the toolbar.
+                if role == "AXTextField", addressBar == nil,
+                   let value = node.string(kAXValueAttribute), let address = PageAddress.fromAddressBar(value) {
+                    addressBar = address
+                }
+                if ["AXButton", "AXStaticText", "AXImage", "AXMenuBar"].contains(role) { continue }
+                queue.append(contentsOf: node.children(kAXChildrenAttribute))
+            }
+            if let addressBar {
+                trace = "address bar after \(visited) elements"
+                return (addressBar, title)
+            }
+            trace = "\(visited) elements, \(webAreas) web area(s) without an address\(attempt == 1 ? " (after waiting)" : "")"
+            if attempt == 0 { Thread.sleep(forTimeInterval: 0.4) }  // the tree may still be building
         }
-        trace = "\(visited) elements, \(webAreas) web area(s) without an address"
         return nil
     }
 
