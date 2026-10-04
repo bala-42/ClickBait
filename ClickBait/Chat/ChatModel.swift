@@ -22,6 +22,8 @@ final class ChatModel {
     var draft = ""
     /// Waiting for (or streaming) a reply: sending is disabled meanwhile.
     var isBusy = false
+    /// The chat is shrinking away (then its window closes).
+    var isClosing = false
     /// Bumped to put the cursor in the text field (a chat opened to type into).
     var focusRequest = 0
 

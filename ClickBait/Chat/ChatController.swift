@@ -37,10 +37,11 @@ final class ChatController {
 
     /// `topLeft` in global AppKit points (where the companion's card was).
     func open(at topLeft: CGPoint) {
-        close()
+        closeNow()
         model.messages = []
         model.draft = ""
         model.isBusy = false
+        model.isClosing = false
 
         let panel = ChatPanel(
             contentRect: CGRect(x: 0, y: 0, width: ChatView.width, height: 120),
@@ -81,7 +82,19 @@ final class ChatController {
         model.focusRequest += 1
     }
 
+    /// Shrinks back into the companion, then goes.
     func close() {
+        guard let closing = panel else { return }
+        model.isClosing = true
+        panel = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(170))
+            closing.orderOut(nil)
+            closing.close()
+        }
+    }
+
+    private func closeNow() {
         panel?.orderOut(nil)
         panel?.close()
         panel = nil

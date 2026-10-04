@@ -2,31 +2,42 @@ import AppKit
 import ClickBaitCore
 import SwiftUI
 
-/// The chat bubble: the answer and any follow-ups, with a field to keep asking.
-/// Same Liquid Glass card style as the companion.
+/// The chat, styled after the Siri overlay: a Liquid Glass card with no hard lines,
+/// each question small and grey with its answer as the main text below, a soft
+/// "Ask ClickBait…" capsule, and a spring in from the companion's corner.
 struct ChatView: View {
     @Bindable var model: ChatModel
 
-    static let width: CGFloat = 360
-    private static let maxTranscriptHeight: CGFloat = 340
+    static let width: CGFloat = 380
+    static let corner: CGFloat = 26
+    private static let maxTranscriptHeight: CGFloat = 380
     @State private var transcriptHeight: CGFloat = 0
+    @State private var shown = false
     @FocusState private var fieldFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             header
             transcript
-            Divider().opacity(0.5)
             inputRow
         }
         .frame(width: Self.width)
         // Empty parts of the card drag the window (SwiftUI content would otherwise
         // swallow the mouse-down before the window could move).
         .background(WindowDragArea())
-        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: 16, style: .continuous)))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: Self.corner, style: .continuous)))
+        .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
+        // Springs out of the companion (it opens at the companion's corner) and shrinks
+        // back into it when closing.
+        .scaleEffect(shown && !model.isClosing ? 1 : (reduceMotion ? 1 : 0.82), anchor: .topLeading)
+        .opacity(shown && !model.isClosing ? 1 : 0)
+        .onAppear {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.36, dampingFraction: 0.82)) { shown = true }
+        }
+        .animation(.easeIn(duration: 0.16), value: model.isClosing)
     }
 
     private var header: some View {
@@ -38,6 +49,7 @@ struct ChatView: View {
             Text("ClickBait")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .opacity(0.8)
             Spacer()
             Button {
                 model.onClose?()
@@ -52,28 +64,29 @@ struct ChatView: View {
             .help("Close (Esc)")
             .accessibilityLabel("Close chat")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     ForEach(model.messages) { message in
                         MessageRow(message: message).id(message.id)
                     }
                     if model.isBusy, model.messages.last?.role != .assistant {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text("Thinking…").font(.system(size: 12)).foregroundStyle(.secondary)
+                            Text("Thinking…").font(.system(size: 15)).foregroundStyle(.secondary)
                         }
                         .id("busy")
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 18)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { transcriptHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -88,7 +101,7 @@ struct ChatView: View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField(model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…", text: $model.draft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .lineLimit(1...4)
                 .focused($fieldFocused)
                 .onSubmit { model.send() }
@@ -105,8 +118,13 @@ struct ChatView: View {
             .disabled(!canSend)
             .accessibilityLabel("Send")
         }
+        // A soft capsule like Siri's "Ask Siri…" field, no divider line above it.
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 7)
+        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.bottom, 12)
     }
 
     private var canSend: Bool {
@@ -126,23 +144,22 @@ private struct MessageRow: View {
     var body: some View {
         switch message.role {
         case .user:
-            HStack {
-                Spacer(minLength: 40)
-                Text(message.text)
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .textSelection(.enabled)
-            }
+            // What was asked: small and grey, the answer below is the main text.
+            Text(message.text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.top, 6)
         case .assistant:
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(MessageFormat.segments(message.text).enumerated()), id: \.offset) { _, segment in
                     switch segment {
                     case .text(let prose):
                         Text(Self.markdown(prose))
-                            .font(.system(size: 13))
-                            .lineSpacing(1.5)
+                            .font(.system(size: 15.5))
+                            .lineSpacing(3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
