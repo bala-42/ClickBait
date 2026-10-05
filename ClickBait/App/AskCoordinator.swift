@@ -1051,10 +1051,13 @@ final class AskCoordinator {
                                        provider: provider, tutorial: tutorial,
                                        continues: !TutorialQuestion.onlyOpens(question, app: "System Settings"))
         }
+        // Said yes already ("show me in Safari!"): never asked a second time.
+        var offered = false
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
             // Ask before switching apps: no plan yet (it's made in that app), so a no gets a
             // written answer instead.
             guard await offerWalkthrough(opening: named) else { return false }
+            offered = true
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
             showTutorialPlanning()
             (capture, screenshot, elements) = ready
@@ -1081,8 +1084,6 @@ final class AskCoordinator {
         }
 
         var plan: TutorialPlan?
-        // Asked once per walkthrough: the yes to a "show me in Safari!" covers what follows.
-        var offered = taskApp.map { $0.lowercased() != context.appName?.lowercased() } ?? false
         for _ in 0..<2 {
             guard !Task.isCancelled else { return false }
             plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider)?

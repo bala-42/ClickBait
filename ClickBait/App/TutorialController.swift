@@ -600,7 +600,7 @@ final class TutorialController {
         isActive = false
         loop?.cancel()
         loop = nil
-        overlay.tutorialDone("done")
+        overlay.tutorialDone(OverlayModel.walkthroughDone)
         if speakSteps { speak?("Done!") }
         Log.ask.notice("Tutorial finished")
         onFinished?(Self.finishedMessage)

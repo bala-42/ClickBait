@@ -75,6 +75,13 @@ final class OverlayModel {
 
     var tone: CompanionTone {
         if isSnipping || isTouring || (isSnipThinking && isSpinning) { return .capture }
+        // Opening or switching apps is green, also inside a walkthrough (lavender hid it).
+        // (The walkthrough's own "done" tick stays lavender.)
+        switch bubble {
+        case .working: return .action
+        case .done(let text) where text != Self.walkthroughDone: return .action
+        default: break
+        }
         if isTutoring { return .tutorial }
         if isGuiding { return .idle }  // pointing is blue, even while the words are still coming
         return switch bubble {
@@ -93,8 +100,14 @@ final class OverlayModel {
         }
     }
 
+    /// A walkthrough is checking what's next ("checking…"): it spins where it points.
+    var isTutorialChecking = false
+    /// The tick a finished walkthrough shows (lavender, unlike other "done" pills).
+    static let walkthroughDone = "done"
+
     /// The AI is thinking: the triangle turns a third at a time with a springy overshoot.
     var isSpinning: Bool {
+        if isTutoring, isTutorialChecking { return true }
         guard !isSnipping, !isGuiding else { return false }
         return switch bubble {
         case .thinking, .explaining: true

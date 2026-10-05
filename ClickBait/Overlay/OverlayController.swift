@@ -432,8 +432,12 @@ final class OverlayController {
         }
     }
 
+    /// What a walkthrough shows while it works out the next step.
+    static let checkingLabel = "checking…"
+
     func setTutoring(_ on: Bool) {
         model.isTutoring = on
+        if !on { model.isTutorialChecking = false }
         if !on {
             if guide?.isTutorial == true { endGuide() }
             if case .hint = model.bubble { model.bubble = .idle }
@@ -443,6 +447,7 @@ final class OverlayController {
     /// Points at the current step's target, the instruction in the label. Moving
     /// between steps glides; an unchanged step just follows its target.
     func tutorialPoint(at target: ScreenPointer) {
+        model.isTutorialChecking = target.label == Self.checkingLabel
         if case .hint = model.bubble { model.bubble = .idle }
         if var guide, guide.isTutorial {
             guard guide.targets.first != target else { return }
@@ -471,6 +476,7 @@ final class OverlayController {
 
     /// The current step's target isn't on screen: the instruction by the cursor instead.
     func tutorialHint(_ text: String) {
+        model.isTutorialChecking = text == Self.checkingLabel
         if guide?.isTutorial == true { endGuide() }
         if model.bubble != .hint(text) { model.bubble = .hint(text) }
         setCompanionHidden(false)
