@@ -63,6 +63,8 @@ final class OverlayModel {
     var waveLevel: Double = 0
     /// ⌥⌘ is held and the user is circling or boxing something.
     var isSnipping = false
+    /// Working out what was snipped: thinking stays red (and spins).
+    var isSnipThinking = false
     /// Touring the named parts of a snipped thing (red, like snipping).
     var isTouring = false
     /// A guided tutorial is running: everything is lavender.
@@ -71,7 +73,7 @@ final class OverlayModel {
     var isGuideSettled = false
 
     var tone: CompanionTone {
-        if isSnipping || isTouring { return .capture }
+        if isSnipping || isTouring || (isSnipThinking && isSpinning) { return .capture }
         if isTutoring { return .tutorial }
         if isGuiding { return .idle }  // pointing is blue, even while the words are still coming
         return switch bubble {

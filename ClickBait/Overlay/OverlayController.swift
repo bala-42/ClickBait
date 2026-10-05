@@ -336,6 +336,11 @@ final class OverlayController {
         return topLeft
     }
 
+    /// The snip is being worked out: red thinking until something else happens.
+    func setSnipAnswering(_ on: Bool) {
+        model.isSnipThinking = on
+    }
+
     /// Strawberry Red while the user marks part of the screen (hold ⌥⌘).
     func setSnipping(_ snipping: Bool) {
         if snipping { endGuide() }

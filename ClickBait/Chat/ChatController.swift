@@ -80,7 +80,7 @@ final class ChatController {
         alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)
         model.isTucked = tucked
-        if !tucked { panel.orderFrontRegardless() }
+        if !tucked { fadeIn(panel) }
     }
 
     /// Opens an empty chat (logo on `logoCenter`) with the cursor in the text field,
@@ -119,11 +119,13 @@ final class ChatController {
         refocusOnReturn = panel.isKeyWindow
         aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: panel.frame)
         model.isTucked = true
+        fadeOut(panel)
         tuckTask?.cancel()
         tuckTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(200))  // the shrink (0.18 s) plays out
             guard !Task.isCancelled, let self, model.isTucked else { return }
             self.panel?.orderOut(nil)
+            self.panel?.alphaValue = 1
         }
     }
 
@@ -137,7 +139,7 @@ final class ChatController {
         origin = logoCenter
         alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)
-        panel.orderFrontRegardless()
+        fadeIn(panel)
         model.isTucked = false
         if refocusOnReturn {
             refocusOnReturn = false
@@ -146,11 +148,31 @@ final class ChatController {
         }
     }
 
+    /// Fades the window in (window server) while SwiftUI grows the card.
+    private func fadeIn(_ panel: NSPanel) {
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+    }
+
+    private func fadeOut(_ panel: NSPanel) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        }
+    }
+
     /// Shrinks back into the companion, then goes.
     func close() {
         guard let closing = panel else { return }
         aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: closing.frame)
         model.isClosing = true
+        fadeOut(closing)
         panel = nil
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(200))  // the shrink (0.18 s) plays out

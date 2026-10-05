@@ -65,6 +65,9 @@ final class TutorialController {
     /// The user clicked the menu the companion pointed at: it's open, so its items are
     /// looked up directly (toggled by another click on it, cleared by any other click).
     private var menuOpened = false
+    /// The user clicked somewhere since this step began. The companion stays on a step
+    /// until then: nothing else (a later target showing, the model's check) moves it on.
+    private var clickedSinceStep = false
     /// The menu the user just opened by clicking a "Open the … menu" step: the next step's
     /// item is inside it, so point at the item rather than at the menu again.
     private var openedMenu: String?
@@ -137,6 +140,7 @@ final class TutorialController {
     /// Every left click anywhere (global AppKit point).
     func noteClick(_ point: NSPoint) {
         guard isActive else { return }
+        clickedSinceStep = true
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         pendingClick = (Point(x: point.x, y: primaryHeight - point.y), Date())
     }
@@ -292,7 +296,8 @@ final class TutorialController {
         // The user may have gone ahead (a later step's target is showing) — only in the app
         // that step belongs to: Finder's own search field once "skipped" System Settings.
         for later in (index + 1)..<min(index + 3, plan.steps.count)
-        where plan.steps[later].app.map({ Self.isApp($0, front) }) ?? true
+        where clickedSinceStep
+            && plan.steps[later].app.map({ Self.isApp($0, front) }) ?? true
             && StepMatcher.find(plan.steps[later].target, in: elements, minimum: 0.9) != nil {
             advance(to: later, reason: "went ahead")
             return
@@ -400,6 +405,7 @@ final class TutorialController {
         lastClicked = reason == "clicked" && index < plan.steps.count ? (plan.steps[index].target, currentRole) : nil
         openedMenu = reason == "clicked" && index < plan.steps.count ? plan.steps[index].target : nil
         index = min(next, plan.steps.count)
+        clickedSinceStep = false
         lastProgress = Date()
         currentFrame = nil
         pointingAtMenu = false
@@ -652,6 +658,8 @@ final class TutorialController {
         guard let reply = await Self.reply(from: provider, to: request, within: .seconds(15)),
               let progress = TutorialProgress.parse(reply), isActive else { return }
         Log.ask.notice("Tutorial check: next step \(progress.nextStep, privacy: .public), done \(progress.done, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
+        // Only after a click: the companion waits on its step until the user acts.
+        guard clickedSinceStep else { return }
         if progress.done {
             advance(to: plan.steps.count, reason: "model: done")
         } else if (1...plan.steps.count).contains(progress.nextStep), progress.nextStep - 1 > index {

@@ -1214,10 +1214,14 @@ final class AskCoordinator {
 
     /// Explains the part of the screen the user circled or boxed, in a chat bubble like
     /// a highlighted-text explanation.
+    /// A snip is being answered (true), so thinking stays red; false once it's over.
+    @ObservationIgnored var onSnipAnswering: ((Bool) -> Void)?
+
     private func snip(_ kind: SnipKind, region: Rect, path: [Point]) {
         stopRefining()
         tutorial?.stop(message: nil)
         guard state != .listening, state != .thinking, !isAnswering else { return }
+        onSnipAnswering?(true)  // after the guard: a refused snip leaves no red behind
         speaker.stop()
         if conversation != nil {
             closeChat()

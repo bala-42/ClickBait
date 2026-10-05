@@ -156,6 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.update(for: state)
             // A tap's explanation, still undoable by a second tap: not shown yet.
             if state == .thinking, self?.coordinator.isExplainProvisional == true { return }
+            // Red snip thinking ends with the thinking.
+            if state != .thinking { self?.overlay.setSnipAnswering(false) }
             self?.overlay.show(state)
             // Never left tucked away: once nothing is in progress (or it failed), it's back.
             if let self, chat.isTucked, !chat.isParked {
@@ -202,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onInstantPointer = { [weak self] pointers in self?.overlay.guide(to: pointers) }
         overlay.levelSource = { [weak coordinator] in coordinator?.microphoneLevel ?? 0 }
         coordinator.onSnipMarking = { [weak self] marking in self?.overlay.setSnipping(marking) }
+        coordinator.onSnipAnswering = { [weak self] on in self?.overlay.setSnipAnswering(on) }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
         coordinator.onPartialAnswer = { [weak self] partial in
             guard let self else { return }

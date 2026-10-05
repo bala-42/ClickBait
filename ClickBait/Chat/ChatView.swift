@@ -45,18 +45,20 @@ struct ChatView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
         // Grows out of the companion, and shrinks back into it.
-        .scaleEffect(shown && !model.isClosing && !model.isTucked ? 1 : (reduceMotion ? 1 : 0.08), anchor: model.companionAnchor)
-        .opacity(shown && !model.isClosing && !model.isTucked ? 1 : 0)
+        // Grows from half size at the companion; the fade is the window's (animated by the
+        // window server, smooth even while ClickBait is busy). Scaling the whole blurred card
+        // up from 8% redrew too much per frame and stuttered.
+        .scaleEffect(shown && !model.isClosing && !model.isTucked ? 1 : (reduceMotion ? 1 : 0.5), anchor: model.companionAnchor)
         .onAppear {
             // A beat later: the card has measured itself and knows where the companion is.
             DispatchQueue.main.async {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.8)) { shown = true }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.86)) { shown = true }
             }
         }
         .animation(.easeIn(duration: 0.18), value: model.isClosing)
         // Tucks away quickly; comes back with the same spring it opened with.
         .animation(model.isTucked ? .easeIn(duration: 0.18)
-                   : (reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.8)),
+                   : (reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.86)),
                    value: model.isTucked)
     }
 
