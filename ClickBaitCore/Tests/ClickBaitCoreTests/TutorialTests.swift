@@ -519,6 +519,28 @@ struct CloseElementTests {
         #expect(InstantAnswer.pickedIDs(in: #"{"ids": [4, 4, 0]}"#) == [4])
         #expect(InstantAnswer.pickedIDs(in: #"{"ids": []}"#).isEmpty)
     }
+
+    @Test(arguments: ["point to October 27th", "point to today's date", "where is Friday", "show me my 3pm meeting",
+                      "where's the event on the 12th"])
+    func contentIsntPicked(_ question: String) {
+        #expect(InstantAnswer.namesContent(question))
+    }
+
+    @Test(arguments: ["where's the share button", "show me the back and forward buttons", "point at the sidebar",
+                      "where do I type my message", "show me the settings"])
+    func controlsArePicked(_ question: String) {
+        #expect(!InstantAnswer.namesContent(question))
+    }
+
+    @Test func picksMustFit() {
+        #expect(!InstantAnswer.pick("Today", fits: "october 27th"))
+        #expect(!InstantAnswer.pick("View", fits: "today s date"))
+        #expect(InstantAnswer.pick("Go Back", fits: "back"))
+        #expect(InstantAnswer.pick("Preferences", fits: "settings"))
+        #expect(InstantAnswer.pick("Reload this page", fits: "refresh"))
+        #expect(InstantAnswer.pick("Show Sidebar", fits: "sidebar"))
+        #expect(!InstantAnswer.pick("", fits: "share"))
+    }
 }
 
 struct WhereToLookTests {

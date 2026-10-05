@@ -69,6 +69,61 @@ public enum InstantAnswer {
         return samePlace ? first : nil
     }
 
+    // MARK: - Content, not controls
+
+    static let months: Set<String> = ["january", "february", "march", "april", "june", "july", "august", "september",
+                                      "october", "november", "december", "jan", "feb", "apr", "jun", "jul", "aug",
+                                      "sep", "sept", "oct", "nov", "dec"]
+    static let weekdays: Set<String> = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    static let contentWords: Set<String> = ["date", "dates", "event", "events", "meeting", "meetings", "appointment",
+                                            "appointments", "birthday", "birthdays", "holiday", "deadline"]
+
+    /// Asks for something *in* the app's content — a date, a day, an event — rather than one
+    /// of its controls: "point to October 27th", "today's date", "Friday", "my 3pm meeting".
+    /// Those are rarely in the element list (Calendar's days aren't clickable elements), and
+    /// a pick from it lands on the nearest button ("Today", "View"): read the screenshot.
+    public static func namesContent(_ question: String) -> Bool {
+        let words = ImpliedPointer.normalized(question).split(separator: " ").map(String.init)
+        return words.contains { word in
+            months.contains(word) || weekdays.contains(word) || contentWords.contains(word)
+                || word.contains(where: \.isNumber)
+                || (word == "may" && words.contains { $0.contains(where: \.isNumber) })
+        }
+    }
+
+    /// Words that name the same control ("settings" is often a gear called "Preferences").
+    static let synonyms: [[String]] = [
+        ["settings", "setting", "preferences", "preference", "options", "gear", "configure"],
+        ["back", "previous", "prev", "backward"], ["forward", "next"], ["reload", "refresh"],
+        ["new", "add", "plus", "create", "compose", "write"], ["delete", "trash", "bin", "remove", "discard"],
+        ["close", "dismiss", "exit", "x"], ["search", "find", "lookup", "filter"], ["share", "export", "send"],
+        ["menu", "more", "options", "ellipsis", "actions"], ["sidebar", "panel", "pane", "drawer"],
+        ["account", "profile", "avatar", "user", "me"], ["home", "start"], ["play", "pause", "resume"],
+        ["volume", "sound", "mute", "unmute", "audio"], ["download", "save"], ["edit", "rename", "pencil"],
+        ["help", "support", "question"], ["notifications", "notification", "bell", "alerts"],
+        ["fullscreen", "full", "maximize", "zoom", "expand"], ["minimize", "collapse", "shrink"],
+        ["upload", "attach", "attachment", "paperclip"], ["message", "chat", "comment", "reply"],
+        ["copy", "duplicate"], ["print", "printer"], ["calendar", "schedule"], ["today", "now"],
+    ]
+
+    /// Whether a picked element plausibly is the thing asked for: one of the target's words
+    /// (or a synonym) is in its name. "October 27" → "Today" and "today's date" → "View"
+    /// don't; "settings" → "Preferences" and "back" → "Go Back" do.
+    public static func pick(_ label: String, fits target: String) -> Bool {
+        let stop: Set<String> = ["the", "my", "a", "an", "of", "to", "s", "this", "that", "for", "with"]
+        let wanted = ImpliedPointer.normalized(target).split(separator: " ").map(String.init).filter { !stop.contains($0) }
+        let have = ImpliedPointer.normalized(label).split(separator: " ").map(String.init)
+        guard !wanted.isEmpty else { return true }
+        guard !have.isEmpty else { return false }
+        func same(_ a: String, _ b: String) -> Bool {
+            a == b || (a.count >= 4 && b.count >= 4 && (a.hasPrefix(b) || b.hasPrefix(a)))  // "refresh" / "refreshes"
+        }
+        return wanted.contains { word in
+            let family = synonyms.filter { $0.contains(word) }.flatMap { $0 } + [word]
+            return have.contains { name in family.contains { same($0, name) } }
+        }
+    }
+
     /// The element id in a reply to `Prompt.pickSystem` (0 or nothing: none fits).
     public static func pickedID(in reply: String) -> Int? {
         pickedIDs(in: reply).first

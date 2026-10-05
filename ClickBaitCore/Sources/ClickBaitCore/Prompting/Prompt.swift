@@ -205,6 +205,9 @@ public enum Prompt {
         ("sidebar" → "Show Sidebar", "back" → "Go Back", "settings" → a gear or "Preferences"). \
         If they ask for several things ("the back and forward buttons"), pick one element for each, \
         in the order they named them (at most 3). \
+        Only pick an element whose name really is that thing. The list holds controls only: a date, \
+        a day, an event, a message, a photo or other content is NOT in it — never pick a nearby \
+        control instead ("October 27" is not the "Today" button). \
         Reply with ONLY {"ids": [N, ...]}. If none of them fits, reply {"ids": []}.
         """
 

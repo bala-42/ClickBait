@@ -1552,7 +1552,12 @@ final class AskCoordinator {
         // now (~0.1 s), not after the model (~8 s). The model still answers in words; its own
         // pointers are only used when there was no exact, single match.
         var instant: [ScreenPointer]?
-        let targets = snip == nil && selectedText == nil ? InstantAnswer.locateTargets(in: question) : []
+        // "Point to October 27th", "today's date": content, not a control. The element list
+        // only holds controls, so a pick from it lands on the nearest button ("Today",
+        // "View"); the screenshot can see the day.
+        let namesContent = InstantAnswer.namesContent(question)
+        let targets = snip == nil && selectedText == nil && !namesContent ? InstantAnswer.locateTargets(in: question) : []
+        if namesContent { Log.ask.notice("Finding content (a date, day or event), not a control: reading the screen") }
         let found = targets.compactMap {
             InstantAnswer.uniqueElement(named: $0, in: elements) ?? InstantAnswer.closeElement(named: $0, in: elements)
         }
@@ -1564,7 +1569,7 @@ final class AskCoordinator {
             }
             Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
             onInstantPointer?(instant!)
-        } else if !elements.isEmpty, snip == nil, selectedText == nil,
+        } else if !elements.isEmpty, snip == nil, selectedText == nil, !namesContent,
                   !targets.isEmpty || (targets.isEmpty && ImpliedPointer.isLocating(question)
                                          && !ImpliedPointer.normalized(question).hasPrefix("show me how")) {
             // Any "where / which / what do I click" question, not only "where's the X": the
@@ -1583,8 +1588,14 @@ final class AskCoordinator {
                 guard let listing = listed.first(where: { $0.id == id }) else { return nil }
                 return elements.first(where: { $0.label == listing.label })
             }
-            // "Back and forward": one element for each thing named, or the screenshot.
-            if !chosen.isEmpty, targets.count <= 1 || chosen.count == targets.count {
+            // "Back and forward": one element for each thing named, or the screenshot. And
+            // each must plausibly be the thing named, or the model settled for a neighbour.
+            let fits = targets.isEmpty || chosen.count == targets.count
+                && zip(chosen, targets).allSatisfy { InstantAnswer.pick($0.label, fits: $1) }
+            if !chosen.isEmpty {
+                Log.ask.notice("Pick for \(targets.isEmpty ? "(no named target)" : targets.joined(separator: " + "), privacy: .public): \(chosen.map { "\"\($0.label)\"" }.joined(separator: ", "), privacy: .public)\(fits ? "" : " — doesn't fit, reading the screen instead", privacy: .public)")
+            }
+            if !chosen.isEmpty, fits {
                 instant = chosen.map { element in
                     let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
                     return ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
