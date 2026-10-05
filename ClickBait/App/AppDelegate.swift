@@ -168,12 +168,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onConfirmRequest = { [weak self] question in
             guard let self else { return }
             readyPillShown = false  // a real question replaces the offer
+            coordinator.answerOffer(false)
             confirm.show(question, at: overlay.companionTopLeft)
         }
         coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
+        // Before a walkthrough: [show me!] / [show me in Safari!] and ✕, lavender, staying
+        // put. ✕, Esc or 8 s without a click: the steps are written in the chat instead.
+        coordinator.onTutorialOffer = { [weak self] label in
+            guard let self else { return }
+            readyPillShown = false
+            confirm.show("", at: overlay.companionTopLeft, confirm: label, cancel: "✕", hint: nil,
+                         tone: .tutorial, waitTime: .seconds(8)) { [weak self] yes in
+                self?.coordinator.answerOffer(yes)
+            }
+        }
+        coordinator.onStepsWritten = { [weak self] text in
+            guard let self, chat.isOpen else { return }
+            chat.model.setAssistant(text)
+            chat.model.isBusy = false
+            chat.untuck()
+        }
         coordinator.onReminderDayRequest = { [weak self] question, options, hint in
             guard let self else { return }
             readyPillShown = false
+            coordinator.answerOffer(false)
             confirm.showChoice(question, options: options, at: overlay.companionTopLeft, hint: hint,
                                datePicker: true) { [weak self] answer in
                 switch answer {

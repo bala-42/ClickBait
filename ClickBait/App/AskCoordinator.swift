@@ -397,6 +397,7 @@ final class AskCoordinator {
         }
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
         if pendingReminder != nil { dropPendingReminder(); stopped.append("reminder") }
+        if pendingOffer != nil { answerOffer(false); onConfirmEnd?(); stopped.append("walkthrough offer") }
         if isRefining { stopRefining(); stopped.append("close-up") }
         if tutorial?.isActive == true { tutorial?.stop(message: "Tutorial stopped."); stopped.append("tutorial") }
         if state == .listening || state == .thinking || isAnswering {
@@ -944,6 +945,50 @@ final class AskCoordinator {
     @ObservationIgnored var onInvoked: (() -> Void)?
     @ObservationIgnored private var tutorialPlanningShown = false
 
+    /// "[show me!] [✕]" should be offered before a walkthrough starts (the button's words).
+    @ObservationIgnored var onTutorialOffer: ((String) -> Void)?
+    /// A walkthrough was declined: its steps, written out for the chat.
+    @ObservationIgnored var onStepsWritten: ((String) -> Void)?
+    @ObservationIgnored private var pendingOffer: CheckedContinuation<Bool, Never>?
+
+    /// Asks before a walkthrough takes over the pointer or opens another app. ✕, Esc or 8 s
+    /// without a click is a no.
+    private func offerWalkthrough(opening app: String?) async -> Bool {
+        showTutorialPlanning()
+        answerOffer(false)  // never two at once
+        let label = app.map { "show me in \($0)!" } ?? "show me!"
+        Log.ask.notice("Tutorial: offering (\(label, privacy: .public))")
+        let yes = await withCheckedContinuation { continuation in
+            pendingOffer = continuation
+            onTutorialOffer?(label)
+        }
+        Log.ask.notice("Tutorial: \(yes ? "show me" : "declined", privacy: .public)")
+        return yes && !Task.isCancelled
+    }
+
+    /// The offer's answer (its pill, Esc, a timeout, anything that replaces it).
+    func answerOffer(_ yes: Bool) {
+        guard let pending = pendingOffer else { return }
+        pendingOffer = nil
+        pending.resume(returning: yes)
+    }
+
+    /// Declined: the plan's steps in the chat instead of the pointer.
+    private func writeSteps(_ plan: TutorialPlan, question: String, display: String) {
+        let text = (plan.intro.isEmpty ? "" : plan.intro + "\n\n") + plan.checklist(done: 0)
+        if conversation == nil || !chatShown {
+            conversation = Conversation()
+            snipMemory = nil
+            chatShown = true
+            onChatOpen?(display)
+        } else {
+            onChatUserMessage?(display)
+        }
+        conversation?.append(user: question, assistantSpeech: text)
+        if state == .thinking { state = .idle }
+        onStepsWritten?(text)
+    }
+
     /// Lavender and spinning from the moment it's known to be a walkthrough, not only once
     /// the steps are ready.
     private func showTutorialPlanning() {
@@ -996,12 +1041,20 @@ final class AskCoordinator {
             // where the model sent Night Shift to General.
             let route = SystemSettingsMap.route(for: question) ?? []
             Log.ask.notice("Tutorial: System Settings by the Apple menu\(route.isEmpty ? "" : " → " + route.joined(separator: " → "), privacy: .public)")
-            return await beginTutorial(.systemSettingsByAppleMenu(from: context.appName, route: route), question: question, startedIn: startedIn,
+            let settingsPlan = TutorialPlan.systemSettingsByAppleMenu(from: context.appName, route: route)
+            guard await offerWalkthrough(opening: nil) else {
+                writeSteps(settingsPlan, question: question, display: display)
+                return true
+            }
+            return await beginTutorial(settingsPlan, question: question, startedIn: startedIn,
                                        speak: speak, display: display, installedName: installedName, apps: apps,
                                        provider: provider, tutorial: tutorial,
                                        continues: !TutorialQuestion.onlyOpens(question, app: "System Settings"))
         }
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
+            // Ask before switching apps: no plan yet (it's made in that app), so a no gets a
+            // written answer instead.
+            guard await offerWalkthrough(opening: named) else { return false }
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
             showTutorialPlanning()
             (capture, screenshot, elements) = ready
@@ -1017,18 +1070,29 @@ final class AskCoordinator {
                                     app: browser, typing: site.address)
             let plan = TutorialPlan(intro: "Type \(site.name)'s address in \(browser).", steps: [step])
             Log.ask.notice("Tutorial: website \(site.address, privacy: .public) in the browser")
+            let switching = browser.caseInsensitiveCompare(context.appName ?? "") != .orderedSame
+            guard await offerWalkthrough(opening: switching ? browser : nil) else {
+                writeSteps(plan, question: question, display: display)
+                return true
+            }
             return await beginTutorial(plan, question: question, startedIn: startedIn, speak: speak, display: display,
                                        installedName: installedName, apps: apps, provider: provider, tutorial: tutorial,
                                        continues: !Websites.isJustAVisit(question, site: site.name))
         }
 
         var plan: TutorialPlan?
+        // Asked once per walkthrough: the yes to a "show me in Safari!" covers what follows.
+        var offered = taskApp.map { $0.lowercased() != context.appName?.lowercased() } ?? false
         for _ in 0..<2 {
             guard !Task.isCancelled else { return false }
             plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider)?
                 .separatingSetup(frontmostApp: context.appName, isInstalledApp: { installedName($0) != nil })
-            // The plan says it happens in another app: open it (green) and plan again there.
+            // The plan says it happens in another app: ask, then open it (green) and plan again there.
             guard let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
+            if !offered {
+                offered = true
+                guard await offerWalkthrough(opening: other) else { return false }
+            }
             guard let ready = await openForTutorial(other, url: url) else { return false }
             showTutorialPlanning()
             (capture, screenshot, elements) = ready
@@ -1050,6 +1114,10 @@ final class AskCoordinator {
                 Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
                 return false
             }
+        }
+        if !offered, !(await offerWalkthrough(opening: nil)) {
+            writeSteps(plan, question: question, display: display)
+            return true
         }
         return await beginTutorial(plan, question: question, startedIn: startedIn, speak: speak, display: display,
                                    installedName: installedName, apps: apps, provider: provider, tutorial: tutorial)
