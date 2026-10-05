@@ -89,10 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
-            // Opens in view: an explanation shows "Explain: …" at once and streams in;
-            // spoken answers and tutorials open with their content ready. Only follow-ups
-            // tuck away while their answer comes.
-            chat.open(logoAt: overlay.companionTriangleCenter)
+            // Opens tucked into the companion; it grows out when the answer starts.
+            chat.open(logoAt: overlay.companionTriangleCenter, tucked: true)
             chat.model.addUser(firstMessage)
             chat.model.isBusy = true
         }
