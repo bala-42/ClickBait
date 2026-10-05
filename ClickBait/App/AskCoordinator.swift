@@ -1018,7 +1018,11 @@ final class AskCoordinator {
         // "System Setting" on its own: getting there is the task (Apple menu → System Settings…).
         let toSystemSettings = TutorialQuestion.onlyOpens(question, app: "System Settings")
             && TutorialQuestion.taskApp(in: question, apps: Array(AppLocator.installed().keys)) == "System Settings"
-        guard asking || ordering || visiting || toSystemSettings, let provider, let tutorial else { return false }
+        // "Where's / show me X": a single blue point when X is on screen right now; when it
+        // isn't (inside a menu, another app: "show me my Safari history"), a walkthrough.
+        let findingHidden = TutorialQuestion.isLocatingRequest(question) && !Self.isOnScreen(question, in: elements)
+        guard asking || ordering || visiting || toSystemSettings || findingHidden, let provider, let tutorial else { return false }
+        if findingHidden { Log.ask.notice("Tutorial: what they're looking for isn't on screen; walking them there") }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()
         // The installed app's own name ("Safari"), whatever case the plan wrote.
@@ -1124,6 +1128,12 @@ final class AskCoordinator {
                                    installedName: installedName, apps: apps, provider: provider, tutorial: tutorial)
     }
 
+    /// What "where's / show me …" asks for is clickable on screen now, by (nearly) its name.
+    private static func isOnScreen(_ question: String, in elements: [ScreenElement]) -> Bool {
+        let targets = InstantAnswer.locateTargets(in: question)
+        return !targets.isEmpty && targets.allSatisfy { StepMatcher.find($0, in: elements, minimum: 0.9) != nil }
+    }
+
     /// Shows the plan in the chat and starts walking it.
     private func beginTutorial(_ plan: TutorialPlan, question: String, startedIn: NSRunningApplication?, speak: Bool,
                                display: String, installedName: @escaping (String) -> String?, apps: [String: URL],
@@ -1181,7 +1191,9 @@ final class AskCoordinator {
         // Safari history"): that is clearly about doing something in it.
         let namesApp = TutorialQuestion.asksForTutorial(question)
             && TutorialQuestion.mentionedApp(in: question, apps: Array(AppLocator.installed().keys)) != nil
+        // "Where's / show me X" is about getting to X, never a content question.
         let sorting = !TutorialQuestion.insistsOnWalkthrough(question) && !namesApp
+            && !TutorialQuestion.isLocatingRequest(question)
         var sort = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         sort.sortRequest = true
         let start = ContinuousClock.now
