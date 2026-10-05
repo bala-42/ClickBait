@@ -230,8 +230,10 @@ final class ChatController {
             return
         }
         tuckTask?.cancel()
-        // Back where the hotkey was pressed, not wherever the companion is now.
-        let logoCenter = homePoint ?? companionPoint?() ?? NSEvent.mouseLocation
+        // Pops out of the companion wherever it is now (the user may have moved since the
+        // hotkey), then stays there.
+        let logoCenter = companionPoint?() ?? homePoint ?? NSEvent.mouseLocation
+        homePoint = logoCenter
         origin = logoCenter
         alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)
