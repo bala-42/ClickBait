@@ -1383,6 +1383,7 @@ final class AskCoordinator {
         tutorial?.stop(message: nil)
         guard state != .listening, state != .thinking, !isAnswering else { return }
         onSnipAnswering?(true)  // after the guard: a refused snip leaves no red behind
+        onInvoked?()  // the chat pops out of the companion where the circling ended
         speaker.stop()
         if conversation != nil {
             closeChat()
@@ -1822,7 +1823,15 @@ final class AskCoordinator {
             let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
                                              scale: provider.coordinateScale).response.parts
             let stops = PartsTour.stops(parts, marked: view.marked)
-            Log.ask.notice("Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) (\(String(describing: ContinuousClock.now - start), privacy: .public))")
+            let positions = parts.prefix(4).map { "\(Int($0.x)),\(Int($0.y))" }.joined(separator: " ")
+            Log.ask.notice("""
+                Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) \
+                (\(String(describing: ContinuousClock.now - start), privacy: .public)); parts at \(positions, privacy: .public) \
+                in a \(memory.closeUp.width, privacy: .public)×\(memory.closeUp.height, privacy: .public) close-up, marked \
+                \(Int(view.marked.minX), privacy: .public),\(Int(view.marked.minY), privacy: .public)–\
+                \(Int(view.marked.maxX), privacy: .public),\(Int(view.marked.maxY), privacy: .public), scale \
+                \(String(describing: provider.coordinateScale), privacy: .public)
+                """)
             guard !stops.isEmpty else { return }
             onTour?(stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) })
         }
