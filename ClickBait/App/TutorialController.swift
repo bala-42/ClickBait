@@ -198,7 +198,11 @@ final class TutorialController {
             if let frame = currentFrame {
                 let dx = max(frame.minX - click.point.x, 0, click.point.x - frame.maxX)
                 let dy = max(frame.minY - click.point.y, 0, click.point.y - frame.maxY)
-                Log.ask.notice("Tutorial: click \(Int((dx * dx + dy * dy).squareRoot()), privacy: .public) pt from the target\(self.pointingAtMenu ? " (a menu to open)" : "", privacy: .public)")
+                Log.ask.notice("""
+                    Tutorial: click \(Int((dx * dx + dy * dy).squareRoot()), privacy: .public) pt from the target\(self.pointingAtMenu ? " (a menu to open)" : "", privacy: .public) \
+                    — click \(Int(click.point.x), privacy: .public),\(Int(click.point.y), privacy: .public), target \
+                    \(Int(frame.x), privacy: .public),\(Int(frame.y), privacy: .public) \(Int(frame.width), privacy: .public)×\(Int(frame.height), privacy: .public)
+                    """)
             }
             refreshNow = true  // something else was clicked (a menu opened?): look again now
         }
@@ -318,7 +322,7 @@ final class TutorialController {
         }).value {
             if loggedTarget != index {
                 loggedTarget = index
-                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at an item in the open menu")
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at an item in the open menu: \(path.joined(separator: " ▸ "), privacy: .public) at \(Int(frame.x), privacy: .public),\(Int(frame.y), privacy: .public) \(Int(frame.width), privacy: .public)×\(Int(frame.height), privacy: .public)")
             }
             point(at: frame, label: instruction, menu: false)
             return
@@ -465,7 +469,7 @@ final class TutorialController {
             }
         }
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
-              let encoded = try? ScreenshotEncoder.encode(capture.image) else { finish(); return }
+              let encoded = try? await ScreenshotEncoder.encodeInBackground(capture.image) else { finish(); return }
         guard isActive else { return }
         // One call: the planner answers "no steps" when the task is already finished.
 
@@ -650,7 +654,7 @@ final class TutorialController {
         lastModelCheck = Date()
         defer { checking = false }
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
-              let encoded = try? ScreenshotEncoder.encode(capture.image), isActive else { return }
+              let encoded = try? await ScreenshotEncoder.encodeInBackground(capture.image), isActive else { return }
         var request = AskRequest(question: goal, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
                                  screenshotHeight: encoded.height, context: context)
         request.tutorialCheck = (plan, index + 1)

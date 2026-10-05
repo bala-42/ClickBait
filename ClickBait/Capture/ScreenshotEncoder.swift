@@ -16,6 +16,16 @@ struct EncodedScreenshot: Sendable {
 enum ScreenshotEncoder {
     static let maxLongEdge = 1280
 
+    /// `encode`, off the main thread: a full Retina screenshot takes ~0.1–0.3 s to scale
+    /// and compress, and on the main thread the companion froze for that long.
+    static func encodeInBackground(_ image: CGImage) async throws -> EncodedScreenshot {
+        let box = ImageBox(image: image)
+        return try await Task.detached(priority: .userInitiated) { try encode(box.image) }.value
+    }
+
+    /// CGImage is immutable and thread-safe; it just isn't annotated Sendable.
+    private struct ImageBox: @unchecked Sendable { let image: CGImage }
+
     static func encode(_ image: CGImage) throws -> EncodedScreenshot {
         let longEdge = max(image.width, image.height)
         let downscale = max(1, Double(longEdge) / Double(maxLongEdge))

@@ -134,6 +134,13 @@ final class ChatController {
     /// A hotkey was pressed with the companion at `point`.
     func invoked(at point: CGPoint) {
         homePoint = point
+        // Asked from another app while it's away there: it moves here (a walkthrough's
+        // checklist went into a chat hidden in Safari).
+        if isAway {
+            setHome()
+            isAway = false
+            trace("re-homed to \(homeName ?? "?") by the hotkey")
+        }
         trace("hotkey at \(Int(point.x)),\(Int(point.y))")
     }
 

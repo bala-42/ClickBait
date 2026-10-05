@@ -1270,7 +1270,7 @@ final class AskCoordinator {
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         context = ScreenContext(appName: app.localizedName ?? name, windowTitle: snapshot.windowTitle)
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist),
-              let screenshot = try? ScreenshotEncoder.encode(capture.image) else { return nil }
+              let screenshot = try? await ScreenshotEncoder.encodeInBackground(capture.image) else { return nil }
         let elements = await Self.elements(in: capture, frontmostPID: pid)
         return (capture, screenshot, elements)
     }
@@ -1826,7 +1826,7 @@ final class AskCoordinator {
         let target = pointer.label.isEmpty ? question : pointer.label
         do {
             let closeUp = try CloseUp(capture, around: pointer.quartz)
-            let encoded = try ScreenshotEncoder.encode(closeUp.image)
+            let encoded = try await ScreenshotEncoder.encodeInBackground(closeUp.image)
             let request = AskRequest(question: question, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
                                      screenshotHeight: encoded.height, context: context, locate: target)
             var reply = ""
