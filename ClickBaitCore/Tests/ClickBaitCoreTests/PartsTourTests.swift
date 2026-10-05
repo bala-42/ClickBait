@@ -127,3 +127,39 @@ struct MostlyTextTests {
         #expect(!PartsTour.isMostlyText(captioned, marked: marked))
     }
 }
+
+struct FaceSnappingTests {
+    // Three people, faces at x 300, 640, 1000 (y 200, 40 px wide).
+    let faces: [(center: Point, width: Double)] = [
+        (Point(x: 300, y: 200), 40), (Point(x: 640, y: 210), 40), (Point(x: 1000, y: 190), 40),
+    ]
+
+    @Test func twoNamesOnOnePersonGoToTwoPeople() {
+        // From the 5 Oct log (in pixels): Rishikanth and Keerthy Suresh on the same person.
+        let parts = [Pointer(x: 294, y: 341, label: "Keerthy Suresh"), Pointer(x: 248, y: 343, label: "Rishikanth"),
+                     Pointer(x: 1050, y: 341, label: "Sananth")]
+        let snapped = FaceSnapping.snap(parts, to: faces)
+        #expect(Set(snapped.map { Int($0.x) }) == [300, 640, 1000])
+        #expect(snapped[1].x == 300)   // leftmost name → leftmost face
+        #expect(snapped[0].x == 640)
+        #expect(snapped[2].x == 1000)
+        #expect(snapped.allSatisfy { $0.y < 220 })  // on the faces
+    }
+
+    @Test func objectsStayWhereTheyAre() {
+        let parts = [Pointer(x: 300, y: 250, label: "Keerthy Suresh"), Pointer(x: 640, y: 700, label: "Gramophone")]
+        let snapped = FaceSnapping.snap(parts, to: [(Point(x: 300, y: 200), 40)])
+        #expect(snapped[1] == parts[1])
+        #expect(snapped[0].y == 200)
+    }
+
+    @Test func noFacesNoChange() {
+        let parts = [Pointer(x: 10, y: 10, label: "Liver")]
+        #expect(FaceSnapping.snap(parts, to: []) == parts)
+    }
+
+    @Test func fewerPeopleThanFacesUseTheClosestFaces() {
+        let snapped = FaceSnapping.snap([Pointer(x: 980, y: 260, label: "Sananth")], to: faces)
+        #expect(snapped[0].x == 1000)
+    }
+}

@@ -1186,6 +1186,11 @@ final class AskCoordinator {
         if state == .thinking { state = .idle }
     }
 
+    /// Faces in a snip's close-up, found off the main thread.
+    private nonisolated static func faces(in view: SnipView) async -> [(center: Point, width: Double)] {
+        await Task.detached(priority: .userInitiated) { FaceFinder.faces(in: view.image) }.value
+    }
+
     /// What "where's / show me …" asks for is clickable on screen now, by (nearly) its name.
     private static func isOnScreen(_ question: String, in elements: [ScreenElement]) -> Bool {
         let targets = InstantAnswer.locateTargets(in: question)
@@ -1793,7 +1798,8 @@ final class AskCoordinator {
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
             if !labelled {
-                let stops = PartsTour.stops(candidates, marked: view.marked)
+                let faces = await Self.faces(in: view)
+                let stops = PartsTour.stops(FaceSnapping.snap(candidates, to: faces), marked: view.marked)
                 tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) }
             }
             Log.ask.notice("""
@@ -1827,7 +1833,9 @@ final class AskCoordinator {
             guard let reply = await Self.reply(from: provider, to: partsRequest, within: .seconds(20)), !Task.isCancelled else { return }
             let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
                                              scale: provider.coordinateScale).response.parts
-            let stops = PartsTour.stops(parts, marked: view.marked)
+            let faces = await Self.faces(in: view)
+            let stops = PartsTour.stops(FaceSnapping.snap(parts, to: faces), marked: view.marked)
+            if !faces.isEmpty { Log.ask.notice("Parts look: \(faces.count, privacy: .public) face(s) found; people placed on them") }
             let positions = parts.prefix(4).map { "\(Int($0.x)),\(Int($0.y))" }.joined(separator: " ")
             Log.ask.notice("""
                 Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) \

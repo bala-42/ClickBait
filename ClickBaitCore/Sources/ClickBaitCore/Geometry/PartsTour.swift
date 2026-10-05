@@ -96,3 +96,54 @@ public enum PartsMatcher {
         return Result(verified: verified, unverified: unverified)
     }
 }
+
+/// Puts named people on real faces. The model reads names well (often from a caption) but
+/// places people loosely — it put two of three actors on the same person. Faces come from
+/// on-device face detection; a part near a person is moved onto a face, each face used
+/// once, matched left to right (the model's left/right order is kept, its exact spots are not).
+public enum FaceSnapping {
+    /// `faces`: face centres and widths, in the same pixels as `parts`.
+    public static func snap(_ parts: [Pointer], to faces: [(center: Point, width: Double)]) -> [Pointer] {
+        guard !faces.isEmpty else { return parts }
+        // A part counts as a person when it sits around a face: within ~3 face widths across
+        // and from just above the face to ~5 face widths below it (the body).
+        func isAroundAFace(_ part: Pointer) -> Bool {
+            faces.contains { face in
+                abs(part.x - face.center.x) <= face.width * 3
+                    && part.y >= face.center.y - face.width * 1.5 && part.y <= face.center.y + face.width * 5
+            }
+        }
+        let people = parts.indices.filter { isAroundAFace(parts[$0]) }
+        guard !people.isEmpty else { return parts }
+        var result = parts
+        let byX = people.sorted { parts[$0].x < parts[$1].x }
+        let faceOrder = faces.indices.sorted { faces[$0].center.x < faces[$1].center.x }
+        if byX.count <= faces.count {
+            // Spread the people over the faces in left-to-right order, choosing the run of
+            // faces closest to where the model put them.
+            var bestStart = 0, bestCost = Double.infinity
+            for start in 0...(faces.count - byX.count) {
+                let cost = byX.enumerated().reduce(0.0) { total, pair in
+                    total + abs(parts[pair.element].x - faces[faceOrder[start + pair.offset]].center.x)
+                }
+                if cost < bestCost { (bestStart, bestCost) = (start, cost) }
+            }
+            for (offset, index) in byX.enumerated() {
+                let face = faces[faceOrder[bestStart + offset]].center
+                result[index].x = face.x
+                result[index].y = face.y
+            }
+        } else {
+            // More names than faces: each face goes to the nearest name; the rest stay put.
+            var free = Set(byX)
+            for faceIndex in faceOrder {
+                let face = faces[faceIndex].center
+                guard let nearest = free.min(by: { abs(parts[$0].x - face.x) < abs(parts[$1].x - face.x) }) else { break }
+                free.remove(nearest)
+                result[nearest].x = face.x
+                result[nearest].y = face.y
+            }
+        }
+        return result
+    }
+}
