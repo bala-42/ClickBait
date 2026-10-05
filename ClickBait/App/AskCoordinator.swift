@@ -934,8 +934,17 @@ final class AskCoordinator {
     @ObservationIgnored private(set) var tutorialReturnApp: NSRunningApplication?
     /// Setup (opening an app for a tutorial) is over: the green "Opening…" can go.
     @ObservationIgnored var onSetupFinished: (() -> Void)?
-    /// A walkthrough is being planned in the app just opened (true), or won't happen (false).
+    /// A walkthrough is being planned (true: lavender, spinning), or won't happen (false).
     @ObservationIgnored var onTutorialPlanning: ((Bool) -> Void)?
+    @ObservationIgnored private var tutorialPlanningShown = false
+
+    /// Lavender and spinning from the moment it's known to be a walkthrough, not only once
+    /// the steps are ready.
+    private func showTutorialPlanning() {
+        guard !tutorialPlanningShown else { return }
+        tutorialPlanningShown = true
+        onTutorialPlanning?(true)
+    }
 
     /// "How do I…" or an order that takes clicks ("Clear search history."): plan the
     /// clicks and walk the user through them in lavender. If the task lives in another
@@ -944,9 +953,10 @@ final class AskCoordinator {
                                elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
         // Lavender while planning, once an app was opened for the walkthrough (green →
         // lavender, not green → idle blue → lavender). Dropped again if no tutorial starts.
-        var planningShown = false
+        tutorialPlanningShown = false
         defer {
-            if planningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
+            if tutorialPlanningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
+            tutorialPlanningShown = false
         }
         let asking = TutorialQuestion.asksForTutorial(question)
         let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
@@ -987,8 +997,7 @@ final class AskCoordinator {
         }
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
-            planningShown = true
-            onTutorialPlanning?(true)
+            showTutorialPlanning()
             (capture, screenshot, elements) = ready
         }
 
@@ -1015,8 +1024,7 @@ final class AskCoordinator {
             // The plan says it happens in another app: open it (green) and plan again there.
             guard let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
             guard let ready = await openForTutorial(other, url: url) else { return false }
-            planningShown = true
-            onTutorialPlanning?(true)
+            showTutorialPlanning()
             (capture, screenshot, elements) = ready
         }
         guard !Task.isCancelled, let plan, let first = plan.steps.first else {
@@ -1115,8 +1123,10 @@ final class AskCoordinator {
                 return nil
             }
             Log.ask.notice("Sorted as a walkthrough in \(took, privacy: .public)\(answer == nil ? " (no verdict)" : "", privacy: .public)")
+            showTutorialPlanning()  // it is a walkthrough: lavender while the steps are planned
         } else {
             Log.ask.notice("Tutorial: no sort needed (\(namesApp ? "a how-to naming an app" : "asked outright", privacy: .public))")
+            showTutorialPlanning()
         }
         let plan = await planned
         Log.ask.notice("""
