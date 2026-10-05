@@ -113,11 +113,15 @@ final class ChatController {
         }
     }
 
-    /// Grows back out of the companion, where it was.
+    /// Grows back out of the companion, its logo on the companion's triangle wherever that
+    /// is now (like opening), not where the chat was before it tucked away.
     func untuck() {
         guard let panel, model.isTucked else { return }
         tuckTask?.cancel()
-        aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: panel.frame)
+        let logoCenter = companionPoint?() ?? NSEvent.mouseLocation
+        origin = logoCenter
+        place(topLeft: CGPoint(x: logoCenter.x - ChatView.logoCenter.x, y: logoCenter.y + ChatView.logoCenter.y))
+        aim(at: logoCenter, in: panel.frame)
         panel.orderFrontRegardless()
         model.isTucked = false
         if refocusOnReturn {
