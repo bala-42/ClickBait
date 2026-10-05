@@ -430,6 +430,9 @@ struct InstantPluralTests {
         #expect(InstantAnswer.locateTargets(in: "where are the back and forward buttons?") == ["back", "forward"])
         #expect(InstantAnswer.locateTargets(in: "where's the share button") == ["share"])
         #expect(InstantAnswer.locateTargets(in: "what is this") == [])
+        #expect(InstantAnswer.locateTargets(in: "show me where the back and forward buttons are") == ["back", "forward"])
+        #expect(InstantAnswer.locateTargets(in: "can you show me where the share button is located") == ["share"])
+        #expect(InstantAnswer.locateTargets(in: "tell me where the reload button is") == ["reload"])
     }
 
     @Test func theAppMenuIsNotTheApp() {
@@ -512,6 +515,9 @@ struct CloseElementTests {
     @Test func picks() {
         #expect(InstantAnswer.pickedID(in: #"{"id": 7}"#) == 7)
         #expect(InstantAnswer.pickedID(in: #"{"id": 0}"#) == nil)
+        #expect(InstantAnswer.pickedIDs(in: #"{"ids": [4, 9]}"#) == [4, 9])
+        #expect(InstantAnswer.pickedIDs(in: #"{"ids": [4, 4, 0]}"#) == [4])
+        #expect(InstantAnswer.pickedIDs(in: #"{"ids": []}"#).isEmpty)
     }
 }
 

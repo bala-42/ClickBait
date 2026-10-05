@@ -1565,7 +1565,7 @@ final class AskCoordinator {
             Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
             onInstantPointer?(instant!)
         } else if !elements.isEmpty, snip == nil, selectedText == nil,
-                  targets.count == 1 || (targets.isEmpty && ImpliedPointer.isLocating(question)
+                  !targets.isEmpty || (targets.isEmpty && ImpliedPointer.isLocating(question)
                                          && !ImpliedPointer.normalized(question).hasPrefix("show me how")) {
             // Any "where / which / what do I click" question, not only "where's the X": the
             // answer is usually something in the list ("where do I type my message?").
@@ -1578,13 +1578,19 @@ final class AskCoordinator {
                                   context: context, elements: listed)
             pick.pickElement = true
             let pickStart = ContinuousClock.now
-            if let reply = await Self.reply(from: provider, to: pick, within: .seconds(5)), let id = InstantAnswer.pickedID(in: reply),
-               let chosen = listed.first(where: { $0.id == id }),
-               let element = elements.first(where: { $0.label == chosen.label }) {
-                let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
-                instant = [ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
-                                         quartz: center)]
-                Log.ask.notice("Picked from the element list in \(String(describing: ContinuousClock.now - pickStart), privacy: .public)")
+            let reply = await Self.reply(from: provider, to: pick, within: .seconds(5))
+            let chosen = InstantAnswer.pickedIDs(in: reply ?? "").compactMap { id -> ScreenElement? in
+                guard let listing = listed.first(where: { $0.id == id }) else { return nil }
+                return elements.first(where: { $0.label == listing.label })
+            }
+            // "Back and forward": one element for each thing named, or the screenshot.
+            if !chosen.isEmpty, targets.count <= 1 || chosen.count == targets.count {
+                instant = chosen.map { element in
+                    let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
+                    return ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
+                                         quartz: center)
+                }
+                Log.ask.notice("Picked \(chosen.count, privacy: .public) from the element list in \(String(describing: ContinuousClock.now - pickStart), privacy: .public)")
                 onInstantPointer?(instant!)
             } else {
                 Log.ask.notice("Nothing among \(listed.count, privacy: .public) listed elements fits (\(String(describing: ContinuousClock.now - pickStart), privacy: .public)); looking at the screen")

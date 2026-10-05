@@ -201,9 +201,11 @@ public enum Prompt {
     /// instead of ~9 s, and the pointer lands on the element's real frame.
     public static let pickSystem = """
         The user wants to find something on their Mac screen. Below is the list of clickable elements \
-        on screen (id: kind "name"). Pick the ONE element they mean — by name, meaning or synonym \
+        on screen (id: kind "name"). Pick the element they mean — by name, meaning or synonym \
         ("sidebar" → "Show Sidebar", "back" → "Go Back", "settings" → a gear or "Preferences"). \
-        Reply with ONLY {"id": N}. If none of them fits, reply {"id": 0}.
+        If they ask for several things ("the back and forward buttons"), pick one element for each, \
+        in the order they named them (at most 3). \
+        Reply with ONLY {"ids": [N, ...]}. If none of them fits, reply {"ids": []}.
         """
 
     /// A second look to pin down where something is, on a sharp close-up.

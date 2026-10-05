@@ -7,11 +7,16 @@ public enum InstantAnswer {
 
     static let locatingOpeners = ["where is the", "where is", "wheres the", "wheres", "where s the", "where s",
                                   "where are the", "where are", "where re the",
+                                  "show me where the", "show me where", "tell me where the", "tell me where",
                                   "show me the", "show me", "point at the", "point to the", "point at", "point to",
                                   "find the", "find", "locate the", "locate", "which is the", "highlight the"]
     static let thingWords: Set<String> = ["button", "buttons", "menu", "menus", "icon", "icons", "tab", "tabs", "field",
                                           "fields", "link", "links", "option", "options", "item", "items", "box", "boxes",
                                           "checkbox", "toggle", "switch", "on", "screen", "the", "here", "please"]
+    /// "… are", "… is located": the end of "show me where the X is", not part of the name.
+    static let trailingWords: Set<String> = ["is", "are", "located", "at"]
+    /// Polite starts before the opener ("can you show me where…").
+    static let politeLeads = ["can you", "could you", "please"]
 
     /// The things a locating question names: "where are the back and forward buttons?" →
     /// ["back", "forward"]. Empty when it isn't one.
@@ -25,7 +30,8 @@ public enum InstantAnswer {
 
     /// The thing a locating question names ("where's the Share button?" → "share"), or nil.
     public static func locateTarget(in question: String) -> String? {
-        let text = ImpliedPointer.normalized(question)
+        var text = ImpliedPointer.normalized(question)
+        for lead in politeLeads where text.hasPrefix(lead + " ") { text = String(text.dropFirst(lead.count + 1)) }
         guard TutorialQuestion.isLocatingRequest(question),
               let opener = locatingOpeners.first(where: { text.hasPrefix($0 + " ") }) else { return nil }
         var words = text.dropFirst(opener.count + 1).split(separator: " ").map(String.init)
@@ -34,7 +40,7 @@ public enum InstantAnswer {
         if let cut = words.lastIndex(where: { ["in", "on", "at"].contains($0) }), cut > 0, (2...4).contains(words.count - cut) {
             words = Array(words[..<cut])
         }
-        while let last = words.last, thingWords.contains(last) { words.removeLast() }
+        while let last = words.last, thingWords.contains(last) || trailingWords.contains(last) { words.removeLast() }
         let target = words.joined(separator: " ")
         return target.isEmpty || words.count > 5 ? nil : target
     }
@@ -65,10 +71,18 @@ public enum InstantAnswer {
 
     /// The element id in a reply to `Prompt.pickSystem` (0 or nothing: none fits).
     public static func pickedID(in reply: String) -> Int? {
+        pickedIDs(in: reply).first
+    }
+
+    /// Every element id in a reply to `Prompt.pickSystem`, in order ({"ids": [3, 5]} for
+    /// "back and forward"; {"id": N} also accepted). Empty: none fits.
+    public static func pickedIDs(in reply: String) -> [Int] {
         guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"), start < end,
-              let object = (try? JSONSerialization.jsonObject(with: Data(reply[start...end].utf8))) as? [String: Any],
-              let id = (object["id"] as? NSNumber)?.intValue, id > 0 else { return nil }
-        return id
+              let object = (try? JSONSerialization.jsonObject(with: Data(reply[start...end].utf8))) as? [String: Any]
+        else { return [] }
+        let raw = (object["ids"] as? [NSNumber]) ?? (object["id"] as? NSNumber).map { [$0] } ?? []
+        var seen = Set<Int>()
+        return raw.map(\.intValue).filter { $0 > 0 && seen.insert($0).inserted }.prefix(3).map { $0 }
     }
 
     // MARK: - Menu walkthroughs ("how do I clear my history?")
