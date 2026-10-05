@@ -183,7 +183,7 @@ final class AskCoordinator {
 
     /// The double-tap window passed: the tap really was a single one.
     /// Inside the double-tap window: the explanation is working but not shown yet (a double
-    /// tap must leave the companion blue and still, not flash marigold and spin).
+    /// tap must leave the companion blue and still, not flash orange and spin).
     var isExplainProvisional: Bool { explainCommit != nil }
     /// The selection read during the window, shown once it's committed.
     @ObservationIgnored private var pendingExcerpt: String?
@@ -322,7 +322,7 @@ final class AskCoordinator {
         let provider = settings.makeProvider()
         self.provider = provider
         let blocklist = settings.blocklist
-        // Marigold and spinning while a typed message is worked on, like a spoken one (it
+        // Orange and spinning while a typed message is worked on, like a spoken one (it
         // stayed idle blue); back to idle if it ends without an answer taking over.
         state = .thinking
         askTask = Task {

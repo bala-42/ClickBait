@@ -83,7 +83,7 @@ struct ChatView: View {
     }
 
     private var logo: some View {
-        // Same colour state as the companion: marigold while answering, blue
+        // Same colour state as the companion: orange while answering, blue
         // otherwise. Full size and resting angle, so it sits exactly on the companion.
         CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
             .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
