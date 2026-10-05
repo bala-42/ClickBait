@@ -139,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.onStateChange = { [weak self, weak statusBar] state in
             statusBar?.update(for: state)
+            // A tap's explanation, still undoable by a second tap: not shown yet.
+            if state == .thinking, self?.coordinator.isExplainProvisional == true { return }
             self?.overlay.show(state)
             // Never left tucked away: once nothing is in progress (or it failed), it's back.
             if let self, chat.isTucked {

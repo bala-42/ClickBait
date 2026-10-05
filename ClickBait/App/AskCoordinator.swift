@@ -166,14 +166,15 @@ final class AskCoordinator {
     private func explainTapped() {
         switch explainTaps.tap(at: ProcessInfo.processInfo.systemUptime) {
         case .first:
-            // Explain now (no waiting), but keep it undoable for the double-tap window.
-            explain()
+            // Explain now (no waiting), but keep it undoable for the double-tap window. The
+            // window opens first, so nothing of the explanation shows during it.
             explainCommit?.cancel()
             explainCommit = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(DoubleTapDetector.defaultWindow))
                 guard !Task.isCancelled else { return }
                 self?.commitExplain()
             }
+            explain()
         case .second:
             undoExplain()
             startTypedChat(trigger: "double-tap ⌥⌘")
@@ -181,8 +182,20 @@ final class AskCoordinator {
     }
 
     /// The double-tap window passed: the tap really was a single one.
+    /// Inside the double-tap window: the explanation is working but not shown yet (a double
+    /// tap must leave the companion blue and still, not flash marigold and spin).
+    var isExplainProvisional: Bool { explainCommit != nil }
+    /// The selection read during the window, shown once it's committed.
+    @ObservationIgnored private var pendingExcerpt: String?
+
     private func commitExplain() {
         explainCommit = nil
+        // Now show what was held back: the thinking state, and the excerpt if it's in.
+        onStateChange?(state)
+        if let excerpt = pendingExcerpt {
+            pendingExcerpt = nil
+            onExplaining?(excerpt)
+        }
         if detachedChat != nil {
             detachedChat = nil
             onChatClose?()
@@ -194,6 +207,7 @@ final class AskCoordinator {
     private func undoExplain() {
         explainCommit?.cancel()
         explainCommit = nil
+        pendingExcerpt = nil
         if state == .thinking || isAnswering {
             askTask?.cancel()
             askTask = nil
@@ -692,7 +706,7 @@ final class AskCoordinator {
         context.windowTitle = snapshot.windowTitle
         context.focusedElement = snapshot.focusedElement
         Log.ask.notice("Explain: \(selected.count, privacy: .public) characters selected via \(method.rawValue, privacy: .public)")
-        onExplaining?(selected)
+        if isExplainProvisional { pendingExcerpt = selected } else { onExplaining?(selected) }
 
         let capture: ScreenCapture
         do {

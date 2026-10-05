@@ -41,6 +41,15 @@ struct CompanionTriangle: View {
     /// Where a stopped spin was, springing to the nearest resting third.
     @State private var settle: Double = 0
     private static let tickTime: Double = 0.5
+    /// Room around the triangle for its glow inside the cached drawing.
+    private static let glowRoom: CGFloat = 8
+    /// The centroid in the padded drawing: the shape is centred by its bounding box, and an
+    /// equilateral triangle's centroid sits height/6 below that box's middle.
+    private static var centroid: UnitPoint {
+        let box = size + 2 * glowRoom
+        let height = size * 3.squareRoot() / 2
+        return UnitPoint(x: 0.5, y: (glowRoom + size / 2 + height / 6) / box)
+    }
     private static let restTime: Double = 0.4
 
     var body: some View {
@@ -62,9 +71,12 @@ struct CompanionTriangle: View {
                 // Triangle and glow are drawn once into a texture that is then turned:
                 // rotating no longer redraws the blurred glow every frame (costly while
                 // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
-                .padding(8)
+                .padding(Self.glowRoom)
                 .drawingGroup()
-                .rotationEffect(.degrees(angle + spin))  // angle smoothed by OverlayController
+                // The spin turns about the triangle's centroid (its dead centre): about the
+                // box's centre it wobbled, and thirds didn't land where they began.
+                .rotationEffect(.degrees(spin), anchor: Self.centroid)
+                .rotationEffect(.degrees(angle))  // aim, smoothed by OverlayController
                 .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
                 .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
         }
