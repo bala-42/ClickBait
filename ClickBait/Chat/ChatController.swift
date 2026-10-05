@@ -171,7 +171,7 @@ final class ChatController {
             guard isAway else { return }
             trace("back home (\(app.localizedName ?? "?")): \(model.isTucked ? "still tucked" : "shown") at \(Int(panel.frame.minX)),\(Int(panel.frame.maxY))")
             isAway = false
-            if !model.isTucked { fadeIn(panel) }
+            if !model.isTucked { showWhenSettled(panel) }
             onBackHome?()
         } else if !isAway {
             trace("away: \(app.localizedName ?? "?") in front, home is \(homeName ?? "?")")
@@ -234,6 +234,21 @@ final class ChatController {
             refocusOnReturn = false
             panel.makeKey()
             model.focusRequest += 1
+        }
+    }
+
+    /// Coming back to its app: macOS reports the app active before the slide to its desktop
+    /// finishes, and a window shown then lands on the desktop being left (the chat turned
+    /// up over Chrome after "let's see!" went back to Claude). Wait for the switch, then
+    /// show it on the desktop the user is now on.
+    private func showWhenSettled(_ shown: NSPanel) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let self, shown === panel, !isAway, !model.isTucked else { return }
+            shown.collectionBehavior.insert(.moveToActiveSpace)
+            fadeIn(shown)
+            shown.collectionBehavior.remove(.moveToActiveSpace)
+            trace("shown at home, on the current desktop")
         }
     }
 
