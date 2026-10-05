@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chat = ChatController()
     private let confirm = ConfirmController()
     private let escape = InputInterceptor()
+    /// The "let's see! / later." pill is up.
+    private var readyPillShown = false
     private lazy var tutorial = TutorialController(overlay: overlay)
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
@@ -82,14 +84,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Two pills: "answer's ready in Safari" rides with the companion; below it, where
+        // it appeared, [let's see!] [later.] stays put. Both fade if ignored.
         chat.onReadyWhileAway = { [weak self] appName in
-            self?.overlay.showShortAnswer("answer's ready in \(appName)")
+            guard let self else { return }
+            overlay.showShortAnswer("answer's ready in \(appName)")
+            guard !confirm.isShowing else { return }  // never over a question being asked
+            let below = overlay.companionTopLeft
+            readyPillShown = true
+            confirm.show("", at: CGPoint(x: below.x, y: below.y - 30), confirm: "let's see!", cancel: "later.",
+                         hint: nil, tone: .idle, waitTime: .seconds(10)) { [weak self] seeIt in
+                guard let self else { return }
+                readyPillShown = false
+                if seeIt { chat.homeApp?.activate() }  // the chat is there, where it was
+            }
+        }
+        // Went back on their own: the offer has done its job.
+        chat.onBackHome = { [weak self] in
+            guard let self, readyPillShown else { return }
+            readyPillShown = false
+            confirm.hide()
         }
         escape.start()
 
         // Esc, in layers: stop what's happening; else stop pointing; else close the chat.
         overlay.onEscape = { [weak self] in
             guard let self else { return false }
+            if readyPillShown {  // Esc on "let's see! / later." means later.
+                readyPillShown = false
+                confirm.hide()
+                return true
+            }
             if coordinator.stopActivity() {
                 overlay.endGuide()
                 overlay.dismissAnswer()
@@ -131,11 +156,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         confirm.onAnswer = { [weak self] yes in self?.coordinator.answerConfirmation(yes) }
         coordinator.onConfirmRequest = { [weak self] question in
             guard let self else { return }
+            readyPillShown = false  // a real question replaces the offer
             confirm.show(question, at: overlay.companionTopLeft)
         }
         coordinator.onConfirmEnd = { [weak self] in self?.confirm.hide() }
         coordinator.onReminderDayRequest = { [weak self] question, options, hint in
             guard let self else { return }
+            readyPillShown = false
             confirm.showChoice(question, options: options, at: overlay.companionTopLeft, hint: hint,
                                datePicker: true) { [weak self] answer in
                 switch answer {

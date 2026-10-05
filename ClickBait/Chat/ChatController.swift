@@ -120,6 +120,13 @@ final class ChatController {
     private(set) var isAway = false
     /// An answer came in while away: say so where the user is now.
     var onReadyWhileAway: ((String) -> Void)?
+    /// The user is back in the chat's app (it's showing again).
+    var onBackHome: (() -> Void)?
+
+    /// The app the chat belongs to.
+    var homeApp: NSRunningApplication? {
+        homePID.flatMap { NSRunningApplication(processIdentifier: $0) }
+    }
 
     private func setHome() {
         let front = NSWorkspace.shared.frontmostApplication
@@ -146,6 +153,7 @@ final class ChatController {
             guard isAway else { return }
             isAway = false
             if !model.isTucked { fadeIn(panel) }
+            onBackHome?()
         } else if !isAway {
             isAway = true
             panel.orderOut(nil)

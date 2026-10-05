@@ -15,12 +15,15 @@ final class ConfirmController {
     var isShowing: Bool { panel != nil }
 
     /// `answer` handles this card's answer instead of `onAnswer` (e.g. "back to Notes?").
+    /// An empty `question` makes it a pill of just the two buttons. `waitTime` overrides
+    /// how long it waits before giving up (as if cancelled).
     func show(_ question: String, at topLeft: CGPoint, confirm: String = "Do it", cancel: String = "Cancel",
-              hint: String? = "or say “yes”", tone: CompanionTone = .action, answer: ((Bool) -> Void)? = nil) {
+              hint: String? = "or say “yes”", tone: CompanionTone = .action, waitTime: Duration? = nil,
+              answer: ((Bool) -> Void)? = nil) {
         hide()
         oneOffAnswer = answer
         let view = ConfirmCard(question: question, confirm: confirm, cancel: cancel, hint: hint, tone: tone) { [weak self] yes in self?.answer(yes) }
-        present(NSHostingView(rootView: view), at: topLeft) { [weak self] in self?.answer(false) }
+        present(NSHostingView(rootView: view), at: topLeft, waitTime: waitTime) { [weak self] in self?.answer(false) }
     }
 
     enum ChoiceAnswer {
@@ -75,7 +78,7 @@ final class ConfirmController {
         panel.setFrame(frame, display: true)
     }
 
-    private func present(_ host: NSView, at topLeft: CGPoint, onTimeout: @escaping () -> Void) {
+    private func present(_ host: NSView, at topLeft: CGPoint, waitTime: Duration? = nil, onTimeout: @escaping () -> Void) {
         let size = host.fittingSize
         let panel = NSPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -97,7 +100,7 @@ final class ConfirmController {
         panel.orderFrontRegardless()
         self.panel = panel
         self.onTimeout = onTimeout
-        restartTimeout(after: Self.waitTime)
+        restartTimeout(after: waitTime ?? Self.waitTime)
     }
 
     func hide() {
@@ -141,9 +144,11 @@ private struct ConfirmCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(question)
-                .font(.system(size: 12.5, weight: .semibold))
-                .wrapped(question, maxWidth: 260, size: 12.5)
+            if !question.isEmpty {
+                Text(question)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .wrapped(question, maxWidth: 260, size: 12.5)
+            }
             HStack(spacing: 6) {
                 Button { answer(true) } label: {
                     Text(confirm).font(.system(size: 12, weight: .bold)).oneLine()
