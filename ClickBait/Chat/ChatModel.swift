@@ -25,6 +25,9 @@ final class ChatModel {
     var isBusy = false
     /// The chat is shrinking away (then its window closes).
     var isClosing = false
+    /// Tucked into the companion while an answer is on its way (the panel is hidden but
+    /// keeps its place); it grows back out when the answer starts arriving.
+    var isTucked = false
     /// Where the companion is, as a point in the card (0…1 each way): the card grows out
     /// of it on opening and shrinks back into it on closing.
     var companionAnchor = UnitPoint.topLeading

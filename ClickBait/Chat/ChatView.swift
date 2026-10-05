@@ -43,8 +43,8 @@ struct ChatView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.cardSize = $0 }
         // Grows out of the companion, and shrinks back into it.
-        .scaleEffect(shown && !model.isClosing ? 1 : (reduceMotion ? 1 : 0.08), anchor: model.companionAnchor)
-        .opacity(shown && !model.isClosing ? 1 : 0)
+        .scaleEffect(shown && !model.isClosing && !model.isTucked ? 1 : (reduceMotion ? 1 : 0.08), anchor: model.companionAnchor)
+        .opacity(shown && !model.isClosing && !model.isTucked ? 1 : 0)
         .onAppear {
             // A beat later: the card has measured itself and knows where the companion is.
             DispatchQueue.main.async {
@@ -52,6 +52,10 @@ struct ChatView: View {
             }
         }
         .animation(.easeIn(duration: 0.18), value: model.isClosing)
+        // Tucks away quickly; comes back with the same spring it opened with.
+        .animation(model.isTucked ? .easeIn(duration: 0.18)
+                   : (reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.8)),
+                   value: model.isTucked)
     }
 
     private var header: some View {

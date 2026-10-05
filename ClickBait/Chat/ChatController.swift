@@ -42,7 +42,9 @@ final class ChatController {
 
     /// Opens with the header logo centred on `logoCenter` (global AppKit points): the
     /// centre of the companion's triangle, so the two line up exactly.
-    func open(logoAt logoCenter: CGPoint) {
+    /// `tucked`: set up in place but not shown yet; `untuck()` grows it out of the companion
+    /// when the answer starts arriving.
+    func open(logoAt logoCenter: CGPoint, tucked: Bool = false) {
         closeNow()
         model.messages = []
         model.draft = ""
@@ -72,7 +74,8 @@ final class ChatController {
         origin = logoCenter
         place(topLeft: CGPoint(x: logoCenter.x - ChatView.logoCenter.x, y: logoCenter.y + ChatView.logoCenter.y))
         aim(at: logoCenter, in: panel.frame)
-        panel.orderFrontRegardless()
+        model.isTucked = tucked
+        if !tucked { panel.orderFrontRegardless() }
     }
 
     /// Opens an empty chat (logo on `logoCenter`) with the cursor in the text field,
@@ -90,6 +93,40 @@ final class ChatController {
         model.focusRequest += 1
     }
 
+    var isTucked: Bool { model.isTucked }
+    private var tuckTask: Task<Void, Never>?
+    /// The text field had the keyboard when the chat tucked away: give it back.
+    private var refocusOnReturn = false
+
+    /// Shrinks into the companion while the answer is on its way, keeping its place. Pills
+    /// and the companion carry on as usual; only this panel steps aside.
+    func tuck() {
+        guard let panel, !model.isTucked else { return }
+        refocusOnReturn = panel.isKeyWindow
+        aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: panel.frame)
+        model.isTucked = true
+        tuckTask?.cancel()
+        tuckTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))  // the shrink (0.18 s) plays out
+            guard !Task.isCancelled, let self, model.isTucked else { return }
+            self.panel?.orderOut(nil)
+        }
+    }
+
+    /// Grows back out of the companion, where it was.
+    func untuck() {
+        guard let panel, model.isTucked else { return }
+        tuckTask?.cancel()
+        aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: panel.frame)
+        panel.orderFrontRegardless()
+        model.isTucked = false
+        if refocusOnReturn {
+            refocusOnReturn = false
+            panel.makeKey()
+            model.focusRequest += 1
+        }
+    }
+
     /// Shrinks back into the companion, then goes.
     func close() {
         guard let closing = panel else { return }
@@ -104,6 +141,8 @@ final class ChatController {
     }
 
     private func closeNow() {
+        tuckTask?.cancel()
+        model.isTucked = false
         panel?.orderOut(nil)
         panel?.close()
         panel = nil

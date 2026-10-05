@@ -61,7 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay.endGuide()
             chat.openForTyping(logoAt: overlay.companionTriangleCenter)
         }
-        coordinator.onChatFocus = { [weak self] in self?.chat.focus() }
+        coordinator.onChatFocus = { [weak self] in
+            self?.chat.untuck()
+            self?.chat.focus()
+        }
         escape.start()
 
         // Esc, in layers: stop what's happening; else stop pointing; else close the chat.
@@ -86,7 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
-            chat.open(logoAt: overlay.companionTriangleCenter)
+            // Opens tucked into the companion; it grows out when the answer starts.
+            chat.open(logoAt: overlay.companionTriangleCenter, tucked: true)
             chat.model.addUser(firstMessage)
             chat.model.isBusy = true
         }
@@ -94,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.overlay.endGuide()
             self?.chat.model.addUser(message)
             self?.chat.model.isBusy = true
+            self?.chat.tuck()  // out of the way while the answer comes; the companion pulses
         }
         confirm.onAnswer = { [weak self] yes in self?.coordinator.answerConfirmation(yes) }
         coordinator.onConfirmRequest = { [weak self] question in
@@ -116,14 +121,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, chat.isOpen, chat.model.isBusy else { return }
             chat.model.setAssistant(chat.model.messages.last?.role == .assistant ? (chat.model.messages.last?.text ?? "") + " …(stopped)" : "Stopped.")
             chat.model.isBusy = false
+            chat.untuck()
         }
         coordinator.onChatReply = { [weak self] text in
             self?.chat.model.setAssistant(text)
             self?.chat.model.isBusy = false
+            self?.chat.untuck()
         }
         coordinator.onChatError = { [weak self] message in
             self?.chat.model.addError(message)
             self?.chat.model.isBusy = false
+            self?.chat.untuck()
         }
         coordinator.onChatClose = { [weak self] in
             self?.overlay.endGuide()
@@ -132,6 +140,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onStateChange = { [weak self, weak statusBar] state in
             statusBar?.update(for: state)
             self?.overlay.show(state)
+            // Never left tucked away: once nothing is in progress (or it failed), it's back.
+            if let self, chat.isTucked {
+                switch state {
+                case .error: chat.untuck()
+                case .idle where !coordinator.isBusy: chat.untuck()
+                default: break
+                }
+            }
         }
         coordinator.onTranscript = { [weak self, weak statusBar] text in
             statusBar?.showHeard(text)
@@ -144,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, chat.isOpen else { return }
             chat.model.replaceLastAssistant(text)
             chat.model.isBusy = false
+            chat.untuck()  // a tutorial's checklist is the answer: show it now
         }
         coordinator.onSetupFinished = { [weak self] in self?.overlay.clearWorking() }
         coordinator.onTutorialPlanning = { [weak self] planning in self?.overlay.tutorialPlanning(planning) }
@@ -169,7 +186,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.levelSource = { [weak coordinator] in coordinator?.microphoneLevel ?? 0 }
         coordinator.onSnipMarking = { [weak self] marking in self?.overlay.setSnipping(marking) }
         coordinator.onExplaining = { [weak self] selected in self?.overlay.showExplaining(selected) }
-        coordinator.onPartialAnswer = { [weak self] partial in self?.chat.model.setAssistant(partial) }
+        coordinator.onPartialAnswer = { [weak self] partial in
+            guard let self else { return }
+            chat.model.setAssistant(partial)
+            // Back as soon as the first full sentence is there: the rest streams in view.
+            if chat.isTucked {
+                var splitter = SentenceSplitter()
+                if !splitter.feed(partial).isEmpty { chat.untuck() }
+            }
+        }
         coordinator.onActionStarted = { [weak self] message in self?.overlay.showWorking(message) }
         coordinator.onActionDone = { [weak self] message in self?.overlay.showDone(message) }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
@@ -178,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if chat.isOpen {
                 chat.model.setAssistant(response.displayText)  // final text, with any code as a block
                 chat.model.isBusy = false
+                chat.untuck()  // a one-sentence answer never "finished" a sentence mid-stream
             }
             // Already pointing (instantly, before the model): don't start over.
             if !coordinator.pointedInstantly { overlay.guide(to: pointers) }
