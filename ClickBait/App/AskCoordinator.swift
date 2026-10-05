@@ -1046,6 +1046,16 @@ final class AskCoordinator {
         do { screenshot = try await encoding.value } catch { return false }
         tutorialReturnApp = nil
 
+        // "Go to YouTube": an order, not a how-to — ClickBait just does it (green), switching
+        // to a tab already showing the site or opening it. "Show me how to open YouTube" (and
+        // "…and play lofi", with more to do) stays a walkthrough.
+        if !asking, let site = Websites.visit(in: question, installedApps: Array(apps.keys)),
+           Websites.isJustAVisit(question, site: site.name),
+           let browser = Websites.namedBrowser(in: question, installed: Array(apps.keys)) ?? AppLocator.defaultBrowserName() {
+            await visitWebsite(site, in: browser, appURL: apps[browser])
+            return true
+        }
+
         // The task's app isn't in front. Either the request names it ("my Safari history")
         // or it's a Mac setting. Planning those from the app in front walked Finder's own
         // "Settings…", so the app is opened first and the plan made there.
@@ -1139,6 +1149,40 @@ final class AskCoordinator {
         }
         return await beginTutorial(plan, question: question, startedIn: startedIn, speak: speak, display: display,
                                    installedName: installedName, apps: apps, provider: provider, tutorial: tutorial)
+    }
+
+    /// Goes to a well-known site (green): its tab if one's open, else a new page.
+    private func visitWebsite(_ site: (name: String, address: String), in browser: String, appURL: URL?) async {
+        onActionStarted?("opening \(site.name)…")
+        let running = NSWorkspace.shared.runningApplications.first { $0.localizedName == browser }
+        if let running {
+            let pid = running.processIdentifier
+            let switched = await Task.detached(priority: .userInitiated) {
+                AXInspector.selectTab(showing: site.name, browserPID: pid)
+            }.value
+            if switched {
+                running.activate()
+                Log.ask.notice("Website: switched to an open \(site.name, privacy: .public) tab in \(browser, privacy: .public)")
+                onActionDone?("switched to \(site.name)")
+                if state == .thinking { state = .idle }
+                return
+            }
+        }
+        guard let url = URL(string: site.address.hasPrefix("http") ? site.address : "https://" + site.address),
+              let appURL else {
+            show(error: "Couldn't open \(site.name).")
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        do {
+            _ = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: configuration)
+            Log.ask.notice("Website: opened \(site.address, privacy: .public) in \(browser, privacy: .public)")
+            onActionDone?("opened \(site.name)")
+        } catch {
+            show(error: "Couldn't open \(site.name): \(error.localizedDescription)")
+        }
+        if state == .thinking { state = .idle }
     }
 
     /// What "where's / show me …" asks for is clickable on screen now, by (nearly) its name.

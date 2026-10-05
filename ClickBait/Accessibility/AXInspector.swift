@@ -213,6 +213,33 @@ enum AXInspector {
         return best
     }
 
+    /// A browser tab already showing `site` ("YouTube"), selected and its window brought to
+    /// the front: "go to YouTube" switches to it rather than opening another. Matches tab
+    /// titles (Chrome's tabs are AX radio buttons, Safari's are tabs). False if none.
+    static func selectTab(showing site: String, browserPID pid: pid_t) -> Bool {
+        guard isTrusted else { return false }
+        let wanted = site.lowercased()
+        let app = element(AXUIElementCreateApplication(pid))
+        let deadline = Date().addingTimeInterval(0.5)
+        for window in app.children(kAXWindowsAttribute) {
+            var queue = [window][...]
+            var visited = 0
+            while let node = queue.popFirst(), visited < 1500, Date() < deadline {
+                visited += 1
+                let role = node.string(kAXRoleAttribute) ?? ""
+                if role == "AXWebArea" { continue }
+                if role == "AXRadioButton" || role == "AXTab" || node.string(kAXSubroleAttribute) == "AXTabButton",
+                   node.name.lowercased().contains(wanted) {
+                    node.perform(kAXPressAction)
+                    window.perform(kAXRaiseAction)
+                    return true
+                }
+                queue.append(contentsOf: node.children(kAXChildrenAttribute))
+            }
+        }
+        return false
+    }
+
     /// The app whose window is under `point` (Quartz) — the one the user is looking at
     /// when the frontmost app's windows are on another display. From the window list
     /// (front to back, normal windows only), so ClickBait's own see-through overlays,
@@ -431,6 +458,11 @@ private struct AXElement {
 
     func string(_ name: String) -> String? {
         (attribute(name) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    func perform(_ action: String) -> Bool {
+        AXUIElementPerformAction(ref, action as CFString) == .success
     }
 
     func element(_ name: String) -> AXElement? {
