@@ -48,6 +48,7 @@ final class ChatController {
         closeNow()
         setHome()
         homePoint = logoCenter
+        trace("open\(tucked ? " (tucked)" : "") at \(Int(logoCenter.x)),\(Int(logoCenter.y))")
         model.messages = []
         model.draft = ""
         model.isBusy = false
@@ -133,11 +134,16 @@ final class ChatController {
     /// A hotkey was pressed with the companion at `point`.
     func invoked(at point: CGPoint) {
         homePoint = point
+        trace("hotkey at \(Int(point.x)),\(Int(point.y))")
     }
 
     /// The app the chat belongs to.
     var homeApp: NSRunningApplication? {
         homePID.flatMap { NSRunningApplication(processIdentifier: $0) }
+    }
+
+    private func trace(_ message: String) {
+        Log.app.notice("Chat: \(message, privacy: .public)")
     }
 
     private func setHome() {
@@ -163,10 +169,12 @@ final class ChatController {
         guard let panel, app.processIdentifier != getpid(), homePID != nil else { return }
         if app.processIdentifier == homePID {
             guard isAway else { return }
+            trace("back home (\(app.localizedName ?? "?")): \(model.isTucked ? "still tucked" : "shown") at \(Int(panel.frame.minX)),\(Int(panel.frame.maxY))")
             isAway = false
             if !model.isTucked { fadeIn(panel) }
             onBackHome?()
         } else if !isAway {
+            trace("away: \(app.localizedName ?? "?") in front, home is \(homeName ?? "?")")
             isAway = true
             panel.orderOut(nil)
         }
@@ -188,6 +196,7 @@ final class ChatController {
     /// and the companion carry on as usual; only this panel steps aside.
     func tuck() {
         guard let panel, !model.isTucked else { return }
+        trace("tuck")
         refocusOnReturn = panel.isKeyWindow
         aim(at: companionPoint?() ?? NSEvent.mouseLocation, in: panel.frame)
         model.isTucked = true
@@ -206,6 +215,7 @@ final class ChatController {
     func untuck() {
         guard let panel, model.isTucked else { return }
         isParked = false
+        trace("untuck\(isAway ? " while away" : "") to \(homePoint.map { "\(Int($0.x)),\(Int($0.y))" } ?? "the companion")")
         if isAway {
             // Its app isn't in front: it'll be there when the user goes back.
             model.isTucked = false
