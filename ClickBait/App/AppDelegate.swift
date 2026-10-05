@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let escape = InputInterceptor()
     /// The "let's see! / later." pill is up.
     private var readyPillShown = false
+    /// Where the companion was at the last hotkey press: the chat's place.
+    private var invokedPoint: CGPoint?
     private lazy var tutorial = TutorialController(overlay: overlay)
     private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
@@ -61,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatOpenForTyping = { [weak self] in
             guard let self else { return }
             overlay.endGuide()
-            chat.openForTyping(logoAt: overlay.companionTriangleCenter)
+            chat.openForTyping(logoAt: invokedPoint ?? overlay.companionTriangleCenter)
         }
         coordinator.onChatFocus = { [weak self] in
             // Focus first: it re-homes the chat to the app in front and shows it there.
@@ -96,7 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          hint: nil, tone: .idle, waitTime: .seconds(10)) { [weak self] seeIt in
                 guard let self else { return }
                 readyPillShown = false
-                if seeIt { chat.homeApp?.activate() }  // the chat is there, where it was
+                if seeIt {
+                    overlay.clearShortAnswer()  // both pills go
+                    chat.homeApp?.activate()  // the chat is there, where it was
+                }
             }
         }
         // Went back on their own: the offer has done its job.
@@ -104,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, readyPillShown else { return }
             readyPillShown = false
             confirm.hide()
+        }
+        coordinator.onInvoked = { [weak self] in
+            guard let self else { return }
+            let point = overlay.companionTriangleCenter
+            invokedPoint = point
+            chat.invoked(at: point)
         }
         escape.start()
 
@@ -142,8 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
-            // Opens tucked into the companion; it grows out when the answer starts.
-            chat.open(logoAt: overlay.companionTriangleCenter, tucked: true)
+            // Opens tucked, where the hotkey was pressed; grows out when the answer starts.
+            chat.open(logoAt: invokedPoint ?? overlay.companionTriangleCenter, tucked: true)
             chat.model.addUser(firstMessage)
             chat.model.isBusy = true
         }

@@ -82,6 +82,13 @@ final class OverlayController {
     /// A pill is up (a result, a problem, an answer): not to be replaced by a repeat.
     var isShowingWords: Bool { model.bubble.hasWords }
 
+    /// Takes down a short-answer pill without counting it as dismissing an answer.
+    func clearShortAnswer() {
+        guard case .answer = model.bubble else { return }
+        dismissTask?.cancel()
+        model.bubble = .idle
+    }
+
     /// A reply short enough for a pill ("Yep, it's on!"): said by the companion, no chat.
     func showShortAnswer(_ text: String) {
         endGuide()

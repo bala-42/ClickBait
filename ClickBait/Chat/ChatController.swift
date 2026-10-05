@@ -47,6 +47,7 @@ final class ChatController {
     func open(logoAt logoCenter: CGPoint, tucked: Bool = false) {
         closeNow()
         setHome()
+        homePoint = logoCenter
         model.messages = []
         model.draft = ""
         model.isBusy = false
@@ -99,10 +100,12 @@ final class ChatController {
         // Summoned again: it belongs to the app in front now, and comes back there.
         if isAway || homePID != NSWorkspace.shared.frontmostApplication?.processIdentifier {
             setHome()
-            if isAway {
-                isAway = false
-                if let companion = companionPoint?() { origin = companion; alignLogo(to: companion) }
-            }
+            isAway = false
+        }
+        // Summoned by the hotkey: to where it was pressed.
+        if let point = homePoint ?? companionPoint?() {
+            origin = point
+            alignLogo(to: point)
         }
         panel.makeKeyAndOrderFront(nil)
         model.focusRequest += 1
@@ -122,6 +125,15 @@ final class ChatController {
     var onReadyWhileAway: ((String) -> Void)?
     /// The user is back in the chat's app (it's showing again).
     var onBackHome: (() -> Void)?
+
+    /// Where the chat sits: where the companion was when the hotkey was last pressed. It
+    /// appears there and stays there, also when it comes back after tucking away.
+    private var homePoint: CGPoint?
+
+    /// A hotkey was pressed with the companion at `point`.
+    func invoked(at point: CGPoint) {
+        homePoint = point
+    }
 
     /// The app the chat belongs to.
     var homeApp: NSRunningApplication? {
@@ -201,7 +213,8 @@ final class ChatController {
             return
         }
         tuckTask?.cancel()
-        let logoCenter = companionPoint?() ?? NSEvent.mouseLocation
+        // Back where the hotkey was pressed, not wherever the companion is now.
+        let logoCenter = homePoint ?? companionPoint?() ?? NSEvent.mouseLocation
         origin = logoCenter
         alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)

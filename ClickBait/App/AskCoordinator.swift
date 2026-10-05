@@ -166,6 +166,7 @@ final class AskCoordinator {
     private func explainTapped() {
         switch explainTaps.tap(at: ProcessInfo.processInfo.systemUptime) {
         case .first:
+            onInvoked?()
             // Explain now (no waiting), but keep it undoable for the double-tap window. The
             // window opens first, so nothing of the explanation shows during it.
             explainCommit?.cancel()
@@ -361,6 +362,7 @@ final class AskCoordinator {
     /// ⌥⌘ + right-click or double-tap ⌥⌘: an empty chat to type the first question into. Sent messages go
     /// through `sendTyped` like any typed follow-up (screen, pointing, actions).
     func startTypedChat(trigger: String = "⌥⌘ right-click") {
+        onInvoked?()
         if snipper.isActive { snipper.cancel() }
         let flags = NSEvent.modifierFlags
         if flags.contains(.option), flags.contains(.command) { ignoreExplainRelease = true }
@@ -470,6 +472,7 @@ final class AskCoordinator {
         }
 
         pressedAt = .now
+        onInvoked?()
         Log.input.notice("Microphone started in \(String(describing: ContinuousClock.now - micStart), privacy: .public)")
         // Capture at press time: the screen the user is asking about is the one they
         // were looking at when they started talking.
@@ -936,6 +939,9 @@ final class AskCoordinator {
     @ObservationIgnored var onSetupFinished: (() -> Void)?
     /// A walkthrough is being planned (true: lavender, spinning), or won't happen (false).
     @ObservationIgnored var onTutorialPlanning: ((Bool) -> Void)?
+    /// A hotkey brought ClickBait up (⌃⌥ held, ⌥⌘ tapped or double-tapped): the chat's
+    /// place is where the companion is at this moment.
+    @ObservationIgnored var onInvoked: (() -> Void)?
     @ObservationIgnored private var tutorialPlanningShown = false
 
     /// Lavender and spinning from the moment it's known to be a walkthrough, not only once
