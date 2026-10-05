@@ -250,15 +250,57 @@ final class ChatController {
     /// finishes, and a window shown then lands on the desktop being left (the chat turned
     /// up over Chrome after "let's see!" went back to Claude). Wait for the switch, then
     /// show it on the desktop the user is now on.
+    ///
+    /// A full-screen app's slide can take longer than that wait (the chat landed on Chrome's
+    /// desktop and Claude's had nothing), so for a while afterwards each finished desktop
+    /// switch, and a couple of later checks, bring it over if it isn't on the one in view.
     private func showWhenSettled(_ shown: NSPanel) {
-        Task { @MainActor [weak self] in
+        settleTask?.cancel()
+        if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+        spaceObserver = nil
+        settleTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
-            guard let self, shown === panel, !isAway, !model.isTucked else { return }
-            shown.collectionBehavior.insert(.moveToActiveSpace)
-            fadeIn(shown)
-            shown.collectionBehavior.remove(.moveToActiveSpace)
-            trace("shown at home, on the current desktop")
+            guard let self, isStillHome(shown) else { return }
+            bringToCurrentDesktop(shown, fading: true)
+            trace("shown at home, on the current desktop (on it: \(shown.isOnActiveSpace))")
+            spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.recheckDesktop(shown, reason: "desktop switch finished") }
+            }
+            for delay in [450, 700] {  // checks at ~0.8 s and ~1.5 s
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled else { break }
+                recheckDesktop(shown, reason: "check")
+            }
+            if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+            spaceObserver = nil
         }
+    }
+
+    private var settleTask: Task<Void, Never>?
+    private var spaceObserver: (any NSObjectProtocol)?
+
+    private func isStillHome(_ shown: NSPanel) -> Bool {
+        shown === panel && !isAway && !model.isTucked
+    }
+
+    /// Not on the desktop in view (shown while the slide was still going): move it here.
+    private func recheckDesktop(_ shown: NSPanel, reason: String) {
+        guard isStillHome(shown), !shown.isOnActiveSpace else { return }
+        bringToCurrentDesktop(shown, fading: false)
+        trace("moved to the current desktop (\(reason)); on it now: \(shown.isOnActiveSpace)")
+    }
+
+    private func bringToCurrentDesktop(_ shown: NSPanel, fading: Bool) {
+        shown.collectionBehavior.insert(.moveToActiveSpace)
+        if fading {
+            fadeIn(shown)
+        } else {
+            shown.orderOut(nil)
+            shown.orderFrontRegardless()
+        }
+        shown.collectionBehavior.remove(.moveToActiveSpace)
     }
 
     /// Fades the window in (window server) while SwiftUI grows the card.
