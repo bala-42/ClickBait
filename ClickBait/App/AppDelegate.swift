@@ -84,7 +84,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         chat.companionPoint = { [weak self] in self?.overlay.companionTriangleCenter ?? NSEvent.mouseLocation }
-        chat.model.onSend = { [weak self] text in self?.coordinator.sendTyped(text) }
+        chat.model.onSend = { [weak self] text in
+            guard let self else { return }
+            // Out of the way the moment Enter is pressed, before thinking starts (it used to
+            // wait ~1–2 s, until the message had been sorted).
+            chat.tuck()
+            coordinator.sendTyped(text)
+            // Refused without a word (busy, nothing to send to): back at once.
+            if !coordinator.isBusy, coordinator.state != .thinking { chat.untuck() }
+        }
         chat.model.onClose = { [weak self] in self?.closeChat() }
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
