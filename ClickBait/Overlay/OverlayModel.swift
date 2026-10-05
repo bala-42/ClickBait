@@ -74,7 +74,8 @@ final class OverlayModel {
     var isGuideSettled = false
 
     var tone: CompanionTone {
-        if isSnipping || isTouring || (isSnipThinking && isSpinning) { return .capture }
+        // Red from the circling until the parts are pointed at (or there's nothing to point).
+        if isSnipping || isTouring || isSnipThinking { return .capture }
         // Opening or switching apps is green, also inside a walkthrough (lavender hid it).
         // (The walkthrough's own "done" tick stays lavender.)
         switch bubble {
@@ -108,6 +109,7 @@ final class OverlayModel {
     /// The AI is thinking: the triangle turns a third at a time with a springy overshoot.
     var isSpinning: Bool {
         if isTutoring, isTutorialChecking { return true }
+        if isSnipThinking, !isGuiding, !isTouring { return true }  // working out a snip, until the tour
         guard !isSnipping, !isGuiding else { return false }
         return switch bubble {
         case .thinking, .explaining: true

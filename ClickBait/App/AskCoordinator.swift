@@ -398,6 +398,7 @@ final class AskCoordinator {
         if pendingAction != nil { dropPending(); stopped.append("confirmation") }
         if pendingReminder != nil { dropPendingReminder(); stopped.append("reminder") }
         if pendingOffer != nil { answerOffer(false); onConfirmEnd?(); stopped.append("walkthrough offer") }
+        onSnipAnswering?(false)
         if isRefining { stopRefining(); stopped.append("close-up") }
         if tutorial?.isActive == true { tutorial?.stop(message: "Tutorial stopped."); stopped.append("tutorial") }
         if state == .listening || state == .thinking || isAnswering {
@@ -1806,11 +1807,15 @@ final class AskCoordinator {
             onChatOpen?(display)
         }
         onAnswer?(parsed.response, pointers)
+        // A snip stays red and spinning until its parts are pointed at; with nothing more to
+        // look for, it ends here.
+        if snip != nil, !tour.isEmpty || !needsPartsLook { onSnipAnswering?(false) }
         if !tour.isEmpty { onTour?(tour) }
 
         // The explanation came back without parts (a 7B model often forgets them while
         // writing): ask once more, just for the parts, while the user reads.
         if needsPartsLook, let memory = snipMemory, let view = memory.view, let provider = self.provider {
+            defer { onSnipAnswering?(false) }  // red ends with the look, tour or not
             isAnswering = false
             isRefining = true
             defer { isRefining = false }

@@ -19,7 +19,7 @@ struct PartsTourTests {
 
     @Test func evenOnePartIsPointedAt() {
         #expect(PartsTour.stops([Pointer(x: 300, y: 300, label: "Liver")], marked: marked).count == 1)
-        let many = (0..<9).map { Pointer(x: 150 + Double($0) * 50, y: 300, label: "Part \($0)") }
+        let many = (0..<12).map { Pointer(x: 150 + Double($0) * 30, y: 300, label: "Part \($0)") }  // more than the cap
         #expect(PartsTour.stops(many, marked: marked).count == PartsTour.maxParts)
     }
 }

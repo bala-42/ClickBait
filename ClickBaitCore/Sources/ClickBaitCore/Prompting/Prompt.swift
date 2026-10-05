@@ -44,7 +44,8 @@ public enum Prompt {
         Put code or a formula worth copying in "code". No "pointers".
         - When explaining part of the screen, if what's shown has named parts you can see \
         (anatomy, a labelled diagram, a machine, a map, a chart's series, a UI panel), add \
-        "parts": up to 6 of them in a sensible order, each {"x": X, "y": Y, "label": "name"} \
+        "parts": up to 10 of them in a sensible order — the people and things your answer \
+        names come first, each person by name — each {"x": X, "y": Y, "label": "name"} \
         with x, y the CENTER of that part in the close-up's pixels and a 1–3 word name. If a \
         part has a written label in the image, use that label's text. Only parts you can \
         actually see and place; leave "parts" out when there are none. In follow-ups about \
@@ -153,14 +154,16 @@ public enum Prompt {
 
     /// A second, focused look at a snip's close-up: just the named parts and where they are.
     public static let partsSystem = """
-        You point out the named parts of what's in an image.
+        You point out the named people and parts of what's in an image.
 
         Reply with ONLY one JSON object, no other text:
         {"parts": [{"x": X, "y": Y, "label": "name"}]}
 
-        - Up to 6 parts you can actually see, in a sensible order (big to small, or top to bottom).
+        - First every person and thing the explanation names, where you can see them — a person \
+        labelled by their name ("Keerthy Suresh"), on their face or body.
+        - Then other named parts you can actually see, up to 10 in all, in a sensible order.
         - x and y are the CENTER of that part in this image's pixels, origin at the top-left.
-        - "label" is the part's proper name, 1–3 words (e.g. "Supraspinatus", "Optic chiasm", "Jupiter").
+        - "label" is the part's or person's proper name, 1–3 words (e.g. "Supraspinatus", "Jupiter", "Keerthy Suresh").
         - If nothing in it has named parts, reply {"parts": []}.
         """
 
@@ -266,7 +269,7 @@ public enum Prompt {
             return """
                 The image is \(request.screenshotWidth)×\(request.screenshotHeight) pixels.
                 It was just explained like this: "\(request.question)"
-                List its visible named parts with their positions.
+                Point out the people and things it names first (each person by name), then its other visible named parts, with their positions.
                 """
         }
         if request.interpretOrder {

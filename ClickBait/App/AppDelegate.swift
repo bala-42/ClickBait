@@ -232,8 +232,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusBar?.update(for: state)
             // A tap's explanation, still undoable by a second tap: not shown yet.
             if state == .thinking, self?.coordinator.isExplainProvisional == true { return }
-            // Red snip thinking ends with the thinking.
-            if state != .thinking { self?.overlay.setSnipAnswering(false) }
+            // Red snip thinking lasts until the tour (the coordinator ends it); a problem or a
+            // new question ends it too.
+            switch state {
+            case .error, .listening: self?.overlay.setSnipAnswering(false)
+            default: break
+            }
             self?.overlay.show(state)
             // Never left tucked away: once nothing is in progress (or it failed), it's back.
             if let self, chat.isTucked, !chat.isParked {

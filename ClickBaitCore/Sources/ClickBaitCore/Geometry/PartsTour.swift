@@ -2,7 +2,7 @@
 /// area, each name once, at most `maxParts`. There's nothing to check positions inside
 /// an image against, so the pills mark them as approximate ("~ …").
 public enum PartsTour {
-    public static let maxParts = 6
+    public static let maxParts = 10
 
     /// The marked area is (mostly) text — a paragraph, code, a message — rather than a
     /// figure: no parts to point at. Prose comes back from text recognition as long lines;
