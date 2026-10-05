@@ -7,8 +7,8 @@ import SwiftUI
 enum CompanionTone: Equatable {
     /// Azure (#007FFF): idle, following the cursor.
     case idle
-    /// Safety Orange (#FF6700): listening, thinking, explaining. Was marigold (#EAA221):
-    /// white pill text is ~35% more readable on this, and it reads instantly against blue.
+    /// Pumpkin (#FF7518): listening, thinking, explaining. Was marigold (#EAA221):
+    /// white pill text is ~25% more readable on this, and it reads clearly against blue.
     case processing
     /// Shamrock Green: Mac system actions and document/file processing.
     case action
@@ -20,7 +20,7 @@ enum CompanionTone: Equatable {
     var color: Color {
         switch self {
         case .idle: Color(red: 0, green: 127.0 / 255, blue: 1.0)
-        case .processing: Color(red: 1.0, green: 103.0 / 255, blue: 0)
+        case .processing: Color(red: 1.0, green: 117.0 / 255, blue: 24.0 / 255)
         case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
         case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
         case .tutorial: Color(red: 181.0 / 255, green: 126.0 / 255, blue: 220.0 / 255)
