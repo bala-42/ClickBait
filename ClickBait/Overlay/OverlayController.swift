@@ -362,7 +362,8 @@ final class OverlayController {
 
     /// After an answer the triangle detaches from the cursor, glides to each target in
     /// turn and points its vertex at it, then glides back. A click anywhere moves on
-    /// (the user has probably just clicked the target); so does `dwell` without one.
+    /// (the user has probably just clicked the target); so does the mouse reaching the
+    /// target, or `dwell` after arriving.
     private struct Guide {
         var targets: [ScreenPointer]
         var index = 0
@@ -372,6 +373,8 @@ final class OverlayController {
         var center: CGPoint
         var velocity = CGVector.zero
         var targetStarted: CFTimeInterval = 0
+        /// When the triangle came to rest at the current target (the wait counts from here).
+        var settledAt: CFTimeInterval?
         /// Touring the parts of a snipped thing: red, names as labels, shorter stops.
         var isTour = false
         /// A tutorial step: lavender, the instruction as the label, no timeout, and clicks
@@ -390,7 +393,12 @@ final class OverlayController {
     /// The angle the triangle is turning toward, and how fast it's turning.
     private var wantedAngle = CompanionTriangle.restingAngle
     private var angleVelocity = 0.0
-    private static let dwell: CFTimeInterval = 8
+    /// How long a blue point holds once it has arrived: enough to see it and read the label.
+    private static let dwell: CFTimeInterval = 1
+    /// Gives up even if the triangle never settles (targets kept being corrected).
+    private static let maxDwell: CFTimeInterval = 8
+    /// The mouse this close to a blue target means it's been found.
+    private static let reachedDistance: CGFloat = 24
     /// Long enough to read a part's name and look at it.
     private static let tourDwell: CFTimeInterval = 2.4
     /// Distance from the triangle's centre to its vertex (up to its pulse size), plus a gap.
@@ -518,7 +526,10 @@ final class OverlayController {
         }
         let current = guide.targets[guide.index]
         guide.index = min(targets.firstIndex(where: { $0.label == current.label }) ?? guide.index, targets.count - 1)
-        if targets[guide.index] != current { guide.targetStarted = CACurrentMediaTime() }
+        if targets[guide.index] != current {
+            guide.targetStarted = CACurrentMediaTime()
+            guide.settledAt = nil
+        }
         guide.targets = targets
         self.guide = guide
         beginTarget()
@@ -570,6 +581,7 @@ final class OverlayController {
         }
         guide.approach = direction
         guide.targetStarted = CACurrentMediaTime()
+        guide.settledAt = nil
         self.guide = guide
 
         let label = guide.targets[guide.index].label
@@ -583,12 +595,32 @@ final class OverlayController {
 
     private func stepGuide(now: CFTimeInterval, elapsed: CFTimeInterval, link: CADisplayLink) {
         guard var guide else { return }
-        if !guide.isTutorial, CACurrentMediaTime() - guide.targetStarted > (guide.isTour ? Self.tourDwell : Self.dwell) {
-            advanceGuide(reason: "timeout")
-            return
-        }
         let target = guide.targets[guide.index].appKit
         let point = CGPoint(x: target.x, y: target.y)
+        if !guide.isTutorial {
+            let clock = CACurrentMediaTime()
+            if guide.isTour {
+                if clock - guide.targetStarted > Self.tourDwell {
+                    advanceGuide(reason: "timeout")
+                    return
+                }
+            } else {
+                // Blue: hold a moment once arrived, or until the mouse gets there.
+                let mouse = NSEvent.mouseLocation
+                if let settledAt = guide.settledAt, clock - settledAt > Self.dwell {
+                    advanceGuide(reason: "timeout")
+                    return
+                }
+                if hypot(mouse.x - point.x, mouse.y - point.y) < Self.reachedDistance {
+                    advanceGuide(reason: "mouse reached it")
+                    return
+                }
+                if clock - guide.targetStarted > Self.maxDwell {
+                    advanceGuide(reason: "never settled")
+                    return
+                }
+            }
+        }
         let spot = CGPoint(x: point.x + guide.approach.dx * Self.tipDistance, y: point.y + guide.approach.dy * Self.tipDistance)
 
         var next = guide.center
@@ -609,6 +641,7 @@ final class OverlayController {
         }
         let moving = next != guide.center
         guide.center = next
+        if !moving, guide.settledAt == nil { guide.settledAt = CACurrentMediaTime() }
         self.guide = guide
         if model.isGuideSettled == moving { model.isGuideSettled = !moving }  // pulse once arrived
 
