@@ -645,3 +645,17 @@ struct SystemSettingsMapTests {
         }
     }
 }
+
+
+struct WhereVersusHowTests {
+    @Test(arguments: ["where is the play button", "where's the volume slider", "show me the search field",
+                      "where is the share icon", "show me the file menu"])
+    func controlsAreFound(_ text: String) {
+        #expect(TutorialQuestion.namesControl(text))
+    }
+
+    @Test(arguments: ["show me my Safari history", "where are my downloads", "where's the clear history option"])
+    func thingsMayNeedWalking(_ text: String) {
+        #expect(!TutorialQuestion.namesControl(text))
+    }
+}

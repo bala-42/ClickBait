@@ -1018,9 +1018,22 @@ final class AskCoordinator {
         // "System Setting" on its own: getting there is the task (Apple menu → System Settings…).
         let toSystemSettings = TutorialQuestion.onlyOpens(question, app: "System Settings")
             && TutorialQuestion.taskApp(in: question, apps: Array(AppLocator.installed().keys)) == "System Settings"
-        // "Where's / show me X": a single blue point when X is on screen right now; when it
-        // isn't (inside a menu, another app: "show me my Safari history"), a walkthrough.
-        let findingHidden = TutorialQuestion.isLocatingRequest(question) && !Self.isOnScreen(question, in: elements)
+        // "Where's / show me X" is showing where (blue), not how (lavender) — unless getting to
+        // X takes more than one click: X is an item inside this app's menus, or a thing
+        // (not a control) in another app the request names ("show me my Safari history").
+        // Decided before any colour changes, so a "where" never flashes lavender.
+        var findingHidden = false
+        if TutorialQuestion.isLocatingRequest(question), !Self.isOnScreen(question, in: elements),
+           !TutorialQuestion.namesControl(question) {
+            let named = TutorialQuestion.mentionedApp(in: question, apps: Array(AppLocator.installed().keys))
+            if let named, named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame {
+                findingHidden = true
+            } else if let target = InstantAnswer.locateTargets(in: question).first {
+                let pid = frontmostPID
+                let path = await Task.detached(priority: .userInitiated) { AXInspector.menuPath(to: target, frontmostPID: pid) }.value
+                findingHidden = (path?.count ?? 0) >= 2
+            }
+        }
         guard asking || ordering || visiting || toSystemSettings || findingHidden, let provider, let tutorial else { return false }
         if findingHidden { Log.ask.notice("Tutorial: what they're looking for isn't on screen; walking them there") }
         let startedIn = NSWorkspace.shared.frontmostApplication

@@ -358,6 +358,17 @@ public enum TutorialQuestion {
         return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
     }
 
+    /// The request names a control — "where's the play button", "show me the volume
+    /// slider": that's finding something on screen (blue), even when it has no text name.
+    public static func namesControl(_ text: String) -> Bool {
+        let words = Set(ImpliedPointer.normalized(text).split(separator: " ").map(String.init))
+        return !words.isDisjoint(with: controlWords)
+    }
+
+    static let controlWords: Set = ["button", "buttons", "icon", "icons", "slider", "toggle", "switch", "field",
+                                    "box", "tab", "tabs", "checkbox", "link", "menu", "knob", "arrow", "bar",
+                                    "dropdown", "popup", "sidebar", "toolbar"]
+
     /// Orders for content, not clicks: "write me a poem", "summarise this", "explain
     /// that". They get a normal answer — never a tutorial.
     static let contentVerbs: Set<String> = ["write", "summarise", "summarize", "explain", "translate", "describe", "draft",
