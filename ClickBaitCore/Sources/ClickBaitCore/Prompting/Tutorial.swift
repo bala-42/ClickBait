@@ -349,13 +349,25 @@ public enum TutorialQuestion {
     /// finding a thing (blue, one pointer) — not doing a task (lavender). "Show me how
     /// to…" is a task and is caught by `asksForTutorial` first.
     public static func isLocatingRequest(_ text: String) -> Bool {
+        if asksWhere(text) { return true }
         var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
-        while let first = words.first, ["please", "can", "could", "you", "would", "will", "hey", "clickbait"].contains(first) {
+        while let first = words.first, leadIns.contains(first) {
             words.removeFirst()
         }
         let joined = words.joined(separator: " ")
         let starts = ["where", "wheres", "show me", "point", "find", "highlight", "locate", "which one is", "which is"]
         return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
+    }
+
+    /// Words people start with before the request itself ("okay, show me…", "so where's…").
+    static let leadIns: Set = ["please", "can", "could", "you", "would", "will", "hey", "clickbait", "okay", "ok",
+                               "so", "um", "uh", "and", "now", "right", "alright", "then", "just", "oh", "well"]
+
+    /// Asks *where* something is — showing where (blue), never how (lavender) — anywhere in
+    /// the sentence ("okay, show me where the back button is"), unless it also asks how.
+    public static func asksWhere(_ text: String) -> Bool {
+        let words = Set(ImpliedPointer.normalized(text).split(separator: " ").map(String.init))
+        return !words.isDisjoint(with: ["where", "wheres"]) && !words.contains("how")
     }
 
     /// The request names a control — "where's the play button", "show me the volume

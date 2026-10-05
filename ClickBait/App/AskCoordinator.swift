@@ -1010,6 +1010,8 @@ final class AskCoordinator {
             if tutorialPlanningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
             tutorialPlanningShown = false
         }
+        // "Where" is showing where: always a blue point, never a walkthrough.
+        if TutorialQuestion.asksWhere(question) { return false }
         let asking = TutorialQuestion.asksForTutorial(question)
         let ordering = !asking && CommandParser.looksLikeOrder(question) && !TutorialQuestion.isContentRequest(question)
             && !TutorialQuestion.isLocatingRequest(question)  // "show me the refresh button": blue pointing

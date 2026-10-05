@@ -659,3 +659,19 @@ struct WhereVersusHowTests {
         #expect(!TutorialQuestion.namesControl(text))
     }
 }
+
+
+struct AsksWhereTests {
+    @Test(arguments: ["okay show me where the back and forward buttons are", "so where's the share button",
+                      "can you show me where my downloads are", "and where is the volume"])
+    func whereIsAlwaysFinding(_ text: String) {
+        #expect(TutorialQuestion.asksWhere(text))
+        #expect(TutorialQuestion.isLocatingRequest(text))
+        #expect(!TutorialQuestion.asksForTutorial(text))
+    }
+
+    @Test(arguments: ["show me how to clear my history", "how do I find where downloads go", "walk me through exporting"])
+    func howIsNotWhere(_ text: String) {
+        #expect(!TutorialQuestion.asksWhere(text))
+    }
+}
