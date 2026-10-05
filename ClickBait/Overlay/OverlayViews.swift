@@ -51,14 +51,20 @@ struct CompanionTriangle: View {
         // running after they stopped (each settle/unsettle while pointing started another),
         // so the triangle went on rippling blue when it should have been idle. Paused, the
         // timeline draws nothing extra.
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !beating && !turning)) { context in
+        // Up to the display's full rate (120 Hz on ProMotion); was capped at 60.
+        TimelineView(.animation(minimumInterval: nil, paused: !beating && !turning)) { context in
             let beat = beating ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
             let spin = turning ? Self.spinAngle(after: context.date.timeIntervalSince(spinStart)) : settle
             EquilateralTriangle()
                 .fill(tone.color.opacity(0.9))
                 .frame(width: Self.size, height: Self.size)
-                .rotationEffect(.degrees(angle + spin))  // angle smoothed by OverlayController
                 .shadow(color: tone.color.opacity(0.45 + 0.45 * beat), radius: 3 + 4 * beat)
+                // Triangle and glow are drawn once into a texture that is then turned:
+                // rotating no longer redraws the blurred glow every frame (costly while
+                // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
+                .padding(8)
+                .drawingGroup()
+                .rotationEffect(.degrees(angle + spin))  // angle smoothed by OverlayController
                 .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
                 .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
         }

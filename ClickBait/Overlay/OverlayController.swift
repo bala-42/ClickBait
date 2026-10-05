@@ -231,7 +231,10 @@ final class OverlayController {
             stepGuide(now: now, elapsed: elapsed, link: link)
             return
         }
-        if isTurning || model.bubble == .listening, link.preferredFrameRateRange != Self.movingRate {
+        // Spinning and pulsing are motion too: at the resting 30 Hz the thinking spin jumped
+        // ~8° a frame and looked choppy.
+        let animating = isTurning || model.bubble == .listening || model.isSpinning || model.isPulsing
+        if animating, link.preferredFrameRateRange != Self.movingRate {
             link.preferredFrameRateRange = Self.movingRate
         }
 
@@ -239,8 +242,7 @@ final class OverlayController {
         guard previous != mouse else {
             // Settled: let the display relax its refresh rate again (unless the
             // triangle is turning or the waveform is moving).
-            let busy = isTurning || model.bubble == .listening
-            let wanted = busy ? Self.movingRate : Self.restingRate
+            let wanted = animating ? Self.movingRate : Self.restingRate
             if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
             return
         }
@@ -569,7 +571,7 @@ final class OverlayController {
         self.guide = guide
         if model.isGuideSettled == moving { model.isGuideSettled = !moving }  // pulse once arrived
 
-        let wanted: CAFrameRateRange = moving || isTurning ? Self.movingRate : Self.restingRate
+        let wanted: CAFrameRateRange = moving || isTurning || model.isPulsing || model.isSpinning ? Self.movingRate : Self.restingRate
         if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
 
         // Point the vertex at the target (0° = up, clockwise; AppKit's y points up).
