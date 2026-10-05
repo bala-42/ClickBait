@@ -10,6 +10,7 @@ struct ChatView: View {
 
     static let width: CGFloat = 520
     static let corner: CGFloat = 26
+    nonisolated static let cardSpace = "chatCard"
     /// Header layout, shared with ChatController so the logo can open exactly on the
     /// companion's triangle.
     private static let headerLeading: CGFloat = 16
@@ -33,6 +34,7 @@ struct ChatView: View {
             inputRow
         }
         .frame(width: Self.width)
+        .coordinateSpace(.named(Self.cardSpace))
         // Empty parts of the card drag the window (SwiftUI content would otherwise
         // swallow the mouse-down before the window could move).
         .background(WindowDragArea())
@@ -64,6 +66,11 @@ struct ChatView: View {
             // otherwise. Full size and resting angle, so it sits exactly on the companion.
             CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
                 .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
+                // Measured, not assumed: the chat places itself so this point is on the companion.
+                .onGeometryChange(for: CGPoint.self) { proxy in
+                    let frame = proxy.frame(in: .named(Self.cardSpace))
+                    return CGPoint(x: frame.midX, y: frame.midY)
+                } action: { model.logoOffset = $0 }
             Text("ClickBait")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)

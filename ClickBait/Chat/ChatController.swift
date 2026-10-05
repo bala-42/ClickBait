@@ -70,9 +70,14 @@ final class ChatController {
         panel.contentView = NSHostingView(rootView: ChatView(model: model))
 
         model.onCardSizeChange = { [weak self] in self?.fitToCard() }
+        // The measured logo spot arrived (or moved): re-align with where it opened.
+        model.onLogoMove = { [weak self] in
+            guard let self, let origin, !model.isClosing else { return }
+            alignLogo(to: origin)
+        }
         self.panel = panel
         origin = logoCenter
-        place(topLeft: CGPoint(x: logoCenter.x - ChatView.logoCenter.x, y: logoCenter.y + ChatView.logoCenter.y))
+        alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)
         model.isTucked = tucked
         if !tucked { panel.orderFrontRegardless() }
@@ -120,7 +125,7 @@ final class ChatController {
         tuckTask?.cancel()
         let logoCenter = companionPoint?() ?? NSEvent.mouseLocation
         origin = logoCenter
-        place(topLeft: CGPoint(x: logoCenter.x - ChatView.logoCenter.x, y: logoCenter.y + ChatView.logoCenter.y))
+        alignLogo(to: logoCenter)
         aim(at: logoCenter, in: panel.frame)
         panel.orderFrontRegardless()
         model.isTucked = false
@@ -161,6 +166,31 @@ final class ChatController {
         panel.setFrame(CGRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
         keepOnScreen()
         if let origin, !model.isClosing { aim(at: origin, in: panel.frame) }
+    }
+
+    /// Puts the panel so the logo's measured centre is on `point` (the companion's triangle).
+    private func alignLogo(to point: CGPoint) {
+        let logo = model.logoOffset ?? ChatView.logoCenter
+        place(topLeft: CGPoint(x: point.x - logo.x, y: point.y + logo.y))
+        logAlignment()
+    }
+
+    /// Logs the companion's and the logo's real positions once the spring has settled.
+    private func logAlignment() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, let panel, !model.isTucked, let companion = companionPoint?() else { return }
+            let logo = model.logoOffset ?? ChatView.logoCenter
+            let shown = CGPoint(x: panel.frame.minX + logo.x, y: panel.frame.maxY - logo.y)
+            Log.app.notice("""
+                Chat logo at (\(Int(shown.x), privacy: .public), \(Int(shown.y), privacy: .public)), companion at \
+                (\(Int(companion.x), privacy: .public), \(Int(companion.y), privacy: .public)): off by \
+                (\(Int(shown.x - companion.x), privacy: .public), \(Int(shown.y - companion.y), privacy: .public)); \
+                panel \(Int(panel.frame.width), privacy: .public)×\(Int(panel.frame.height), privacy: .public), \
+                card \(Int(self.model.cardSize.width), privacy: .public)×\(Int(self.model.cardSize.height), privacy: .public), \
+                logo offset \(self.model.logoOffset == nil ? "assumed" : "measured", privacy: .public)
+                """)
+        }
     }
 
     private func place(topLeft: CGPoint) {

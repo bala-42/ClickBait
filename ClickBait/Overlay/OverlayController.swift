@@ -61,6 +61,11 @@ final class OverlayController {
     /// using the same placement as the companion itself, edge flips included. The chat's
     /// logo opens exactly here.
     var companionTriangleCenter: CGPoint {
+        // Where it's actually drawn now (it trails the cursor and moves aside for pills),
+        // read from its window — not where it would rest next to the mouse.
+        if guide == nil, let frame = bubbleStage?.contentFrame, frame.width > 0 {
+            return CGPoint(x: frame.minX + Self.triangleInset, y: frame.maxY - Self.triangleInset)
+        }
         let topLeft = restingTopLeft(for: NSEvent.mouseLocation)
         return CGPoint(x: topLeft.x + Self.triangleInset, y: topLeft.y - Self.triangleInset)
     }
