@@ -198,13 +198,15 @@ final class AskCoordinator {
             pendingExcerpt = nil
             onExplaining?(excerpt)
         }
-        if let display = explainChat {
-            explainChat = nil
-            onChatOpen?(display)
-        }
+        // The old chat goes first: closing it after opening the explanation's chat closed
+        // the new one instead (same window), so the explanation never appeared.
         if detachedChat != nil {
             detachedChat = nil
             onChatClose?()
+        }
+        if let display = explainChat {
+            explainChat = nil
+            onChatOpen?(display)
         }
     }
 

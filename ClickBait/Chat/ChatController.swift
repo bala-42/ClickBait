@@ -61,7 +61,9 @@ final class ChatController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .floating
-        panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+        // Comes to whichever desktop you're on when it's shown again (it stayed behind on
+        // the desktop it opened on).
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
