@@ -131,15 +131,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.model.isBusy = false
             chat.untuck()
         }
+        // Replies to typed orders, notes and questions ("Added to Reminders…", a "Do it?")
+        // are said by a pill or card: kept in the conversation, the chat stays aside.
         coordinator.onChatReply = { [weak self] text in
-            self?.chat.model.setAssistant(text)
-            self?.chat.model.isBusy = false
-            self?.chat.untuck()
+            guard let self else { return }
+            chat.model.setAssistant(text)
+            chat.model.isBusy = false
+            chat.park()
+            // Not over a green result already saying it, nor next to a card asking it.
+            if !overlay.isShowingWords, !confirm.isShowing { overlay.showShortAnswer(text) }
         }
         coordinator.onChatError = { [weak self] message in
-            self?.chat.model.addError(message)
-            self?.chat.model.isBusy = false
-            self?.chat.untuck()
+            guard let self else { return }
+            chat.model.addError(message)
+            chat.model.isBusy = false
+            chat.park()
+            overlay.show(.error(message))
         }
         coordinator.onChatClose = { [weak self] in
             self?.overlay.endGuide()
@@ -151,9 +158,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if state == .thinking, self?.coordinator.isExplainProvisional == true { return }
             self?.overlay.show(state)
             // Never left tucked away: once nothing is in progress (or it failed), it's back.
-            if let self, chat.isTucked {
+            if let self, chat.isTucked, !chat.isParked {
                 switch state {
-                case .error: chat.untuck()
+                case .error: chat.park()  // the error is a pill
                 case .idle where !coordinator.isBusy: chat.untuck()
                 default: break
                 }
@@ -199,10 +206,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onPartialAnswer = { [weak self] partial in
             guard let self else { return }
             chat.model.setAssistant(partial)
-            // Back as soon as the first full sentence is there: the rest streams in view.
+            // Back once the answer is more than a pill can say (a full sentence past the pill
+            // length, or a second sentence): the rest streams in view. Short replies and
+            // pointing never bring it back.
             if chat.isTucked {
                 var splitter = SentenceSplitter()
-                if !splitter.feed(partial).isEmpty { chat.untuck() }
+                let sentences = splitter.feed(partial).count
+                if sentences >= 2 || (sentences >= 1 && partial.count > PillText.maxLength) { chat.untuck() }
             }
         }
         coordinator.onActionStarted = { [weak self] message in self?.overlay.showWorking(message) }
@@ -210,13 +220,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             guard let self else { return }
+            // Pointing, or a few friendly words: the companion says it; the chat isn't needed.
+            let short = PillText.fits(response.speech, code: response.code)
+            let pillSays = short || !pointers.isEmpty
             if chat.isOpen {
                 chat.model.setAssistant(response.displayText)  // final text, with any code as a block
                 chat.model.isBusy = false
-                chat.untuck()  // a one-sentence answer never "finished" a sentence mid-stream
+                if !pillSays {
+                    chat.untuck()
+                } else if chat.isTucked {
+                    chat.park()  // kept in the conversation; a double tap brings it back
+                }
             }
-            // Already pointing (instantly, before the model): don't start over.
-            if !coordinator.pointedInstantly { overlay.guide(to: pointers) }
+            // Already pointing (instantly, before the model): don't start over. The reply's
+            // own few words label the pointer when they fit ("Share's up here!").
+            if !pointers.isEmpty {
+                if !coordinator.pointedInstantly { overlay.guide(to: pointers, label: short ? response.speech : nil) }
+            } else if short, !(chat.isOpen && !chat.isTucked) {
+                overlay.showShortAnswer(response.speech)
+            }
         }
         hotkey.start()
         TextReader.warmUp()

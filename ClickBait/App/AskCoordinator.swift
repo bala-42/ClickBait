@@ -187,6 +187,8 @@ final class AskCoordinator {
     var isExplainProvisional: Bool { explainCommit != nil }
     /// The selection read during the window, shown once it's committed.
     @ObservationIgnored private var pendingExcerpt: String?
+    /// The chat the explanation started during the window (its first line), opened at commit.
+    @ObservationIgnored private var explainChat: String?
 
     private func commitExplain() {
         explainCommit = nil
@@ -195,6 +197,10 @@ final class AskCoordinator {
         if let excerpt = pendingExcerpt {
             pendingExcerpt = nil
             onExplaining?(excerpt)
+        }
+        if let display = explainChat {
+            explainChat = nil
+            onChatOpen?(display)
         }
         if detachedChat != nil {
             detachedChat = nil
@@ -208,6 +214,13 @@ final class AskCoordinator {
         explainCommit?.cancel()
         explainCommit = nil
         pendingExcerpt = nil
+        if explainChat != nil {
+            // The explanation had started its own chat: gone with it.
+            explainChat = nil
+            conversation = nil
+            snipMemory = nil
+            chatShown = false
+        }
         if state == .thinking || isAnswering {
             askTask?.cancel()
             askTask = nil
@@ -1329,7 +1342,13 @@ final class AskCoordinator {
             snipMemory = nil
             if !speak {  // explain: show the bubble right away, the answer streams into it
                 chatShown = true
-                onChatOpen?(display)
+                // Still undoable by a second tap: the chat opens once that can't happen; a
+                // double tap drops it (it used to open the explanation instead of a new chat).
+                if isExplainProvisional {
+                    explainChat = display
+                } else {
+                    onChatOpen?(display)
+                }
             }
         } else {
             onChatUserMessage?(display)
@@ -1615,7 +1634,8 @@ final class AskCoordinator {
                 (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) (~)
                 """)
         }
-        if !chatShown, pointers.isEmpty {
+        // A reply a pill can say ("Yep, it's on!") opens no chat: the companion says it.
+        if !chatShown, pointers.isEmpty, !PillText.fits(parsed.response.speech, code: parsed.response.code) {
             chatShown = true
             onChatOpen?(display)
         }

@@ -76,6 +76,17 @@ final class OverlayController {
         return CGPoint(x: mouse.x + Self.cursorClearance.width + 4, y: mouse.y - Self.cursorClearance.height - 4)
     }
 
+    /// A pill is up (a result, a problem, an answer): not to be replaced by a repeat.
+    var isShowingWords: Bool { model.bubble.hasWords }
+
+    /// A reply short enough for a pill ("Yep, it's on!"): said by the companion, no chat.
+    func showShortAnswer(_ text: String) {
+        endGuide()
+        setCompanionHidden(false)
+        model.bubble = .answer(text)
+        scheduleDismiss(after: .seconds(5))
+    }
+
     /// A command is running (green, pulsing) — file actions can take a while.
     func showWorking(_ message: String) {
         endGuide()
@@ -351,6 +362,9 @@ final class OverlayController {
         /// A tutorial step: lavender, the instruction as the label, no timeout, and clicks
         /// don't move it on (the tutorial watches the screen for that).
         var isTutorial = false
+        /// The reply's own few words for a single target ("Share's up here!"), shown instead
+        /// of "this one!".
+        var label: String?
     }
 
     private var guide: Guide?
@@ -457,13 +471,14 @@ final class OverlayController {
         beginTarget()
     }
 
-    func guide(to targets: [ScreenPointer]) {
+    func guide(to targets: [ScreenPointer], label: String? = nil) {
         endGuide()
         guard !targets.isEmpty else { return }
         // Start from wherever the triangle is drawn now.
         let frame = bubbleStage?.contentFrame ?? .zero
         let start = CGPoint(x: frame.minX + Self.triangleInset, y: frame.maxY - Self.triangleInset)
         guide = Guide(targets: targets, center: start)
+        guide?.label = targets.count == 1 ? label : nil
         model.bubble = .idle
         beginTarget()
         setCompanionHidden(false)
@@ -539,7 +554,7 @@ final class OverlayController {
         let label = guide.targets[guide.index].label
         model.guideLabel = guide.isTour || guide.isTutorial
             ? label  // the part's name ("probably supraspinatus")
-            : GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
+            : guide.label ?? GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
         model.guideTarget = label.isEmpty ? nil : label
         model.isGuiding = true
         showGuideLabel()

@@ -283,7 +283,9 @@ struct CompanionBubbleView: View {
             TinyPill(text: message.prefix(1).lowercased() + message.dropFirst(), symbol: "gearshape.fill", tone: model.tone)
         case .idle, .listening, .thinking, .explaining:
             EmptyView()
-        case .answer(let text), .done(let text):
+        case .answer(let text):
+            TinyPill(text: text, tone: model.tone)  // a few friendly words, no icon
+        case .done(let text):
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):
             TinyPill(text: message, symbol: "exclamationmark", tone: model.tone, isProblem: true)

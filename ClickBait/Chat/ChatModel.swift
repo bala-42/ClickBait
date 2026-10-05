@@ -28,6 +28,9 @@ final class ChatModel {
     /// Tucked into the companion while an answer is on its way (the panel is hidden but
     /// keeps its place); it grows back out when the answer starts arriving.
     var isTucked = false
+    /// Near the right screen edge: logo at the card's top-right, so it can still sit on the
+    /// companion with the card opening to its left.
+    var isFlipped = false
     /// The logo's centre measured in the card (from its top-left, y down); nil until laid out.
     @ObservationIgnored var logoOffset: CGPoint? {
         didSet { if logoOffset != oldValue { onLogoMove?() } }

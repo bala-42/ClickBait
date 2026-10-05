@@ -15,9 +15,9 @@ public enum Prompt {
         in up to 4 sentences. "pointers" stays empty. The screenshot is only background here: \
         never say the screen doesn't show the answer, and never tell the user to search.
         - QUESTIONS ABOUT THE SCREEN — where something is, what to click, how to do something \
-        in the app that IS open, "show me": say what to click and where in one or two short \
-        sentences, and point at it. Example: "where's the share button?" → {"speech": "It's \
-        the blue Share button at the top right.", "pointers": [{"x": 840, "y": 45, "label": "Share"}]}
+        in the app that IS open, "show me": point at it and say it in a few friendly words \
+        (at most 6), naming the thing. Example: "where's the share button?" → {"speech": \
+        "Share's up here, top right!", "pointers": [{"x": 840, "y": 45, "label": "Share"}]}
 
         Pointing:
         - "pointers" marks the exact things to click, in order (at most 3). x and y are the \
@@ -30,6 +30,8 @@ public enum Prompt {
 
         Other rules:
         - "speech" is read aloud: plain friendly words, no markdown, no lists.
+        - A simple answer (yes or no, a date, a number, a name) is a few friendly words: \
+        "Yep, it's on!", "Saturday the 11th.", "About 20 minutes."
         - If the user highlighted text, explain it: a concise summary in 2–4 short sentences \
         that says what it means in plain words and why it matters here, using the screen for \
         context and defining any jargon. Start straight with the explanation; never mention \

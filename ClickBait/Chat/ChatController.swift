@@ -99,6 +99,15 @@ final class ChatController {
     }
 
     var isTucked: Bool { model.isTucked }
+    /// Tucked on purpose (the reply was said by a pill or the pointer): it stays away, its
+    /// conversation kept, until a long answer, a double tap or a new chat brings it back.
+    private(set) var isParked = false
+
+    /// Steps aside for a reply the pills can say, keeping the conversation.
+    func park() {
+        tuck()
+        isParked = model.isTucked
+    }
     private var tuckTask: Task<Void, Never>?
     /// The text field had the keyboard when the chat tucked away: give it back.
     private var refocusOnReturn = false
@@ -122,6 +131,7 @@ final class ChatController {
     /// is now (like opening), not where the chat was before it tucked away.
     func untuck() {
         guard let panel, model.isTucked else { return }
+        isParked = false
         tuckTask?.cancel()
         let logoCenter = companionPoint?() ?? NSEvent.mouseLocation
         origin = logoCenter
@@ -150,6 +160,7 @@ final class ChatController {
     }
 
     private func closeNow() {
+        isParked = false
         tuckTask?.cancel()
         model.isTucked = false
         panel?.orderOut(nil)
@@ -169,8 +180,15 @@ final class ChatController {
     }
 
     /// Puts the panel so the logo's measured centre is on `point` (the companion's triangle).
+    /// Near the right edge the header flips (logo top-right) so it still fits there.
     private func alignLogo(to point: CGPoint) {
-        let logo = model.logoOffset ?? ChatView.logoCenter
+        let width = panel?.frame.width ?? ChatView.width
+        let bounds = (NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
+        let flip = bounds.map { point.x - ChatView.logoCenter.x + width > $0.maxX } ?? false
+        if model.isFlipped != flip { model.isFlipped = flip }  // the logo moves; onLogoMove re-aligns
+        var logo = model.logoOffset ?? ChatView.logoCenter
+        // Until the flipped layout has been measured, mirror the unflipped spot.
+        if flip != (logo.x > width / 2) { logo.x = width - logo.x }
         place(topLeft: CGPoint(x: point.x - logo.x, y: point.y + logo.y))
         logAlignment()
     }

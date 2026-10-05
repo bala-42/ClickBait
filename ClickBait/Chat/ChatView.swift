@@ -62,37 +62,56 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            // Same colour state as the companion: marigold while answering, blue
-            // otherwise. Full size and resting angle, so it sits exactly on the companion.
-            CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
-                .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
-                // Measured, not assumed: the chat places itself so this point is on the companion.
-                .onGeometryChange(for: CGPoint.self) { proxy in
-                    let frame = proxy.frame(in: .named(Self.cardSpace))
-                    return CGPoint(x: frame.midX, y: frame.midY)
-                } action: { model.logoOffset = $0 }
-            Text("ClickBait")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .opacity(0.8)
-            Spacer()
-            Button {
-                model.onClose?()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .background(.primary.opacity(0.08), in: Circle())
+            if model.isFlipped {
+                closeButton
+                Spacer()
+                title
+                logo
+            } else {
+                logo
+                title
+                Spacer()
+                closeButton
             }
-            .buttonStyle(.plain)
-            .help("Close (Esc)")
-            .accessibilityLabel("Close chat")
         }
         .frame(height: Self.headerRowHeight)
         .padding(.horizontal, Self.headerLeading)
         .padding(.top, Self.headerTop)
         .padding(.bottom, 4)
+    }
+
+    private var logo: some View {
+        // Same colour state as the companion: marigold while answering, blue
+        // otherwise. Full size and resting angle, so it sits exactly on the companion.
+        CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
+            .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
+            // Measured, not assumed: the chat places itself so this point is on the companion.
+            .onGeometryChange(for: CGPoint.self) { proxy in
+                let frame = proxy.frame(in: .named(Self.cardSpace))
+                return CGPoint(x: frame.midX, y: frame.midY)
+            } action: { model.logoOffset = $0 }
+    }
+
+    private var title: some View {
+        Text("ClickBait")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .opacity(0.8)
+    }
+
+    private var closeButton: some View {
+        Button {
+            model.onClose?()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .background(.primary.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Close (Esc)")
+        .accessibilityLabel("Close chat")
     }
 
     private var transcript: some View {
