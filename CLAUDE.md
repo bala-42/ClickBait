@@ -109,6 +109,9 @@ Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips si
 ### Orders in other words (phase E, step 4)
 When the rules don't recognise something that looks like an order (not a question), a text-only request (`Prompt.orderSystem`, no screenshot, ~1.3 s on qwen2.5vl:7b, 8 s timeout) asks which catalog action it is, or none. The proposal must pass `ActionCatalog.resolve` and the Finder check. Safe actions run at once; `ActionCatalog.needsConfirmation` ones (trash, move, rename, move into folder, quit, shortcuts, Wi-Fi off, lock, sleep display) show a green confirm card (Do it / Cancel, "yes"/"cancel" by voice, Esc; 20 s timeout). Rule-recognised orders still run directly.
 
+### Companion motion
+Listening: the waveform. **Thinking (marigold, `isSpinning`): the triangle turns a third at a time** — each tick (0.5 s) springs ~20° past and settles (an underdamped step), then rests 0.4 s; a triangle looks the same every 120°, so ticks end where they began. When thinking stops mid-tick it springs to the nearest third. Working (green), snipping (red) and pointing (blue, once arrived) pulse. Reduce Motion: thinking pulses instead of turning. Both are clock-driven (`TimelineView`, paused when idle). Typed messages set the thinking state too (they stayed idle blue).
+
 ### Chat tucks away while the answer comes
 Sending a message (spoken or typed) tucks the chat panel into the companion (`ChatController.tuck`: shrinks, hidden, keeps its place; a first question opens tucked). Only the panel steps aside — pills, pointing and the marigold pulse carry on. It grows back out where it was (`untuck`) as soon as the answer's first full sentence is in (`SentenceSplitter`), or at once for a reply, error, "Stopped", a tutorial checklist or the final answer; and whenever ClickBait goes idle with nothing in progress, so it can't stay hidden. If the text field had the keyboard, it gets it back.
 

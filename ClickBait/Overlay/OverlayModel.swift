@@ -81,12 +81,21 @@ final class OverlayModel {
         }
     }
 
-    /// The triangle pulses while something is in progress.
+    /// The triangle pulses while something is in progress (not thinking: that spins).
     var isPulsing: Bool {
         if isSnipping { return true }
         return switch bubble {
-        case .thinking, .explaining, .working: true  // listening shows the waveform instead
+        case .working: true  // listening shows the waveform instead
         default: isGuiding && isGuideSettled  // a gentle beat once it's there, not while gliding
+        }
+    }
+
+    /// The AI is thinking: the triangle turns a third at a time with a springy overshoot.
+    var isSpinning: Bool {
+        guard !isSnipping, !isGuiding else { return false }
+        return switch bubble {
+        case .thinking, .explaining: true
+        default: false
         }
     }
     /// The triangle's rotation in degrees (0 = vertex up, clockwise). Aimed up-left at

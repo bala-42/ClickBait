@@ -62,7 +62,7 @@ struct ChatView: View {
         HStack(spacing: 8) {
             // Same colour state as the companion: marigold while answering, blue
             // otherwise. Full size and resting angle, so it sits exactly on the companion.
-            CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: model.isBusy)
+            CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
                 .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
             Text("ClickBait")
                 .font(.system(size: 12, weight: .semibold))

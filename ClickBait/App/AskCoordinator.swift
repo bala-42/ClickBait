@@ -293,7 +293,11 @@ final class AskCoordinator {
         let provider = settings.makeProvider()
         self.provider = provider
         let blocklist = settings.blocklist
+        // Marigold and spinning while a typed message is worked on, like a spoken one (it
+        // stayed idle blue); back to idle if it ends without an answer taking over.
+        state = .thinking
         askTask = Task {
+            defer { if state == .thinking { state = .idle } }
             let startedAt = ContinuousClock.now
             if let (order, proposal) = await understandOrder(text) {
                 onChatUserMessage?(text)

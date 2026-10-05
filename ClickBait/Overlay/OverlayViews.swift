@@ -23,6 +23,9 @@ struct EquilateralTriangle: Shape {
 struct CompanionTriangle: View {
     let tone: CompanionTone
     let pulsing: Bool
+    /// Thinking: a third of a turn at a time, springing past and settling back, then a
+    /// short rest. A triangle looks the same every 120°, so each tick ends where it began.
+    var spinning: Bool = false
     /// Degrees clockwise from vertex-up.
     var angle: Double = Self.restingAngle
     static let size: CGFloat = 15
@@ -34,29 +37,60 @@ struct CompanionTriangle: View {
     private static let beatPeriod: Double = 1.4
     /// When the current pulse began, so every pulse starts from rest instead of mid-swell.
     @State private var pulseStart = Date()
+    @State private var spinStart = Date()
+    /// Where a stopped spin was, springing to the nearest resting third.
+    @State private var settle: Double = 0
+    private static let tickTime: Double = 0.5
+    private static let restTime: Double = 0.4
 
     var body: some View {
-        // The beat is computed from the clock, not a repeatForever animation: those kept
-        // running after pulsing stopped (each settle/unsettle while pointing started
-        // another), so the triangle went on rippling blue when it should have been idle.
-        // Paused, the timeline draws nothing extra and the beat is exactly 0.
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !pulsing)) { context in
-            let beat = pulsing ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
+        // Reduce Motion: no turning; thinking pulses gently instead.
+        let beating = pulsing || (spinning && reduceMotion)
+        let turning = spinning && !reduceMotion
+        // Both are computed from the clock, not repeatForever animations: those kept
+        // running after they stopped (each settle/unsettle while pointing started another),
+        // so the triangle went on rippling blue when it should have been idle. Paused, the
+        // timeline draws nothing extra.
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !beating && !turning)) { context in
+            let beat = beating ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
+            let spin = turning ? Self.spinAngle(after: context.date.timeIntervalSince(spinStart)) : settle
             EquilateralTriangle()
                 .fill(tone.color.opacity(0.9))
                 .frame(width: Self.size, height: Self.size)
-                .rotationEffect(.degrees(angle))  // smoothed by OverlayController, not animated here
+                .rotationEffect(.degrees(angle + spin))  // angle smoothed by OverlayController
                 .shadow(color: tone.color.opacity(0.45 + 0.45 * beat), radius: 3 + 4 * beat)
                 .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
                 .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
         }
         .frame(width: Self.size * 1.7, height: Self.size * 1.7)
         .animation(.easeInOut(duration: 0.25), value: tone)
-        .animation(.easeOut(duration: 0.2), value: pulsing)  // settle back softly when it stops
-        .onChange(of: pulsing) { _, isPulsing in
-            if isPulsing { pulseStart = .now }
+        .animation(.easeOut(duration: 0.2), value: beating)  // settle back softly when it stops
+        .onChange(of: beating) { _, isBeating in
+            if isBeating { pulseStart = .now }
+        }
+        .onChange(of: turning) { _, isTurning in
+            if isTurning {
+                spinStart = .now
+                return
+            }
+            // Stopped mid-tick: spring to the nearest third (they all look the same), so the
+            // triangle never snaps when the answer arrives.
+            let now = Self.spinAngle(after: Date().timeIntervalSince(spinStart)).truncatingRemainder(dividingBy: 120)
+            settle = now
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) { settle = now > 60 ? 120 : 0 }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Thirds of a turn: each tick springs ~16° past and settles back (an underdamped
+    /// step), then rests. Ends of ticks and rests are exact multiples of 120°.
+    private static func spinAngle(after elapsed: TimeInterval) -> Double {
+        let cycle = tickTime + restTime
+        let t = max(elapsed, 0)
+        let ticks = (t / cycle).rounded(.down)
+        let u = (t - ticks * cycle) / tickTime
+        let progress = u >= 1 ? 1 : 1 - exp(-6 * u) * cos(3 * .pi * u)
+        return 120 * (ticks + progress)
     }
 
     /// 0 → 1 → 0 over one period, eased like the old easeInOut swell.
@@ -199,7 +233,7 @@ struct CompanionBubbleView: View {
                     ListeningWaveform(level: model.waveLevel, tone: model.tone)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else {
-                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, angle: model.triangleAngle)
+                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, spinning: model.isSpinning, angle: model.triangleAngle)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
