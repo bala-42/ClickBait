@@ -1146,7 +1146,12 @@ final class AskCoordinator {
 
     /// Green setup: open the app the task needs and wait until it's in front with its
     /// menus readable (a cold launch takes a few seconds). Then a fresh look at the screen.
+    /// Opening or switching apps for a walkthrough: the chat goes along (its checklist).
+    @ObservationIgnored private(set) var isOpeningAppForTutorial = false
+
     private func openForTutorial(_ name: String, url: URL?) async -> (ScreenCapture, EncodedScreenshot, [ScreenElement])? {
+        isOpeningAppForTutorial = true
+        defer { isOpeningAppForTutorial = false }
         guard let url else {
             show(error: "That needs \(name), which isn't installed.")
             return nil

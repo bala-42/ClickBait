@@ -46,6 +46,7 @@ final class ChatController {
     /// when the answer starts arriving.
     func open(logoAt logoCenter: CGPoint, tucked: Bool = false) {
         closeNow()
+        setHome()
         model.messages = []
         model.draft = ""
         model.isBusy = false
@@ -61,9 +62,8 @@ final class ChatController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .floating
-        // Comes to whichever desktop you're on when it's shown again (it stayed behind on
-        // the desktop it opened on).
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
+        // Stays on the desktop it was summoned on: it belongs to that app and window.
+        panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -96,11 +96,61 @@ final class ChatController {
     /// Puts the cursor back in an open chat's text field.
     func focus() {
         guard let panel else { return }
+        // Summoned again: it belongs to the app in front now, and comes back there.
+        if isAway || homePID != NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            setHome()
+            if isAway {
+                isAway = false
+                if let companion = companionPoint?() { origin = companion; alignLogo(to: companion) }
+            }
+        }
         panel.makeKeyAndOrderFront(nil)
         model.focusRequest += 1
     }
 
     var isTucked: Bool { model.isTucked }
+
+    // MARK: Belonging to an app
+
+    /// The app the chat was summoned in. While another app is in front it steps away, and
+    /// it's back (where it was) when that app is.
+    private var homePID: pid_t?
+    private var homeName: String?
+    /// Hidden because another app is in front.
+    private(set) var isAway = false
+    /// An answer came in while away: say so where the user is now.
+    var onReadyWhileAway: ((String) -> Void)?
+
+    private func setHome() {
+        let front = NSWorkspace.shared.frontmostApplication
+        guard front?.processIdentifier != getpid() else { return }
+        homePID = front?.processIdentifier
+        homeName = front?.localizedName
+    }
+
+    /// A walkthrough moved on to `app`: the chat (its checklist) goes with it.
+    func adopt(_ app: NSRunningApplication) {
+        guard let panel, app.processIdentifier != getpid() else { return }
+        homePID = app.processIdentifier
+        homeName = app.localizedName
+        if isAway {
+            isAway = false
+            if !model.isTucked { fadeIn(panel) }
+        }
+    }
+
+    /// Called when an app comes to the front.
+    func appActivated(_ app: NSRunningApplication) {
+        guard let panel, app.processIdentifier != getpid(), homePID != nil else { return }
+        if app.processIdentifier == homePID {
+            guard isAway else { return }
+            isAway = false
+            if !model.isTucked { fadeIn(panel) }
+        } else if !isAway {
+            isAway = true
+            panel.orderOut(nil)
+        }
+    }
     /// Tucked on purpose (the reply was said by a pill or the pointer): it stays away, its
     /// conversation kept, until a long answer, a double tap or a new chat brings it back.
     private(set) var isParked = false
@@ -136,6 +186,12 @@ final class ChatController {
     func untuck() {
         guard let panel, model.isTucked else { return }
         isParked = false
+        if isAway {
+            // Its app isn't in front: it'll be there when the user goes back.
+            model.isTucked = false
+            if model.messages.last?.role == .assistant { onReadyWhileAway?(homeName ?? "the other app") }
+            return
+        }
         tuckTask?.cancel()
         let logoCenter = companionPoint?() ?? NSEvent.mouseLocation
         origin = logoCenter
@@ -185,6 +241,7 @@ final class ChatController {
 
     private func closeNow() {
         isParked = false
+        isAway = false
         tuckTask?.cancel()
         model.isTucked = false
         panel?.orderOut(nil)

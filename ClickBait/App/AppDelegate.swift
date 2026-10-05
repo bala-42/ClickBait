@@ -62,8 +62,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.openForTyping(logoAt: overlay.companionTriangleCenter)
         }
         coordinator.onChatFocus = { [weak self] in
-            self?.chat.untuck()
+            // Focus first: it re-homes the chat to the app in front and shows it there.
             self?.chat.focus()
+            self?.chat.untuck()
+        }
+        // The chat belongs to the app it was summoned in: away while another app is in
+        // front, back (where it was) when that app is.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // A walkthrough switching apps takes the chat (its checklist) along.
+                if self.tutorial.isActive || self.overlay.isTutoring || self.coordinator.isOpeningAppForTutorial {
+                    self.chat.adopt(app)
+                } else {
+                    self.chat.appActivated(app)
+                }
+            }
+        }
+        chat.onReadyWhileAway = { [weak self] appName in
+            self?.overlay.showShortAnswer("answer's ready in \(appName)")
         }
         escape.start()
 

@@ -76,6 +76,9 @@ final class OverlayController {
         return CGPoint(x: mouse.x + Self.cursorClearance.width + 4, y: mouse.y - Self.cursorClearance.height - 4)
     }
 
+    /// Lavender: a walkthrough is being planned or run.
+    var isTutoring: Bool { model.isTutoring }
+
     /// A pill is up (a result, a problem, an answer): not to be replaced by a repeat.
     var isShowingWords: Bool { model.bubble.hasWords }
 
