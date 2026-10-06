@@ -182,6 +182,26 @@ extension View {
     }
 }
 
+/// Moves one line of text so its visible letters, not its line box, are centred up-down:
+/// a line box leaves room for capitals above, so lowercase names ("~ mercury") sat 1–2 pt
+/// low in their pill (measured 9 pt above vs 5 pt below, 2026-10-06).
+enum InkCentring {
+    static func offset(for text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        guard width <= maxWidth, !text.contains(where: \.isNewline) else { return 0 }  // one line only
+        let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        guard !ink.isEmpty else { return 0 }
+        // SwiftUI's line is the font's height rounded up (15 pt for 12 pt semibold, not 14.1),
+        // the extra below the baseline.
+        let lineHeight = (ascent + descent + leading).rounded(.up)
+        let above = ascent - ink.maxY, below = lineHeight - ascent + ink.minY
+        return -((above - below) / 2 * 2).rounded() / 2  // whole pixels on a 2× screen: crisp text
+    }
+}
+
 /// The soft glow around the companion, its chat logo and the pills, in the state's colour
 /// (raised from 0.45 / 3 pt at the user's request, 2026-10-06: "glow a little").
 enum Glow {
@@ -215,8 +235,10 @@ struct GuideLabelView: View {
             if let label = model.guideLabel, !label.isEmpty {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold))
-                    // A tour's part names sit in the middle of their red pill (user's request).
+                    // A tour's part names sit in the middle of their red pill (user's request),
+                    // across and up-down by the letters themselves.
                     .wrapped(label, maxWidth: 240, alignment: model.isTouring ? .center : .leading)
+                    .offset(y: model.isTouring ? InkCentring.offset(for: label, maxWidth: 240) : 0)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(Glow.opacity),
