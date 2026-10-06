@@ -169,13 +169,15 @@ extension View {
     /// Text that's as wide as it needs up to `maxWidth`, then wraps onto as many lines
     /// as it takes. Measured explicitly: inside the overlay's fixed-size layout SwiftUI
     /// would otherwise lay a long label out on one line, or cut it off.
-    func wrapped(_ text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold) -> some View {
+    func wrapped(_ text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold,
+                 alignment: HorizontalAlignment = .leading) -> some View {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
         let widest = text.split(whereSeparator: \.isNewline)
             .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }
             .max() ?? 0
         return self
-            .frame(width: min(ceil(widest) + 2, maxWidth), alignment: .leading)
+            .multilineTextAlignment(alignment == .center ? .center : .leading)
+            .frame(width: min(ceil(widest) + 2, maxWidth), alignment: Alignment(horizontal: alignment, vertical: .center))
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -206,7 +208,8 @@ struct GuideLabelView: View {
             if let label = model.guideLabel, !label.isEmpty {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold))
-                    .wrapped(label, maxWidth: 240)
+                    // A tour's part names sit in the middle of their red pill (user's request).
+                    .wrapped(label, maxWidth: 240, alignment: model.isTouring ? .center : .leading)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
                     .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(0.45),
