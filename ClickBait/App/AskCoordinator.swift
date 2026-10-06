@@ -1196,6 +1196,12 @@ final class AskCoordinator {
     private nonisolated static func tourPointers(_ stops: [Pointer], in view: SnipView) async -> [ScreenPointer] {
         let outlines = await Task.detached(priority: .userInitiated) { view.outlines(at: stops) }.value
         Log.ask.notice("Parts: outlines for \(outlines.compactMap { $0 }.count, privacy: .public) of \(stops.count, privacy: .public) (the tip stops at their edges)")
+        // Where each part is and how far its edges are, so a tip that's off can be read off:
+        // the model's spot (close-up pixels) or the outline (points: nearest–farthest edge).
+        for (stop, outline) in zip(stops, outlines) {
+            let edges = outline.map { "edges \(Int($0.radii.min() ?? 0))–\(Int($0.radii.max() ?? 0)) pt" } ?? "no outline"
+            Log.ask.notice("Parts: \(stop.label, privacy: .public) at \(Int(stop.x), privacy: .public),\(Int(stop.y), privacy: .public) of \(view.image.width, privacy: .public)×\(view.image.height, privacy: .public): \(edges, privacy: .public)")
+        }
         return zip(stops, outlines).map { stop, outline in
             var pointer = view.screenPointer(Pointer(x: stop.x, y: stop.y, label: "~ " + stop.label.lowercased()))
             pointer.outline = outline
