@@ -10,6 +10,9 @@ struct ScreenPointer: Equatable {
     var appKit: Point
     /// Global Quartz point (top-left origin) — for Accessibility hit-testing.
     var quartz: Point
+    /// A tour part's outline around the point, in screen points: the triangle's tip stops
+    /// at its edge instead of on top of the thing. Nil: the tip goes to the point.
+    var outline: PartOutline? = nil
 }
 
 enum AskState: Equatable {
@@ -1188,6 +1191,18 @@ final class AskCoordinator {
         if state == .thinking { state = .idle }
     }
 
+    /// A tour's stops on screen, labelled as guesses ("~ name"), each with the outline of the
+    /// thing at its point where one stands out (found off the main thread).
+    private nonisolated static func tourPointers(_ stops: [Pointer], in view: SnipView) async -> [ScreenPointer] {
+        let outlines = await Task.detached(priority: .userInitiated) { view.outlines(at: stops) }.value
+        Log.ask.notice("Parts: outlines for \(outlines.compactMap { $0 }.count, privacy: .public) of \(stops.count, privacy: .public) (the tip stops at their edges)")
+        return zip(stops, outlines).map { stop, outline in
+            var pointer = view.screenPointer(Pointer(x: stop.x, y: stop.y, label: "~ " + stop.label.lowercased()))
+            pointer.outline = outline
+            return pointer
+        }
+    }
+
     /// Faces in a snip's close-up, found off the main thread.
     private nonisolated static func faces(in view: SnipView) async -> [(center: Point, width: Double)] {
         await Task.detached(priority: .userInitiated) { FaceFinder.faces(in: view.image) }.value
@@ -1819,7 +1834,7 @@ final class AskCoordinator {
             if !labelled {
                 let faces = await Self.faces(in: view)
                 let stops = PartsTour.stops(FaceSnapping.snap(candidates, to: faces), marked: view.marked)
-                tour = stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) }
+                tour = await Self.tourPointers(stops, in: view)
             }
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
@@ -1865,7 +1880,7 @@ final class AskCoordinator {
                 \(String(describing: provider.coordinateScale), privacy: .public)
                 """)
             guard !stops.isEmpty else { return }
-            onTour?(stops.map { view.screenPointer(Pointer(x: $0.x, y: $0.y, label: "~ " + $0.label.lowercased())) })
+            onTour?(await Self.tourPointers(stops, in: view))
         }
 
         // Pointers no accessibility element backs up: the triangle is already on its

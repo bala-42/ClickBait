@@ -369,6 +369,9 @@ final class OverlayController {
         var index = 0
         /// Unit vector from the target toward where the triangle sits.
         var approach = CGVector(dx: -0.7071, dy: 0.7071)
+        /// How far the target's edge is along `approach` (a tour part's outline; else 0):
+        /// the tip stops there instead of on top of the thing.
+        var edge: CGFloat = 0
         /// The triangle's centre, sprung toward its spot each frame.
         var center: CGPoint
         var velocity = CGVector.zero
@@ -574,12 +577,15 @@ final class OverlayController {
         var direction = CGVector(dx: guide.center.x - point.x, dy: guide.center.y - point.y)
         let length = hypot(direction.dx, direction.dy)
         direction = length > 1 ? CGVector(dx: direction.dx / length, dy: direction.dy / length) : CGVector(dx: -0.7071, dy: 0.7071)
-        let spot = CGPoint(x: point.x + direction.dx * 40, y: point.y + direction.dy * 40)
+        let outline = guide.targets[guide.index].outline
+        let reach = 40 + (outline?.radius(toward: direction.dx, direction.dy) ?? 0)
+        let spot = CGPoint(x: point.x + direction.dx * reach, y: point.y + direction.dy * reach)
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }),
            !screen.visibleFrame.insetBy(dx: 10, dy: 10).contains(spot) {
             direction = CGVector(dx: -direction.dx, dy: -direction.dy)
         }
         guide.approach = direction
+        guide.edge = outline?.radius(toward: direction.dx, direction.dy) ?? 0
         guide.targetStarted = CACurrentMediaTime()
         guide.settledAt = nil
         self.guide = guide
@@ -621,7 +627,8 @@ final class OverlayController {
                 }
             }
         }
-        let spot = CGPoint(x: point.x + guide.approach.dx * Self.tipDistance, y: point.y + guide.approach.dy * Self.tipDistance)
+        let reach = Self.tipDistance + guide.edge
+        let spot = CGPoint(x: point.x + guide.approach.dx * reach, y: point.y + guide.approach.dy * reach)
 
         var next = guide.center
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
