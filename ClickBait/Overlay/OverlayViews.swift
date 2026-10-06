@@ -72,7 +72,7 @@ struct CompanionTriangle: View {
                 // rotating no longer redraws the blurred glow every frame (costly while
                 // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
                 .padding(Self.glowRoom)
-                .drawingGroup()
+                .modifier(CachedDrawing(enabled: !beating))
                 // The spin turns about the triangle's centroid (its dead centre): about the
                 // box's centre it wobbled, and thirds didn't land where they began.
                 .rotationEffect(.degrees(spin), anchor: Self.centroid)
@@ -98,6 +98,24 @@ struct CompanionTriangle: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) { settle = now > 60 ? 120 : 0 }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Draws the triangle and glow into a texture once, so turning doesn't redraw the blur.
+    /// Not while pulsing: the glow changes every frame then, and a drawing group redrawn every
+    /// frame waits for the window server to show the last one first (~90 ms stalls twice a
+    /// second while pointing, 2026-10-06).
+    private struct CachedDrawing: ViewModifier {
+        let enabled: Bool
+
+        // Both draw the same pixels (checked with ImageRenderer across the beat); the swap is
+        // instant, so the pulse's start animation can't cross-fade two triangles.
+        func body(content: Content) -> some View {
+            if enabled {
+                content.drawingGroup().transition(.identity)
+            } else {
+                content.transition(.identity)
+            }
+        }
     }
 
     /// Thirds of a turn: each tick springs ~16° past and settles back (an underdamped
