@@ -23,9 +23,16 @@ final class StagePanel {
         self.content = content
     }
 
+    /// Where the content sits in the stage. The view itself stays at the stage's origin and is
+    /// shifted by the stage layer's sublayer transform: `setFrameOrigin` every frame cost
+    /// ~10× the move itself in AppKit bookkeeping (frame-change notifications, focus and
+    /// tracking-area updates, constraints; 262–294 ms of main thread per 19 s of motion,
+    /// 2026-10-06). The layer lands on the same (fractional) position either way.
+    private var offset = CGPoint.zero
+
     /// The content's frame in global AppKit coordinates.
     var contentFrame: CGRect {
-        content.frame.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+        CGRect(origin: CGPoint(x: panel.frame.minX + offset.x, y: panel.frame.minY + offset.y), size: content.frame.size)
     }
 
     /// Puts the content's bottom-left at `origin` (global AppKit), on the screen holding
@@ -36,6 +43,9 @@ final class StagePanel {
             panel.setFrame(screen.frame, display: false)
         }
         let local = CGPoint(x: origin.x - panel.frame.minX, y: origin.y - panel.frame.minY)
-        if content.frame.origin != local { content.setFrameOrigin(local) }
+        guard local != offset, let layer = content.superview?.layer else { return }
+        offset = local
+        // AppKit's own layers don't animate this (their action is NSNull), so it moves at once.
+        layer.sublayerTransform = CATransform3DMakeTranslation(local.x, local.y, 0)
     }
 }
