@@ -282,7 +282,7 @@ final class TutorialController {
         if visible == nil, let loose = StepMatcher.find(step.target, in: elements, minimum: 0.85) {
             if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
                 AXInspector.menuPath(to: step.target, frontmostPID: pid)
-            }).value {
+            }).value, !alreadyChosen(path) {
                 menuPaths[index] = path
             }
             if menuPaths[index] == nil { visible = loose }
@@ -309,7 +309,7 @@ final class TutorialController {
         // Inside a closed menu? Point at the menu to open first.
         if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
             AXInspector.menuPath(to: step.target, frontmostPID: pid)
-        }).value {
+        }).value, !alreadyChosen(path) {
             menuPaths[index] = path
             Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is inside a menu (\(path.count - 1, privacy: .public) to open): \(path.joined(separator: " ▸ "), privacy: .public)")
             // Opening that menu becomes a step of the plan, so the pill and the chat's
@@ -379,6 +379,14 @@ final class TutorialController {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let center = Point(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
         overlay.tutorialPoint(at: ScreenPointer(label: label, appKit: Point(x: center.x, y: primaryHeight - center.y), quartz: center))
+    }
+
+    /// A menu item an earlier step already chose isn't where this step is (a dialog's
+    /// "Clear History" button isn't Safari ▸ Clear History… again): logged, and not used.
+    private func alreadyChosen(_ path: [String]) -> Bool {
+        guard plan.choseEarlier(path, before: index) else { return false }
+        Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public)'s target is also \(path.joined(separator: " ▸ "), privacy: .public), chosen earlier; not going back there")
+        return true
     }
 
     /// Puts "Open the View menu" (and any submenu) into the plan before the current step,

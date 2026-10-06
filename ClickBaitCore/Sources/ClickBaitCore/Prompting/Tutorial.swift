@@ -190,6 +190,18 @@ public struct TutorialPlan: Equatable, Sendable {
         return name.trimmingCharacters(in: .whitespaces)
     }
 
+    /// Whether the menu item a step's target was found at ("Safari ▸ Clear History…") is one an
+    /// earlier step of this plan already chose. A later step is never back there: Safari's
+    /// dialog button "Clear History" matched the item just used, and the walkthrough sent the
+    /// user into the menu to clear history a second time.
+    public func choseEarlier(_ menuPath: [String], before index: Int) -> Bool {
+        guard let item = menuPath.last else { return false }
+        let name = Self.withoutEllipsis(item)
+        return steps.prefix(max(0, min(index, steps.count))).contains {
+            Self.withoutEllipsis($0.target).caseInsensitiveCompare(name) == .orderedSame
+        }
+    }
+
     /// The way into System Settings that works from any app: the Apple menu, then
     /// "System Settings…". Shown (pointed at), not done for the user; no model needed.
     /// `route` (from `SystemSettingsMap`) continues inside System Settings: the page in

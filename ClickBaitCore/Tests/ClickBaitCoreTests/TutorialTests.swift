@@ -74,6 +74,20 @@ struct TutorialMenuTests {
         #expect(inline.expandingMenus(using: safari).steps.map(\.target) == ["History", "Clear History…"])
     }
 
+    @Test func aDialogButtonIsNotTheMenuItemAlreadyChosen() {
+        // Safari: History ▸ Clear History… opens a dialog whose button is "Clear History".
+        let plan = TutorialPlan(intro: "", steps: [TutorialStep(target: "Safari", instruction: "Open the Safari menu"),
+                                                   TutorialStep(target: "Clear History…", instruction: "Choose Clear History…"),
+                                                   TutorialStep(target: "Clear History", instruction: "Click Clear History")])
+        #expect(plan.choseEarlier(["Safari", "Clear History…"], before: 2))
+        #expect(plan.choseEarlier(["Safari", "clear history..."], before: 2))
+        // The step that chooses it is still found in the menu, and other items are unaffected.
+        #expect(!plan.choseEarlier(["Safari", "Clear History…"], before: 1))
+        #expect(!plan.choseEarlier(["History", "Show All History"], before: 2))
+        #expect(!plan.choseEarlier([], before: 2))
+        #expect(plan.choseEarlier(["Safari", "Clear History…"], before: 99))
+    }
+
     @Test func leavesCompletePlansAlone() {
         let full = TutorialPlan(intro: "", steps: [TutorialStep(target: "History", instruction: "Open History"),
                                                    TutorialStep(target: "Clear History…", instruction: "Choose Clear History…")])
