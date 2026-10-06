@@ -67,7 +67,7 @@ struct CompanionTriangle: View {
             EquilateralTriangle()
                 .fill(tone.color.opacity(0.9))
                 .frame(width: Self.size, height: Self.size)
-                .shadow(color: tone.color.opacity(0.45 + 0.45 * beat), radius: 3 + 4 * beat)
+                .shadow(color: tone.color.opacity(Glow.opacity + 0.4 * beat), radius: Glow.radius + 4 * beat)
                 // Triangle and glow are drawn once into a texture that is then turned:
                 // rotating no longer redraws the blurred glow every frame (costly while
                 // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
@@ -159,7 +159,7 @@ private struct TinyPill: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .modifier(ToneFill(fill: isProblem ? Color(white: 0.13).opacity(0.94) : tone.color.opacity(0.9),
-                           glow: isProblem ? .black.opacity(0.6) : tone.color.opacity(0.45),
+                           glow: isProblem ? .black.opacity(0.6) : tone.color.opacity(Glow.opacity),
                            shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
     }
@@ -182,6 +182,13 @@ extension View {
     }
 }
 
+/// The soft glow around the companion, its chat logo and the pills, in the state's colour
+/// (raised from 0.45 / 3 pt at the user's request, 2026-10-06: "glow a little").
+enum Glow {
+    static let opacity = 0.6
+    static let radius: CGFloat = 4
+}
+
 /// Pills wear the triangle's colour (or black, for problems), so label and pointer
 /// read as one. No outline: just the fill and a soft glow.
 struct ToneFill<S: Shape>: ViewModifier {
@@ -193,7 +200,7 @@ struct ToneFill<S: Shape>: ViewModifier {
         content
             .foregroundStyle(.white)
             .background(shape.fill(fill))
-            .shadow(color: glow, radius: 3)
+            .shadow(color: glow, radius: Glow.radius)
             .animation(.easeInOut(duration: 0.25), value: fill)
     }
 }
@@ -212,7 +219,7 @@ struct GuideLabelView: View {
                     .wrapped(label, maxWidth: 240, alignment: model.isTouring ? .center : .leading)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(0.45),
+                    .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(Glow.opacity),
                                        shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
                     .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
                     .contentTransition(.opacity)  // names crossfade between stops
@@ -249,7 +256,7 @@ struct ListeningWaveform: View {
                         .frame(width: 3.5, height: height)
                 }
             }
-            .shadow(color: tone.color.opacity(0.5), radius: 3)
+            .shadow(color: tone.color.opacity(Glow.opacity + 0.05), radius: Glow.radius)
         }
         .frame(width: CompanionTriangle.size * 1.7, height: CompanionTriangle.size * 1.7)
         .accessibilityLabel("Listening")

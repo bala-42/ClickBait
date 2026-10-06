@@ -167,7 +167,7 @@ private struct ConfirmCard: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .modifier(ToneFill(fill: tone.color.opacity(0.92), glow: tone.color.opacity(0.45),
+        .modifier(ToneFill(fill: tone.color.opacity(0.92), glow: tone.color.opacity(Glow.opacity),
                            shape: RoundedRectangle(cornerRadius: 13, style: .continuous)))
         .padding(8)
         .fixedSize()
@@ -240,7 +240,7 @@ private struct ChoiceCard: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .modifier(ToneFill(fill: tone.color.opacity(0.92), glow: tone.color.opacity(0.45),
+        .modifier(ToneFill(fill: tone.color.opacity(0.92), glow: tone.color.opacity(Glow.opacity),
                            shape: RoundedRectangle(cornerRadius: 13, style: .continuous)))
         .padding(8)
         .fixedSize()
