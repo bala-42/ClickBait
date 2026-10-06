@@ -34,13 +34,35 @@ final class AudioRecorder {
 
     var isRecording: Bool { engine != nil }
 
+    /// The engine being prepared in the background, and whether the hardware changed meanwhile.
+    private var pendingEngine: ObjectIdentifier?
+    private var pendingIsStale = false
+
+    /// Builds the next engine's graph off the main thread (21–33 ms of main-thread time at
+    /// every release of the talk keys, 2026-10-06). A press before it's ready makes its own
+    /// engine, as when nothing was prepared.
     func prepare() {
-        guard preparedEngine == nil else { return }
+        guard preparedEngine == nil, pendingEngine == nil else { return }
         let engine = AVAudioEngine()
-        _ = engine.inputNode
-        engine.prepare()
         observeConfigurationChanges(of: engine)
-        preparedEngine = engine
+        let id = ObjectIdentifier(engine)
+        pendingEngine = id
+        pendingIsStale = false
+        let box = EngineBox(engine: engine)
+        Task {
+            await Task.detached(priority: .userInitiated) { Self.buildGraph(of: box) }.value
+            pendingEngine = nil
+            guard !pendingIsStale, preparedEngine == nil else {
+                stopObserving(box.engine)
+                return
+            }
+            preparedEngine = box.engine
+        }
+    }
+
+    private nonisolated static func buildGraph(of box: EngineBox) {
+        _ = box.engine.inputNode
+        box.engine.prepare()
     }
 
     func start() throws {
@@ -118,6 +140,10 @@ final class AudioRecorder {
     }
 
     private func configurationChanged(engineID: ObjectIdentifier) {
+        if engineID == pendingEngine {
+            pendingIsStale = true  // dropped when its preparation finishes
+            return
+        }
         if let prepared = preparedEngine, ObjectIdentifier(prepared) == engineID {
             stopObserving(prepared)
             preparedEngine = nil  // rebuilt on demand with the new hardware
@@ -138,6 +164,12 @@ final class AudioRecorder {
     private nonisolated static func tapBlock(for sink: SampleSink) -> AVAudioNodeTapBlock {
         { buffer, _ in sink.append(buffer) }
     }
+}
+
+/// Hands an engine to the background preparation; only one side touches it at a time
+/// (the main actor stores it only after the preparation has finished).
+private struct EngineBox: @unchecked Sendable {
+    let engine: AVAudioEngine
 }
 
 /// Receives buffers on the realtime audio thread, converts them, and accumulates
