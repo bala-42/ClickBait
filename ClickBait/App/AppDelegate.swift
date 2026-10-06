@@ -51,6 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.statusBar = statusBar
         overlay.start()
+        #if DEBUG
+        overlay.runBenchmarkIfRequested()
+        #endif
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches
         // both. Esc typed in ClickBait's own chat comes through overlay.onEscape below.
