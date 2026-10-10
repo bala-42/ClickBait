@@ -63,6 +63,14 @@ public struct AskRequest: Sendable {
     /// (`Prompt.subjectLine`; Ollama's structured output puts it first), looked up while
     /// the rest streams.
     public var askSubject = false
+    /// Internet Mode's first step (`Prompt.lookupSystem`, text only): write the search words.
+    public var lookupQuery = false
+    /// For that step: words read on this Mac near the pointer (never sent anywhere but Ollama),
+    /// and the chat's earlier question for a follow-up like "look it up".
+    public var screenWords: String?
+    public var earlierQuestion: String?
+    /// What an Internet Mode lookup found, for the answer ("From the web").
+    public var web: [WebPassage] = []
     /// Plan a tutorial for `question` (`Prompt.tutorialSystem`).
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.

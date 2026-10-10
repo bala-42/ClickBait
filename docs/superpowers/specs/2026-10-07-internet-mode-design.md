@@ -1,8 +1,23 @@
 # Internet Mode — design
 
-Date: 2026-10-07 · Status: direction approved 2026-10-10 ("wider free lookups"); not built
+Date: 2026-10-07 · Status: approved 2026-10-10 with the decisions below; built 2026-10-10
 
 **Decided 2026-10-10:** no paid APIs or keys anywhere in ClickBait — the user (and most users) don't have an Anthropic key. The Anthropic provider is removed (roadmap D), so "Internet Mode" means only this feature: free, keyless lookups answered by the local model. The Settings label "Internet Mode — Anthropic API" goes away with the provider. Remaining review items in this spec (sources, the 🔒/🌐 menu title, SearXNG setup) still need the user's sign-off before building.
+
+## Decisions (signed off 2026-10-10) — these override anything below that disagrees
+
+1. **SearXNG is optional.** It runs on this Mac as a second install if the user wants it. Without it, Internet Mode works with Wikipedia, Stack Overflow (Stack Exchange API), MDN and Apple developer docs. Settings → Internet shows it as "Ready" or "Not set up (optional)" (not "Needed"), with plain setup steps.
+2. **Menu-bar title** "🔒 ClickBait" / "🌐 ClickBait" as text, changed only when the switch is toggled, never per state (per-state status-item changes stalled the companion; see CLAUDE.md).
+3. **When it goes online:** only while 🌐 is on AND the user's words ask for something the local model can't know — "look it up" and the like, recent facts ("latest", "current", "this week", a year, "release"), an error ("this error", a traceback), or an API/documentation question. Fixed rules on the user's words (`WebLookup.reason`), never the model's initiative. The "Internet's off…" note is shown only for the explicit phrases.
+4. **Screen words in a search (option a).** For a question about the screen, the local model writes a short search phrase from what's on screen; only that phrase leaves the Mac: ≤12 words / 100 characters, with email addresses, web addresses, file paths, long numbers and key-like strings removed first (`QueryScrubber`). Never raw screen text or passages; nothing from blocked apps. Every query shows in Recent searches.
+5. **People's names (option a).** Names the user said or typed may be searched; names found on screen (detected on-device with `NLTagger`) are removed from any phrase, and snips with a face send nothing.
+6. **Snips (option a).** Circling while 🌐 is on counts as the ask: the existing snip lookup (subject → Wikipedia, for the parts tour) runs under the one switch; the separate "Look Up Snips on Wikipedia" item is gone. It's the one recorded exception to "the user's words ask".
+7. **The spec line "No artificial limits on what a lookup sends" is withdrawn** (4 replaces it).
+8. **Always a model-written query.** The search words come from a short text-only step on the local model (`Prompt.lookupSystem`, ~1 s); the request minus its trigger words is only the fallback. Measured: Wikipedia searched for the raw words "latest Swift version" returned Taylor Swift albums.
+9. **Timeouts:** 3 s per request; the whole lookup gets ~4 s and uses whatever has arrived. A slow source never holds up the answer; a failed lookup gives a local answer plus "Couldn't reach the web, so this is from what I know."
+10. **Budget:** ~800 tokens (3,200 characters) of web text to start, measured before raising it.
+11. **Where it shows:** a web answer always opens the chat (never a pill), with "Sources:" links under it. No inline [1] marks (they'd be read aloud).
+12. **Wikipedia** is used for general questions, and for anything when SearXNG isn't running and no technical source fits — not for code questions (they went to unrelated articles).
 
 ## Why
 

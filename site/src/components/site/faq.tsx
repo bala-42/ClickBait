@@ -27,11 +27,11 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Does it really work offline?",
-    a: "Yes, once the two models are downloaded. Questions, explanations, walkthroughs and Mac actions all run on your Mac. Opening a website still needs the internet, obviously. There’s one optional extra, off every time ClickBait starts: switch on “Look Up Snips on Wikipedia” in the menu and, when you circle a picture, the name of what it shows (just that, never your screen or anyone’s name) is looked up on Wikipedia to label its parts better.",
+    a: "Yes, once the two models are downloaded. Questions, explanations, walkthroughs and Mac actions all run on your Mac. Opening a website still needs the internet, obviously. There’s one optional extra, off every time ClickBait starts: Internet Mode (🔒 → 🌐 in the menu bar). With it on, when you ask it to look something up, or ask about something recent, an error or an API, ClickBait searches Wikipedia, Stack Overflow, MDN and Apple’s docs for free. Only short search words leave your Mac, never your screen, your voice or a name on it, and the answer still comes from your Mac.",
   },
   {
     q: "Do I need an API key or an account?",
-    a: "No. There’s nothing to sign up for or pay for, ever: the AI runs on your Mac through Ollama, and the optional Wikipedia lookups are free and need no key.",
+    a: "No. There’s nothing to sign up for or pay for, ever: the AI runs on your Mac through Ollama, and the optional Internet Mode lookups are free and need no key.",
   },
   {
     q: "How fast is it?",

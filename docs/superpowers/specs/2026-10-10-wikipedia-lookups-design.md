@@ -1,6 +1,6 @@
 # Wikipedia lookups (a lighter "Internet Mode") — exploration
 
-Date: 2026-10-10 · Status: snip parts tours built; spoken questions not
+Date: 2026-10-10 · Status: snip parts tours built, now part of Internet Mode (🌐); questions are covered by `2026-10-07-internet-mode-design.md`
 
 ## Why
 
@@ -37,7 +37,7 @@ Findings:
 
 Discussed with the user, in order: looking things up at hotkey release (too early: there's only audio), during the circling (too early: no subject yet, and only screen text or titles could be sent), then **after the snip is done, as soon as the model names its subject**. That's what was built.
 
-1. **Switch:** menu "Look Up Snips on Wikipedia", off at every launch, never saved (`AppSettings.wikipediaLookups`).
+1. **Switch:** Internet Mode (🌐), off at every launch, never saved (`AppSettings.internet`). (It was its own menu item, "Look Up Snips on Wikipedia", until Internet Mode absorbed it the same day.)
 2. **User lets go of the snip.** The close-up goes to the model as before; text reading and object finding start on the Mac.
 3. **Subject first.** With the switch on, a first snip explanation is asked for `"subject"` (an encyclopedia title, 1–4 words; "none" for people, text, code or an app's screen), and Ollama's structured output makes it the first key. Prompt alone: qwen3.5:9b put it after "speech" or left it out (2 runs); enforced: first in 4 of 4. The reply streams, so the subject arrives with the first words (~5 s after release on the solar-system test; the explanation took ~11.6 s).
 4. **Lookup on that word** (`StreamingSubject` → `AskCoordinator.startLookup` → `WikipediaClient`): search (1 hit) → its REST summary, intro trimmed to 1,200 characters, 3 s timeout, `User-Agent` naming ClickBait. Measured live: 0.7–0.8 s for both requests, done long before the explanation ends.

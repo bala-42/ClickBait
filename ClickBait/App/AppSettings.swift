@@ -32,9 +32,10 @@ final class AppSettings {
         didSet { defaults.set(keepDebugCaptures, forKey: Key.keepDebugCaptures) }
     }
 
-    /// Look up what a snip shows on Wikipedia, to name its parts (only the subject words the
-    /// model names are sent). Off at every launch and never saved: switched on from the menu.
-    var wikipediaLookups = false
+    /// Internet Mode (🔒/🌐): off at every launch, never saved, switched from the menu bar.
+    @ObservationIgnored let internet = InternetMode()
+    /// Its free, keyless lookups (one ephemeral session for the app's life).
+    @ObservationIgnored let web = WebFetcher()
 
     var speechModel: SpeechModel {
         didSet { defaults.set(speechModel.rawValue, forKey: Key.speechModel) }

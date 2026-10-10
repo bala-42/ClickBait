@@ -15,7 +15,8 @@ final class SettingsWindowController: NSWindowController {
         )
         window.title = "ClickBait Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, speech: speech, speaker: speaker))
+        window.contentView = NSHostingView(rootView: SettingsView(settings: settings, speech: speech, speaker: speaker,
+                                                                       searxng: SearXNGStatus(fetcher: settings.web)))
         window.center()
         super.init(window: window)
     }
@@ -33,6 +34,7 @@ struct SettingsView: View {
     @Bindable var settings: AppSettings
     let speech: SpeechModelManager
     let speaker: Speaker
+    let searxng: SearXNGStatus
 
     var body: some View {
         Form {
@@ -63,6 +65,10 @@ struct SettingsView: View {
 
             Section("AI model") {
                 ProviderSettingsSection(settings: settings)
+            }
+
+            Section("Internet") {
+                InternetSettingsSection(searxng: searxng)
             }
 
             Section {

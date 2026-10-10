@@ -1339,6 +1339,107 @@ final class AskCoordinator {
         return PartsTour.stops(FaceSnapping.snap(Array(unique), to: faces), marked: view.marked)
     }
 
+    struct WebLookupResult: Sendable {
+        var passages: [WebPassage] = []
+        var needsScreen = false
+        /// "Sources: [Wikipedia — Swift](…) · …", for under the answer.
+        var credit: String?
+    }
+
+    /// Internet Mode's fixed steps: the search words (local model, text only), then the
+    /// sources at once (~4 s at most), then the passages closest to the question. Only the
+    /// cleaned search words and page addresses leave the Mac (spec decisions 4–5).
+    private func lookUp(question: String, reason: WebLookup.Reason, selectedText: String?, capture: ScreenCapture,
+                        history: [ChatTurn], provider: any LLMProvider) async -> WebLookupResult {
+        let start = ContinuousClock.now
+        var result = WebLookupResult(needsScreen: WebLookup.refersToScreen(question))
+        // What's on screen near the pointer, read on this Mac, for the query step only.
+        var screenWords = ""
+        if result.needsScreen {
+            let boxes = await TextReader.read(capture.image)
+            let mouse = NSEvent.mouseLocation
+            let pointer = Point(x: (mouse.x - capture.displayFrame.minX) * capture.backingScale,
+                                y: (capture.displayFrame.maxY - mouse.y) * capture.backingScale)
+            func distance(_ point: Point) -> Double { hypot(point.x - pointer.x, point.y - pointer.y) }
+            for box in boxes.sorted(by: { distance($0.center) < distance($1.center) }) {
+                guard screenWords.count + box.text.count < 1_500 else { break }
+                screenWords += (screenWords.isEmpty ? "" : " | ") + box.text
+            }
+        }
+        let onScreen = [screenWords, context.windowTitle ?? "", selectedText ?? ""].joined(separator: "\n")
+        let screenNames = OnDeviceLanguage.personalNames(in: onScreen)
+        let earlier = history.last(where: { $0.role == .user }).map { Self.spokenQuestion(in: $0.content) }
+
+        var ask = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                             context: context, selectedText: selectedText)
+        ask.lookupQuery = true
+        ask.screenWords = screenWords.isEmpty ? nil : screenWords
+        ask.earlierQuestion = earlier
+        let reply = await Self.reply(from: provider, to: ask, within: .seconds(3))
+        guard !Task.isCancelled else { return result }
+        let fallback = WebLookup.directQuery(question).isEmpty ? WebLookup.directQuery(earlier ?? "") : WebLookup.directQuery(question)
+        let written = reply.flatMap(WebLookup.query(inReply:))
+        let query = QueryScrubber.clean(written ?? fallback, screenNames: screenNames, userWords: question)
+        let queryTook = ContinuousClock.now - start
+
+        // A page the user means ("summarise this page") or named, if it's https.
+        var pages = Array(URLGuard.addresses(in: question))
+        if question.range(of: #"\bthis\s+(?:page|article|site|website|post|doc|documentation)\b"#,
+                          options: [.regularExpression, .caseInsensitive]) != nil {
+            let pid = frontmostPID
+            let found = await Task.detached(priority: .userInitiated) { () -> String? in
+                var trace = ""
+                return AXInspector.pageAddress(frontmostPID: pid, trace: &trace)?.address
+            }.value
+            if let address = found,
+               let url = URL(string: address), URLGuard.allows(url, seenIn: [url]) {
+                pages.append(url)
+            }
+        }
+        guard !query.isEmpty || !pages.isEmpty else {
+            Log.ask.notice("Lookup: no search words left after cleaning; answering locally")
+            return result
+        }
+        if !query.isEmpty { settings.internet.record(query) }
+        pages.prefix(2).forEach { settings.internet.record($0.absoluteString) }
+
+        let searxng = await settings.web.searxngReady()
+        let sources = query.isEmpty ? [] : WebSourcePicker.sources(question: question, query: query, reason: reason,
+                                                                  searxngAvailable: searxng)
+        let outcome = await settings.web.lookUp(query: query, sources: sources, pages: Array(pages.prefix(2)))
+        guard !Task.isCancelled else { return result }
+        let documents = outcome.documents
+        result.passages = await Task.detached(priority: .userInitiated) {
+            OnDeviceLanguage.pickPassages(documents, question: question + " " + query)
+        }.value
+        var seen = Set<URL>()
+        let cited = result.passages.filter { seen.insert($0.url).inserted }.prefix(3)
+        if !cited.isEmpty {
+            result.credit = "Sources: " + cited.map { "[\($0.source.displayName) — \(Self.markdownSafe($0.title))](\($0.url.absoluteString))" }
+                .joined(separator: " · ")
+        }
+        Log.ask.notice("""
+            Lookup (\(reason.rawValue, privacy: .public), \(result.needsScreen ? "about the screen" : "text only", privacy: .public)): \
+            query \(written == nil ? "fallback" : "written", privacy: .public) in \(String(describing: queryTook), privacy: .public), \
+            "\(query, privacy: .private)"; sources \(sources.map(\.rawValue).joined(separator: ","), privacy: .public) \
+            (failed: \(outcome.failed.map(\.rawValue).joined(separator: ","), privacy: .public)); \
+            \(documents.count, privacy: .public) docs → \(result.passages.count, privacy: .public) passages, \
+            \(result.passages.reduce(0) { $0 + $1.text.count }, privacy: .public) chars; \
+            \(String(describing: ContinuousClock.now - start), privacy: .public) in all
+            """)
+        return result
+    }
+
+    /// The words a stored user turn asked ("The user said: …" in the prompt text it keeps).
+    private static func spokenQuestion(in content: String) -> String {
+        guard let range = content.range(of: "The user said: ", options: .backwards) else { return String(content.suffix(200)) }
+        return String(content[range.upperBound...].prefix(300))
+    }
+
+    private static func markdownSafe(_ title: String) -> String {
+        title.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")")
+    }
+
     /// Looks up the subject a snip's reply opened with (Wikipedia lookups on). Only those
     /// words are sent, and not at all when the close-up shows a face (a person's name is
     /// never sent) or is mostly text (no tour follows). Stored in the snip's memory.
@@ -1354,7 +1455,8 @@ final class AskCoordinator {
                 Log.ask.notice("Lookup: skipped, the snip is mostly text")
                 return nil
             }
-            guard !Task.isCancelled, self?.settings.wikipediaLookups == true else { return nil }
+            guard !Task.isCancelled, let self, settings.internet.isOn else { return nil }
+            settings.internet.record("Wikipedia: \(subject)")
             let start = ContinuousClock.now
             let reference = await WikipediaClient().reference(for: subject)
             Log.ask.notice("""
@@ -1829,6 +1931,27 @@ final class AskCoordinator {
             onAnswer?(response, instant)
             return
         }
+        // Internet Mode (🌐): online only when the user's words ask (spec decision 3), never
+        // for snips (their subject lookup is separate) or pointing. Starts now, alongside the
+        // screenshot's encoding.
+        let lookupReason = snip == nil && !question.isEmpty && !ImpliedPointer.isLocating(question)
+            ? WebLookup.reason(for: question, selectedText: selectedText) : nil
+        var webNote: String?
+        var webCredit: String?
+        var lookup: Task<WebLookupResult, Never>?
+        if let lookupReason {
+            if settings.internet.isOn {
+                let capturedImage = capture
+                lookup = Task {
+                    await lookUp(question: question, reason: lookupReason, selectedText: selectedText,
+                                 capture: capturedImage, history: history, provider: provider)
+                }
+            } else if lookupReason == .asked {
+                webNote = "Internet's off. Switch to 🌐 in the menu bar to look things up."
+                Log.ask.notice("Lookup asked for with Internet Mode off: answering locally")
+            }
+        }
+        defer { lookup?.cancel() }
         let reply: String
         let screenshot: EncodedScreenshot
         var request: AskRequest
@@ -1868,7 +1991,19 @@ final class AskCoordinator {
                 elements: listed
             )
             request.contextJPEG = snipFollowUp?.context ?? snipContext
-            request.askSubject = snip != nil && history.isEmpty && settings.wikipediaLookups
+            request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn
+            if let lookup {
+                // What the lookup found within its ~4 s; a question not about the screen is
+                // then answered text-only (faster).
+                let result = await withTaskCancellationHandler { await lookup.value } onCancel: { lookup.cancel() }
+                request.web = result.passages
+                if result.passages.isEmpty {
+                    webNote = "Couldn't reach the web, so this is from what I know."
+                } else {
+                    webCredit = result.credit
+                    if !result.needsScreen { request.screenshotJPEG = Data(); request.elements = [] }
+                }
+            }
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))
@@ -1967,7 +2102,7 @@ final class AskCoordinator {
             if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
             run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                     code: parsed.response.code, language: parsed.response.language)
-            let finalText = parsed.response.displayText
+            let finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
             let lastUser = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.user })
             let lastAssistant = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.assistant })
             if let lastUser, let lastAssistant, lastAssistant > lastUser {
@@ -2073,11 +2208,15 @@ final class AskCoordinator {
                 """)
         }
         // A reply a pill can say ("Yep, it's on!") opens no chat: the companion says it.
-        if !chatShown, pointers.isEmpty, !PillText.fits(parsed.response.speech, code: parsed.response.code) {
+        // Web answers always go to the chat, where their sources can show (spec decision 11).
+        if !chatShown, pointers.isEmpty,
+           !PillText.fits(parsed.response.speech, code: parsed.response.code) || webCredit != nil || webNote != nil {
             chatShown = true
             onChatOpen?(display)
         }
         onAnswer?(parsed.response, pointers)
+        if let webNote { onChatSource?(webNote) }
+        if let webCredit { onChatSource?(webCredit) }
         // A snip stays red and spinning until its parts are pointed at; with nothing more to
         // look for, it ends here.
         if snip != nil, named.isEmpty, !needsPartsLook { onSnipAnswering?(false) }

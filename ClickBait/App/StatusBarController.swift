@@ -6,14 +6,16 @@ import AppKit
 final class StatusBarController: NSObject, NSMenuDelegate {
     private static let hint = "Hold ⌃⌥ to ask · tap ⌥⌘ to explain highlighted text · double-tap ⌥⌘ to type"
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
     private let revealCaptureItem = NSMenuItem(title: "Reveal Last Capture", action: nil, keyEquivalent: "")
     private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let backgroundCapsulesItem = NSMenuItem(title: "Background ClickBaits", action: nil, keyEquivalent: "")
     private let backgroundCapsulesMenu = NSMenu()
-    private let wikipediaItem = NSMenuItem(title: "Look Up Snips on Wikipedia", action: nil, keyEquivalent: "")
+    private let internetItem = NSMenuItem(title: "Internet: off 🔒", action: nil, keyEquivalent: "")
+    private let recentItem = NSMenuItem(title: "Recent Searches", action: nil, keyEquivalent: "")
+    private let recentMenu = NSMenu()
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
@@ -32,11 +34,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         backgroundCapsulesMenu.delegate = self
         backgroundCapsulesItem.submenu = backgroundCapsulesMenu
+        recentItem.submenu = recentMenu
         statusItem.menu = makeMenu()
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "ClickBait")
-            button.image?.isTemplate = true
-        }
+        settings.internet.onChange = { [weak self] in self?.showInternetMode() }
+        showInternetMode()
         update(for: .idle)
     }
 
@@ -70,7 +71,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
-        wikipediaItem.state = settings.wikipediaLookups ? .on : .off
         if menu === backgroundCapsulesMenu { rebuildBackgroundCapsulesMenu() }
     }
 
@@ -82,6 +82,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        internetItem.action = #selector(toggleInternet)
+        internetItem.target = self
+        internetItem.toolTip = "Internet Mode: free lookups when you ask (only search words leave your Mac). Off every time ClickBait starts."
+        menu.addItem(internetItem)
+        menu.addItem(.separator())
         menu.delegate = self
 
         statusLine.isEnabled = false
@@ -95,10 +100,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         backgroundCapsulesItem.isEnabled = false
         menu.addItem(backgroundCapsulesItem)
-        wikipediaItem.action = #selector(toggleWikipedia)
-        wikipediaItem.target = self
-        wikipediaItem.toolTip = "Sends only the name of what you circled (never the screen) to Wikipedia, to label its parts. Off when ClickBait starts."
-        menu.addItem(wikipediaItem)
+        menu.addItem(recentItem)
         menu.addItem(.separator())
 
         #if DEBUG
@@ -124,9 +126,32 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() { onOpenSettings() }
     @objc private func openPermissions() { onOpenPermissions() }
-    @objc private func toggleWikipedia() {
-        settings.wikipediaLookups.toggle()
-        Log.app.notice("Wikipedia lookups \(self.settings.wikipediaLookups ? "on" : "off", privacy: .public)")
+    @objc private func toggleInternet() { settings.internet.toggle() }
+
+    /// The title is text and changes only here, when the switch is toggled — never per
+    /// state (per-state status-item changes stalled the companion; spec decision 2).
+    private func showInternetMode() {
+        let on = settings.internet.isOn
+        let title = on ? "🌐 ClickBait" : "🔒 ClickBait"
+        if statusItem.button?.title != title {
+            statusItem.button?.title = title
+            statusItem.button?.setAccessibilityLabel(on ? "ClickBait, Internet Mode on" : "ClickBait, Internet Mode off")
+        }
+        internetItem.title = on ? "Internet: on 🌐" : "Internet: off 🔒"
+        internetItem.state = on ? .on : .off
+        recentMenu.removeAllItems()
+        let recent = settings.internet.recent
+        recentItem.isHidden = !on && recent.isEmpty
+        if recent.isEmpty {
+            let empty = NSMenuItem(title: "Nothing looked up yet", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            recentMenu.addItem(empty)
+        }
+        for lookup in recent {
+            let item = NSMenuItem(title: lookup.count > 60 ? String(lookup.prefix(59)) + "…" : lookup, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            recentMenu.addItem(item)
+        }
     }
     @objc private func showCapsule(_ sender: NSMenuItem) {
         guard let idText = sender.representedObject as? String, let id = UUID(uuidString: idText) else { return }

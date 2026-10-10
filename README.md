@@ -8,7 +8,8 @@ your screen, answers, **points at exactly what to click**, or walks you through 
 
 - **Private.** Answers come from a local model through [Ollama](https://ollama.com); speech is
   recognised on your Mac (WhisperKit). No account, no server, no telemetry, no API keys. Screenshots
-  and audio never leave your Mac and are never saved.
+  and audio never leave your Mac and are never saved. The optional Internet Mode sends only short
+  search words, and only when you ask.
 - **Free, for good.** Nothing to sign up for or pay for. Once the models are downloaded it works offline.
 - **Honest about speed.** Pointing at a button it can name is near-instant; anything where the model
   has to look and think takes several seconds on your own Mac.
@@ -96,9 +97,14 @@ complete and copies it into place without going online.
   screenshots; notes and reminders; Shortcuts you tick in **Settings → Commands**. In Finder with files
   selected (or boxed): compress, merge, convert, make smaller, rename, move, put in a new folder, move
   to the Bin. New files never overwrite anything; risky actions ask first.
-- **Wikipedia lookups (optional).** **Look Up Snips on Wikipedia** in the menu bar (off every time
-  ClickBait starts) lets a parts tour check the name of what you circled on Wikipedia — only that name
-  is sent, never the screen, its text or a person's name.
+- **Internet Mode (optional, 🔒 → 🌐).** Off every time ClickBait starts; switch it on from the menu
+  bar. Then, when your words ask ("look it up", "what's the latest…", "why this error?", an API
+  question), ClickBait looks it up for free on Wikipedia, Stack Overflow, MDN and Apple's developer
+  docs (plus [SearXNG](https://docs.searxng.org) on your Mac, if you set it up in **Settings →
+  Internet**) and the local model answers, with the sources listed in the chat. Circling a picture
+  with 🌐 on checks its name on Wikipedia for the parts tour. Only short search words and page
+  addresses leave your Mac — never the screenshot, the screen's text, your voice or a name on screen.
+  The last five searches are listed in the menu (memory only).
 
 Both hotkeys only fire when pressed on their own, so shortcuts like ⌃⌥← or ⌥⌘D keep working.
 
