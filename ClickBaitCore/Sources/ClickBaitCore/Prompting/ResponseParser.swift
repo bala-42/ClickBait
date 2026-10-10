@@ -59,7 +59,7 @@ public enum ResponseParser {
             speech: speech.isEmpty ? fallbackSpeech : speech,
             pointers: pointers,
             code: code(in: object),
-            language: (object["language"] ?? object["lang"]) as? String,
+            language: ((object["language"] ?? object["lang"]) as? String).flatMap { ["", "null", "none"].contains($0.lowercased()) ? nil : $0 },
             action: action(in: object)
         )
         // Parts of a snipped thing: positions in the image, no element list involved.
@@ -89,7 +89,9 @@ public enum ResponseParser {
         case let lines as [String]: lines.joined(separator: "\n")
         default: nil
         }
-        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        // A schema that types "code" as a string makes "no code" come back as "null".
+        guard let text, !["", "null", "none"].contains(text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        else { return nil }
         return text.trimmingCharacters(in: .newlines)
     }
 

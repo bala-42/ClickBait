@@ -59,8 +59,11 @@ final class CapsuleController {
                 item.panel.animator().setFrame(exitFrame, display: true)
                 item.panel.animator().alphaValue = 0
             } completionHandler: {
-                item.panel.orderOut(nil)
-                item.panel.close()
+                // AppKit runs this on the main thread, but doesn't say so to Swift.
+                MainActor.assumeIsolated {
+                    item.panel.orderOut(nil)
+                    item.panel.close()
+                }
             }
         }
         for entry in entries {

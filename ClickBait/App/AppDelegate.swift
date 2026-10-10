@@ -251,6 +251,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Not over a green result already saying it, nor next to a card asking it.
             if !overlay.isShowingWords, !confirm.isShowing { overlay.showShortAnswer(text) }
         }
+        coordinator.onChatSource = { [weak self] credit in
+            guard let self, chat.isOpen,
+                  let last = chat.model.messages.last(where: { $0.role == .assistant }),
+                  !last.text.contains(credit) else { return }
+            chat.model.replaceLastAssistant(last.text + "\n\n" + credit)
+        }
         coordinator.onChatError = { [weak self] message in
             guard let self else { return }
             chat.model.addError(message)

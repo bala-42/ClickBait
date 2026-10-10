@@ -95,5 +95,6 @@ final class BackgroundJobs {
     private func cancelSnipWork(in entry: Entry) {
         entry.snipMemory?.text?.cancel()
         entry.snipMemory?.objects?.cancel()
+        entry.snipMemory?.reference?.cancel()
     }
 }

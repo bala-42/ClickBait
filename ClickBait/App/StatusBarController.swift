@@ -13,6 +13,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let backgroundCapsulesItem = NSMenuItem(title: "Background ClickBaits", action: nil, keyEquivalent: "")
     private let backgroundCapsulesMenu = NSMenu()
+    private let wikipediaItem = NSMenuItem(title: "Look Up Snips on Wikipedia", action: nil, keyEquivalent: "")
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
@@ -69,6 +70,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
+        wikipediaItem.state = settings.wikipediaLookups ? .on : .off
         if menu === backgroundCapsulesMenu { rebuildBackgroundCapsulesMenu() }
     }
 
@@ -93,6 +95,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         backgroundCapsulesItem.isEnabled = false
         menu.addItem(backgroundCapsulesItem)
+        wikipediaItem.action = #selector(toggleWikipedia)
+        wikipediaItem.target = self
+        wikipediaItem.toolTip = "Sends only the name of what you circled (never the screen) to Wikipedia, to label its parts. Off when ClickBait starts."
+        menu.addItem(wikipediaItem)
         menu.addItem(.separator())
 
         #if DEBUG
@@ -118,6 +124,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() { onOpenSettings() }
     @objc private func openPermissions() { onOpenPermissions() }
+    @objc private func toggleWikipedia() {
+        settings.wikipediaLookups.toggle()
+        Log.app.notice("Wikipedia lookups \(self.settings.wikipediaLookups ? "on" : "off", privacy: .public)")
+    }
     @objc private func showCapsule(_ sender: NSMenuItem) {
         guard let idText = sender.representedObject as? String, let id = UUID(uuidString: idText) else { return }
         Log.app.notice("Background capsule selected for recall")

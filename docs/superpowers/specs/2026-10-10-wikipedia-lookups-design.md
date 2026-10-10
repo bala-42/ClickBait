@@ -1,6 +1,6 @@
 # Wikipedia lookups (a lighter "Internet Mode") — exploration
 
-Date: 2026-10-10 · Status: exploration, nothing built
+Date: 2026-10-10 · Status: snip parts tours built; spoken questions not
 
 ## Why
 
@@ -33,30 +33,24 @@ Findings:
 - **Fresh enough:** the macOS article was edited 2026-09-25.
 - **Cheap for the local model:** an intro adds ~100–450 tokens (~0.3–1.3 s at ~350 tokens/s); a whole article ~1,000+ (cap it).
 
-## Proposal
+## Decided and built (2026-10-10): snip parts tours only
 
-- **Opt-in switch**, off at every launch (as in the 07 Oct spec): "Look things up on Wikipedia" in the menu. Off → nothing changes.
-- **Only when asked:** "look it up", "check Wikipedia", "search online", "what's the latest on…". The model never decides to go online.
-- **The query is subject terms, made on this Mac:** the request's names and nouns via Apple's `NLTagger` (named entities + nouns, on-device, no model call), the trigger words stripped. If that gives nothing, one text-only model call (~1.5 s) names the subject. **Screen text and screenshots are never sent** — only those few words.
-- **One lookup:** search (3 hits) → summary of the top hit → that intro (≤ 600 tokens) goes into the prompt as "Reference (Wikipedia: <title>)". No loop, no following links.
-- **Credit it:** the chat ends with "Source: Wikipedia — <Title>" as a link. Wikipedia text is CC BY-SA 4.0, so showing it needs the credit and link; we only quote, never store.
-- **Etiquette:** a `User-Agent` naming ClickBait and the repo (Wikimedia asks for this), one request at a time, 3 s timeout → answer without it and say so.
-- **Nothing kept:** queries live in memory only (a "recent lookups" list of 5, cleared on quit).
+Discussed with the user, in order: looking things up at hotkey release (too early: there's only audio), during the circling (too early: no subject yet, and only screen text or titles could be sent), then **after the snip is done, as soon as the model names its subject**. That's what was built.
 
-## Privacy and the written promises
+1. **Switch:** menu "Look Up Snips on Wikipedia", off at every launch, never saved (`AppSettings.wikipediaLookups`).
+2. **User lets go of the snip.** The close-up goes to the model as before; text reading and object finding start on the Mac.
+3. **Subject first.** With the switch on, a first snip explanation is asked for `"subject"` (an encyclopedia title, 1–4 words; "none" for people, text, code or an app's screen), and Ollama's structured output makes it the first key. Prompt alone: qwen3.5:9b put it after "speech" or left it out (2 runs); enforced: first in 4 of 4. The reply streams, so the subject arrives with the first words (~5 s after release on the solar-system test; the explanation took ~11.6 s).
+4. **Lookup on that word** (`StreamingSubject` → `AskCoordinator.startLookup` → `WikipediaClient`): search (1 hit) → its REST summary, intro trimmed to 1,200 characters, 3 s timeout, `User-Agent` naming ClickBait. Measured live: 0.7–0.8 s for both requests, done long before the explanation ends.
+5. **Guards before anything is sent:** a face in the close-up (`FaceFinder`) → no lookup (a person's name is never sent); mostly text (`PartsTour.isMostlyText`) → no lookup (no tour follows); background (peeled) answers and follow-ups → no lookup.
+6. **Used for the pills:** the intro goes into the marks request ("Background from Wikipedia…") so the model can tell the named things apart. Placement stays on-device (`ObjectFinder`); Wikipedia can't fix look-alikes or a wrong subject.
+7. **Credit:** when the marks were named with it, the chat's answer gets "Source: [Wikipedia — Title](url)" (CC BY-SA).
 
-- This **overturns** the "No web lookups" rule in CLAUDE.md (2026-10-01), and "works offline / it never tells anyone" on the site. If it goes ahead, change the rule to: *"No web lookups unless the user switches on Wikipedia lookups and asks; only the subject words are sent, to Wikipedia; never the screen, audio or screen text."* Update the site's Privacy and FAQ the same day.
-- Wikimedia sees the user's IP address and the subject words ([Wikimedia privacy policy](https://foundation.wikimedia.org/wiki/Policy:Privacy_policy)).
+Not built: lookups for spoken or typed questions (timing proposed: after transcription and the rule checks, alongside the ~2.4 s screenshot encode), per-pill descriptions, a "recent lookups" list.
 
-## Where it would live
-
-- `ClickBaitCore/Prompting/LookupQuery.swift` — trigger detection + subject terms from tagged words (testable without the network).
-- `ClickBaitCore/Providers/WikipediaClient.swift` — search + summary over `URLSession`, parsing tested with recorded JSON.
-- `Prompt` gains a reference block; `AskCoordinator.respond` runs the lookup before the stream when the switch is on and the request asks.
+Privacy: CLAUDE.md's "no web lookups" rule now has this one exception, and the site's FAQ says so. Wikimedia sees the user's IP address and the subject words ([privacy policy](https://foundation.wikimedia.org/wiki/Policy:Privacy_policy)).
 
 ## Open questions
 
-1. OK to relax "no web lookups" for Wikipedia only, behind the switch?
-2. Trigger words only, or also offer it after a weak answer ("Want me to check Wikipedia?")?
-3. English Wikipedia only (matches the English-only speech model), or follow the system language?
-4. Should the existing Anthropic "Internet Mode" setting in the build be hidden until roadmap D is decided?
+1. Extend to spoken and typed questions (automatic when switched on, or only on "look it up")?
+2. English Wikipedia only (matches the English-only speech model), or follow the system language?
+3. Should the existing Anthropic "Internet Mode" setting in the build be hidden until roadmap D is decided?

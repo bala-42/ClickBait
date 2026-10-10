@@ -56,6 +56,13 @@ public struct AskRequest: Sendable {
     public var markNames: [String] = []
     /// How many marks are drawn, numbered from 1.
     public var markCount = 0
+    /// Background on what the snip shows (Wikipedia lookups on), for telling the named
+    /// things apart when naming the marks.
+    public var reference: WikiReference?
+    /// A first snip explanation with Wikipedia lookups on: the reply opens with "subject"
+    /// (`Prompt.subjectLine`; Ollama's structured output puts it first), looked up while
+    /// the rest streams.
+    public var askSubject = false
     /// Plan a tutorial for `question` (`Prompt.tutorialSystem`).
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.

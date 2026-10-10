@@ -43,6 +43,8 @@ struct LiveOllamaTests {
             request.screenshotWidth = w
             request.screenshotHeight = h
             request.snip = .circled
+            // CLICKBAIT_LIVE_SUBJECT=1: as with Wikipedia lookups on (the reply opens with "subject").
+            request.askSubject = ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_SUBJECT"] != nil
             print("LIVE size \(w)x\(h)")
         }
         if ProcessInfo.processInfo.environment["CLICKBAIT_LIVE_TUTORIAL"] != nil {

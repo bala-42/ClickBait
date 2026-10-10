@@ -290,11 +290,19 @@ public enum Prompt {
                 """
         }
         if !request.markNames.isEmpty {
-            return """
+            var text = """
                 Names: \(request.markNames.joined(separator: ", "))
                 Markers: 1–\(request.markCount).
                 The explanation: "\(request.question)"
                 """
+            if let reference = request.reference {
+                text += """
+
+                    Background from Wikipedia ("\(reference.title)"), for what the named things look like and where they sit:
+                    \(reference.extract)
+                    """
+            }
+            return text
         }
         if request.listParts {
             return """
@@ -346,6 +354,7 @@ public enum Prompt {
             lines.append(question.isEmpty
                 ? "Explain it: start with what it is. If it has named parts you can see, also list them in \"parts\" with their positions."
                 : "The user said: \(question)")
+            if request.askSubject { lines.append(subjectLine) }
         } else if let selected = request.selectedText, !selected.isEmpty {
             lines.append("The user highlighted this text:")
             lines.append("<<<")
@@ -359,6 +368,13 @@ public enum Prompt {
         }
         return lines.joined(separator: "\n")
     }
+
+    /// Asked of a first snip explanation while Wikipedia lookups are on (`AskRequest.askSubject`).
+    static let subjectLine = """
+        Also give "subject", first in the JSON: what it shows as an encyclopedia would title it, \
+        1–4 words ("Rotator cuff", "Solar System", "Mona Lisa"), or "none" for a person or people, \
+        text, code, a message or an app's screen.
+        """
 
     static func truncated(_ text: String) -> String {
         guard text.count > maxSelectedCharacters else { return text }

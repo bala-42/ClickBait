@@ -27,7 +27,7 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Does it really work offline?",
-    a: "Yes, once the two models are downloaded. Questions, explanations, walkthroughs and Mac actions all run on your Mac. Opening a website still needs the internet, obviously.",
+    a: "Yes, once the two models are downloaded. Questions, explanations, walkthroughs and Mac actions all run on your Mac. Opening a website still needs the internet, obviously. There’s one optional extra, off every time ClickBait starts: switch on “Look Up Snips on Wikipedia” in the menu and, when you circle a picture, the name of what it shows (just that, never your screen or anyone’s name) is looked up on Wikipedia to label its parts better.",
   },
   {
     q: "How fast is it?",

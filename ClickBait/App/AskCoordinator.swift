@@ -81,6 +81,8 @@ final class AskCoordinator {
     @ObservationIgnored var onActionDone: ((String) -> Void)?
     /// Named parts of a snipped thing to show one by one (the red tour).
     @ObservationIgnored var onTour: (([ScreenPointer]) -> Void)?
+    /// A tour's names were checked against Wikipedia: its credit line, for the chat.
+    @ObservationIgnored var onChatSource: ((String) -> Void)?
     /// The user started (true) or stopped marking part of the screen with ⌥⌘ held.
     @ObservationIgnored var onSnipMarking: ((Bool) -> Void)? {
         didSet { snipper.onMarkingChange = onSnipMarking }
@@ -290,6 +292,7 @@ final class AskCoordinator {
         pendingSnipView?.objects.cancel()
         snipMemory?.text?.cancel()
         snipMemory?.objects?.cancel()
+        snipMemory?.reference?.cancel()
         pendingSnipView = nil
         snipMemory = nil
         invalidateAnswerFlow()
@@ -1312,6 +1315,7 @@ final class AskCoordinator {
                                      screenshotHeight: encoded.height, context: ScreenContext())
             request.markNames = names
             request.markCount = objects.count
+            request.reference = await memory.reference?.value
             let start = ContinuousClock.now
             if let reply = await Self.reply(from: provider, to: request,
                                             within: provider.timeout(for: .labelTourParts)), !Task.isCancelled {
@@ -1321,7 +1325,10 @@ final class AskCoordinator {
                     found things (\(String(describing: ContinuousClock.now - start), privacy: .public)): \
                     \(placed.map { "\($0.label) at \(Int($0.x)),\(Int($0.y))" }.joined(separator: ", "), privacy: .public)
                     """)
-                if !placed.isEmpty { return PartsTour.stops(placed, marked: view.marked) }
+                if !placed.isEmpty {
+                    if let reference = request.reference { onChatSource?(reference.credit) }
+                    return PartsTour.stops(placed, marked: view.marked)
+                }
             } else {
                 Log.ask.notice("Parts: naming the marks gave no answer")
             }
@@ -1334,6 +1341,32 @@ final class AskCoordinator {
         let faces = await Self.faces(in: view)
         if !faces.isEmpty { Log.ask.notice("Parts: \(faces.count, privacy: .public) face(s) found; people placed on them") }
         return PartsTour.stops(FaceSnapping.snap(Array(unique), to: faces), marked: view.marked)
+    }
+
+    /// Looks up the subject a snip's reply opened with (Wikipedia lookups on). Only those
+    /// words are sent, and not at all when the close-up shows a face (a person's name is
+    /// never sent) or is mostly text (no tour follows). Stored in the snip's memory.
+    private func startLookup(_ subject: String) {
+        guard let memory = snipMemory, let view = memory.view else { return }
+        let reading = memory.text
+        snipMemory?.reference = Task { [weak self] in
+            if !(await Self.faces(in: view)).isEmpty {
+                Log.ask.notice("Lookup: skipped, the snip shows a face")
+                return nil
+            }
+            if let reading, PartsTour.isMostlyText(await TextReader.read(reading, within: .milliseconds(1500)), marked: view.marked) {
+                Log.ask.notice("Lookup: skipped, the snip is mostly text")
+                return nil
+            }
+            guard !Task.isCancelled, self?.settings.wikipediaLookups == true else { return nil }
+            let start = ContinuousClock.now
+            let reference = await WikipediaClient().reference(for: subject)
+            Log.ask.notice("""
+                Lookup: Wikipedia for \(subject, privacy: .private) → \(reference?.title ?? "nothing", privacy: .private) \
+                (\(String(describing: ContinuousClock.now - start), privacy: .public))
+                """)
+            return reference
+        }
     }
 
     private nonisolated static func faces(in view: SnipView) async -> [(center: Point, width: Double)] {
@@ -1597,6 +1630,7 @@ final class AskCoordinator {
         pendingSnipView?.objects.cancel()
         snipMemory?.text?.cancel()
         snipMemory?.objects?.cancel()
+        snipMemory?.reference?.cancel()
         let text = Task { await TextReader.read(view.image) }
         let objects = Self.findObjects(in: view)
         pendingSnipView = (view, text, objects)
@@ -1643,6 +1677,9 @@ final class AskCoordinator {
         var text: Task<[TextBox], Never>?
         /// The separate things in the close-up, found on this Mac, for the tour to point at.
         var objects: Task<[FoundObject], Never>?
+        /// What the snip shows, looked up on Wikipedia once the reply names its subject
+        /// (`startLookup`), for naming the marks. Nil with lookups off.
+        var reference: Task<WikiReference?, Never>?
     }
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
@@ -1835,6 +1872,7 @@ final class AskCoordinator {
                 elements: listed
             )
             request.contextJPEG = snipFollowUp?.context ?? snipContext
+            request.askSubject = snip != nil && history.isEmpty && settings.wikipediaLookups
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))
@@ -1857,9 +1895,18 @@ final class AskCoordinator {
             if settings.provider == .ollama, backgroundJobs?.entries.contains(where: { $0.job.isWorking }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
+            // A first snip explanation opens with its subject: with lookups on, it's looked up
+            // while the rest streams, ready for naming the marks after the answer.
+            var lookingUp = !request.askSubject
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
+                if !lookingUp, case .foreground = run.destination, let subject = StreamingSubject.subject(in: text) {
+                    lookingUp = true
+                    startLookup(subject)
+                } else if !lookingUp, text.contains("\"speech\"") {
+                    lookingUp = true  // no subject before the explanation: nothing to look up
+                }
                 let newSpeech = extractor.feed(chunk)
                 if case .background(let jobID) = run.destination {
                     backgroundJobs?.append(chunk, to: jobID)
