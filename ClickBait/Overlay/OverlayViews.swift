@@ -315,6 +315,19 @@ struct ListeningWaveform: View {
     }
 }
 
+/// The companion's triangle, reading its angle and swell itself: they change every frame
+/// while turning or flying, and only this small view should redraw then — read in the
+/// companion's own body, each change re-ran the whole companion (card, layout, measuring),
+/// ~0.2 s of main thread per tour each (2026-10-11).
+private struct LiveCompanionTriangle: View {
+    let model: OverlayModel
+
+    var body: some View {
+        CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, spinning: model.isSpinning,
+                          angle: model.triangleAngle, flightScale: model.flightScale)
+    }
+}
+
 /// The companion that follows the cursor: the triangle, with a tiny pill beside it
 /// when there's a result or a problem to show.
 struct CompanionBubbleView: View {
@@ -340,8 +353,7 @@ struct CompanionBubbleView: View {
                     ListeningWaveform(level: model.waveLevel, tone: model.tone)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else {
-                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, spinning: model.isSpinning, angle: model.triangleAngle,
-                                      flightScale: model.flightScale)
+                    LiveCompanionTriangle(model: model)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
