@@ -37,7 +37,8 @@ struct CapsuleView: View {
                 Button { presentation.isExpanded.toggle(); onLayoutChange() } label: {
                     HStack(spacing: 1) {
                         CompanionTriangle(tone: tone, pulsing: !finished && !reduceMotion,
-                                          spinning: !finished && !reduceMotion)
+                                          spinning: !finished && !reduceMotion,
+                                          glowOpacity: Glow.opacity, glowRadius: Glow.radius)
                             .scaleEffect(0.72)
                             .frame(width: 30, height: 24)
                         if finished {

@@ -1,17 +1,17 @@
 import ClickBaitCore
 import SwiftUI
 
-/// An equilateral triangle with a vertex pointing up; rotate it to aim.
+/// An equilateral triangle with a vertex pointing up, built around its centroid (as
+/// Clicky's, MIT): the rect's centre is the triangle's dead centre, so rotating about it
+/// never wobbles. Top vertex at midY − h/1.5, base at midY + h/3, h = side × √3/2.
 struct EquilateralTriangle: Shape {
     func path(in rect: CGRect) -> Path {
-        // Side = width; height = side × √3/2, centred vertically in the rect.
-        let side = rect.width
+        let side = min(rect.width, rect.height)
         let height = side * 3.squareRoot() / 2
-        let top = rect.midY - height / 2
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: top))
-        path.addLine(to: CGPoint(x: rect.maxX, y: top + height))
-        path.addLine(to: CGPoint(x: rect.minX, y: top + height))
+        path.move(to: CGPoint(x: rect.midX, y: rect.midY - height / 1.5))
+        path.addLine(to: CGPoint(x: rect.midX + side / 2, y: rect.midY + height / 3))
+        path.addLine(to: CGPoint(x: rect.midX - side / 2, y: rect.midY + height / 3))
         path.closeSubpath()
         return path
     }
@@ -28,9 +28,16 @@ struct CompanionTriangle: View {
     var spinning: Bool = false
     /// Degrees clockwise from vertex-up.
     var angle: Double = Self.restingAngle
-    static let size: CGFloat = 15
-    /// Up-left, at the cursor.
-    static let restingAngle: Double = -45
+    /// Its glow (the companion's own: solid, like Clicky's). The capsules and the peel's
+    /// small panels pass the pills' softer `Glow`, which fits inside them.
+    var glowOpacity: Double = Self.glowOpacity
+    var glowRadius: CGFloat = Self.glowRadius
+    static let size: CGFloat = 16
+    /// Up-left, at the cursor (Clicky's −35°; was −45°).
+    static let restingAngle: Double = -35
+    /// Solid colour glow, radius 8 (was opacity 0.6, radius 4); the pulse swells it 4 pt more.
+    static let glowOpacity = 1.0
+    static let glowRadius: CGFloat = 8
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// One full beat (swell and back), as the old 0.7 s autoreversing pulse.
@@ -41,15 +48,10 @@ struct CompanionTriangle: View {
     /// Where a stopped spin was, springing to the nearest resting third.
     @State private var settle: Double = 0
     private static let tickTime: Double = 0.5
-    /// Room around the triangle for its glow inside the cached drawing.
-    private static let glowRoom: CGFloat = 8
-    /// The centroid in the padded drawing: the shape is centred by its bounding box, and an
-    /// equilateral triangle's centroid sits height/6 below that box's middle.
-    private static var centroid: UnitPoint {
-        let box = size + 2 * glowRoom
-        let height = size * 3.squareRoot() / 2
-        return UnitPoint(x: 0.5, y: (glowRoom + size / 2 + height / 6) / box)
-    }
+    /// Room around the triangle for its glow inside the cached drawing: a radius-8 glow is
+    /// visible (α ≥ 2/255) to 23.3 pt from the centre at 2× (ImageRenderer, 2026-10-11),
+    /// and the drawing reaches size/2 + room = 24 pt.
+    private static let glowRoom: CGFloat = 16
     private static let restTime: Double = 0.4
 
     var body: some View {
@@ -65,17 +67,18 @@ struct CompanionTriangle: View {
             let beat = beating ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
             let spin = turning ? Self.spinAngle(after: context.date.timeIntervalSince(spinStart)) : settle
             EquilateralTriangle()
-                .fill(tone.color.opacity(0.9))
+                .fill(tone.color)
                 .frame(width: Self.size, height: Self.size)
-                .shadow(color: tone.color.opacity(Glow.opacity + 0.4 * beat), radius: Glow.radius + 4 * beat)
+                .shadow(color: tone.color.opacity(min(1, glowOpacity + 0.4 * beat)), radius: glowRadius + 4 * beat)
                 // Triangle and glow are drawn once into a texture that is then turned:
                 // rotating no longer redraws the blurred glow every frame (costly while
                 // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
                 .padding(Self.glowRoom)
                 .modifier(CachedDrawing(enabled: !beating))
-                // The spin turns about the triangle's centroid (its dead centre): about the
-                // box's centre it wobbled, and thirds didn't land where they began.
-                .rotationEffect(.degrees(spin), anchor: Self.centroid)
+                // The spin turns about the triangle's centroid, which the shape now puts at the
+                // centre (about the bounding box's centre it wobbled, and thirds didn't land
+                // where they began).
+                .rotationEffect(.degrees(spin))
                 .rotationEffect(.degrees(angle))  // aim, smoothed by OverlayController
                 .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
                 .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
@@ -295,9 +298,15 @@ struct CompanionBubbleView: View {
     @State private var popOpacity: Double = 1
 
     static let maxTextWidth: CGFloat = 300
+    /// Around the companion inside its measured size (the old 4 pt), and the canvas's extra
+    /// margin outside it for the glow, which reaches ~31 pt from the centre while pulsing.
+    static let contentPadding: CGFloat = 4
+    static let triangleSpacing: CGFloat = 2
+    static let cardSpacing: CGFloat = 3
+    static let canvasMargin: CGFloat = 16
 
     var body: some View {
-        HStack(alignment: .top, spacing: 3) {
+        HStack(alignment: .top, spacing: Self.cardSpacing) {
             Group {
                 if model.bubble == .listening {
                     ListeningWaveform(level: model.waveLevel, tone: model.tone)
@@ -307,7 +316,7 @@ struct CompanionBubbleView: View {
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
-            .padding(2)
+            .padding(Self.triangleSpacing)
             .scaleEffect(popScale)
             .opacity(popOpacity)
             if model.bubble.hasWords && !model.isGuiding {
@@ -315,12 +324,15 @@ struct CompanionBubbleView: View {
                     .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
             }
         }
-        .padding(4)
+        .padding(Self.contentPadding)
         .padding([.trailing, .bottom], 10)  // room for the shadow inside the panel
         .fixedSize()
         // The panel is a fixed, invisible canvas; tell the controller how big the
         // companion really is so it can keep it on screen.
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.bubbleSize = $0 }
+        // Outside the measured size: room for the glow above and left of the triangle,
+        // without moving the on-screen limits.
+        .padding([.top, .leading], Self.canvasMargin)
         .frame(width: OverlayModel.bubbleCanvas.width, height: OverlayModel.bubbleCanvas.height, alignment: .topLeading)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.8), value: model.bubble)
         .onChange(of: model.companionPop) { _, _ in animatePop() }

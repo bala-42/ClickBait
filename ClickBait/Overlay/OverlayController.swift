@@ -68,7 +68,7 @@ final class OverlayController {
             return CGPoint(x: frame.minX + Self.triangleInset, y: frame.maxY - Self.triangleInset)
         }
         let topLeft = restingTopLeft(for: NSEvent.mouseLocation)
-        return CGPoint(x: topLeft.x + Self.triangleInset, y: topLeft.y - Self.triangleInset)
+        return CGPoint(x: topLeft.x + Self.triangleInContent, y: topLeft.y - Self.triangleInContent)
     }
 
     /// Peels a small copy of the current companion toward its new capsule. The real
@@ -88,7 +88,8 @@ final class OverlayController {
         }
 
         let size = CGSize(width: 44, height: 28)
-        let host = NSHostingView(rootView: CompanionTriangle(tone: tone, pulsing: false, spinning: true)
+        let host = NSHostingView(rootView: CompanionTriangle(tone: tone, pulsing: false, spinning: true,
+                                                             glowOpacity: Glow.opacity, glowRadius: Glow.radius)
             .scaleEffect(0.8)
             .frame(width: size.width, height: size.height))
         host.wantsLayer = true
@@ -270,9 +271,18 @@ final class OverlayController {
 
     // MARK: - Bubble position
 
-    /// Gap between the cursor's hotspot and the companion. The system arrow cursor
-    /// extends about 12 pt right and 20 pt down from its hotspot, so this clears it.
-    private static let cursorClearance = CGSize(width: 18, height: 24)
+    /// Where the triangle's centre rests: 35 pt right of and 25 pt below the pointer's
+    /// hotspot, as Clicky's (MIT). The system arrow reaches ~12 pt right and 20 pt down, so
+    /// the triangle (≤ 9 pt from its centre) clears it.
+    private static let triangleOffset = CGSize(width: 35, height: 25)
+    /// The companion's top-left corner from the hotspot (the triangle sits `triangleInContent`
+    /// inside it).
+    private static var cursorClearance: CGSize {
+        CGSize(width: triangleOffset.width - triangleInContent, height: triangleOffset.height - triangleInContent)
+    }
+    /// Gap from the hotspot when flipped to the cursor's left or above it at a screen edge
+    /// (the content then sits wholly on that side, as before).
+    private static let flipClearance = CGSize(width: 18, height: 24)
 
     // MARK: - Motion
 
@@ -411,18 +421,19 @@ final class OverlayController {
     private func moveBubble(to mouse: NSPoint) {
         guard let stage = bubbleStage else { return }
         let topLeft = restingTopLeft(for: mouse)
-        stage.setOrigin(NSPoint(x: topLeft.x, y: topLeft.y - OverlayModel.bubbleCanvas.height), anchor: mouse)
+        let margin = CompanionBubbleView.canvasMargin
+        stage.setOrigin(NSPoint(x: topLeft.x - margin, y: topLeft.y + margin - OverlayModel.bubbleCanvas.height), anchor: mouse)
     }
 
     /// Top-left corner of the companion beside `mouse`, in AppKit coordinates (y up).
     private func restingTopLeft(for mouse: NSPoint) -> NSPoint {
         let content = model.bubbleSize
-        let gap = Self.cursorClearance
+        let gap = Self.cursorClearance, flip = Self.flipClearance
         var topLeft = NSPoint(x: mouse.x + gap.width, y: mouse.y - gap.height)
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) {
             let bounds = screen.visibleFrame
-            if topLeft.x + content.width > bounds.maxX { topLeft.x = mouse.x - gap.width - content.width }
-            if topLeft.y - content.height < bounds.minY { topLeft.y = mouse.y + gap.height + content.height }
+            if topLeft.x + content.width > bounds.maxX { topLeft.x = mouse.x - flip.width - content.width }
+            if topLeft.y - content.height < bounds.minY { topLeft.y = mouse.y + flip.height + content.height }
             topLeft.x = max(bounds.minX, min(topLeft.x, bounds.maxX - content.width))
             topLeft.y = min(bounds.maxY, max(topLeft.y, bounds.minY + content.height))
         }
@@ -487,10 +498,15 @@ final class OverlayController {
     private static let reachedDistance: CGFloat = 24
     /// Long enough to read a part's name and look at it.
     private static let tourDwell: CFTimeInterval = 2.4
-    /// Distance from the triangle's centre to its vertex (up to its pulse size), plus a gap.
-    private static var tipDistance: CGFloat { CompanionTriangle.size * 3.squareRoot() / 4 * 1.2 + 3 }
-    /// The triangle's centre measured from the companion panel's top-left corner.
-    private static var triangleInset: CGFloat { 4 + 2 + CompanionTriangle.size * 0.85 }
+    /// Distance from the triangle's centre (its centroid) to its vertex, size/√3, up to its
+    /// pulse size, plus a gap.
+    private static var tipDistance: CGFloat { CompanionTriangle.size / 3.squareRoot() * 1.2 + 3 }
+    /// The triangle's centre measured from the companion's top-left corner (its measured content).
+    private static var triangleInContent: CGFloat {
+        CompanionBubbleView.contentPadding + CompanionBubbleView.triangleSpacing + CompanionTriangle.size * 0.85
+    }
+    /// The triangle's centre measured from the companion panel's (canvas's) top-left corner.
+    private static var triangleInset: CGFloat { CompanionBubbleView.canvasMargin + triangleInContent }
 
     var isGuiding: Bool { guide != nil }
 
@@ -627,8 +643,7 @@ final class OverlayController {
         guard let guide else { return }
         // The cursor position that would put the triangle where it is: the normal follow
         // then glides it back from here.
-        anchor = CGPoint(x: guide.center.x - Self.cursorClearance.width - Self.triangleInset,
-                         y: guide.center.y + Self.cursorClearance.height + Self.triangleInset)
+        anchor = CGPoint(x: guide.center.x - Self.triangleOffset.width, y: guide.center.y + Self.triangleOffset.height)
         returnVelocity = guide.velocity
         self.guide = nil
         hideGuideLabel()
