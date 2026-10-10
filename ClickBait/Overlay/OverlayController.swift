@@ -286,8 +286,11 @@ final class OverlayController {
 
     // MARK: - Motion
 
-    /// How long the companion takes to (mostly) catch up with the cursor: a soft, floaty
-    /// glide (the feel the desktop used to have by accident, now on purpose everywhere).
+    /// Following the cursor: an underdamped spring, Clicky's feel (MIT) — SwiftUI's
+    /// `.spring(response: 0.2, dampingFraction: 0.6)`, whose stiffness (2π/response)² and
+    /// damping 2ζω are exactly `Spring(period: response, damping: ζ)`. It overshoots ~9%
+    /// of its lag when the mouse stops, then settles. Reduce Motion: critically damped
+    /// (no overshoot). (Was an exponential ease, 0.11 s.)
     ///
     /// Motion is driven entirely by the display's refresh: every frame reads the cursor
     /// position. Mouse-moved events can't be used even to wake this up — macOS only
@@ -295,7 +298,10 @@ final class OverlayController {
     /// arrive late or in bursts, which made the follow feel different from the desktop.
     /// The display's refresh rate also varies (ProMotion drops it over static content
     /// like the desktop), so a steady rate is requested while the companion moves.
-    private static let followTime: TimeInterval = 0.11
+    private static let followSpring = Spring(period: 0.2, damping: 0.6)
+    private static let calmFollowSpring = Spring(period: 0.2, damping: 1)
+    /// The follow's speed (points a second), carried from frame to frame.
+    private var followVelocity = CGVector.zero
     /// The system-wide cursor check is a call into the window server; ~20 times a second
     /// is plenty to catch a video hiding the pointer.
     private static let visibilityInterval: CFTimeInterval = 0.05
@@ -315,6 +321,7 @@ final class OverlayController {
 
     private func startMotion() {
         anchor = NSEvent.mouseLocation
+        followVelocity = .zero
         if let view = bubbleHost {
             let link = view.displayLink(target: frameTarget, selector: #selector(FrameTarget.tick(_:)))
             link.add(to: .main, forMode: .common)
@@ -358,7 +365,9 @@ final class OverlayController {
         }
 
         let previous = anchor ?? mouse
-        guard previous != mouse else {
+        // Still springing (an overshoot passes through the mouse's spot with speed left).
+        let springing = followVelocity != .zero || returnVelocity != nil
+        guard previous != mouse || springing else {
             // Settled: let the display relax its refresh rate again (unless the
             // triangle is turning or the waveform is moving).
             let wanted = animating ? Self.movingRate : Self.restingRate
@@ -376,11 +385,23 @@ final class OverlayController {
             Self.glideSpring.step(&y, velocity: &vy, toward: mouse.y, dt: elapsed)
             next = CGPoint(x: x, y: y)
             returnVelocity = CGVector(dx: vx, dy: vy)
-            if hypot(mouse.x - next.x, mouse.y - next.y) < 4 { returnVelocity = nil }  // the follow takes over
+            if hypot(mouse.x - next.x, mouse.y - next.y) < 4 {  // the follow takes over, at the same speed
+                followVelocity = CGVector(dx: vx, dy: vy)
+                returnVelocity = nil
+            }
         } else {
-            let pull = 1 - exp(-elapsed / Self.followTime)
-            next = CGPoint(x: previous.x + (mouse.x - previous.x) * pull, y: previous.y + (mouse.y - previous.y) * pull)
-            if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25 { next = mouse }
+            let spring = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? Self.calmFollowSpring : Self.followSpring
+            var vx = Double(followVelocity.dx), vy = Double(followVelocity.dy)
+            var x = Double(previous.x), y = Double(previous.y)
+            spring.step(&x, velocity: &vx, toward: mouse.x, dt: elapsed)
+            spring.step(&y, velocity: &vy, toward: mouse.y, dt: elapsed)
+            next = CGPoint(x: x, y: y)
+            followVelocity = CGVector(dx: vx, dy: vy)
+            // Settled: within a quarter point and barely moving.
+            if hypot(mouse.x - next.x, mouse.y - next.y) < 0.25, hypot(vx, vy) < 3 {
+                next = mouse
+                followVelocity = .zero
+            }
         }
         anchor = next
         moveBubble(to: next)
@@ -645,6 +666,7 @@ final class OverlayController {
         // then glides it back from here.
         anchor = CGPoint(x: guide.center.x - Self.triangleOffset.width, y: guide.center.y + Self.triangleOffset.height)
         returnVelocity = guide.velocity
+        followVelocity = .zero
         self.guide = nil
         hideGuideLabel()
         model.isGuiding = false
