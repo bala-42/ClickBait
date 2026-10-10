@@ -59,6 +59,9 @@ final class OverlayModel {
     }
 
     var bubble: Bubble = .idle
+    /// Incremented when an answer peels away so the companion can pop back in for the
+    /// next listen without tying the animation to the background job's lifetime.
+    var companionPop = 0
 
     /// How loud the user is right now while listening, 0…1 (drives the waveform).
     var waveLevel: Double = 0

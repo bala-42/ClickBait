@@ -108,10 +108,18 @@ final class AskCoordinator {
     @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var errorResetTask: Task<Void, Never>?
     @ObservationIgnored private var askTask: Task<Void, Never>?
+    @ObservationIgnored var backgroundJobs: BackgroundJobs?
+    @ObservationIgnored private var activeAnswerRun: AnswerRun?
+    @ObservationIgnored private var peelableRunID: UUID?
+    @ObservationIgnored var onPeel: ((BackgroundJob) -> [ChatModel.Message])?
+    @ObservationIgnored var onPeelRefused: (() -> Void)?
     /// The open chat bubble's memory. Nil when no bubble is open; dropped on close.
     @ObservationIgnored private(set) var conversation: Conversation?
     /// A reply is being fetched for the chat (blocks a second send).
     @ObservationIgnored private(set) var isAnswering = false
+    /// The current answer flow owns shared busy state until a newer flow replaces it.
+    @ObservationIgnored private var answerFlowID: UUID?
+    @ObservationIgnored private var answeringOwnerID: UUID?
     @ObservationIgnored let speaker: Speaker
     /// When the user let go (or pressed ⌥⌘), for the time-to-first-audio log.
     @ObservationIgnored private var answerStartedAt: ContinuousClock.Instant?
@@ -230,7 +238,7 @@ final class AskCoordinator {
         if state == .thinking || isAnswering {
             askTask?.cancel()
             askTask = nil
-            isAnswering = false
+            invalidateAnswerFlow()
             state = .idle
             Log.ask.notice("Explain undone (second tap)")
         }
@@ -248,12 +256,28 @@ final class AskCoordinator {
         speaker.stop()
         askTask?.cancel()
         askTask = nil
+        invalidateAnswerFlow()
         if state == .speaking || state == .thinking { state = .idle }
     }
 
     // MARK: - Chat
 
     /// The chat bubble was closed (✕ or Escape): its memory goes with it.
+    func detachChatForCapsule() -> (conversation: Conversation, snipMemory: SnipMemory?)? {
+        guard chatShown, let conversation else { return nil }
+        let detached = (conversation: conversation, snipMemory: snipMemory)
+        self.conversation = nil
+        chatShown = false
+        snipMemory = nil
+        return detached
+    }
+
+    func restoreBackgroundConversation(_ restored: Conversation, snipMemory: SnipMemory? = nil) {
+        conversation = restored
+        chatShown = true
+        self.snipMemory = snipMemory
+    }
+
     func closeChat() {
         tutorial?.stop(message: nil)
         guard conversation != nil, chatShown else { return }
@@ -262,7 +286,13 @@ final class AskCoordinator {
         askTask = nil
         conversation = nil
         chatShown = false
-        isAnswering = false
+        pendingSnipView?.text.cancel()
+        pendingSnipView?.objects.cancel()
+        snipMemory?.text?.cancel()
+        snipMemory?.objects?.cancel()
+        pendingSnipView = nil
+        snipMemory = nil
+        invalidateAnswerFlow()
         if state == .thinking || state == .speaking { state = .idle }
         Log.ask.notice("Chat closed")
     }
@@ -296,9 +326,9 @@ final class AskCoordinator {
         if pendingReminder != nil {
             if let day = ReminderDay.parse(text) {
                 onChatUserMessage?(text)
-                isAnswering = true
+                let answerID = beginAnswerFlow()
                 askTask = Task {
-                    defer { isAnswering = false }
+                    defer { finishAnswering(answerID) }
                     await resolveReminder(day)
                 }
                 return
@@ -311,9 +341,9 @@ final class AskCoordinator {
            !isUnknownApp(command) {
             Log.ask.notice("Command recognised (typed): \(command.name, privacy: .public)")
             onChatUserMessage?(text)
-            isAnswering = true
+            let answerID = beginAnswerFlow()
             askTask = Task {
-                defer { isAnswering = false }
+                defer { finishAnswering(answerID) }
                 switch await perform(command, speak: false) {
                 case .success(let confirmation): onChatReply?(confirmation + ".")
                 case .failure(let message): onChatError?(message)
@@ -334,8 +364,8 @@ final class AskCoordinator {
             let startedAt = ContinuousClock.now
             if let (order, proposal) = await understandOrder(text) {
                 onChatUserMessage?(text)
-                isAnswering = true
-                defer { isAnswering = false }
+                let answerID = beginAnswerFlow()
+                defer { finishAnswering(answerID) }
                 switch order {
                 case .ready(let action): onChatReply?(await handleProposal(action, request: proposal, speak: false))
                 case .failed(let reason): onChatError?(reason)
@@ -423,7 +453,7 @@ final class AskCoordinator {
         if isAnswering {
             askTask?.cancel()
             askTask = nil
-            isAnswering = false
+            invalidateAnswerFlow()
         }
         switch state {
         case .listening:
@@ -441,6 +471,13 @@ final class AskCoordinator {
     }
 
     private func begin() {
+        if let run = activeAnswerRun, peelableRunID == run.id, state == .thinking || isAnswering {
+            guard let backgroundJobs, backgroundJobs.hasRoom else {
+                onPeelRefused?()
+                return
+            }
+            peel(run)
+        }
         stopRefining()
         tutorial?.stop(message: nil)  // a new question ends a tutorial
         guard state != .listening, state != .thinking, !isAnswering else { return }
@@ -499,6 +536,34 @@ final class AskCoordinator {
         Task.detached(priority: .userInitiated) { await provider.warmUp() }
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
+    }
+
+    private func peel(_ run: AnswerRun) {
+        guard case .foreground = run.destination, let backgroundJobs else { return }
+        let job = BackgroundJob(question: run.question, kind: run.kind, homeBundleID: run.homeBundleID,
+                                homePID: run.homePID, conversation: run.conversation)
+        guard backgroundJobs.add(job, task: run.task) else {
+            onPeelRefused?()
+            return
+        }
+        run.destination = .background(job.id)
+        run.chatMessages = onPeel?(job) ?? []
+        backgroundJobs.setSnipMemory(run.snipMemory, for: job.id)
+        if run.chatMessages.isEmpty {
+            run.chatMessages = [ChatModel.Message(role: .user, text: run.display)]
+        }
+        backgroundJobs.setChatMessages(run.chatMessages, for: job.id)
+        peelableRunID = nil
+        if answerFlowID == run.id { answerFlowID = nil }
+        finishAnswering(run.id)
+        speaker.stop()
+        onSnipAnswering?(false)
+        conversation = nil
+        snipMemory = nil
+        chatShown = false
+        activeAnswerRun = nil
+        state = .idle
+        Log.ask.notice("Peeled answer \(job.id.uuidString, privacy: .public) into a background capsule")
     }
 
     /// Checks shared by ask and explain. Shows the reason and returns false if blocked.
@@ -878,7 +943,7 @@ final class AskCoordinator {
         let start = ContinuousClock.now
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
-        let reply = await Self.reply(from: provider, to: request, within: .seconds(8))
+        let reply = await Self.reply(from: provider, to: request, within: provider.timeout(for: .interpretOrder))
         guard let reply, let parsed = ResponseParser.action(inReply: reply),
               var proposal = OrderCheck.sanitized(parsed, order: text) else {
             Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
@@ -1194,8 +1259,9 @@ final class AskCoordinator {
     /// A tour's stops on screen, labelled as guesses ("~ name"), each with the outline of the
     /// thing at its point where one stands out (found off the main thread).
     private nonisolated static func tourPointers(_ stops: [Pointer], in view: SnipView) async -> [ScreenPointer] {
+        let start = ContinuousClock.now
         let outlines = await Task.detached(priority: .userInitiated) { view.outlines(at: stops) }.value
-        Log.ask.notice("Parts: outlines for \(outlines.compactMap { $0 }.count, privacy: .public) of \(stops.count, privacy: .public) (the tip stops at their edges)")
+        Log.ask.notice("Parts: outlines for \(outlines.compactMap { $0 }.count, privacy: .public) of \(stops.count, privacy: .public) in \(String(describing: ContinuousClock.now - start), privacy: .public) (the tip stops at their edges)")
         // Where each part is and how far its edges are, so a tip that's off can be read off:
         // the model's spot (close-up pixels) or the outline (points: nearest–farthest edge).
         for (stop, outline) in zip(stops, outlines) {
@@ -1210,6 +1276,63 @@ final class AskCoordinator {
     }
 
     /// Faces in a snip's close-up, found off the main thread.
+    /// Starts finding the separate things in a snip's close-up, off the main thread.
+    private nonisolated static func findObjects(in view: SnipView) -> Task<[FoundObject], Never> {
+        let cancellation = ObjectFinder.CancellationFlag()
+        return Task.detached(priority: .userInitiated) {
+            await withTaskCancellationHandler {
+                let start = ContinuousClock.now
+                let objects = ObjectFinder.objects(in: view.image, marked: view.marked, cancellation: cancellation)
+                Log.ask.notice("Objects: \(objects.count, privacy: .public) found in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+                return objects
+            } onCancel: {
+                cancellation.cancel()
+            }
+        }
+    }
+
+    /// Where a snip's named parts are. The model names things well but can't place them (it
+    /// laid eight diagonal planets out in an even row, 2026-10-06), so the things found on
+    /// this Mac are numbered on the close-up and the model says which number each name is.
+    /// Names it gives no mark keep their guessed spot only when no mark was named at all, and
+    /// never when the guesses look laid out rather than found (`PartsTour.looksMadeUp`).
+    private func placeParts(_ named: [Pointer], explanation: String, memory: SnipMemory, view: SnipView,
+                            provider: any LLMProvider) async -> [Pointer] {
+        var seen = Set<String>()
+        let unique = named.filter { seen.insert($0.label.lowercased()).inserted }.prefix(PartsTour.maxParts)
+        guard !unique.isEmpty else { return [] }
+        let names = unique.map(\.label)
+        let objects = await memory.objects?.value ?? []
+        if !objects.isEmpty, let image = ObjectFinder.marked(view.image, objects: objects),
+           let encoded = try? await ScreenshotEncoder.encodeInBackground(image), !Task.isCancelled {
+            var request = AskRequest(question: explanation, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
+                                     screenshotHeight: encoded.height, context: ScreenContext())
+            request.markNames = names
+            request.markCount = objects.count
+            let start = ContinuousClock.now
+            if let reply = await Self.reply(from: provider, to: request,
+                                            within: provider.timeout(for: .labelTourParts)), !Task.isCancelled {
+                let placed = ObjectMarks.placed(names: names, reply: reply, objects: objects)
+                Log.ask.notice("""
+                    Parts: \(placed.count, privacy: .public) of \(names.count, privacy: .public) named on \(objects.count, privacy: .public) \
+                    found things (\(String(describing: ContinuousClock.now - start), privacy: .public)): \
+                    \(placed.map { "\($0.label) at \(Int($0.x)),\(Int($0.y))" }.joined(separator: ", "), privacy: .public)
+                    """)
+                if !placed.isEmpty { return PartsTour.stops(placed, marked: view.marked) }
+            } else {
+                Log.ask.notice("Parts: naming the marks gave no answer")
+            }
+        }
+        guard !Task.isCancelled else { return [] }
+        if PartsTour.looksMadeUp(Array(unique)) {
+            Log.ask.notice("Parts: the model's positions are laid out in an even row, not found; no tour")
+            return []
+        }
+        let faces = await Self.faces(in: view)
+        if !faces.isEmpty { Log.ask.notice("Parts: \(faces.count, privacy: .public) face(s) found; people placed on them") }
+        return PartsTour.stops(FaceSnapping.snap(Array(unique), to: faces), marked: view.marked)
+    }
+
     private nonisolated static func faces(in view: SnipView) async -> [(center: Point, width: Double)] {
         await Task.detached(priority: .userInitiated) { FaceFinder.faces(in: view.image) }.value
     }
@@ -1286,7 +1409,9 @@ final class AskCoordinator {
         let planRequest = request
         // Both are child tasks: cancelled with the ask (Esc), and the plan is dropped when
         // this returns early on a "question" verdict.
-        async let verdict: String? = sorting ? Self.reply(from: provider, to: sort, within: .seconds(3)) : nil
+        async let verdict: String? = sorting
+            ? Self.reply(from: provider, to: sort, within: provider.timeout(for: .classifyRequest))
+            : nil
         async let planned = Self.planSteps(planRequest, menus: menus, provider: provider)
         if sorting {
             let answer = await verdict
@@ -1316,12 +1441,13 @@ final class AskCoordinator {
         if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
             var textOnly = request
             textOnly.screenshotJPEG = Data()
-            if let reply = await reply(from: provider, to: textOnly, within: .seconds(15)),
+            if let reply = await reply(from: provider, to: textOnly, within: provider.timeout(for: .planTutorialTextOnly)),
                let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty || parsed.app != nil {
                 plan = parsed
             }
         }
-        if plan == nil, !Task.isCancelled, let reply = await reply(from: provider, to: request, within: .seconds(25)) {
+        if plan == nil, !Task.isCancelled,
+           let reply = await reply(from: provider, to: request, within: provider.timeout(for: .planTutorialWithScreenshot)) {
             plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
         }
         return plan
@@ -1464,13 +1590,24 @@ final class AskCoordinator {
         }
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(view.image) }
         // Printed labels, read on this Mac while the model answers (for the parts tour).
-        pendingSnipView = (view, Task { await TextReader.read(view.image) })
+        pendingSnipView?.text.cancel()
+        pendingSnipView?.objects.cancel()
+        snipMemory?.text?.cancel()
+        snipMemory?.objects?.cancel()
+        let text = Task { await TextReader.read(view.image) }
+        let objects = Self.findObjects(in: view)
+        pendingSnipView = (view, text, objects)
         // No whole-screen context picture: with qwen2.5vl:7b it doubled the wait (8–13 s)
         // and made answers worse; the window title gives the context instead.
         let contextImage: Data? = nil
-        await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
-                      speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
-                      snip: kind, snipContext: contextImage)
+        await withTaskCancellationHandler {
+            await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
+                          speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
+                          snip: kind, snipContext: contextImage)
+        } onCancel: {
+            text.cancel()
+            objects.cancel()
+        }
     }
 
     private func selectMarkedFiles(kind: SnipKind, region: Rect, path: [Point], finderPID pid: pid_t) async {
@@ -1493,7 +1630,7 @@ final class AskCoordinator {
     /// The snip a chat started from: follow-ups resend its close-up and context picture.
     @ObservationIgnored private var snipMemory: SnipMemory?
     /// The close-up's geometry and text recognition, handed from `finishSnip` to `respond`.
-    @ObservationIgnored private var pendingSnipView: (view: SnipView, text: Task<[TextBox], Never>)?
+    @ObservationIgnored private var pendingSnipView: (view: SnipView, text: Task<[TextBox], Never>, objects: Task<[FoundObject], Never>)?
 
     struct SnipMemory {
         var kind: SnipKind
@@ -1501,6 +1638,8 @@ final class AskCoordinator {
         var context: Data?
         var view: SnipView?
         var text: Task<[TextBox], Never>?
+        /// The separate things in the close-up, found on this Mac, for the tour to point at.
+        var objects: Task<[FoundObject], Never>?
     }
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
@@ -1548,8 +1687,18 @@ final class AskCoordinator {
         } else {
             onChatUserMessage?(display)
         }
-        isAnswering = true
-        defer { isAnswering = false }
+        let answerID = beginAnswerFlow()
+        let run = AnswerRun(id: answerID, question: question, kind: snip == nil ? .answer : .snip,
+                            homeBundleID: frontmostBundleID, homePID: frontmostPID,
+                            display: display, conversation: conversation ?? Conversation())
+        run.task = askTask
+        run.snipMemory = snipMemory
+        activeAnswerRun = run
+        defer {
+            if peelableRunID == answerID { peelableRunID = nil }
+            finishAnswering(answerID)
+            if activeAnswerRun?.id == answerID { activeAnswerRun = nil }
+        }
         // "… in Safari" while another app is in front: look at Safari's buttons, not the
         // front app's (the first "show me the share button in Safari" looked in the wrong app).
         var elements = elements
@@ -1604,7 +1753,7 @@ final class AskCoordinator {
                                   context: context, elements: listed)
             pick.pickElement = true
             let pickStart = ContinuousClock.now
-            let reply = await Self.reply(from: provider, to: pick, within: .seconds(5))
+            let reply = await Self.reply(from: provider, to: pick, within: provider.timeout(for: .selectElement))
             let chosen = InstantAnswer.pickedIDs(in: reply ?? "").compactMap { id -> ScreenElement? in
                 guard let listing = listed.first(where: { $0.id == id }) else { return nil }
                 return elements.first(where: { $0.label == listing.label })
@@ -1656,8 +1805,10 @@ final class AskCoordinator {
                 screenshot = try await encoding.value
             }
             if let snip, history.isEmpty {
+                snipMemory?.objects?.cancel()
                 snipMemory = SnipMemory(kind: snip, closeUp: screenshot, context: snipContext,
-                                        view: pendingSnipView?.view, text: pendingSnipView?.text)
+                                        view: pendingSnipView?.view, text: pendingSnipView?.text,
+                                        objects: pendingSnipView?.objects)
                 pendingSnipView = nil
             }
             // Only "where/how/click…" questions need something to point at; for the rest
@@ -1698,11 +1849,18 @@ final class AskCoordinator {
             // The chat shows the words as they come, but at most ~12 times a second: redrawing
             // and resizing it for every fragment made the companion stutter while answering.
             var lastPartial = ContinuousClock.now - .seconds(1)
+            run.snipMemory = snipMemory
+            peelableRunID = answerID
+            if settings.provider == .ollama, backgroundJobs?.entries.contains(where: { $0.job.isWorking }) == true {
+                Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
+            }
             for try await chunk in provider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
                 let newSpeech = extractor.feed(chunk)
-                if !newSpeech.isEmpty, !Task.isCancelled {
+                if case .background(let jobID) = run.destination {
+                    backgroundJobs?.append(chunk, to: jobID)
+                } else if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
                     if chatShown, ContinuousClock.now - lastPartial >= .milliseconds(80) {
                         lastPartial = .now
@@ -1715,14 +1873,14 @@ final class AskCoordinator {
                     }
                 }
             }
-            if speak, !Task.isCancelled {
+            if case .foreground = run.destination, speak, !Task.isCancelled {
                 for sentence in sentences.feed(codeFilter.flush()) {
                     speaker.speak(isFirstSentence ? tidy(sentence) : sentence)
                     isFirstSentence = false
                     spokeAnything = true
                 }
             }
-            if speak, !Task.isCancelled, let rest = sentences.flush() {
+            if case .foreground = run.destination, speak, !Task.isCancelled, let rest = sentences.flush() {
                 speaker.speak(isFirstSentence ? tidy(rest) : rest)
                 spokeAnything = true
             }
@@ -1739,6 +1897,10 @@ final class AskCoordinator {
         } catch {
             guard !Task.isCancelled else { return }
             Log.ask.error("Provider failed: \(error.localizedDescription, privacy: .public)")
+            if case .background(let jobID) = run.destination {
+                backgroundJobs?.fail(jobID, reason: error.localizedDescription)
+                return
+            }
             if state == .thinking { state = .idle }
             if chatShown {
                 onChatError?(error.localizedDescription)
@@ -1751,6 +1913,25 @@ final class AskCoordinator {
 
         if settings.keepDebugCaptures {
             DebugCaptureStore.saveReply(reply)
+        }
+
+        if case .background(let jobID) = run.destination {
+            var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
+                                             scale: provider.coordinateScale)
+            if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
+            run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
+                                    code: parsed.response.code, language: parsed.response.language)
+            let finalText = parsed.response.displayText
+            let lastUser = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.user })
+            let lastAssistant = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.assistant })
+            if let lastUser, let lastAssistant, lastAssistant > lastUser {
+                run.chatMessages[lastAssistant].text = finalText
+            } else {
+                run.chatMessages.append(ChatModel.Message(role: .assistant, text: finalText))
+            }
+            backgroundJobs?.setChatMessages(run.chatMessages, for: jobID)
+            backgroundJobs?.complete(jobID, answer: finalText, conversation: run.conversation)
+            return
         }
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
@@ -1816,19 +1997,21 @@ final class AskCoordinator {
             sentences.feed(MessageFormat.spokenText(parsed.response.speech)).forEach(speaker.speak)
             sentences.flush().map(speaker.speak)
         }
-        conversation?.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
-                             code: parsed.response.code, language: parsed.response.language)
+        run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
+                                code: parsed.response.code, language: parsed.response.language)
+        if answerFlowID == answerID { conversation = run.conversation }
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
         if state == .thinking || state == .speaking { state = .idle }
         // Snips: tour the named parts of what was marked — but only when the names aren't
-        // already printed in the image (then a tour adds nothing). Positions come from the
-        // model alone, right only about half the time on such images, so every pill is
-        // marked approximate: "~ supraspinatus".
-        var tour: [ScreenPointer] = []
+        // already printed in the image (then a tour adds nothing). Where they are is worked
+        // out after the answer is shown (`placeParts`): on things found on this Mac where it
+        // can, else the model's own guesses, so every pill is marked approximate: "~ jupiter".
+        var named: [Pointer] = []
         var needsPartsLook = false
         if snip != nil, let memory = snipMemory, let view = memory.view {
             var text: [TextBox] = []
             if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
+            guard !Task.isCancelled, answerFlowID == answerID else { return }
             let candidates = parsed.response.parts + snipPointers
             let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
             // Labelled figures (names already printed) and plain text (a paragraph, code)
@@ -1837,14 +2020,10 @@ final class AskCoordinator {
             let labelled = mostlyText || (!printed.isEmpty && printed.count * 2 >= max(candidates.count, 1))
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
-            if !labelled {
-                let faces = await Self.faces(in: view)
-                let stops = PartsTour.stops(FaceSnapping.snap(candidates, to: faces), marked: view.marked)
-                tour = await Self.tourPointers(stops, in: view)
-            }
+            if !labelled { named = candidates }
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
-                (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public)); touring \(tour.count, privacy: .public) (~)
+                (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public))
                 """)
         }
         // A reply a pill can say ("Yep, it's on!") opens no chat: the companion says it.
@@ -1855,47 +2034,48 @@ final class AskCoordinator {
         onAnswer?(parsed.response, pointers)
         // A snip stays red and spinning until its parts are pointed at; with nothing more to
         // look for, it ends here.
-        if snip != nil, !tour.isEmpty || !needsPartsLook { onSnipAnswering?(false) }
-        if !tour.isEmpty { onTour?(tour) }
+        if snip != nil, named.isEmpty, !needsPartsLook { onSnipAnswering?(false) }
 
-        // The explanation came back without parts (a 7B model often forgets them while
-        // writing): ask once more, just for the parts, while the user reads.
-        if needsPartsLook, let memory = snipMemory, let view = memory.view, let provider = self.provider {
-            defer { onSnipAnswering?(false) }  // red ends with the look, tour or not
-            isAnswering = false
-            isRefining = true
-            defer { isRefining = false }
-            var partsRequest = AskRequest(question: parsed.response.speech, screenshotJPEG: memory.closeUp.jpeg,
-                                          screenshotWidth: memory.closeUp.width, screenshotHeight: memory.closeUp.height,
-                                          context: context)
-            partsRequest.listParts = true
-            let start = ContinuousClock.now
-            guard let reply = await Self.reply(from: provider, to: partsRequest, within: .seconds(20)), !Task.isCancelled else { return }
-            let parts = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
+        // Place the named parts and tour them, while the user reads. An explanation that came
+        // back without parts (a 7B model often forgets them while writing) is asked once
+        // more, just for the parts, first.
+        if !named.isEmpty || needsPartsLook, let memory = snipMemory, let view = memory.view, let provider = self.provider {
+            defer { if answerFlowID == answerID { onSnipAnswering?(false) } }
+            finishAnswering(answerID)
+            beginRefining(answerID)
+            defer { finishRefining(answerID) }
+            if needsPartsLook {
+                var partsRequest = AskRequest(question: parsed.response.speech, screenshotJPEG: memory.closeUp.jpeg,
+                                              screenshotWidth: memory.closeUp.width, screenshotHeight: memory.closeUp.height,
+                                              context: context)
+                partsRequest.listParts = true
+                let start = ContinuousClock.now
+                guard let reply = await Self.reply(from: provider, to: partsRequest,
+                                                   within: provider.timeout(for: .labelTourParts)), !Task.isCancelled else { return }
+                named = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
                                              scale: provider.coordinateScale).response.parts
-            let faces = await Self.faces(in: view)
-            let stops = PartsTour.stops(FaceSnapping.snap(parts, to: faces), marked: view.marked)
-            if !faces.isEmpty { Log.ask.notice("Parts look: \(faces.count, privacy: .public) face(s) found; people placed on them") }
-            let positions = parts.prefix(4).map { "\(Int($0.x)),\(Int($0.y))" }.joined(separator: " ")
-            Log.ask.notice("""
-                Parts look: \(parts.count, privacy: .public) named, touring \(stops.count, privacy: .public) \
-                (\(String(describing: ContinuousClock.now - start), privacy: .public)); parts at \(positions, privacy: .public) \
-                in a \(memory.closeUp.width, privacy: .public)×\(memory.closeUp.height, privacy: .public) close-up, marked \
-                \(Int(view.marked.minX), privacy: .public),\(Int(view.marked.minY), privacy: .public)–\
-                \(Int(view.marked.maxX), privacy: .public),\(Int(view.marked.maxY), privacy: .public), scale \
-                \(String(describing: provider.coordinateScale), privacy: .public)
-                """)
-            guard !stops.isEmpty else { return }
-            onTour?(await Self.tourPointers(stops, in: view))
+                Log.ask.notice("""
+                    Parts look: \(named.count, privacy: .public) named (\(String(describing: ContinuousClock.now - start), privacy: .public)) \
+                    in a \(memory.closeUp.width, privacy: .public)×\(memory.closeUp.height, privacy: .public) close-up, marked \
+                    \(Int(view.marked.minX), privacy: .public),\(Int(view.marked.minY), privacy: .public)–\
+                    \(Int(view.marked.maxX), privacy: .public),\(Int(view.marked.maxY), privacy: .public), scale \
+                    \(String(describing: provider.coordinateScale), privacy: .public)
+                    """)
+            }
+            let stops = await placeParts(named, explanation: parsed.response.speech, memory: memory, view: view, provider: provider)
+            guard !stops.isEmpty, !Task.isCancelled, answerFlowID == answerID else { return }
+            let tour = await Self.tourPointers(stops, in: view)
+            guard !Task.isCancelled, answerFlowID == answerID else { return }
+            onTour?(tour)
         }
 
         // Pointers no accessibility element backs up: the triangle is already on its
         // way to the rough spot; take a sharp, zoomed-in look and nudge it if needed.
         guard snapped.contains(where: { !$0.confirmed }), let provider = self.provider else { return }
         // The answer is done: the next question mustn't wait for this.
-        isAnswering = false
-        isRefining = true
-        defer { isRefining = false }
+        finishAnswering(answerID)
+        beginRefining(answerID)
+        defer { finishRefining(answerID) }
         var refined: [ScreenPointer?] = pointers
         for (index, item) in snapped.enumerated() where !item.confirmed {
             guard !Task.isCancelled else { return }
@@ -1906,7 +2086,7 @@ final class AskCoordinator {
             }
         }
         let kept = refined.compactMap { $0 }
-        guard !Task.isCancelled, kept != pointers else { return }
+        guard !Task.isCancelled, answerFlowID == answerID, kept != pointers else { return }
         if kept.count < pointers.count {
             Log.ask.notice("Close-up: withdrew \(pointers.count - kept.count, privacy: .public) pointer(s) that matched nothing on screen")
         }
@@ -1937,15 +2117,138 @@ final class AskCoordinator {
         return probe.seesContent ? .rejected : nil
     }
 
+    #if DEBUG
+    /// Creates a real, cancellable local Ollama job to inspect capsule runtime behaviour.
+    /// It never changes the saved provider or sends this capture to a cloud service.
+    func runDebugCapsuleTest() {
+        guard !isBusy, !chatShown else {
+            show(error: "Finish or close the current answer before starting a capsule test.")
+            return
+        }
+        guard let jobs = backgroundJobs, jobs.hasRoom else {
+            show(error: "There is no free capsule slot for the local test.")
+            return
+        }
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if settings.blocklist.isBlocked(bundleID: frontmost?.bundleIdentifier) {
+            show(error: "ClickBait doesn't look at this app — it's on your blocklist.")
+            return
+        }
+        guard CGPreflightScreenCaptureAccess() else {
+            show(error: "Screen Recording is off. Open Permissions… from the menu bar icon.")
+            return
+        }
+
+        let question = "For a local capsule runtime check, briefly describe the visible screen content."
+        let provider = settings.makeOllamaProvider()
+        let pid = frontmost.map { Int32($0.processIdentifier) }
+        let bundleID = frontmost?.bundleIdentifier
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist)
+                let screenshot = try await ScreenshotEncoder.encodeInBackground(capture.image)
+                guard !Task.isCancelled, let jobs = backgroundJobs, jobs.hasRoom else { return }
+                let request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg,
+                                         screenshotWidth: screenshot.width, screenshotHeight: screenshot.height,
+                                         context: ScreenContext(appName: frontmost?.localizedName))
+                let job = BackgroundJob(question: question, kind: .answer, homeBundleID: bundleID,
+                                       homePID: pid, conversation: Conversation())
+                let task = Task { [weak self] in
+                    guard let self else { return }
+                    await completeDebugCapsuleTest(jobID: job.id, request: request, screenshot: screenshot, provider: provider)
+                }
+                guard jobs.add(job, task: task) else {
+                    task.cancel()
+                    return
+                }
+                var messages = onPeel?(job) ?? []
+                if messages.isEmpty { messages = [ChatModel.Message(role: .user, text: question)] }
+                jobs.setChatMessages(messages, for: job.id)
+                Log.ask.notice("Started DEBUG local capsule runtime check using Ollama")
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.capture.error("Debug capsule capture failed: \(error.localizedDescription, privacy: .public)")
+                show(error: "Couldn't capture the screen for the local capsule test: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func completeDebugCapsuleTest(jobID: UUID, request: AskRequest, screenshot: EncodedScreenshot,
+                                          provider: OllamaProvider) async {
+        guard let jobs = backgroundJobs else { return }
+        do {
+            var reply = ""
+            for try await chunk in provider.stream(request) {
+                guard !Task.isCancelled else { return }
+                reply += chunk
+                jobs.append(chunk, to: jobID)
+            }
+            guard !Task.isCancelled else { return }
+            let parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height,
+                                              scale: provider.coordinateScale)
+            let answer = parsed.response.displayText
+            var conversation = Conversation()
+            conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
+                                code: parsed.response.code, language: parsed.response.language)
+            jobs.setChatMessages([
+                ChatModel.Message(role: .user, text: request.question),
+                ChatModel.Message(role: .assistant, text: answer),
+            ], for: jobID)
+            jobs.complete(jobID, answer: answer, conversation: conversation)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            jobs.fail(jobID, reason: error.localizedDescription)
+        }
+    }
+    #endif
+
     /// A close-up look is running after an answer (it can be dropped at any time).
     @ObservationIgnored private var isRefining = false
+    @ObservationIgnored private var refiningOwnerID: UUID?
+
+    private func beginAnswerFlow() -> UUID {
+        let id = UUID()
+        answerFlowID = id
+        answeringOwnerID = id
+        isAnswering = true
+        return id
+    }
+
+    private func finishAnswering(_ id: UUID) {
+        guard answeringOwnerID == id else { return }
+        answeringOwnerID = nil
+        isAnswering = false
+    }
+
+    private func invalidateAnswerFlow() {
+        answerFlowID = nil
+        answeringOwnerID = nil
+        isAnswering = false
+        refiningOwnerID = nil
+        isRefining = false
+        onSnipAnswering?(false)
+    }
+
+    private func beginRefining(_ id: UUID) {
+        refiningOwnerID = id
+        isRefining = true
+    }
+
+    private func finishRefining(_ id: UUID) {
+        guard refiningOwnerID == id else { return }
+        refiningOwnerID = nil
+        isRefining = false
+    }
 
     /// A new question or explanation takes over: drop a close-up still running so the
     /// local model is free at once.
     private func stopRefining() {
         guard isRefining else { return }
         askTask?.cancel()
-        isRefining = false
+        invalidateAnswerFlow()
         Log.ask.notice("Close-up dropped: a new question started")
     }
 

@@ -11,16 +11,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let revealCaptureItem = NSMenuItem(title: "Reveal Last Capture", action: nil, keyEquivalent: "")
     private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let backgroundCapsulesItem = NSMenuItem(title: "Background ClickBaits", action: nil, keyEquivalent: "")
+    private let backgroundCapsulesMenu = NSMenu()
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
+    private let onDebugCapsuleTest: () -> Void
+    private let onShowCapsule: (UUID) -> Void
+    private var backgroundEntries: [BackgroundJobs.Entry] = []
 
-    init(settings: AppSettings, onOpenSettings: @escaping () -> Void, onOpenPermissions: @escaping () -> Void) {
+    init(settings: AppSettings, onOpenSettings: @escaping () -> Void, onOpenPermissions: @escaping () -> Void,
+         onDebugCapsuleTest: @escaping () -> Void = {}, onShowCapsule: @escaping (UUID) -> Void = { _ in }) {
         self.settings = settings
         self.onOpenSettings = onOpenSettings
         self.onOpenPermissions = onOpenPermissions
+        self.onDebugCapsuleTest = onDebugCapsuleTest
+        self.onShowCapsule = onShowCapsule
         super.init()
 
+        backgroundCapsulesMenu.delegate = self
+        backgroundCapsulesItem.submenu = backgroundCapsulesMenu
         statusItem.menu = makeMenu()
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "ClickBait")
@@ -59,6 +69,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
+        if menu === backgroundCapsulesMenu { rebuildBackgroundCapsulesMenu() }
+    }
+
+    func updateBackgroundJobs(_ entries: [BackgroundJobs.Entry]) {
+        backgroundEntries = entries
+        backgroundCapsulesItem.isEnabled = !entries.isEmpty
+        rebuildBackgroundCapsulesMenu()
     }
 
     private func makeMenu() -> NSMenu {
@@ -74,7 +91,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         answerItem.isHidden = true
         menu.addItem(answerItem)
         menu.addItem(.separator())
+        backgroundCapsulesItem.isEnabled = false
+        menu.addItem(backgroundCapsulesItem)
+        menu.addItem(.separator())
 
+        #if DEBUG
+        menu.addItem(item("Debug: Test Capsule (Local)", action: #selector(runDebugCapsuleTest), key: ""))
+        menu.addItem(.separator())
+        #endif
         menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))
         menu.addItem(item("Permissions…", action: #selector(openPermissions), key: ""))
         revealCaptureItem.action = #selector(revealLastCapture)
@@ -94,6 +118,46 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() { onOpenSettings() }
     @objc private func openPermissions() { onOpenPermissions() }
+    @objc private func showCapsule(_ sender: NSMenuItem) {
+        guard let idText = sender.representedObject as? String, let id = UUID(uuidString: idText) else { return }
+        Log.app.notice("Background capsule selected for recall")
+        // Let AppKit finish dismissing the nested status menu before ordering the
+        // status-level panel forward; otherwise the menu can cover the recalled card.
+        DispatchQueue.main.async { [weak self] in
+            self?.onShowCapsule(id)
+        }
+    }
+
+    private func rebuildBackgroundCapsulesMenu() {
+        backgroundCapsulesMenu.removeAllItems()
+        guard !backgroundEntries.isEmpty else {
+            let empty = NSMenuItem(title: "No background tasks", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            backgroundCapsulesMenu.addItem(empty)
+            return
+        }
+
+        for entry in backgroundEntries {
+            let state: String
+            switch entry.job.status {
+            case .working: state = "Working"
+            case .done: state = "Ready"
+            case .failed: state = "Failed"
+            case .stopped: state = "Stopped"
+            }
+            let question = entry.job.question.count > 44
+                ? String(entry.job.question.prefix(43)) + "…"
+                : entry.job.question
+            let item = NSMenuItem(title: "\(state): \(question)", action: #selector(showCapsule(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.id.uuidString
+            backgroundCapsulesMenu.addItem(item)
+        }
+    }
+
+    #if DEBUG
+    @objc private func runDebugCapsuleTest() { onDebugCapsuleTest() }
+    #endif
 
     @objc private func revealLastCapture() {
         let directory = DebugCaptureStore.directory

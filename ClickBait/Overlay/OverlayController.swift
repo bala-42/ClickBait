@@ -21,6 +21,7 @@ final class OverlayController {
     private var monitors: [Any] = []
     private var spaceObserver: NSObjectProtocol?
     private var dismissTask: Task<Void, Never>?
+    private var peelFlightStages: [UUID: StagePanel] = [:]
 
     func start() {
         makeBubblePanel()
@@ -68,6 +69,88 @@ final class OverlayController {
         }
         let topLeft = restingTopLeft(for: NSEvent.mouseLocation)
         return CGPoint(x: topLeft.x + Self.triangleInset, y: topLeft.y - Self.triangleInset)
+    }
+
+    /// Peels a small copy of the current companion toward its new capsule. The real
+    /// companion immediately returns to the cursor and listens for the next question.
+    /// If motion is reduced or the capsule is on another display, only the capsule's
+    /// own fade is used.
+    func peel(to target: CGPoint?, tone: CompanionTone, completion: @escaping @MainActor () -> Void) {
+        model.companionPop &+= 1
+        let start = companionTriangleCenter
+        guard let target,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let sourceScreen = NSScreen.screens.first(where: { $0.frame.contains(start) }),
+              let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(target) }),
+              sourceScreen.frame == targetScreen.frame else {
+            completion()
+            return
+        }
+
+        let size = CGSize(width: 44, height: 28)
+        let host = NSHostingView(rootView: CompanionTriangle(tone: tone, pulsing: false, spinning: true)
+            .scaleEffect(0.8)
+            .frame(width: size.width, height: size.height))
+        host.wantsLayer = true
+        let stage = StagePanel(content: host, size: size, makePanel: Self.makePanel)
+        let startOrigin = CGPoint(x: start.x - size.width / 2, y: start.y - size.height / 2)
+        stage.setOrigin(startOrigin, anchor: start)
+
+        guard let stageLayer = host.superview?.layer, let contentLayer = host.layer else {
+            completion()
+            return
+        }
+
+        let flightID = UUID()
+        peelFlightStages[flightID] = stage
+        let panelOrigin = stage.panel.frame.origin
+        let targetOrigin = CGPoint(x: target.x - panelOrigin.x - size.width / 2,
+                                   y: target.y - panelOrigin.y - size.height / 2)
+        let initialTransform = stageLayer.sublayerTransform
+        let finalTransform = CATransform3DMakeTranslation(targetOrigin.x, targetOrigin.y, 0)
+
+        let travel = CAKeyframeAnimation(keyPath: "sublayerTransform")
+        travel.values = [NSValue(caTransform3D: initialTransform),
+                         NSValue(caTransform3D: initialTransform),
+                         NSValue(caTransform3D: finalTransform)]
+        travel.keyTimes = [0, 0.267, 1]
+        travel.timingFunctions = [CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeInEaseOut)]
+        travel.duration = 0.45
+
+        let direction = atan2(target.y - start.y, target.x - start.x)
+        let rotate = CATransform3DMakeRotation(direction, 0, 0, 1)
+        let stretch = CATransform3DConcat(
+            CATransform3DConcat(rotate, CATransform3DMakeScale(1.35, 0.8, 1)),
+            CATransform3DMakeRotation(-direction, 0, 0, 1)
+        )
+        let settled = CATransform3DMakeScale(0.8, 0.8, 1)
+        let shape = CAKeyframeAnimation(keyPath: "transform")
+        shape.values = [NSValue(caTransform3D: CATransform3DIdentity),
+                        NSValue(caTransform3D: stretch), NSValue(caTransform3D: settled)]
+        shape.keyTimes = [0, 0.267, 1]
+        shape.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+        shape.duration = 0.45
+
+        let fade = CAKeyframeAnimation(keyPath: "opacity")
+        fade.values = [1, 1, 0]
+        fade.keyTimes = [0, 0.72, 1]
+        fade.duration = 0.45
+
+        stageLayer.sublayerTransform = finalTransform
+        contentLayer.transform = settled
+        contentLayer.opacity = 0
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak panel = stage.panel] in
+            panel?.orderOut(nil)
+            panel?.close()
+            self?.peelFlightStages.removeValue(forKey: flightID)
+            completion()
+        }
+        stageLayer.add(travel, forKey: "capsule-peel-travel")
+        contentLayer.add(shape, forKey: "capsule-peel-shape")
+        contentLayer.add(fade, forKey: "capsule-peel-fade")
+        CATransaction.commit()
+        stage.panel.orderFrontRegardless()
     }
 
     /// Where a confirmation should open: where the companion's card sits now.

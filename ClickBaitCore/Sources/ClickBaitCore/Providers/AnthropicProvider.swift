@@ -7,6 +7,8 @@ public struct AnthropicProvider: LLMProvider {
     static let baseURL = URL(string: "https://api.anthropic.com/v1")!
     static let apiVersion = "2023-06-01"
     static let fallbackBeta = "server-side-fallback-2026-07-01"
+    static let webSearchMaxUses = 1
+    static let webSearchMaxContinuations = 2
 
     public let model: String
     private let apiKey: String?
@@ -19,6 +21,18 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     public var displayName: String { "Anthropic (\(model))" }
+    public var coordinateScale: CoordinateScale { .pixels }
+
+    public func timeout(for operation: ProviderOperation) -> Duration {
+        switch operation {
+        case .interpretOrder: .seconds(12)
+        case .classifyRequest: .seconds(8)
+        case .selectElement: .seconds(10)
+        case .planTutorialTextOnly: .seconds(25)
+        case .planTutorialWithScreenshot: .seconds(40)
+        case .labelTourParts: .seconds(90)
+        }
+    }
 
     private static let unreachable = "Couldn't reach Anthropic. Check your internet connection."
 
@@ -26,6 +40,13 @@ public struct AnthropicProvider: LLMProvider {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    if !request.markNames.isEmpty {
+                        let text = try await completeWebSearch(request)
+                        if !text.isEmpty { continuation.yield(text) }
+                        continuation.finish()
+                        return
+                    }
+
                     let lines = try await HTTPStreaming.lines(
                         for: try makeMessagesRequest(request),
                         session: session,
@@ -65,6 +86,10 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     func makeMessagesRequest(_ ask: AskRequest) throws -> URLRequest {
+        try makeMessagesRequest(body: Self.messagesBody(for: ask, model: model))
+    }
+
+    private func makeMessagesRequest(body: [String: Any]) throws -> URLRequest {
         var request = try authorizedRequest(url: Self.baseURL.appending(path: "messages"))
         request.httpMethod = "POST"
         request.timeoutInterval = 120
@@ -72,8 +97,71 @@ public struct AnthropicProvider: LLMProvider {
         if options.fallbacks {
             request.setValue(Self.fallbackBeta, forHTTPHeaderField: "anthropic-beta")
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: Self.messagesBody(for: ask, model: model))
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
+    }
+
+    /// A red tour is a follow-up, so it can finish as a single result after a bounded web
+    /// search. Anthropic may pause a long server-side search loop; replay its assistant
+    /// content unchanged, with the same search tool, until it finishes or reaches the cap.
+    private func completeWebSearch(_ ask: AskRequest) async throws -> String {
+        var body = Self.messagesBody(for: ask, model: model)
+        var continuations = 0
+
+        while true {
+            try Task.checkCancellation()
+            let request = try makeMessagesRequest(body: body)
+            let (data, status) = try await HTTPStreaming.data(for: request, session: session,
+                                                               unreachableMessage: Self.unreachable)
+            guard (200..<300).contains(status) else { throw Self.error(status: status, body: data, model: model) }
+            let message = try Self.decodeMessageResponse(data)
+
+            if message.stopReason == "pause_turn" {
+                guard continuations < Self.webSearchMaxContinuations else {
+                    throw LLMError.invalidResponse("Internet Mode search took too long to finish.")
+                }
+                body = Self.continuationBody(body, assistantContent: message.content)
+                continuations += 1
+                continue
+            }
+
+            guard message.stopReason == "end_turn" || message.stopReason == "stop_sequence" else {
+                throw LLMError.invalidResponse("Internet Mode ended before it finished matching the marked parts.")
+            }
+            let text = message.content
+                .filter { $0["type"] as? String == "text" }
+                .compactMap { $0["text"] as? String }
+                .joined()
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw LLMError.invalidResponse("Internet Mode returned no part labels.")
+            }
+            return text
+        }
+    }
+
+    static func decodeMessageResponse(_ data: Data) throws -> (content: [[String: Any]], stopReason: String) {
+        guard let response = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawContent = response["content"] as? [Any],
+              let stopReason = response["stop_reason"] as? String else {
+            throw LLMError.invalidResponse("Anthropic returned an unreadable message.")
+        }
+        let content = rawContent.compactMap { $0 as? [String: Any] }
+        guard content.count == rawContent.count else {
+            throw LLMError.invalidResponse("Anthropic returned an unreadable message block.")
+        }
+        if stopReason == "refusal" {
+            let details = response["stop_details"] as? [String: Any]
+            throw LLMError.refusal(category: details?["category"] as? String)
+        }
+        return (content, stopReason)
+    }
+
+    static func continuationBody(_ body: [String: Any], assistantContent: [[String: Any]]) -> [String: Any] {
+        var continued = body
+        var messages = body["messages"] as? [[String: Any]] ?? []
+        messages.append(["role": "assistant", "content": assistantContent])
+        continued["messages"] = messages
+        return continued
     }
 
     private func authorizedRequest(url: URL) throws -> URLRequest {
@@ -94,11 +182,14 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     static func messagesBody(for ask: AskRequest, model: String) -> [String: Any] {
+        let useWebSearch = !ask.markNames.isEmpty
         var body: [String: Any] = [
             "model": model,
-            // Room for adaptive thinking plus a short JSON answer.
-            "max_tokens": 4096,
-            "stream": true,
+            // Leave room for reasoning. Red marker matching gets a larger ceiling below.
+            "max_tokens": ask.markNames.isEmpty ? 8192 : 16_384,
+            // The marker follow-up is not spoken; wait for the whole answer so a paused
+            // server-side search can be resumed with the exact assistant content.
+            "stream": !useWebSearch,
             "system": Prompt.system(for: ask),
             // Earlier turns as text; only the newest message carries a screenshot.
             "messages": ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] } + [[
@@ -112,9 +203,18 @@ public struct AnthropicProvider: LLMProvider {
             ]],
         ]
         let options = options(for: model)
-        if options.effort {
-            // Spoken answers must start fast; low effort keeps thinking short.
-            body["output_config"] = ["effort": "low"]
+        if useWebSearch {
+            body["tools"] = [[
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": webSearchMaxUses,
+                "allowed_callers": ["direct"],
+            ]]
+        }
+        if options.effort, !ask.markNames.isEmpty {
+            // Spend more reasoning on the red tour's visual matching step, where a wrong
+            // label sends the cursor to the wrong part. Ordinary asks use the model default.
+            body["output_config"] = ["effort": "high"]
         }
         if options.fallbacks {
             // Re-run a wrongly declined request on Anthropic's recommended model.

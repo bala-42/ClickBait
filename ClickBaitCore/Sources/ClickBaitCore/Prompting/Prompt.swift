@@ -66,6 +66,7 @@ public enum Prompt {
         if request.pickElement { text = pickSystem }
         else if request.sortRequest { text = sortSystem }
         else if request.interpretOrder { text = orderSystem }
+        else if !request.markNames.isEmpty { text = marksSystem }
         else if request.listParts { text = partsSystem }
         else if request.planTutorial { text = tutorialSystem }
         else if request.tutorialCheck != nil { text = progressSystem }
@@ -165,6 +166,24 @@ public enum Prompt {
         - x and y are the CENTER of that part in this image's pixels, origin at the top-left.
         - "label" is the part's or person's proper name, 1–3 words (e.g. "Supraspinatus", "Jupiter", "Keerthy Suresh").
         - If nothing in it has named parts, reply {"parts": []}.
+        """
+
+    /// What each numbered mark (found on the device, drawn on the close-up) is on: the model
+    /// names things well but can't place them (`ObjectMarks`). Asked mark by mark, keyed by
+    /// number: asked name by name it just counted 1, 2, 3… onto fish in the wallpaper
+    /// (1/9); a bare list lost track of which entry was which mark (9/15).
+    public static let marksSystem = """
+        Red numbered markers have been placed on things in this image. Look at each marker in \
+        turn, from 1 up, and say what the thing it is on is.
+
+        Reply with ONLY one JSON object with one key per marker number: {"1": "name", "2": "name", ...}
+        - Each value is one of the given names, or "none" when the marked thing is none of them \
+        (background, something else).
+        - Each name goes to at most one marker.
+        - Decide by what the marked thing looks like (colour, size, shape, details) and where \
+        it sits, not by the order of the numbers.
+        - Use web search for unfamiliar or specialist identities when it can clarify the image. \
+        Search provides context only: match every name to the visible thing under its marker.
         """
 
     /// Text-only: map an order the rules didn't recognise onto one known action.
@@ -268,6 +287,13 @@ public enum Prompt {
                 Steps:
                 \(steps.joined(separator: "\n"))
                 They were on step \(check.expected). Which step should they do next?
+                """
+        }
+        if !request.markNames.isEmpty {
+            return """
+                Names: \(request.markNames.joined(separator: ", "))
+                Markers: 1–\(request.markCount).
+                The explanation: "\(request.question)"
                 """
         }
         if request.listParts {

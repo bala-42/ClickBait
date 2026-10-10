@@ -84,11 +84,12 @@ struct OllamaStreamDecoderTests {
 }
 
 struct RequestBuilderTests {
-    @Test func anthropicBodySendsImageBeforeTextWithLowEffortAndFallbacks() throws {
+    @Test func anthropicBodyUsesModelDefaultsAndSendsImageBeforeText() throws {
         let body = AnthropicProvider.messagesBody(for: ask, model: "claude-opus-5-5")
         #expect(body["model"] as? String == "claude-opus-5-5")
         #expect(body["stream"] as? Bool == true)
-        #expect((body["output_config"] as? [String: String])?["effort"] == "low")
+        #expect(body["max_tokens"] as? Int == 8192)
+        #expect(body["output_config"] == nil)
         #expect(body["fallbacks"] as? String == "default")
         #expect(body["thinking"] == nil)
 
@@ -104,6 +105,98 @@ struct RequestBuilderTests {
         let body = AnthropicProvider.messagesBody(for: ask, model: "claude-haiku-4-5")
         #expect(body["output_config"] == nil)
         #expect(body["fallbacks"] == nil)
+    }
+
+    @Test func anthropicRedMarkerTourKeepsImagesLabelsAndPixelCoordinates() throws {
+        var tour = ask
+        tour.markNames = ["Liver", "Gallbladder"]
+        tour.markCount = 2
+
+        let provider = AnthropicProvider(model: "claude-opus-5-5", apiKey: "sk-test")
+        let body = AnthropicProvider.messagesBody(for: tour, model: provider.model)
+        #expect(provider.coordinateScale == .pixels)
+        #expect(body["system"] as? String == Prompt.marksSystem)
+        #expect(body["stream"] as? Bool == false)
+
+        let tools = try #require(body["tools"] as? [[String: Any]])
+        #expect(tools.count == 1)
+        #expect(tools[0]["type"] as? String == "web_search_20250305")
+        #expect(tools[0]["name"] as? String == "web_search")
+        #expect(tools[0]["max_uses"] as? Int == AnthropicProvider.webSearchMaxUses)
+        #expect(tools[0]["allowed_callers"] as? [String] == ["direct"])
+
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        let content = try #require(messages.first?["content"] as? [[String: Any]])
+        #expect(content.map { $0["type"] as? String } == ["image", "text"])
+        let source = try #require(content[0]["source"] as? [String: String])
+        #expect(source["data"] == tour.screenshotJPEG.base64EncodedString())
+        #expect((content.last?["text"] as? String)?.contains("Names: Liver, Gallbladder") == true)
+        #expect((content.last?["text"] as? String)?.contains("Markers: 1–2") == true)
+        #expect((body["max_tokens"] as? Int) == 16_384)
+        #expect((body["output_config"] as? [String: String])?["effort"] == "high")
+    }
+
+    @Test func anthropicPartsLookRequestsScreenshotPixelCoordinates() throws {
+        var parts = ask
+        parts.listParts = true
+
+        let body = AnthropicProvider.messagesBody(for: parts, model: "claude-opus-5-5")
+        #expect(body["system"] as? String == Prompt.partsSystem)
+
+        let messages = try #require(body["messages"] as? [[String: Any]])
+        let content = try #require(messages.first?["content"] as? [[String: Any]])
+        #expect((content.last?["text"] as? String)?.contains("1280×831 pixels") == true)
+        #expect(Prompt.partsSystem.contains("this image's pixels"))
+    }
+
+    @Test func anthropicAllowsMoreTimeForInternetModeFollowUps() {
+        let local = OllamaProvider(model: "qwen3.5:9b")
+        let internet = AnthropicProvider(model: "claude-opus-5-5", apiKey: "sk-test")
+
+        #expect(local.timeout(for: .classifyRequest) == .seconds(3))
+        #expect(internet.timeout(for: .classifyRequest) == .seconds(8))
+        #expect(local.timeout(for: .labelTourParts) == .seconds(20))
+        #expect(internet.timeout(for: .labelTourParts) == .seconds(90))
+    }
+
+    @Test func anthropicPauseTurnContinuationPreservesServerSearchBlocks() throws {
+        let body = AnthropicProvider.messagesBody(for: {
+            var request = ask
+            request.markNames = ["Liver"]
+            request.markCount = 3
+            return request
+        }(), model: "claude-opus-5-5")
+        let assistantContent: [[String: Any]] = [
+            ["type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": ["query": "liver anatomy"]],
+            ["type": "web_search_tool_result", "tool_use_id": "srv_1", "content": []],
+        ]
+
+        let continued = AnthropicProvider.continuationBody(body, assistantContent: assistantContent)
+        let messages = try #require(continued["messages"] as? [[String: Any]])
+        #expect(messages.count == 2)
+        #expect(messages.last?["role"] as? String == "assistant")
+        let replayed = try #require(messages.last?["content"] as? [[String: Any]])
+        #expect(replayed.map { $0["type"] as? String } == ["server_tool_use", "web_search_tool_result"])
+        #expect(continued["tools"] as? [[String: Any]] != nil)
+        #expect(continued["stream"] as? Bool == false)
+    }
+
+    @Test func anthropicDecodesFinalAndPausedMessages() throws {
+        let pausedData = try JSONSerialization.data(withJSONObject: [
+            "content": [["type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": [:]]],
+            "stop_reason": "pause_turn",
+        ])
+        let paused = try AnthropicProvider.decodeMessageResponse(pausedData)
+        #expect(paused.stopReason == "pause_turn")
+        #expect(paused.content.first?["type"] as? String == "server_tool_use")
+
+        let doneData = try JSONSerialization.data(withJSONObject: [
+            "content": [["type": "text", "text": #"{"1":"Liver"}"#]],
+            "stop_reason": "end_turn",
+        ])
+        let done = try AnthropicProvider.decodeMessageResponse(doneData)
+        #expect(done.stopReason == "end_turn")
+        #expect(done.content.first?["text"] as? String == #"{"1":"Liver"}"#)
     }
 
     @Test func anthropicRequestHeaders() throws {

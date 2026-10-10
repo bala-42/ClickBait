@@ -51,6 +51,11 @@ public struct AskRequest: Sendable {
     /// For snips whose explanation came back without parts: list them (`Prompt.partsSystem`).
     /// `question` then holds the explanation, as a hint to what the image shows.
     public var listParts = false
+    /// Name the numbered marks on a snip's close-up (`Prompt.marksSystem`): which mark is
+    /// each of these names. `question` then holds the explanation.
+    public var markNames: [String] = []
+    /// How many marks are drawn, numbered from 1.
+    public var markCount = 0
     /// Plan a tutorial for `question` (`Prompt.tutorialSystem`).
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.

@@ -19,10 +19,24 @@ public protocol LLMProvider: Sendable {
 
     /// How the model that answers questions about the screen writes positions.
     var coordinateScale: CoordinateScale { get }
+
+    /// Deadlines for secondary requests such as tutorial classification and tour labels.
+    func timeout(for operation: ProviderOperation) -> Duration
 }
 
 extension LLMProvider {
     public var coordinateScale: CoordinateScale { .pixels }
+
+    public func timeout(for operation: ProviderOperation) -> Duration {
+        switch operation {
+        case .interpretOrder: .seconds(8)
+        case .classifyRequest: .seconds(3)
+        case .selectElement: .seconds(5)
+        case .planTutorialTextOnly: .seconds(15)
+        case .planTutorialWithScreenshot: .seconds(25)
+        case .labelTourParts: .seconds(20)
+        }
+    }
 }
 
 public enum LLMError: LocalizedError, Equatable {
@@ -49,6 +63,17 @@ public enum LLMError: LocalizedError, Equatable {
             "The model sent something unexpected: \(detail)"
         }
     }
+}
+
+/// A bounded deadline for the small secondary requests that complete a screen answer.
+/// Network providers need more room for round trips than an on-device model.
+public enum ProviderOperation: Sendable, Equatable {
+    case interpretOrder
+    case classifyRequest
+    case selectElement
+    case planTutorialTextOnly
+    case planTutorialWithScreenshot
+    case labelTourParts
 }
 
 extension LLMProvider {

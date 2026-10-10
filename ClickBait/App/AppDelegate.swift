@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
+    private lazy var capsules = CapsuleController()
+    private let backgroundJobs = BackgroundJobs()
     private let chat = ChatController()
     private let confirm = ConfirmController()
     private let escape = InputInterceptor()
@@ -36,7 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Lets Ollama free the models it kept loaded for ClickBait.
     func applicationWillTerminate(_ notification: Notification) {
-        (settings.makeProvider() as? OllamaProvider)?.unload()
+        backgroundJobs.removeAll()
+        capsules.removeAll()
+        settings.makeOllamaProvider().unload()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,10 +51,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let statusBar = StatusBarController(
             settings: settings,
             onOpenSettings: { [weak self] in self?.settingsWindow.show() },
-            onOpenPermissions: { [weak self] in self?.onboardingWindow.show() }
+            onOpenPermissions: { [weak self] in self?.onboardingWindow.show() },
+            onDebugCapsuleTest: { [weak self] in
+                #if DEBUG
+                self?.coordinator.runDebugCapsuleTest()
+                #endif
+            },
+            onShowCapsule: { [weak self] in self?.capsules.expand($0) }
         )
         self.statusBar = statusBar
         overlay.start()
+        coordinator.backgroundJobs = backgroundJobs
+        backgroundJobs.onChange = { [weak self] entries in
+            self?.capsules.sync(entries)
+            self?.statusBar?.updateBackgroundJobs(entries)
+        }
+        capsules.canGoThere = { [weak self] in self.map { !$0.coordinator.isBusy } ?? false }
+        capsules.onStop = { [weak self] in self?.backgroundJobs.stop($0) }
+        capsules.onDismiss = { [weak self] in self?.backgroundJobs.remove($0) }
+        capsules.onLater = { [weak self] in self?.capsules.fold($0) }
+        capsules.onGoThere = { [weak self] in self?.goThere($0) }
+        coordinator.onPeel = { [weak self] job in
+            guard let self else { return [] }
+            let messages = chat.stash()
+            backgroundJobs.setChatMessages(messages, for: job.id)
+            let index = backgroundJobs.entries.firstIndex(where: { $0.id == job.id })
+            let target = index.flatMap { capsules.slotCenter(forIndex: $0) }
+            let tone: CompanionTone = job.kind == .snip ? .capture : .processing
+            overlay.peel(to: target, tone: tone, completion: {})
+            return messages
+        }
+        coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
         #if DEBUG
         overlay.runBenchmarkIfRequested()
         #endif
@@ -354,6 +385,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for kind in PermissionKind.allCases {
             Log.app.notice("Permission \(kind.title, privacy: .public): \(String(describing: self.permissions.status(of: kind)), privacy: .public)")
         }
+    }
+
+    private func goThere(_ id: UUID) {
+        guard !coordinator.isBusy,
+              let entry = backgroundJobs.entries.first(where: { $0.id == id }),
+              case .done = entry.job.status else { return }
+        let job = entry.job
+        var messages = entry.chatMessages
+        if messages.isEmpty {
+            messages.append(ChatModel.Message(role: .user, text: job.question))
+            if !job.answer.isEmpty { messages.append(ChatModel.Message(role: .assistant, text: job.answer)) }
+        }
+
+        var homeApp = job.homePID.flatMap { NSRunningApplication(processIdentifier: pid_t($0)) }
+        if homeApp?.isTerminated == true { homeApp = nil }
+        if homeApp == nil, let bundleID = job.homeBundleID {
+            homeApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+        }
+
+        if chat.isOpen {
+            let oldHome = chat.homeApp
+            let oldBundleID = chat.homeBundleID
+            let oldPID = chat.homeProcessID
+            let oldMessages = chat.stash()
+            let detached = coordinator.detachChatForCapsule()
+            let oldConversation = detached?.conversation ?? Conversation()
+            let firstQuestion = oldMessages.first(where: { $0.role == .user })?.text ?? "your chat"
+            let answer = oldMessages.last(where: { $0.role == .assistant })?.text ?? ""
+            var displaced = BackgroundJob(question: firstQuestion, kind: .answer,
+                                          homeBundleID: oldBundleID ?? oldHome?.bundleIdentifier,
+                                          homePID: oldPID ?? oldHome.map { Int32($0.processIdentifier) },
+                                          conversation: oldConversation)
+            displaced.complete(summary: "your chat about \(firstQuestion)", answer: answer, conversation: oldConversation)
+            backgroundJobs.remove(id)
+            if backgroundJobs.add(displaced, task: nil) {
+                backgroundJobs.setChatMessages(oldMessages, for: displaced.id)
+                backgroundJobs.setSnipMemory(detached?.snipMemory, for: displaced.id)
+            }
+        } else {
+            backgroundJobs.remove(id)
+        }
+
+        coordinator.restoreBackgroundConversation(job.conversation, snipMemory: entry.snipMemory)
+        homeApp?.activate()
+        chat.restore(messages, logoAt: invokedPoint ?? overlay.companionTriangleCenter, homeApp: homeApp)
     }
 
     /// ✕ or Escape on the chat bubble: close it and forget the conversation.

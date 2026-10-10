@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ClickBaitCore
 
@@ -161,5 +162,85 @@ struct FaceSnappingTests {
     @Test func fewerPeopleThanFacesUseTheClosestFaces() {
         let snapped = FaceSnapping.snap([Pointer(x: 980, y: 260, label: "Sananth")], to: faces)
         #expect(snapped[0].x == 1000)
+    }
+}
+
+struct MadeUpLayoutTests {
+    // qwen3.5:9b's reply for a diagonal solar-system picture (2026-10-06), 0–1000 scale:
+    // every planet at y = 576, exactly 56 apart.
+    private let planets = ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"]
+
+    @Test func anEvenRowIsMadeUp() {
+        let row = planets.enumerated().map { Pointer(x: 336 + Double($0.offset) * 56, y: 576, label: $0.element) }
+        #expect(PartsTour.looksMadeUp([Pointer(x: 192, y: 408, label: "Sun")] + row))
+        let column = planets.prefix(4).enumerated().map { Pointer(x: 500, y: 100 + Double($0.offset) * 80, label: $0.element) }
+        #expect(PartsTour.looksMadeUp(column))
+    }
+
+    @Test func realPositionsAreNotMadeUp() {
+        // Where the planets really are in that picture's close-up.
+        let real = [(249, 450), (343, 411), (438, 358), (505, 296), (673, 320), (849, 247), (969, 171), (1076, 112)]
+        #expect(!PartsTour.looksMadeUp(zip(planets, real).map { Pointer(x: Double($1.0), y: Double($1.1), label: $0) }))
+        // Three in a row is too few to tell; uneven gaps on one line are a real layout.
+        #expect(!PartsTour.looksMadeUp([Pointer(x: 100, y: 50, label: "A"), Pointer(x: 200, y: 50, label: "B"), Pointer(x: 300, y: 50, label: "C")]))
+        #expect(!PartsTour.looksMadeUp([100, 160, 300, 330].map { Pointer(x: $0, y: 50, label: "\($0)") }))
+    }
+}
+
+struct ObjectMarksTests {
+    private let marked = Rect(x: 0, y: 0, width: 1280, height: 584)
+
+    private func thing(_ x: Double, _ y: Double, _ width: Double, _ height: Double, fill: Double = 0.8) -> FoundObject {
+        FoundObject(center: Point(x: x, y: y), width: width, height: height, fill: fill)
+    }
+
+    @Test func eachThingIsMarkedOnceLeftToRight() {
+        let found = [
+            thing(673, 320, 130, 128), thing(249, 450, 31, 29, fill: 0.77), thing(249, 450, 30, 28, fill: 0.79),
+            thing(438, 356, 51, 76, fill: 0.59), thing(438, 358, 51, 50, fill: 0.79),  // Earth, seen twice
+            thing(1103, 191, 138, 360, fill: 0.14),  // an orbit line
+            thing(640, 292, 1280, 584),  // the whole background
+            thing(20, 20, 4, 4),  // a speck
+        ]
+        let marks = ObjectMarks.merge(found, imageWidth: 1280, imageHeight: 584, marked: marked)
+        #expect(marks.map(\.center.x) == [249, 438, 673])
+        #expect(marks[0].fill == 0.79 && marks[1].height == 50)  // the most solid sighting
+    }
+
+    @Test func thingsOutsideWhatWasMarkedAreLeftOut() {
+        let marks = ObjectMarks.merge([thing(300, 300, 40, 40), thing(1200, 300, 40, 40)], imageWidth: 1280, imageHeight: 584,
+                                      marked: Rect(x: 200, y: 200, width: 400, height: 200))
+        #expect(marks.map(\.center.x) == [300])
+    }
+
+    @Test func badgesSitAboveOrBelowTheThing() {
+        #expect(ObjectMarks.badgeCenter(for: thing(673, 320, 130, 128)).y < 320 - 64)
+        #expect(ObjectMarks.badgeCenter(for: thing(1076, 30, 69, 50)).y > 30 + 25)  // no room above
+    }
+
+    @Test func namedMarksBecomeStopsOnTheThings() {
+        let objects = [thing(505, 296, 40, 40), thing(343, 411, 48, 49), thing(849, 247, 169, 99)]
+        // A fish in the wallpaper (4) is "none"; 9 isn't a mark; Venus given twice keeps the first.
+        let reply = #"{"1": "Mars", "2": "Venus", "3": "Saturn", "4": "none", "9": "Earth", "5": "Venus"}"#
+        let marks = objects + [thing(1100, 300, 30, 12), thing(1150, 320, 30, 12)]
+        let stops = ObjectMarks.placed(names: ["Sun", "Mars", "Venus", "Earth", "Saturn"], reply: reply, objects: marks)
+        #expect(stops.map(\.label) == ["Mars", "Venus", "Saturn"])  // in the names' order
+        #expect(stops[0] == Pointer(x: 505, y: 296, label: "Mars"))
+        #expect(stops[1] == Pointer(x: 343, y: 411, label: "Venus"))
+        #expect(ObjectMarks.placed(names: ["Mars"], reply: "no idea", objects: objects).isEmpty)
+    }
+
+    @Test func theMarksPromptListsTheNames() {
+        var request = AskRequest(question: "The solar system.", screenshotJPEG: Data(), screenshotWidth: 1280, screenshotHeight: 584,
+                                 context: ScreenContext())
+        request.markNames = ["Sun", "Mercury"]
+        request.markCount = 8
+        #expect(Prompt.system(for: request) == Prompt.marksSystem)
+        #expect(Prompt.userText(for: request).contains("Names: Sun, Mercury\nMarkers: 1–8."))
+        // One key per mark, each a name or "none".
+        let schema = OllamaProvider.schema(for: request)
+        let properties = schema?["properties"] as? [String: Any]
+        #expect(properties?.count == 8 && (schema?["required"] as? [String])?.contains("8") == true)
+        #expect((properties?["3"] as? [String: Any])?["enum"] as? [String] == ["Sun", "Mercury", "none"])
     }
 }

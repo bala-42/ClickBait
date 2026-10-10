@@ -104,15 +104,20 @@ final class AppSettings {
     /// each time, so it's never cached in memory longer than one ask.
     func makeProvider() -> any LLMProvider {
         switch provider {
-        case .ollama:
-            OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces),
-                           fastModel: ollamaFastModel.trimmingCharacters(in: .whitespaces))
+        case .ollama: makeOllamaProvider()
         case .anthropic:
             AnthropicProvider(
                 model: anthropicModel.trimmingCharacters(in: .whitespaces),
                 apiKey: KeychainStore.read(.anthropicAPIKey)
             )
         }
+    }
+
+    /// Local provider configuration, also used to release Ollama models at app exit
+    /// when Internet Mode is selected.
+    func makeOllamaProvider() -> OllamaProvider {
+        OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces),
+                       fastModel: ollamaFastModel.trimmingCharacters(in: .whitespaces))
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -151,8 +156,8 @@ enum ProviderKind: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .ollama: "Ollama — local, private (default)"
-        case .anthropic: "Anthropic — your API key (sends the screenshot to Anthropic)"
+        case .ollama: "Local Mode — Ollama (default)"
+        case .anthropic: "Internet Mode — Anthropic API"
         }
     }
 }

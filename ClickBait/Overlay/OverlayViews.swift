@@ -291,6 +291,8 @@ struct CompanionBubbleView: View {
     let model: OverlayModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var popScale: CGFloat = 1
+    @State private var popOpacity: Double = 1
 
     static let maxTextWidth: CGFloat = 300
 
@@ -306,6 +308,8 @@ struct CompanionBubbleView: View {
                 }
             }
             .padding(2)
+            .scaleEffect(popScale)
+            .opacity(popOpacity)
             if model.bubble.hasWords && !model.isGuiding {
                 card
                     .transition(.scale(scale: 0.85, anchor: .topLeading).combined(with: .opacity))
@@ -319,7 +323,22 @@ struct CompanionBubbleView: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.bubbleSize = $0 }
         .frame(width: OverlayModel.bubbleCanvas.width, height: OverlayModel.bubbleCanvas.height, alignment: .topLeading)
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.8), value: model.bubble)
+        .onChange(of: model.companionPop) { _, _ in animatePop() }
         .accessibilityElement(children: .combine)
+    }
+
+    private func animatePop() {
+        withTransaction(Transaction(animation: nil)) {
+            popScale = reduceMotion ? 1 : 0
+            popOpacity = reduceMotion ? 0 : 1
+        }
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.2, dampingFraction: 0.68)) {
+                popScale = 1
+                popOpacity = 1
+            }
+        }
     }
 
     /// Only things that need words get any: a result or a problem, as a tiny pill.

@@ -58,33 +58,12 @@ struct SnipView: @unchecked Sendable {
         return ScreenPointer(label: part.label, appKit: Point(x: quartz.x, y: primaryDisplayHeight - quartz.y), quartz: quartz)
     }
 
-    /// The outline of the thing at each part (`PartOutline`), in screen points; nil where
-    /// nothing separate stands out. Worked out on a copy at most 320 px long (a few ms;
-    /// edges within ~2 pt).
+    /// The outline of the thing at each part (`OutlineFinder`), in screen points; nil where
+    /// no separate thing is seen whole.
     func outlines(at parts: [Pointer]) -> [PartOutline?] {
-        let factor = min(1, 320 / Double(max(image.width, image.height)))
-        let width = max(1, Int((Double(image.width) * factor).rounded()))
-        let height = max(1, Int((Double(image.height) * factor).rounded()))
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(
-                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
-            else { return false }
-            context.interpolationQuality = .medium
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return parts.map { _ in nil } }
-        let scaleX = Double(width) / Double(image.width), scaleY = Double(height) / Double(image.height)
-        let marked = Rect(x: marked.x * scaleX, y: marked.y * scaleY, width: marked.width * scaleX, height: marked.height * scaleY)
-        // Small-copy pixels → screen points.
-        let pointsPerPixel = crop.width / Double(width)
+        let pointsPerPixel = crop.width / Double(image.width)
         return parts.map { part in
-            PartOutline.find(rgba: pixels, width: width, height: height, bytesPerRow: width * 4,
-                             at: Point(x: part.x * scaleX, y: part.y * scaleY), marked: marked)?
-                .scaled(by: pointsPerPixel)
+            OutlineFinder.outline(in: image, at: Point(x: part.x, y: part.y))?.scaled(by: pointsPerPixel)
         }
     }
 }

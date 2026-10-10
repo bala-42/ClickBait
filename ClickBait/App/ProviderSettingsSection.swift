@@ -7,6 +7,7 @@ struct ProviderSettingsSection: View {
 
     @State private var keyDraft = ""
     @State private var hasSavedKey = KeychainStore.read(.anthropicAPIKey) != nil
+    @State private var isReplacingKey = false
     @State private var keyError: String?
     @State private var testResult: TestResult?
     @State private var isTesting = false
@@ -40,7 +41,12 @@ struct ProviderSettingsSection: View {
             TextField("Anthropic model", text: $settings.anthropicModel, prompt: Text(AnthropicProvider.defaultModel))
                 .onChange(of: settings.anthropicModel) { testResult = nil }
             apiKeyRow
-            Text("Your screenshot and question are sent to Anthropic with your key. The key is stored in your Keychain.")
+            if !hasSavedKey {
+                Label("Save an API key before using Internet Mode.", systemImage: "exclamationmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            Text("Internet Mode sends screenshots and task context to Anthropic: your question, selected text, text chat history, and any app, window, or readable on-screen details ClickBait collects for the task. Ordinary asks use the model's normal reasoning level. Strawberry-red part tours send the marked close-up and candidate names, use higher reasoning, and may search the web for specialist context to improve visual matching. A tour can use up to three searches if a long request has to resume; Anthropic charges US$0.01 per search plus model token costs, so the tour can take longer and cost more. ClickBait won't automatically switch providers. Your key stays in the macOS Keychain.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -67,21 +73,37 @@ struct ProviderSettingsSection: View {
     }
 
     @ViewBuilder private var apiKeyRow: some View {
-        if hasSavedKey {
+        if hasSavedKey && !isReplacingKey {
             HStack {
                 Label("API key saved in Keychain", systemImage: "key.fill")
                 Spacer()
+                Button("Replace") {
+                    isReplacingKey = true
+                    keyDraft = ""
+                    keyError = nil
+                    testResult = nil
+                }
                 Button("Remove") {
                     KeychainStore.delete(.anthropicAPIKey)
                     hasSavedKey = false
+                    isReplacingKey = false
+                    keyDraft = ""
+                    keyError = nil
                     testResult = nil
                 }
             }
         } else {
             HStack {
-                SecureField("API key", text: $keyDraft, prompt: Text("sk-ant-…"))
-                Button("Save") { saveKey() }
+                SecureField(hasSavedKey ? "New API key" : "API key", text: $keyDraft, prompt: Text("sk-ant-…"))
+                Button(hasSavedKey ? "Replace" : "Save") { saveKey() }
                     .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isReplacingKey {
+                    Button("Cancel") {
+                        isReplacingKey = false
+                        keyDraft = ""
+                        keyError = nil
+                    }
+                }
             }
             if let keyError {
                 Text(keyError).font(.callout).foregroundStyle(.orange)
@@ -90,11 +112,17 @@ struct ProviderSettingsSection: View {
     }
 
     private func saveKey() {
+        let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
         do {
-            try KeychainStore.save(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines), for: .anthropicAPIKey)
+            // KeychainStore updates the existing item in place. A failed replacement
+            // leaves the previously saved key intact.
+            try KeychainStore.save(key, for: .anthropicAPIKey)
             keyDraft = ""
             keyError = nil
+            isReplacingKey = false
             hasSavedKey = true
+            testResult = nil
         } catch {
             keyError = error.localizedDescription
         }

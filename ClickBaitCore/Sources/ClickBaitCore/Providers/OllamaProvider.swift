@@ -167,6 +167,8 @@ public struct OllamaProvider: LLMProvider {
     static func options(for ask: AskRequest) -> [String: Any] {
         var options: [String: Any] = ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens]
         if ask.listParts { options["num_predict"] = partsReplyTokens }
+        // ~9 tokens a mark ("12": "Neptune",); 15 marks took 138.
+        if !ask.markNames.isEmpty { options["num_predict"] = max(partsReplyTokens, ask.markCount * 14) }
         return options
     }
 
@@ -175,6 +177,7 @@ public struct OllamaProvider: LLMProvider {
     /// Structured output for the requests that have a fixed shape.
     static func schema(for ask: AskRequest) -> [String: Any]? {
         if ask.listParts { return partsSchema }
+        if !ask.markNames.isEmpty { return marksSchema(for: ask) }
         if ask.pickElement { return pickSchema }
         if ask.sortRequest { return sortSchema }
         if ask.planTutorial { return tutorialSchema }
@@ -218,6 +221,13 @@ public struct OllamaProvider: LLMProvider {
         "properties": ["next_step": ["type": "integer"], "done": ["type": "boolean"]],
         "required": ["next_step", "done"],
     ] }
+
+    /// One key per mark ("1"…"N"), each one of the names or "none".
+    static func marksSchema(for ask: AskRequest) -> [String: Any] {
+        let keys = (1...max(ask.markCount, 1)).map(String.init)
+        let value: [String: Any] = ["type": "string", "enum": ask.markNames + ["none"]]
+        return ["type": "object", "properties": Dictionary(uniqueKeysWithValues: keys.map { ($0, value) }), "required": keys]
+    }
 
     static var partsSchema: [String: Any] { [
         "type": "object",

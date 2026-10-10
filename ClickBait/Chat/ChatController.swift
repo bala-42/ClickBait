@@ -87,6 +87,26 @@ final class ChatController {
         if !tucked { fadeIn(panel) }
     }
 
+    /// Hides the current chat without treating it as a user close. Its messages are
+    /// handed to a background capsule and restored if the user returns to that job.
+    func stash() -> [ChatModel.Message] {
+        let messages = model.messages
+        closeNow()
+        model.isClosing = false
+        return messages
+    }
+
+    /// Restores a stashed conversation at the companion, belonging to its original app.
+    func restore(_ messages: [ChatModel.Message], logoAt logoCenter: CGPoint, homeApp: NSRunningApplication?) {
+        open(logoAt: logoCenter)
+        model.messages = messages
+        model.isBusy = false
+        if let homeApp {
+            homePID = homeApp.processIdentifier
+            homeName = homeApp.localizedName
+        }
+    }
+
     /// Opens an empty chat (logo on `logoCenter`) with the cursor in the text field,
     /// ready to type. Takes the keyboard without activating ClickBait, like Spotlight.
     func openForTyping(logoAt logoCenter: CGPoint) {
@@ -148,6 +168,8 @@ final class ChatController {
     var homeApp: NSRunningApplication? {
         homePID.flatMap { NSRunningApplication(processIdentifier: $0) }
     }
+    var homeBundleID: String? { homeApp?.bundleIdentifier }
+    var homeProcessID: Int32? { homePID }
 
     private func trace(_ message: String) {
         Log.app.notice("Chat: \(message, privacy: .public)")
