@@ -30,6 +30,10 @@ const FAQS: { q: string; a: React.ReactNode }[] = [
     a: "Yes, once the two models are downloaded. Questions, explanations, walkthroughs and Mac actions all run on your Mac. Opening a website still needs the internet, obviously. There’s one optional extra, off every time ClickBait starts: switch on “Look Up Snips on Wikipedia” in the menu and, when you circle a picture, the name of what it shows (just that, never your screen or anyone’s name) is looked up on Wikipedia to label its parts better.",
   },
   {
+    q: "Do I need an API key or an account?",
+    a: "No. There’s nothing to sign up for or pay for, ever: the AI runs on your Mac through Ollama, and the optional Wikipedia lookups are free and need no key.",
+  },
+  {
     q: "How fast is it?",
     a: "Honestly: it depends what you ask. Pointing at a button it can name is near-instant. Anything where it has to look at your screen and think takes several seconds, because it’s running on your Mac rather than a warehouse of servers.",
   },
@@ -62,7 +66,7 @@ export function Faq() {
   return (
     <Section id="faq" tone="pumpkin" labelledBy="faq-title">
       <div className="grid gap-12 lg:grid-cols-[2fr_3fr]">
-        <BaitHeading id="faq-title" tone="pumpkin" kicker="FAQ" bait="7 questions you’re too embarrassed to ask">
+        <BaitHeading id="faq-title" tone="pumpkin" kicker="FAQ" bait="8 questions you’re too embarrassed to ask">
           Questions, answered.
         </BaitHeading>
         <Accordion type="single" collapsible className="w-full">

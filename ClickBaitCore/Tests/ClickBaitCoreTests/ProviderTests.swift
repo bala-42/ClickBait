@@ -10,59 +10,6 @@ private let ask = AskRequest(
     context: ScreenContext(appName: "Pages", windowTitle: "Report.pages")
 )
 
-struct SSEParserTests {
-    @Test func parsesEventsSeparatedByBlankLines() {
-        var parser = SSEParser()
-        let lines = ["event: message_start", #"data: {"type":"message_start"}"#, "", ": ping", "data: a", "data: b", ""]
-        let events = lines.compactMap { parser.consume(line: $0) }
-        #expect(events == [
-            .init(name: "message_start", data: #"{"type":"message_start"}"#),
-            .init(name: nil, data: "a\nb"),
-        ])
-    }
-
-    @Test func flushEmitsTrailingEventWithoutBlankLine() {
-        var parser = SSEParser()
-        _ = parser.consume(line: "event: message_stop")
-        _ = parser.consume(line: #"data: {"type":"message_stop"}"#)
-        #expect(parser.flush()?.name == "message_stop")
-        #expect(parser.flush() == nil)
-    }
-}
-
-struct AnthropicStreamDecoderTests {
-    private func event(_ data: String) -> SSEParser.Event { .init(name: nil, data: data) }
-
-    @Test func textDeltaYieldsText() throws {
-        let output = try AnthropicStreamDecoder.decode(event(
-            #"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Click"}}"#))
-        #expect(output == .text("Click"))
-    }
-
-    @Test func thinkingDeltaIsSkipped() throws {
-        let output = try AnthropicStreamDecoder.decode(event(
-            #"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#))
-        #expect(output == .none)
-    }
-
-    @Test func messageStopIsDone() throws {
-        #expect(try AnthropicStreamDecoder.decode(event(#"{"type":"message_stop"}"#)) == .done)
-    }
-
-    @Test func refusalThrows() {
-        #expect(throws: LLMError.refusal(category: "cyber")) {
-            try AnthropicStreamDecoder.decode(event(
-                #"{"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}}}"#))
-        }
-    }
-
-    @Test func errorEventThrows() {
-        #expect(throws: LLMError.invalidResponse("Overloaded")) {
-            try AnthropicStreamDecoder.decode(event(#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#))
-        }
-    }
-}
-
 struct OllamaStreamDecoderTests {
     @Test func decodesChunksAndDone() throws {
         let chunk = try OllamaStreamDecoder.decode(line: #"{"message":{"role":"assistant","content":"{\"spe"},"done":false}"#)
@@ -84,139 +31,10 @@ struct OllamaStreamDecoderTests {
 }
 
 struct RequestBuilderTests {
-    @Test func anthropicBodyUsesModelDefaultsAndSendsImageBeforeText() throws {
-        let body = AnthropicProvider.messagesBody(for: ask, model: "claude-opus-5-5")
-        #expect(body["model"] as? String == "claude-opus-5-5")
-        #expect(body["stream"] as? Bool == true)
-        #expect(body["max_tokens"] as? Int == 8192)
-        #expect(body["output_config"] == nil)
-        #expect(body["fallbacks"] as? String == "default")
-        #expect(body["thinking"] == nil)
-
-        let messages = try #require(body["messages"] as? [[String: Any]])
-        let content = try #require(messages.first?["content"] as? [[String: Any]])
-        #expect(content.map { $0["type"] as? String } == ["image", "text"])
-        let source = try #require(content[0]["source"] as? [String: String])
-        #expect(source["media_type"] == "image/jpeg")
-        #expect(source["data"] == "/9j/")
-    }
-
-    @Test func anthropicOmitsUnsupportedOptionsForHaiku() {
-        let body = AnthropicProvider.messagesBody(for: ask, model: "claude-haiku-4-5")
-        #expect(body["output_config"] == nil)
-        #expect(body["fallbacks"] == nil)
-    }
-
-    @Test func anthropicRedMarkerTourKeepsImagesLabelsAndPixelCoordinates() throws {
-        var tour = ask
-        tour.markNames = ["Liver", "Gallbladder"]
-        tour.markCount = 2
-
-        let provider = AnthropicProvider(model: "claude-opus-5-5", apiKey: "sk-test")
-        let body = AnthropicProvider.messagesBody(for: tour, model: provider.model)
-        #expect(provider.coordinateScale == .pixels)
-        #expect(body["system"] as? String == Prompt.marksSystem)
-        #expect(body["stream"] as? Bool == false)
-
-        let tools = try #require(body["tools"] as? [[String: Any]])
-        #expect(tools.count == 1)
-        #expect(tools[0]["type"] as? String == "web_search_20250305")
-        #expect(tools[0]["name"] as? String == "web_search")
-        #expect(tools[0]["max_uses"] as? Int == AnthropicProvider.webSearchMaxUses)
-        #expect(tools[0]["allowed_callers"] as? [String] == ["direct"])
-
-        let messages = try #require(body["messages"] as? [[String: Any]])
-        let content = try #require(messages.first?["content"] as? [[String: Any]])
-        #expect(content.map { $0["type"] as? String } == ["image", "text"])
-        let source = try #require(content[0]["source"] as? [String: String])
-        #expect(source["data"] == tour.screenshotJPEG.base64EncodedString())
-        #expect((content.last?["text"] as? String)?.contains("Names: Liver, Gallbladder") == true)
-        #expect((content.last?["text"] as? String)?.contains("Markers: 1–2") == true)
-        #expect((body["max_tokens"] as? Int) == 16_384)
-        #expect((body["output_config"] as? [String: String])?["effort"] == "high")
-    }
-
-    @Test func anthropicPartsLookRequestsScreenshotPixelCoordinates() throws {
-        var parts = ask
-        parts.listParts = true
-
-        let body = AnthropicProvider.messagesBody(for: parts, model: "claude-opus-5-5")
-        #expect(body["system"] as? String == Prompt.partsSystem)
-
-        let messages = try #require(body["messages"] as? [[String: Any]])
-        let content = try #require(messages.first?["content"] as? [[String: Any]])
-        #expect((content.last?["text"] as? String)?.contains("1280×831 pixels") == true)
-        #expect(Prompt.partsSystem.contains("this image's pixels"))
-    }
-
-    @Test func anthropicAllowsMoreTimeForInternetModeFollowUps() {
-        let local = OllamaProvider(model: "qwen3.5:9b")
-        let internet = AnthropicProvider(model: "claude-opus-5-5", apiKey: "sk-test")
-
-        #expect(local.timeout(for: .classifyRequest) == .seconds(3))
-        #expect(internet.timeout(for: .classifyRequest) == .seconds(8))
-        #expect(local.timeout(for: .labelTourParts) == .seconds(20))
-        #expect(internet.timeout(for: .labelTourParts) == .seconds(90))
-    }
-
-    @Test func anthropicPauseTurnContinuationPreservesServerSearchBlocks() throws {
-        let body = AnthropicProvider.messagesBody(for: {
-            var request = ask
-            request.markNames = ["Liver"]
-            request.markCount = 3
-            return request
-        }(), model: "claude-opus-5-5")
-        let assistantContent: [[String: Any]] = [
-            ["type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": ["query": "liver anatomy"]],
-            ["type": "web_search_tool_result", "tool_use_id": "srv_1", "content": []],
-        ]
-
-        let continued = AnthropicProvider.continuationBody(body, assistantContent: assistantContent)
-        let messages = try #require(continued["messages"] as? [[String: Any]])
-        #expect(messages.count == 2)
-        #expect(messages.last?["role"] as? String == "assistant")
-        let replayed = try #require(messages.last?["content"] as? [[String: Any]])
-        #expect(replayed.map { $0["type"] as? String } == ["server_tool_use", "web_search_tool_result"])
-        #expect(continued["tools"] as? [[String: Any]] != nil)
-        #expect(continued["stream"] as? Bool == false)
-    }
-
-    @Test func anthropicDecodesFinalAndPausedMessages() throws {
-        let pausedData = try JSONSerialization.data(withJSONObject: [
-            "content": [["type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": [:]]],
-            "stop_reason": "pause_turn",
-        ])
-        let paused = try AnthropicProvider.decodeMessageResponse(pausedData)
-        #expect(paused.stopReason == "pause_turn")
-        #expect(paused.content.first?["type"] as? String == "server_tool_use")
-
-        let doneData = try JSONSerialization.data(withJSONObject: [
-            "content": [["type": "text", "text": #"{"1":"Liver"}"#]],
-            "stop_reason": "end_turn",
-        ])
-        let done = try AnthropicProvider.decodeMessageResponse(doneData)
-        #expect(done.stopReason == "end_turn")
-        #expect(done.content.first?["text"] as? String == #"{"1":"Liver"}"#)
-    }
-
-    @Test func anthropicRequestHeaders() throws {
-        let request = try AnthropicProvider(model: "claude-opus-5-5", apiKey: "sk-test").makeMessagesRequest(ask)
-        #expect(request.url?.absoluteString == "https://api.anthropic.com/v1/messages")
-        #expect(request.value(forHTTPHeaderField: "x-api-key") == "sk-test")
-        #expect(request.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
-        #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "server-side-fallback-2026-07-01")
-
-        let haiku = try AnthropicProvider(model: "claude-haiku-4-5", apiKey: "sk-test").makeMessagesRequest(ask)
-        #expect(haiku.value(forHTTPHeaderField: "anthropic-beta") == nil)
-    }
-
-    @Test func anthropicWithoutKeyFailsBeforeAnyRequest() {
-        #expect(throws: LLMError.missingAPIKey) {
-            try AnthropicProvider(model: "claude-opus-5-5", apiKey: nil).makeMessagesRequest(ask)
-        }
-        #expect(throws: LLMError.missingAPIKey) {
-            try AnthropicProvider(model: "claude-opus-5-5", apiKey: "").makeMessagesRequest(ask)
-        }
+    @Test func secondaryRequestsHaveLocalDeadlines() {
+        #expect(ProviderOperation.classifyRequest.timeout == .seconds(3))
+        #expect(ProviderOperation.selectElement.timeout == .seconds(5))
+        #expect(ProviderOperation.labelTourParts.timeout == .seconds(20))
     }
 
     @Test func ollamaBodyIsLocalJSONModeWithImage() throws {
@@ -271,9 +89,7 @@ struct RequestBuilderTests {
     }
 
     @Test func errorsMapToPlainLanguage() {
-        #expect(AnthropicProvider.error(status: 401, body: Data(#"{"error":{"message":"invalid x-api-key"}}"#.utf8), model: "m")
-            == .http(status: 401, message: "invalid x-api-key"))
-        #expect(LLMError.http(status: 401, message: "x").errorDescription == "The API key was rejected. Check it in Settings.")
+        #expect(LLMError.http(status: 500, message: "x").errorDescription == "The model service returned an error (500): x")
         #expect(OllamaProvider.error(status: 404, body: Data(#"{"error":"model not found"}"#.utf8), model: "m") == .modelNotFound("m"))
     }
 }
@@ -314,10 +130,6 @@ struct ConversationTests {
         #expect(ollama.map { $0["role"] as? String } == ["system", "user", "assistant", "user"])
         #expect(ollama[1]["images"] == nil)       // old turns carry no screenshot
         #expect(ollama[3]["images"] != nil)       // the new message does
-
-        let anthropic = try #require(AnthropicProvider.messagesBody(for: followUp, model: "claude-opus-5-5")["messages"] as? [[String: Any]])
-        #expect(anthropic.map { $0["role"] as? String } == ["user", "assistant", "user"])
-        #expect(anthropic[0]["content"] as? String == "How do I share this?")
     }
 }
 

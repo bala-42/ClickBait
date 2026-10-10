@@ -584,10 +584,6 @@ final class AskCoordinator {
             show(error: "Screen Recording is off. Open Permissions… from the menu bar icon.")
             return false
         }
-        if settings.provider == .anthropic, (KeychainStore.read(.anthropicAPIKey) ?? "").isEmpty {
-            show(error: LLMError.missingAPIKey.localizedDescription)
-            return false
-        }
         return true
     }
 
@@ -949,7 +945,7 @@ final class AskCoordinator {
         let start = ContinuousClock.now
         var request = AskRequest(question: text, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
         request.interpretOrder = true
-        let reply = await Self.reply(from: provider, to: request, within: provider.timeout(for: .interpretOrder))
+        let reply = await Self.reply(from: provider, to: request, within: ProviderOperation.interpretOrder.timeout)
         guard let reply, let parsed = ResponseParser.action(inReply: reply),
               var proposal = OrderCheck.sanitized(parsed, order: text) else {
             Log.ask.notice("Order check: no action (\(String(describing: ContinuousClock.now - start), privacy: .public))")
@@ -1318,7 +1314,7 @@ final class AskCoordinator {
             request.reference = await memory.reference?.value
             let start = ContinuousClock.now
             if let reply = await Self.reply(from: provider, to: request,
-                                            within: provider.timeout(for: .labelTourParts)), !Task.isCancelled {
+                                            within: ProviderOperation.labelTourParts.timeout), !Task.isCancelled {
                 let placed = ObjectMarks.placed(names: names, reply: reply, objects: objects)
                 Log.ask.notice("""
                     Parts: \(placed.count, privacy: .public) of \(names.count, privacy: .public) named on \(objects.count, privacy: .public) \
@@ -1446,7 +1442,7 @@ final class AskCoordinator {
         // Both are child tasks: cancelled with the ask (Esc), and the plan is dropped when
         // this returns early on a "question" verdict.
         async let verdict: String? = sorting
-            ? Self.reply(from: provider, to: sort, within: provider.timeout(for: .classifyRequest))
+            ? Self.reply(from: provider, to: sort, within: ProviderOperation.classifyRequest.timeout)
             : nil
         async let planned = Self.planSteps(planRequest, menus: menus, provider: provider)
         if sorting {
@@ -1477,13 +1473,13 @@ final class AskCoordinator {
         if TutorialPlanning.canUseTextOnly(elements: request.elements.count, menuItems: menus.count) {
             var textOnly = request
             textOnly.screenshotJPEG = Data()
-            if let reply = await reply(from: provider, to: textOnly, within: provider.timeout(for: .planTutorialTextOnly)),
+            if let reply = await reply(from: provider, to: textOnly, within: ProviderOperation.planTutorialTextOnly.timeout),
                let parsed = TutorialPlan.parse(reply)?.expandingMenus(using: menus), !parsed.steps.isEmpty || parsed.app != nil {
                 plan = parsed
             }
         }
         if plan == nil, !Task.isCancelled,
-           let reply = await reply(from: provider, to: request, within: provider.timeout(for: .planTutorialWithScreenshot)) {
+           let reply = await reply(from: provider, to: request, within: ProviderOperation.planTutorialWithScreenshot.timeout) {
             plan = TutorialPlan.parse(reply)?.expandingMenus(using: menus)
         }
         return plan
@@ -1793,7 +1789,7 @@ final class AskCoordinator {
                                   context: context, elements: listed)
             pick.pickElement = true
             let pickStart = ContinuousClock.now
-            let reply = await Self.reply(from: provider, to: pick, within: provider.timeout(for: .selectElement))
+            let reply = await Self.reply(from: provider, to: pick, within: ProviderOperation.selectElement.timeout)
             let chosen = InstantAnswer.pickedIDs(in: reply ?? "").compactMap { id -> ScreenElement? in
                 guard let listing = listed.first(where: { $0.id == id }) else { return nil }
                 return elements.first(where: { $0.label == listing.label })
@@ -1892,7 +1888,7 @@ final class AskCoordinator {
             var lastPartial = ContinuousClock.now - .seconds(1)
             run.snipMemory = snipMemory
             peelableRunID = answerID
-            if settings.provider == .ollama, backgroundJobs?.entries.contains(where: { $0.job.isWorking }) == true {
+            if backgroundJobs?.entries.contains(where: { $0.job.isWorking }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
             // A first snip explanation opens with its subject: with lookups on, it's looked up
@@ -2101,7 +2097,7 @@ final class AskCoordinator {
                 partsRequest.listParts = true
                 let start = ContinuousClock.now
                 guard let reply = await Self.reply(from: provider, to: partsRequest,
-                                                   within: provider.timeout(for: .labelTourParts)), !Task.isCancelled else { return }
+                                                   within: ProviderOperation.labelTourParts.timeout), !Task.isCancelled else { return }
                 named = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
                                              scale: provider.coordinateScale).response.parts
                 Log.ask.notice("""
@@ -2169,7 +2165,7 @@ final class AskCoordinator {
 
     #if DEBUG
     /// Creates a real, cancellable local Ollama job to inspect capsule runtime behaviour.
-    /// It never changes the saved provider or sends this capture to a cloud service.
+    /// The capture goes only to Ollama on this Mac.
     func runDebugCapsuleTest() {
         guard !isBusy, !chatShown else {
             show(error: "Finish or close the current answer before starting a capsule test.")
@@ -2190,7 +2186,7 @@ final class AskCoordinator {
         }
 
         let question = "For a local capsule runtime check, briefly describe the visible screen content."
-        let provider = settings.makeOllamaProvider()
+        let provider = settings.makeProvider()
         let pid = frontmost.map { Int32($0.processIdentifier) }
         let bundleID = frontmost?.bundleIdentifier
         Task { [weak self] in

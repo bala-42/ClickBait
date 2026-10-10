@@ -182,8 +182,6 @@ public enum Prompt {
         - Each name goes to at most one marker.
         - Decide by what the marked thing looks like (colour, size, shape, details) and where \
         it sits, not by the order of the numbers.
-        - Use web search for unfamiliar or specialist identities when it can clarify the image. \
-        Search provides context only: match every name to the visible thing under its marker.
         """
 
     /// Text-only: map an order the rules didn't recognise onto one known action.

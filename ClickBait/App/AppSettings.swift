@@ -2,8 +2,7 @@ import ClickBaitCore
 import Foundation
 import Observation
 
-/// User preferences, persisted in UserDefaults. Secrets (API keys) never go here;
-/// they live in the Keychain.
+/// User preferences, persisted in UserDefaults.
 @MainActor
 @Observable
 final class AppSettings {
@@ -11,10 +10,8 @@ final class AppSettings {
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
         static let speechModel = "settings.speechModel"
-        static let provider = "settings.provider"
         static let ollamaModel = "settings.ollamaModel"
         static let ollamaFastModel = "settings.ollamaFastModel"
-        static let anthropicModel = "settings.anthropicModel"
         static let speakAnswers = "settings.speakAnswers"
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
@@ -43,11 +40,6 @@ final class AppSettings {
         didSet { defaults.set(speechModel.rawValue, forKey: Key.speechModel) }
     }
 
-    /// Local Ollama by default; Anthropic only when the user switches and adds a key.
-    var provider: ProviderKind {
-        didSet { defaults.set(provider.rawValue, forKey: Key.provider) }
-    }
-
     var ollamaModel: String {
         didSet { defaults.set(ollamaModel, forKey: Key.ollamaModel) }
     }
@@ -55,10 +47,6 @@ final class AppSettings {
     /// Reads orders ("move these to Documents"): a text job where speed matters most.
     var ollamaFastModel: String {
         didSet { defaults.set(ollamaFastModel, forKey: Key.ollamaFastModel) }
-    }
-
-    var anthropicModel: String {
-        didSet { defaults.set(anthropicModel, forKey: Key.anthropicModel) }
     }
 
     /// Read answers aloud (on-device system voices).
@@ -93,33 +81,18 @@ final class AppSettings {
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
         keepDebugCaptures = defaults.bool(forKey: Key.keepDebugCaptures)
         speechModel = defaults.string(forKey: Key.speechModel).flatMap(SpeechModel.init(rawValue:)) ?? .default
-        provider = defaults.string(forKey: Key.provider).flatMap(ProviderKind.init(rawValue:)) ?? .ollama
         ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
         ollamaFastModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaFastModel)) ?? OllamaProvider.defaultFastModel
-        anthropicModel = Self.nonEmpty(defaults.string(forKey: Key.anthropicModel)) ?? AnthropicProvider.defaultModel
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true
         voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
         speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
         commandsEnabled = defaults.object(forKey: Key.commandsEnabled) as? Bool ?? true
         allowedShortcuts = defaults.stringArray(forKey: Key.allowedShortcuts) ?? []
+        LegacyCloudSettings.remove(from: defaults)
     }
 
-    /// Builds the provider the user selected. The API key is read from the Keychain
-    /// each time, so it's never cached in memory longer than one ask.
-    func makeProvider() -> any LLMProvider {
-        switch provider {
-        case .ollama: makeOllamaProvider()
-        case .anthropic:
-            AnthropicProvider(
-                model: anthropicModel.trimmingCharacters(in: .whitespaces),
-                apiKey: KeychainStore.read(.anthropicAPIKey)
-            )
-        }
-    }
-
-    /// Local provider configuration, also used to release Ollama models at app exit
-    /// when Internet Mode is selected.
-    func makeOllamaProvider() -> OllamaProvider {
+    /// Ollama on this Mac: the only provider (no paid keys, 2026-10-10).
+    func makeProvider() -> OllamaProvider {
         OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces),
                        fastModel: ollamaFastModel.trimmingCharacters(in: .whitespaces))
     }
@@ -149,19 +122,5 @@ final class AppSettings {
     private static func load<T: Decodable>(_ type: T.Type, from defaults: UserDefaults, forKey key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
-    }
-}
-
-enum ProviderKind: String, CaseIterable, Identifiable {
-    case ollama
-    case anthropic
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .ollama: "Local Mode — Ollama (default)"
-        case .anthropic: "Internet Mode — Anthropic API"
-        }
     }
 }

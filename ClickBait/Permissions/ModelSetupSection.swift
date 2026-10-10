@@ -15,10 +15,6 @@ final class ModelSetupChecker {
         case noOllama
         /// Ollama runs, but the model isn't pulled.
         case missingModel(String)
-        /// Internet Mode is selected and a key is saved in Keychain.
-        case cloudConfigured
-        /// Internet Mode is selected but no API key is saved.
-        case missingAPIKey
     }
 
     private(set) var state: State = .checking
@@ -29,13 +25,9 @@ final class ModelSetupChecker {
         self.settings = settings
     }
 
-    var isReady: Bool { state == .ready || state == .cloudConfigured }
+    var isReady: Bool { state == .ready }
 
     func check() async {
-        guard settings.provider == .ollama else {
-            state = (KeychainStore.read(.anthropicAPIKey) ?? "").isEmpty ? .missingAPIKey : .cloudConfigured
-            return
-        }
         let provider = settings.makeProvider()
         do {
             try await provider.checkConnection()
@@ -84,13 +76,6 @@ struct ModelSetupSection: View {
             case .ready:
                 Text("Ollama is running with \(OllamaProvider.defaultModel). Answers stay on this Mac.")
                     .font(.callout).foregroundStyle(.secondary)
-            case .cloudConfigured:
-                Text("An Anthropic API key is saved in your Keychain. Use Test Connection in Settings → Provider to verify it.")
-                    .font(.callout).foregroundStyle(.secondary)
-            case .missingAPIKey:
-                Text("Internet Mode needs an Anthropic API key. Add one in Settings → Provider, or switch back to Local Mode.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             case .noOllama:
                 Text("ClickBait answers with Ollama, which runs AI models on your Mac. Install it, open it, then come back here.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -123,9 +108,7 @@ struct ModelSetupSection: View {
             ProgressView().controlSize(.small)
         case .ready:
             Label("Ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-        case .cloudConfigured:
-            Label("Configured", systemImage: "key.fill").foregroundStyle(.green)
-        case .noOllama, .missingModel, .missingAPIKey:
+        case .noOllama, .missingModel:
             Label("Needed", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
         }
     }

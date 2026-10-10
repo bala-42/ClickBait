@@ -61,7 +61,7 @@ struct SettingsView: View {
                 SpeechModelSection(settings: settings, speech: speech)
             }
 
-            Section("Provider") {
+            Section("AI model") {
                 ProviderSettingsSection(settings: settings)
             }
 

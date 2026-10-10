@@ -24,7 +24,7 @@ enum PermissionKind: CaseIterable, Identifiable {
         case .microphone:
             "Lets ClickBait hear your question while you hold Control+Option."
         case .screenRecording:
-            "Lets ClickBait see the screen you're asking about. Screenshots stay on your Mac unless you pick a cloud provider."
+            "Lets ClickBait see the screen you're asking about. Screenshots never leave your Mac."
         case .accessibility:
             "Lets ClickBait notice the hotkey in any app and aim the pointer at real buttons."
         }

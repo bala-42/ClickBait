@@ -5,10 +5,10 @@
 ClickBait is a free, open-source (Apache 2.0), local-first AI companion that lives next to your cursor on macOS. Hold a hotkey, ask a question out loud, and it looks at your screen, answers by voice, and **points at exactly what to click**.
 
 ## Product principles
-1. **Free and private by default.** Default path uses local models only. No account, no server, no telemetry. Screenshots never leave the machine unless the user opts into a cloud provider.
-2. **No paid keys, ever (decided 2026-10-10).** ClickBait must work fully for someone without any API key or paid account — most users, and the developer, don't have one. Local models answer; the optional internet features are free and keyless. The Anthropic provider still in the code ("Internet Mode — Anthropic API" in Settings) is **to be removed** (roadmap D).
+1. **Free and private by default.** Default path uses local models only. No account, no server, no telemetry. Screenshots never leave the machine.
+2. **No paid keys, ever (decided 2026-10-10).** ClickBait must work fully for someone without any API key or paid account — most users, and the developer, don't have one. Local models answer; the optional internet features are free and keyless. The Anthropic provider was removed (roadmap D, done 2026-10-10); Ollama is the only provider.
 3. **Point, don't just talk.** The overlay pointer is the core magic. Accuracy matters more than eloquence.
-4. **Fast feels smart.** Target: spoken answer starts < 1.5s (cloud) / < 3s (local) after the hotkey is released. Stream everything.
+4. **Fast feels smart.** Target: spoken answer starts < 3s after the hotkey is released (measured: ~8 s for a screen question on qwen3.5:9b; instant pointing ~0.05 s). Stream everything.
 5. **Portable core.** Keep logic that isn't macOS-specific in `ClickBaitCore` (no AppKit/SwiftUI imports) so a Windows shell can come later.
 
 ## Differentiators (earlier ideas; the master roadmap below takes precedence)
@@ -25,7 +25,7 @@ ClickBait is a free, open-source (Apache 2.0), local-first AI companion that liv
   - `WhisperKit` (argmaxinc) for on-device speech-to-text.
   - Nothing else unless justified in the PR/commit message.
 - Local LLM: **Ollama** HTTP API at `http://localhost:11434` (user installs Ollama and pulls a vision model). Model name configurable in Settings.
-- Cloud LLM (BYOK): Anthropic Messages API with image input — **to be removed** (decided 2026-10-10: no paid keys).
+- No cloud model and no API keys (2026-10-10): the Anthropic provider was removed (roadmap D).
 - TTS: `AVSpeechSynthesizer` (free, on-device). Speak sentence-by-sentence as text streams in.
 
 ## Architecture
@@ -40,7 +40,7 @@ ClickBait/                 macOS app target (AppKit/SwiftUI shell)
   Permissions/             Permission checks + onboarding window
 ClickBaitCore/             Platform-agnostic Swift package (Package.swift lives here)
   Sources/ClickBaitCore/
-    Providers/             LLMProvider protocol, OllamaProvider, AnthropicProvider (to be removed), WikipediaClient
+    Providers/             LLMProvider protocol, OllamaProvider (the only provider), WikipediaClient
     Prompting/             System prompt, request builder, response parser
     Models/                AssistantResponse, Pointer, ScreenContext, Guide (future)
     Geometry/              Screenshot-pixel ↔ screen-point mapping
@@ -50,7 +50,7 @@ ClickBaitCore/             Platform-agnostic Swift package (Package.swift lives 
 ### Ask flow (Milestone 1)
 1. User **holds Control+Option** → start mic recording, capture screenshot of the display under the cursor, snapshot AX context (frontmost app name, window title, focused element role/title).
 2. User **releases** → stop recording → transcribe with WhisperKit.
-3. Downscale screenshot so the long edge is ≤ 1280px (keep the scale factor!) → send screenshot + transcript + context to the selected `LLMProvider`.
+3. Downscale screenshot so the long edge is ≤ 1280px (keep the scale factor!) → send screenshot + transcript + context to Ollama (`OllamaProvider`).
 4. Model must reply with JSON matching `AssistantResponse`:
    ```json
    {
@@ -169,8 +169,8 @@ The overlay windows live on the current desktop only (`.moveToActiveSpace`, brou
 Microphone, Screen Recording, Accessibility. On first launch show an onboarding window that checks each, explains why in one sentence, and deep-links to the right System Settings pane. App must degrade gracefully (e.g. no AX → no snapping, still points).
 
 ## Privacy rules (non-negotiable)
-- No network calls except: Ollama on localhost, and the one-time WhisperKit model download from Hugging Face — which must be started explicitly by the user (onboarding/Settings), never in the background — plus the opt-in lookups below. No paid services or API keys (2026-10-10). Until its removal (roadmap D), the Anthropic provider still in the code is the one other exception, used only when the user selects it.
-- **Internet Mode (decided 2026-10-10, not built yet):** an opt-in 🌐 switch, off at every launch, never saved. The local model still answers; only search words and page addresses go out, to free, keyless sources (Wikipedia, Stack Overflow's Stack Exchange API, MDN, Apple developer documentation, and SearXNG running on this Mac) — never the screen, its text, audio, or a person's name. Only when the user's words ask for it. Design: `docs/superpowers/specs/2026-10-07-internet-mode-design.md`. "Internet Mode" means only this; the Anthropic setting that borrowed the name goes with the provider.
+- No network calls except: Ollama on localhost, and the one-time WhisperKit model download from Hugging Face — which must be started explicitly by the user (onboarding/Settings), never in the background — plus the opt-in lookups below. No paid services or API keys (2026-10-10); no cloud model.
+- **Internet Mode (decided 2026-10-10, not built yet):** an opt-in 🌐 switch, off at every launch, never saved. The local model still answers; only search words and page addresses go out, to free, keyless sources (Wikipedia, Stack Overflow's Stack Exchange API, MDN, Apple developer documentation, and SearXNG running on this Mac) — never the screen, its text, audio, or a person's name. Only when the user's words ask for it. Design: `docs/superpowers/specs/2026-10-07-internet-mode-design.md`. "Internet Mode" means only this.
 - No analytics, no crash reporting services.
 - No web lookups for answers or ⌥⌘ explanations (decided 2026-10-01): they use only the screen and the model's own knowledge. **One exception (2026-10-10): Wikipedia lookups for snip parts tours**, only while the user has switched them on in the menu (off at every launch, never saved); only the subject words the model named are sent to en.wikipedia.org — never the screen, its text, audio or a person's name (skipped when the close-up shows a face).
 - Never write screenshots or audio to disk except to a temp dir that is deleted after the request (debug mode may keep them, off by default).
@@ -185,7 +185,7 @@ Philosophy: 100% local on Apple Silicon via Ollama, permanently free, works offl
 - **A. Identity & quick wins** (done): ⌘C/⌘V/⌘A etc. in the chat bubble; equilateral-triangle companion; synchronized colour states on companion and chat banner — Azure (#007FFF) idle/tracking, Pumpkin (#FF7518, was Marigold #EAA221) input & processing (thinking spins), Shamrock Green Mac actions & document processing, Strawberry Red circling/snipping, Lavender (#B57EDC) guided tutorials.
 - **B. Companion guides you** (done): after inference the triangle detaches from the cursor, glides and rotates to point its vertex at each target, then returns. Replaces the separate pointer arrow.
 - **C. Circling & snipping** (done; Red): **hold ⌥⌘** — move to trace/circle, or click-drag a box; release fires. A *tap* of ⌥⌘ still explains the highlighted text. The traced shape/box is sent to the model drawn on the screenshot (or cropped).
-- **D. Air-gapped mode** (decided 2026-10-10, not built): **remove the Anthropic provider entirely** — `AnthropicProvider`, its Settings section and "Internet Mode — Anthropic API" label, the Keychain key, the paid web search in parts tours, and its mentions in the README and the site FAQ; Ollama is the only provider. Add **Whisper model import from a local file** as an alternative to the one-time download, so a Mac without internet can finish setup. Then build **Internet Mode** as free lookups (see Privacy rules and its spec).
+- **D. Air-gapped mode** (decided 2026-10-10): **the Anthropic provider is removed** (done 2026-10-10) — `AnthropicProvider`, its Settings section and "Internet Mode — Anthropic API" label, the API-key field and Keychain code, the paid web search in parts tours and the longer cloud deadlines (`ProviderOperation.timeout` is one set of local deadlines). On the first launch after the update `LegacyCloudSettings` forgets the provider choice (a user who had Anthropic is on Ollama) and deletes any stored key from the Keychain, once. Ollama is the only provider. Still to do: add **Whisper model import from a local file** as an alternative to the one-time download, so a Mac without internet can finish setup. Then build **Internet Mode** as free lookups (see Privacy rules and its spec).
 - **E. File management** beyond the Finder selection: inspect/organize/clean up across folders. Clear orders stay rule-based; bulk changes the model proposes are shown for confirmation. Trash only, never permanent deletes.
 - **F. Thought Space banner & memory**: a working-memory board beside the companion. Persistent memory is **opt-in, off by default, local only, browsable and deletable in Settings, never records blocked apps**, and samples on app switches rather than continuously.
 

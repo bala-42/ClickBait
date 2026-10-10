@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         backgroundJobs.removeAll()
         capsules.removeAll()
-        settings.makeOllamaProvider().unload()
+        settings.makeProvider().unload()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
