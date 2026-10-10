@@ -55,7 +55,10 @@ swift test --package-path ClickBaitCore
 ### 3. Grant permissions and get the speech model
 
 On first launch ClickBait asks for these, and offers the speech model (about 145 MB, downloaded once
-from Hugging Face when you click Download — never in the background):
+from Hugging Face when you click Download — never in the background). **No internet?** Click
+**Import from a file…** instead and pick the `SpeechModels` folder (or a .zip of it) copied from a Mac
+that has it, at `~/Library/Application Support/ClickBait/SpeechModels`; ClickBait checks it's
+complete and copies it into place without going online.
 
 | Permission | Why |
 |---|---|

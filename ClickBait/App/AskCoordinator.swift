@@ -497,7 +497,7 @@ final class AskCoordinator {
         switch speech.state {
         case .ready:
             break
-        case .notDownloaded, .downloading:
+        case .notDownloaded, .downloading, .importing:
             show(error: "The speech model isn't downloaded yet. Open Settings… → Speech.")
             return
         case .loading:

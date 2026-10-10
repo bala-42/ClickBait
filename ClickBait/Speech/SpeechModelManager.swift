@@ -1,3 +1,4 @@
+import ClickBaitCore
 import Foundation
 import Observation
 @preconcurrency import WhisperKit
@@ -28,7 +29,8 @@ enum SpeechModel: String, CaseIterable, Identifiable {
 /// Downloads (only when the user asks), finds and loads the on-device speech model.
 ///
 /// Privacy: the download from Hugging Face is the only network call this makes, and it
-/// only happens from `download()`, which is wired to explicit buttons. Loading refuses
+/// only happens from `download()`, which is wired to explicit buttons. `importModel(from:)`
+/// never touches the network: it's how a Mac without internet finishes setup. Loading refuses
 /// to run unless the model *and* its tokenizer are already on disk, because WhisperKit
 /// would otherwise quietly fetch a missing tokenizer.
 @MainActor
@@ -37,6 +39,7 @@ final class SpeechModelManager {
     enum State: Equatable {
         case notDownloaded
         case downloading(fraction: Double)
+        case importing
         case loading
         case ready
         case failed(String)
@@ -130,6 +133,41 @@ final class SpeechModelManager {
             } catch {
                 state = .failed("Download failed: \(error.localizedDescription)")
                 Log.app.error("Speech model download failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Copies a model the user picked (the SpeechModels folder from another Mac, a model
+    /// folder with its tokenizer, or a .zip of either) to where downloads go, after checking
+    /// it's complete (`SpeechModelImport`), then switches to it and loads it. Local only.
+    func importModel(from source: URL) {
+        if case .downloading = state { return }
+        guard state != .importing else { return }
+        work?.cancel()
+        state = .importing
+        let preferred = settings.speechModel.rawValue
+        let variants = SpeechModel.allCases.map(\.rawValue)
+        let base = Self.baseDirectory
+        Log.app.notice("User started speech model import (\(source.pathExtension.lowercased() == "zip" ? "zip" : "folder", privacy: .public))")
+        work = Task {
+            do {
+                let start = ContinuousClock.now
+                let variant = try await Task.detached(priority: .userInitiated) {
+                    try SpeechModelImport.install(from: source, into: base, variants: variants, preferred: preferred)
+                }.value
+                guard let model = SpeechModel(rawValue: variant) else { return }
+                settings.setSpeechModelFolder(base.appending(path: SpeechModelImport.destination(for: variant).model,
+                                                             directoryHint: .isDirectory), for: model)
+                Log.app.notice("Speech model \(variant, privacy: .public) imported in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+                // Switching the picker to it loads it too (Settings' onChange); loading twice is a no-op.
+                if settings.speechModel != model { settings.speechModel = model }
+                loadIfInstalled()
+            } catch is CancellationError {
+                state = installedFolder(for: settings.speechModel) == nil ? .notDownloaded : .ready
+            } catch {
+                state = .failed(error is SpeechModelImportError ? error.localizedDescription
+                                : "Import failed: \(error.localizedDescription)")
+                Log.app.error("Speech model import failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

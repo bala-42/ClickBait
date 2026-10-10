@@ -1,6 +1,8 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// Model picker + download button, shared by Settings and the onboarding window.
+/// Model picker + download and import buttons, shared by Settings and the onboarding window.
 struct SpeechModelSection: View {
     @Bindable var settings: AppSettings
     let speech: SpeechModelManager
@@ -14,18 +16,19 @@ struct SpeechModelSection: View {
                     ForEach(SpeechModel.allCases, content: Self.modelRow)
                 }
                 .onChange(of: settings.speechModel) { speech.loadIfInstalled() }
-                .disabled(isDownloading)
+                .disabled(isBusy)
             }
 
             HStack(spacing: 8) {
                 status
                 Spacer()
                 if needsDownload {
+                    Button("Import from a file…") { chooseFile() }
                     Button("Download") { speech.download() }
                 }
             }
 
-            Text("Speech is recognized on your Mac. The model is downloaded once from Hugging Face when you click Download — nothing else ever leaves your Mac for this.")
+            Text("Speech is recognized on your Mac. The model is downloaded once from Hugging Face when you click Download — nothing else ever leaves your Mac for this. No internet? Import the SpeechModels folder (or a .zip of it) from a Mac that has it: ~/Library/Application Support/ClickBait/SpeechModels.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -46,6 +49,11 @@ struct SpeechModelSection: View {
                 Text("Downloading… \(Int(fraction * 100))%")
             }
             .frame(maxWidth: 260)
+        case .importing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Importing…")
+            }
         case .loading:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
@@ -61,9 +69,26 @@ struct SpeechModelSection: View {
         }
     }
 
-    private var isDownloading: Bool {
-        if case .downloading = speech.state { return true }
-        return false
+    private var isBusy: Bool {
+        switch speech.state {
+        case .downloading, .importing: true
+        default: false
+        }
+    }
+
+    /// A folder or .zip; checked and copied by `SpeechModelManager.importModel`, offline.
+    private func chooseFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import a Speech Model"
+        panel.message = "Choose the SpeechModels folder, or a .zip of it, from a Mac where ClickBait has the model (~/Library/Application Support/ClickBait/SpeechModels)."
+        panel.prompt = "Import"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.folder, .zip]
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        speech.importModel(from: url)
     }
 
     private var needsDownload: Bool {
