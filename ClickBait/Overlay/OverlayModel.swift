@@ -100,7 +100,9 @@ final class OverlayModel {
         if isSnipping { return true }
         return switch bubble {
         case .working: true  // listening shows the waveform instead
-        default: isGuiding && isGuideSettled  // a gentle beat once it's there, not while gliding
+        // A gentle beat once it's there, not while gliding — and never on a red parts tour,
+        // which holds steady on each part (user's rule, 2026-10-11).
+        default: isGuiding && isGuideSettled && !isTouring
         }
     }
 

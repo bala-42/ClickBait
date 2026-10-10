@@ -519,9 +519,11 @@ final class OverlayController {
     private static let reachedDistance: CGFloat = 24
     /// Long enough to read a part's name and look at it.
     private static let tourDwell: CFTimeInterval = 2.4
-    /// Distance from the triangle's centre (its centroid) to its vertex, size/√3, up to its
-    /// pulse size, plus a gap.
-    private static var tipDistance: CGFloat { CompanionTriangle.size / 3.squareRoot() * 1.2 + 3 }
+    /// Distance from the triangle's centre (its centroid) to its rounded tip — size/√3 less
+    /// the corner radius — up to its pulse size, plus a gap.
+    private static var tipDistance: CGFloat {
+        (CompanionTriangle.size / 3.squareRoot() - EquilateralTriangle.cornerRadius) * 1.2 + 3
+    }
     /// The triangle's centre measured from the companion's top-left corner (its measured content).
     private static var triangleInContent: CGFloat {
         CompanionBubbleView.contentPadding + CompanionBubbleView.triangleSpacing + CompanionTriangle.size * 0.85

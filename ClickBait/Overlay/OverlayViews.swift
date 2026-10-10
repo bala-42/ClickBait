@@ -3,15 +3,25 @@ import SwiftUI
 
 /// An equilateral triangle with a vertex pointing up, built around its centroid (as
 /// Clicky's, MIT): the rect's centre is the triangle's dead centre, so rotating about it
-/// never wobbles. Top vertex at midY − h/1.5, base at midY + h/3, h = side × √3/2.
+/// never wobbles. Top vertex at midY − h/1.5, base at midY + h/3, h = side × √3/2. Its
+/// corners are slightly rounded (Clicky's are sharp; its glow softens them).
 struct EquilateralTriangle: Shape {
+    /// Corner radius (pt). A 60° corner rounded by r pulls the tip back by exactly r.
+    static let cornerRadius: CGFloat = 1.5
+
     func path(in rect: CGRect) -> Path {
         let side = min(rect.width, rect.height)
         let height = side * 3.squareRoot() / 2
+        let top = CGPoint(x: rect.midX, y: rect.midY - height / 1.5)
+        let right = CGPoint(x: rect.midX + side / 2, y: rect.midY + height / 3)
+        let left = CGPoint(x: rect.midX - side / 2, y: rect.midY + height / 3)
+        // Scaled with the shape, so a small capsule triangle is rounded alike.
+        let radius = Self.cornerRadius * side / CompanionTriangle.size
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.midY - height / 1.5))
-        path.addLine(to: CGPoint(x: rect.midX + side / 2, y: rect.midY + height / 3))
-        path.addLine(to: CGPoint(x: rect.midX - side / 2, y: rect.midY + height / 3))
+        path.move(to: CGPoint(x: (left.x + top.x) / 2, y: (left.y + top.y) / 2))
+        path.addArc(tangent1End: top, tangent2End: right, radius: radius)
+        path.addArc(tangent1End: right, tangent2End: left, radius: radius)
+        path.addArc(tangent1End: left, tangent2End: top, radius: radius)
         path.closeSubpath()
         return path
     }
@@ -32,7 +42,7 @@ struct CompanionTriangle: View {
     /// small panels pass the pills' softer `Glow`, which fits inside them.
     var glowOpacity: Double = Self.glowOpacity
     var glowRadius: CGFloat = Self.glowRadius
-    static let size: CGFloat = 16
+    nonisolated static let size: CGFloat = 16
     /// Up-left, at the cursor (Clicky's −35°; was −45°).
     static let restingAngle: Double = -35
     /// Solid colour glow, radius 8 (was opacity 0.6, radius 4); the pulse swells it 4 pt more.
