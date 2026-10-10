@@ -244,7 +244,7 @@ final class OverlayController {
         let host = NSHostingView(rootView: CompanionBubbleView(model: model))
         let stage = StagePanel(content: host, size: OverlayModel.bubbleCanvas, makePanel: Self.makePanel)
         model.onBubbleSizeChange = { [weak self] in
-            guard let self, guide == nil else { return }
+            guard let self, guide == nil, homeFlight == nil else { return }
             moveBubble(to: anchor ?? NSEvent.mouseLocation)
         }
         stage.panel.orderFrontRegardless()
@@ -335,7 +335,8 @@ final class OverlayController {
         let now = link.targetTimestamp
         // A long gap while the companion is moving is a stutter the user sees: log it
         // with what was going on, so it can be traced (the main thread was busy).
-        if let last = lastFrame, now - last > 0.08, companionAlpha > 0, guide != nil || anchor != NSEvent.mouseLocation {
+        if let last = lastFrame, now - last > 0.08, companionAlpha > 0,
+           guide != nil || homeFlight != nil || anchor != NSEvent.mouseLocation {
             Log.app.notice("Companion stalled \(Int((now - last) * 1000), privacy: .public) ms (\(String(describing: self.model.bubble).prefix(20), privacy: .public)\(self.guide != nil ? ", pointing" : "", privacy: .public))")
         }
         let elapsed = min(max(now - (lastFrame ?? now - 1.0 / 60), 1.0 / 240), 0.1)
@@ -355,6 +356,10 @@ final class OverlayController {
         defer { stepTurn(elapsed: elapsed) }
         if guide != nil {
             stepGuide(now: now, elapsed: elapsed, link: link)
+            return
+        }
+        if homeFlight != nil {
+            stepHome(now: now, elapsed: elapsed, mouse: mouse, link: link)
             return
         }
         // Spinning and pulsing are motion too: at the resting 30 Hz the thinking spin jumped
@@ -501,11 +506,31 @@ final class OverlayController {
         /// The reply's own few words for a single target ("Share's up here!"), shown instead
         /// of "this one!".
         var label: String?
+        /// The flight to the current spot (Clicky's arc) and when it set off (frame-loop clock).
+        var flight: FlightArc?
+        var flightStarted: CFTimeInterval = 0
     }
+
+    /// Flying home after pointing: an arc to where the companion rests by the cursor as it
+    /// was when the flight began; a mouse that moves on by more than 100 pt ends it (the
+    /// follow takes over from there, as Clicky's).
+    private struct HomeFlight {
+        var arc: FlightArc
+        var started: CFTimeInterval
+        var mouse: CGPoint
+        var center: CGPoint
+        var velocity = CGVector.zero
+    }
+    private var homeFlight: HomeFlight?
+    /// From this much of a flight on, the triangle turns from its heading of travel onto
+    /// what it's aiming at (with the turn spring), so it lands aimed.
+    private static let turnInAt = 0.7
+    private static let homeCancelDistance: CGFloat = 100
 
     private var guide: Guide?
     /// Gliding to a target: eases in, slows down and settles softly (about half a second).
-    private static let glideSpring = Spring(period: 0.38, damping: 1)  // critically damped: no overshoot
+    /// The glide home with Reduce Motion on (flights are off then): critically damped.
+    private static let glideSpring = Spring(period: 0.38, damping: 1)
     /// Turning: a little quicker than the glide so the tip leads.
     private static let turnSpring = Spring(period: 0.3, damping: 1)
     /// The angle the triangle is turning toward, and how fast it's turning.
@@ -627,6 +652,7 @@ final class OverlayController {
 
     func guide(to targets: [ScreenPointer], label: String? = nil) {
         endGuide()
+        endHomeFlight()
         guard !targets.isEmpty else { return }
         // Start from wherever the triangle is drawn now.
         let frame = bubbleStage?.contentFrame ?? .zero
@@ -664,10 +690,21 @@ final class OverlayController {
     /// Back to following the cursor, gliding from wherever the triangle is now.
     func endGuide() {
         guard let guide else { return }
-        // The cursor position that would put the triangle where it is: the normal follow
-        // then glides it back from here.
-        anchor = CGPoint(x: guide.center.x - Self.triangleOffset.width, y: guide.center.y + Self.triangleOffset.height)
-        returnVelocity = guide.velocity
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // The cursor position that would put the triangle where it is: the normal follow
+            // then glides it back from here.
+            anchor = CGPoint(x: guide.center.x - Self.triangleOffset.width, y: guide.center.y + Self.triangleOffset.height)
+            returnVelocity = guide.velocity
+        } else {
+            // An arc to where the companion rests by the cursor now.
+            let mouse = NSEvent.mouseLocation
+            let rest = restingTopLeft(for: mouse)
+            let end = CGPoint(x: rest.x + Self.triangleInContent, y: rest.y - Self.triangleInContent)
+            homeFlight = HomeFlight(arc: FlightArc(from: Point(x: guide.center.x, y: guide.center.y), to: Point(x: end.x, y: end.y)),
+                                    started: CACurrentMediaTime(), mouse: mouse, center: guide.center)
+            anchor = mouse
+            returnVelocity = nil
+        }
         followVelocity = .zero
         self.guide = nil
         hideGuideLabel()
@@ -753,20 +790,30 @@ final class OverlayController {
         let spot = CGPoint(x: point.x + guide.approach.dx * reach, y: point.y + guide.approach.dy * reach)
 
         var next = guide.center
+        var heading: Double?
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             next = spot
             guide.velocity = .zero
-        } else if next != spot {
-            var vx = Double(guide.velocity.dx), vy = Double(guide.velocity.dy)
-            var x = Double(next.x), y = Double(next.y)
-            Self.glideSpring.step(&x, velocity: &vx, toward: spot.x, dt: elapsed)
-            Self.glideSpring.step(&y, velocity: &vy, toward: spot.y, dt: elapsed)
-            if Spring.isSettled(x, velocity: vx, target: spot.x, tolerance: 0.2),
-               Spring.isSettled(y, velocity: vy, target: spot.y, tolerance: 0.2) {
-                (x, y, vx, vy) = (spot.x, spot.y, 0, 0)
+            guide.flight = nil
+            setFlightScale(1)
+        } else {
+            // A new or corrected spot: fly there from wherever the triangle is now. The flight
+            // ends exactly where the glide did (the tip at the target's edge, same side).
+            let moved = guide.flight.map { hypot($0.end.x - spot.x, $0.end.y - spot.y) > 0.5 } ?? (next != spot)
+            if moved {
+                guide.flight = FlightArc(from: Point(x: next.x, y: next.y), to: Point(x: spot.x, y: spot.y))
+                guide.flightStarted = now
             }
-            next = CGPoint(x: x, y: y)
-            guide.velocity = CGVector(dx: vx, dy: vy)
+            if let flight = guide.flight {
+                let progress = flight.progress(after: now - guide.flightStarted)
+                let eased = FlightArc.smoothstep(progress)
+                let at = flight.point(at: eased)
+                next = progress >= 1 ? spot : CGPoint(x: at.x, y: at.y)
+                guide.velocity = progress >= 1 ? .zero
+                    : CGVector(dx: (next.x - guide.center.x) / elapsed, dy: (next.y - guide.center.y) / elapsed)
+                if progress < Self.turnInAt { heading = flight.heading(at: eased) }
+                setFlightScale(progress >= 1 ? 1 : flight.scale(at: progress))
+            }
         }
         let moving = next != guide.center
         guide.center = next
@@ -781,11 +828,56 @@ final class OverlayController {
         // One heading per stop — from where the triangle will rest toward the target —
         // so it turns once and holds still (aiming from its moving position made the tip
         // wobble as it arrived).
-        wantedAngle = atan2(-guide.approach.dx, -guide.approach.dy) * 180 / .pi
+        // While flying: facing the way it travels, until `turnInAt`.
+        wantedAngle = heading ?? atan2(-guide.approach.dx, -guide.approach.dy) * 180 / .pi
 
         bubbleStage?.setOrigin(NSPoint(x: next.x - Self.triangleInset,
                                        y: next.y + Self.triangleInset - OverlayModel.bubbleCanvas.height), anchor: next)
         placeGuideLabel(triangleCenter: next, awayFrom: guide.approach, elapsed: elapsed)
+    }
+
+    /// One frame of the flight home. Faces its way of travel, then turns back to rest.
+    private func stepHome(now: CFTimeInterval, elapsed: CFTimeInterval, mouse: CGPoint, link: CADisplayLink) {
+        guard var home = homeFlight else { return }
+        if link.preferredFrameRateRange != Self.movingRate { link.preferredFrameRateRange = Self.movingRate }
+        // The user moved on: follow from here, at the flight's speed.
+        if hypot(mouse.x - home.mouse.x, mouse.y - home.mouse.y) > Self.homeCancelDistance {
+            anchor = CGPoint(x: home.center.x - Self.triangleOffset.width, y: home.center.y + Self.triangleOffset.height)
+            followVelocity = home.velocity
+            endHomeFlight()
+            Log.app.notice("Flight home: the mouse moved on; following")
+            return
+        }
+        let progress = home.arc.progress(after: now - home.started)
+        let eased = FlightArc.smoothstep(progress)
+        let at = home.arc.point(at: eased)
+        let next = CGPoint(x: at.x, y: at.y)
+        home.velocity = CGVector(dx: (next.x - home.center.x) / elapsed, dy: (next.y - home.center.y) / elapsed)
+        home.center = next
+        wantedAngle = progress < Self.turnInAt ? home.arc.heading(at: eased) ?? CompanionTriangle.restingAngle
+            : CompanionTriangle.restingAngle
+        bubbleStage?.setOrigin(NSPoint(x: next.x - Self.triangleInset,
+                                       y: next.y + Self.triangleInset - OverlayModel.bubbleCanvas.height), anchor: next)
+        if progress >= 1 {
+            // Landed where the follow would have put it for that mouse spot: it takes over.
+            anchor = home.mouse
+            endHomeFlight()
+            return
+        }
+        homeFlight = home
+        setFlightScale(home.arc.scale(at: progress))
+    }
+
+    private func endHomeFlight() {
+        homeFlight = nil
+        setFlightScale(1)
+    }
+
+    /// The swell, set only when it changes visibly (each change redraws the triangle view).
+    private func setFlightScale(_ scale: Double) {
+        let value = CGFloat(scale)
+        guard value != model.flightScale, value == 1 || abs(value - model.flightScale) >= 0.01 else { return }
+        model.flightScale = value
     }
 
     /// Whether the triangle is still turning toward `wantedAngle`.
@@ -802,23 +894,36 @@ final class OverlayController {
     }
 
     /// Turns the triangle with a spring, in the frame loop rather than a SwiftUI
-    /// animation (which restarted every frame while gliding and stuttered).
+    /// animation (which restarted every frame while gliding and stuttered). The spring runs
+    /// on its own exact angle; the view (a SwiftUI update each time) only hears of changes
+    /// it could show — 0.25° or more, and the final settle — since flights turn all the way.
     private func stepTurn(elapsed: CFTimeInterval) {
-        guard isTurning else { return }
-        let target = model.triangleAngle + angleDelta
+        guard isTurning || springAngle != nil else { return }
+        let current = springAngle ?? model.triangleAngle
+        var delta = (wantedAngle - current).truncatingRemainder(dividingBy: 360)
+        if delta > 180 { delta -= 360 }
+        if delta < -180 { delta += 360 }
+        let target = current + delta
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             model.triangleAngle = target
             angleVelocity = 0
+            springAngle = nil
             return
         }
-        var angle = model.triangleAngle
+        var angle = current
         Self.turnSpring.step(&angle, velocity: &angleVelocity, toward: target, dt: elapsed)
         if Spring.isSettled(angle, velocity: angleVelocity, target: target, tolerance: 0.2) {
-            angle = target
             angleVelocity = 0
+            springAngle = nil
+            model.triangleAngle = target
+            return
         }
-        model.triangleAngle = angle
+        springAngle = angle
+        if abs(angle - model.triangleAngle) >= 0.25 { model.triangleAngle = angle }
     }
+
+    /// The turn spring's exact angle while turning (the view gets it in 0.25° steps).
+    private var springAngle: Double?
 
     // MARK: - Listening waveform
 

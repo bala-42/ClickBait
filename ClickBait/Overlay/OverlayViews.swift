@@ -42,6 +42,8 @@ struct CompanionTriangle: View {
     /// small panels pass the pills' softer `Glow`, which fits inside them.
     var glowOpacity: Double = Self.glowOpacity
     var glowRadius: CGFloat = Self.glowRadius
+    /// The flight's swell (`FlightArc.scale`): the triangle grows, and its glow with it.
+    var flightScale: CGFloat = 1
     nonisolated static let size: CGFloat = 16
     /// Up-left, at the cursor (Clicky's −35°; was −45°).
     static let restingAngle: Double = -35
@@ -76,21 +78,36 @@ struct CompanionTriangle: View {
         TimelineView(.animation(minimumInterval: nil, paused: !beating && !turning)) { context in
             let beat = beating ? Self.beat(after: context.date.timeIntervalSince(pulseStart)) : 0
             let spin = turning ? Self.spinAngle(after: context.date.timeIntervalSince(spinStart)) : settle
-            EquilateralTriangle()
-                .fill(tone.color)
-                .frame(width: Self.size, height: Self.size)
-                .shadow(color: tone.color.opacity(min(1, glowOpacity + 0.4 * beat)), radius: glowRadius + 4 * beat)
-                // Triangle and glow are drawn once into a texture that is then turned:
-                // rotating no longer redraws the blurred glow every frame (costly while
-                // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
-                .padding(Self.glowRoom)
-                .modifier(CachedDrawing(enabled: !beating))
+            let swell = reduceMotion ? 0 : max(flightScale - 1, 0)
+            ZStack {
+                // Mid-flight the glow grows by (scale − 1)·20 pt (Clicky's): a second glow,
+                // drawn once at the full growth, fades in with the swell — re-blurring the
+                // glow every frame is what stalled the pulse (2026-10-06).
+                if swell > 0.001 {
+                    EquilateralTriangle()
+                        .fill(tone.color)
+                        .frame(width: Self.size, height: Self.size)
+                        .shadow(color: tone.color, radius: glowRadius + CGFloat(FlightArc.fullSwell * FlightArc.glowPerSwell))
+                        .padding(Self.glowRoom)
+                        .drawingGroup()
+                        .opacity(Double(swell) / FlightArc.fullSwell)
+                }
+                EquilateralTriangle()
+                    .fill(tone.color)
+                    .frame(width: Self.size, height: Self.size)
+                    .shadow(color: tone.color.opacity(min(1, glowOpacity + 0.4 * beat)), radius: glowRadius + 4 * beat)
+                    // Triangle and glow are drawn once into a texture that is then turned:
+                    // rotating no longer redraws the blurred glow every frame (costly while
+                    // Ollama keeps the GPU busy). The glow is centred, so it looks the same.
+                    .padding(Self.glowRoom)
+                    .modifier(CachedDrawing(enabled: !beating))
+            }
                 // The spin turns about the triangle's centroid, which the shape now puts at the
                 // centre (about the bounding box's centre it wobbled, and thirds didn't land
                 // where they began).
                 .rotationEffect(.degrees(spin))
                 .rotationEffect(.degrees(angle))  // aim, smoothed by OverlayController
-                .scaleEffect(reduceMotion ? 1 : 1 + 0.18 * beat)
+                .scaleEffect(reduceMotion ? 1 : (1 + 0.18 * beat) * (1 + swell))
                 .opacity(reduceMotion ? 1 - 0.4 * beat : 1)
         }
         .frame(width: Self.size * 1.7, height: Self.size * 1.7)
@@ -309,11 +326,12 @@ struct CompanionBubbleView: View {
 
     static let maxTextWidth: CGFloat = 300
     /// Around the companion inside its measured size (the old 4 pt), and the canvas's extra
-    /// margin outside it for the glow, which reaches ~31 pt from the centre while pulsing.
+    /// margin outside it for the glow: ~31 pt from the centre while pulsing, ~44 pt at a
+    /// flight's peak (the radius-14 glow, 33.8 pt, swollen 1.3×).
     static let contentPadding: CGFloat = 4
     static let triangleSpacing: CGFloat = 2
     static let cardSpacing: CGFloat = 3
-    static let canvasMargin: CGFloat = 16
+    static let canvasMargin: CGFloat = 26
 
     var body: some View {
         HStack(alignment: .top, spacing: Self.cardSpacing) {
@@ -322,7 +340,8 @@ struct CompanionBubbleView: View {
                     ListeningWaveform(level: model.waveLevel, tone: model.tone)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else {
-                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, spinning: model.isSpinning, angle: model.triangleAngle)
+                    CompanionTriangle(tone: model.tone, pulsing: model.isPulsing, spinning: model.isSpinning, angle: model.triangleAngle,
+                                      flightScale: model.flightScale)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }

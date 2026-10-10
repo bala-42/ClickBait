@@ -75,6 +75,8 @@ final class OverlayModel {
     var isTutoring = false
     /// The guiding triangle has arrived at its target (it pulses only then).
     var isGuideSettled = false
+    /// The flight's swell (1 at rest, up to 1.3 mid-flight; `FlightArc.scale`).
+    var flightScale: CGFloat = 1
 
     var tone: CompanionTone {
         // Red from the circling until the parts are pointed at (or there's nothing to point).
