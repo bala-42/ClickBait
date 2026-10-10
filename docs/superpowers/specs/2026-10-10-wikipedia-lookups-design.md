@@ -53,4 +53,4 @@ Privacy: CLAUDE.md's "no web lookups" rule now has this one exception, and the s
 
 1. Extend to spoken and typed questions (automatic when switched on, or only on "look it up")?
 2. English Wikipedia only (matches the English-only speech model), or follow the system language?
-3. Should the existing Anthropic "Internet Mode" setting in the build be hidden until roadmap D is decided?
+3. ~~Should the existing Anthropic "Internet Mode" setting in the build be hidden until roadmap D is decided?~~ Decided 2026-10-10: the Anthropic provider is removed entirely; Internet Mode becomes the wider free lookups (`2026-10-07-internet-mode-design.md`), which these Wikipedia lookups become part of.

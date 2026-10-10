@@ -1,6 +1,8 @@
 # Internet Mode — design
 
-Date: 2026-10-07 · Status: draft for review
+Date: 2026-10-07 · Status: direction approved 2026-10-10 ("wider free lookups"); not built
+
+**Decided 2026-10-10:** no paid APIs or keys anywhere in ClickBait — the user (and most users) don't have an Anthropic key. The Anthropic provider is removed (roadmap D), so "Internet Mode" means only this feature: free, keyless lookups answered by the local model. The Settings label "Internet Mode — Anthropic API" goes away with the provider. Remaining review items in this spec (sources, the 🔒/🌐 menu title, SearXNG setup) still need the user's sign-off before building.
 
 ## Why
 
