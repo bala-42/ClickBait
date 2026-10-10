@@ -553,6 +553,9 @@ final class AskCoordinator {
             run.chatMessages = [ChatModel.Message(role: .user, text: run.display)]
         }
         backgroundJobs.setChatMessages(run.chatMessages, for: job.id)
+        // The task belongs to the capsule now (its ✕ stops it): Esc, dismissing an answer or
+        // closing a chat cancels `askTask`, which would silently kill the background answer.
+        if askTask == run.task { askTask = nil }
         peelableRunID = nil
         if answerFlowID == run.id { answerFlowID = nil }
         finishAnswering(run.id)
