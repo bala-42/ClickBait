@@ -11,7 +11,6 @@ and **points at exactly what to click**.
 - **Bring your own key.** Optionally plug in an Anthropic API key for smarter answers. Keys are stored
   in the macOS Keychain.
 
-> **Status:** early development — Milestone 1 (Ask & Point) is being built.
 
 ## Requirements
 
