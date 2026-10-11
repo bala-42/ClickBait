@@ -388,25 +388,24 @@ struct ListeningWaveform: View {
     let level: Double
     let tone: CompanionTone
 
-    /// Middle bars reach highest, like a voice-memo meter.
-    private static let shape: [Double] = [0.55, 0.85, 1, 0.85, 0.55]
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Clicky's waveform (MIT): five 2 pt bars, 2 pt apart, heights from `WaveformMeter`, a
+    /// soft glow, redrawn at most 36 times a second. In the state's colour (Pumpkin while
+    /// listening). Reduce Motion: no idle pulse; the bars still follow the voice.
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 36.0)) { context in
             let time = context.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(Self.shape.indices, id: \.self) { index in
-                    // A little independent wobble per bar so a steady voice still looks alive.
-                    let wobble = reduceMotion ? 1 : 0.8 + 0.2 * sin(time * 11 + Double(index) * 1.7)
-                    let height = 4 + 18 * level * Self.shape[index] * wobble
-                    Capsule()
-                        .fill(tone.color.opacity(0.95))
-                        .frame(width: 3.5, height: height)
+            HStack(alignment: .center, spacing: WaveformMeter.barSpacing) {
+                ForEach(WaveformMeter.barProfile.indices, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: WaveformMeter.barCornerRadius, style: .continuous)
+                        .fill(tone.color)
+                        .frame(width: WaveformMeter.barWidth,
+                               height: WaveformMeter.barHeight(index: index, level: level, time: time, pulsing: !reduceMotion))
                 }
             }
-            .shadow(color: tone.color.opacity(Glow.opacity + 0.05), radius: Glow.radius)
+            .shadow(color: tone.color.opacity(0.6), radius: 6)
+            .animation(.linear(duration: 0.08), value: level)
         }
         .frame(width: CompanionTriangle.size * 1.7, height: CompanionTriangle.size * 1.7)
         .accessibilityLabel("Listening")

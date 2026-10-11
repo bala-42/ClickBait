@@ -352,7 +352,7 @@ final class OverlayController {
             updateVisibility()
         }
 
-        updateWaveform()
+        updateWaveform(elapsed: elapsed)
         defer { stepTurn(elapsed: elapsed) }
         if guide != nil {
             stepGuide(now: now, elapsed: elapsed, link: link)
@@ -937,18 +937,16 @@ final class OverlayController {
     var levelSource: (() -> Float)?
     private var waveEnvelope: Double = 0
 
-    /// Follows the voice: rises at once, falls back over ~150 ms, on a dB scale so
-    /// quiet and loud speech both move the bars.
-    private func updateWaveform() {
+    /// Follows the voice as Clicky's does (`WaveformMeter.level`): RMS ×10.2, rising at once
+    /// and falling ×0.72 per ~21 ms, timed by the frame so any refresh rate looks the same.
+    /// (Was a dB scale, −55…−15 dB, falling over ~150 ms.)
+    private func updateWaveform(elapsed: CFTimeInterval) {
         guard model.bubble == .listening else {
             if model.waveLevel != 0 { model.waveLevel = 0 }
             waveEnvelope = 0
             return
         }
-        let rms = Double(levelSource?() ?? 0)
-        let decibels = 20 * log10(max(rms, 0.000_01))
-        let loudness = min(max((decibels + 55) / 40, 0), 1)  // −55 dB → 0, −15 dB → 1
-        waveEnvelope = loudness > waveEnvelope ? loudness : waveEnvelope * 0.88 + loudness * 0.12
+        waveEnvelope = WaveformMeter.level(after: waveEnvelope, rms: Double(levelSource?() ?? 0), dt: elapsed)
         if abs(model.waveLevel - waveEnvelope) > 0.005 { model.waveLevel = waveEnvelope }
     }
 
