@@ -234,6 +234,27 @@ struct AgentDoneCard: View {
     }
 }
 
+/// A job that couldn't finish: why, and ✕ to remove it.
+struct AgentFailedCard: View {
+    let title: String
+    let reason: String
+    let tone: CompanionTone
+    var blur = true
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            AgentCardTitle(title: title, badge: "failed", tone: tone, onClose: onClose)
+            Text("Couldn't answer: \(reason)")
+                .font(.system(size: 12))
+                .foregroundStyle(AgentDockStyle.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .modifier(AgentCardChrome(tone: tone, blur: blur))
+    }
+}
+
 /// The result at the cursor when a job finishes: its summary in a pill of the job's colour.
 struct AgentResultPill: View {
     let text: String

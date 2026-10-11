@@ -511,6 +511,8 @@ struct CompanionBubbleView: View {
             TinyPill(text: message, symbol: "exclamationmark", tone: model.tone, isProblem: true)
         case .hint(let text):
             TinyPill(text: text, tone: model.tone)
+        case .jobResult(let text, let tone):
+            AgentResultPill(text: text, tone: tone)
         }
     }
 }

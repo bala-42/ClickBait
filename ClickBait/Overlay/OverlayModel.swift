@@ -46,12 +46,14 @@ final class OverlayModel {
         case error(String)
         /// A tutorial step whose target isn't on screen: its instruction by the cursor.
         case hint(String)
+        /// A background ClickBait finished: its summary, in the job's colour.
+        case jobResult(String, CompanionTone)
 
         /// A result or a problem: shown as a tiny pill. Everything else is just the
         /// triangle's colour and pulse.
         var hasWords: Bool {
             switch self {
-            case .answer, .done, .error, .hint, .working: true  // working: "opening safari…"
+            case .answer, .done, .error, .hint, .working, .jobResult: true  // working: "opening safari…"
             case .thinking(let heard): heard != nil  // what was heard, so mishearing shows
             default: false
             }
@@ -94,7 +96,7 @@ final class OverlayModel {
         if isTutoring { return .tutorial }
         if isGuiding { return .idle }  // pointing is blue, even while the words are still coming
         return switch bubble {
-        case .idle, .answer, .error, .hint: .idle
+        case .idle, .answer, .error, .hint, .jobResult: .idle  // a job's result pill wears the job's colour; the companion stays Azure
         case .listening, .thinking, .explaining: .processing
         case .working, .done: .action
         }

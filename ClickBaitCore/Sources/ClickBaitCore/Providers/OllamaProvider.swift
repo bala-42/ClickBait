@@ -168,6 +168,7 @@ public struct OllamaProvider: LLMProvider {
         var options: [String: Any] = ["temperature": 0.1, "num_ctx": contextTokens, "num_predict": maxReplyTokens]
         if ask.listParts { options["num_predict"] = partsReplyTokens }
         if ask.lookupQuery { options["num_predict"] = 60 }
+        if ask.suggestNextAfter != nil { options["num_predict"] = 60 }
         // ~9 tokens a mark ("12": "Neptune",); 15 marks took 138.
         if !ask.markNames.isEmpty { options["num_predict"] = max(partsReplyTokens, ask.markCount * 14) }
         return options
@@ -184,6 +185,11 @@ public struct OllamaProvider: LLMProvider {
         if ask.planTutorial { return tutorialSchema }
         if ask.tutorialCheck != nil { return progressSchema }
         if ask.lookupQuery { return ["type": "object", "properties": ["query": ["type": "string"]], "required": ["query"]] }
+        if ask.suggestNextAfter != nil {
+            return ["type": "object",
+                    "properties": ["next": ["type": "array", "maxItems": NextSuggestions.maxCount, "items": ["type": "string"]]],
+                    "required": ["next"]]
+        }
         return nil
     }
 

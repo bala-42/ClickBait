@@ -64,6 +64,7 @@ public enum Prompt {
     public static func system(for request: AskRequest) -> String {
         let text: String
         if request.lookupQuery { text = lookupSystem }
+        else if request.suggestNextAfter != nil { text = nextSystem }
         else if request.pickElement { text = pickSystem }
         else if request.sortRequest { text = sortSystem }
         else if request.interpretOrder { text = orderSystem }
@@ -247,6 +248,9 @@ public enum Prompt {
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
         if request.lookupQuery { return lookupText(for: request) }
+        if let answer = request.suggestNextAfter {
+            return "Question: \(request.question)\nAnswer: \(String(answer.prefix(1_500)))"
+        }
         var text = baseUserText(for: request)
         if !request.web.isEmpty { text += "\n\n" + webBlock(request.web) }
         // Qwen 3.5 answers on its 0–1000 scale whatever it's told; saying so made it
@@ -383,6 +387,16 @@ public enum Prompt {
         Also give "subject" as the last key: what it shows as an encyclopedia would title it, \
         1–4 words ("Rotator cuff", "Solar System", "Mona Lisa"), or "none" for a person or people, \
         text, code, a message or an app's screen.
+        """
+
+    /// A finished background answer's card (text only, ~1 s): what the user might ask next.
+    public static let nextSystem = """
+        You suggest what someone might ask their computer assistant next, after an answer.
+
+        Reply with ONLY one JSON object: {"next": ["...", "..."]}
+        - One or two follow-up requests in the user's own voice, each 2–6 words, starting \
+        with a verb or a question word ("Show me the fixed code", "Why is it nil?").
+        - About the same topic, useful next steps. Never repeat the question.
         """
 
     /// Internet Mode, step one (text only, ~1 s): the words to search for. Only this phrase

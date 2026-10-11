@@ -12,6 +12,8 @@ final class CapsuleController {
     var onLater: ((UUID) -> Void)?
     var onDismiss: ((UUID) -> Void)?
     var onSeen: ((UUID) -> Void)?
+    var onSuggestion: ((UUID, String) -> Void)?
+    var onFollowUp: ((UUID, Bool) -> Void)?
     var canGoThere: (() -> Bool)?
 
     /// Room around a tile and a card for their glows inside their windows.
@@ -156,6 +158,8 @@ final class CapsuleController {
                                                                    onGoThere: { [weak self] in self?.onGoThere?($0) },
                                                                    onLater: { [weak self] in self?.onLater?($0) },
                                                                    onDismiss: { [weak self] in self?.onDismiss?($0) },
+                                                                   onSuggestion: { [weak self] in self?.onSuggestion?($0, $1) },
+                                                                   onFollowUp: { [weak self] in self?.onFollowUp?($0, $1) },
                                                                    canGoThere: { [weak self] in self?.canGoThere?() ?? true }))
         let card = Self.makePanel(CGRect(x: 0, y: 0, width: AgentDock.cardWidth, height: 100))
         cardHost.autoresizingMask = [.width, .height]

@@ -183,6 +183,15 @@ final class OverlayController {
         scheduleDismiss(after: .seconds(5))
     }
 
+    /// A background ClickBait finished: its summary by the companion, in the job's colour,
+    /// for 5 s. Only when nothing else is saying anything (the caller waits for that).
+    func showJobResult(_ text: String, tone: CompanionTone) {
+        guard !model.bubble.hasWords, !isGuiding else { return }
+        setCompanionHidden(false)
+        model.bubble = .jobResult(text, tone)
+        scheduleDismiss(after: .seconds(5))
+    }
+
     /// A command is running (green, pulsing) — file actions can take a while.
     func showWorking(_ message: String) {
         endGuide()
@@ -1065,7 +1074,7 @@ final class OverlayController {
 private extension OverlayModel.Bubble {
     var isAnswer: Bool {
         switch self {
-        case .answer, .done, .error: return true  // a click or Escape clears these
+        case .answer, .done, .error, .jobResult: return true  // a click or Escape clears these
         default: return false
         }
     }

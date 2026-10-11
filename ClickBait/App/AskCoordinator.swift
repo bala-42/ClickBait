@@ -920,6 +920,49 @@ final class AskCoordinator {
         }
     }
 
+    /// "suggested next:" for a finished background answer's card: one short text-only
+    /// request (`Prompt.nextSystem`, ~1 s). Nil if it's slow (Ollama may be busy with a
+    /// question: a foreground answer comes first) or the reply isn't usable.
+    func suggestNext(question: String, answer: String) async -> [String]? {
+        var ask = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                             context: ScreenContext(appName: nil), selectedText: nil)
+        ask.suggestNextAfter = MessageFormat.spokenText(answer)
+        let start = ContinuousClock.now
+        let reply = await Self.reply(from: settings.makeProvider(), to: ask, within: .seconds(4))
+        let suggestions = reply.flatMap { NextSuggestions.parse($0, question: question) }
+        Log.ask.notice("Suggested next: \(suggestions?.count ?? -1) in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+        return suggestions
+    }
+
+    /// A card's [voice]: listening as if ⌃⌥ were held, until the next click (or 20 s),
+    /// which counts as letting go.
+    func listenUntilClick() {
+        guard !isBusy else { return }
+        handle(.askPressed)
+        guard state == .listening else { return }
+        var monitors: [Any] = []
+        var done = false
+        let finish: @MainActor () -> Void = { [weak self] in
+            guard !done else { return }
+            done = true
+            monitors.forEach(NSEvent.removeMonitor)
+            monitors.removeAll()
+            guard let self, state == .listening else { return }
+            handle(.askReleased)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { _ in
+            MainActor.assumeIsolated { finish() }
+        }) { monitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { event in
+            MainActor.assumeIsolated { finish() }
+            return event
+        }) { monitors.append(local) }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(20))
+            finish()
+        }
+    }
+
     /// For orders the rules don't recognise ("stash these in my documents"): a quick,
     /// text-only request asking which known action it is. Nil if none (or no answer in
     /// time); the result still has to pass the catalog and the Finder check.

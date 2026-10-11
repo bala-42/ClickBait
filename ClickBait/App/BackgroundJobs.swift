@@ -19,6 +19,8 @@ final class BackgroundJobs {
         var progress: JobProgress = .uncounted
         /// What the answer has said so far (its spoken text), for the running card's line.
         var liveText = ""
+        /// "suggested next:" for a done card: nil until asked (when it first opens).
+        var suggestions: [String]?
         /// Its card has been opened since it finished: the tile stops pulsing.
         var seen = false
         var id: UUID { job.id }
@@ -26,7 +28,7 @@ final class BackgroundJobs {
         /// Everything a tile or card shows is the same.
         func looksSame(as other: Entry) -> Bool {
             job == other.job && liveText == other.liveText && seen == other.seen && progress == other.progress
-                && chatMessages.count == other.chatMessages.count
+                && chatMessages.count == other.chatMessages.count && suggestions == other.suggestions
         }
     }
 
@@ -88,6 +90,11 @@ final class BackgroundJobs {
         guard let index = entries.firstIndex(where: { $0.id == id }), !entries[index].job.isWorking,
               !entries[index].seen else { return }
         entries[index].seen = true
+    }
+
+    func setSuggestions(_ suggestions: [String], for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].suggestions = suggestions
     }
 
     func setSnipMemory(_ memory: AskCoordinator.SnipMemory?, for id: UUID) {

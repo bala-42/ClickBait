@@ -88,69 +88,49 @@ struct DockTileView: View {
     }
 }
 
-/// The card under a tile.
+/// The card under a tile: running, done or failed.
 struct CapsuleView: View {
     @Bindable var presentation: CapsulePresentation
     let onStop: (UUID) -> Void
     let onGoThere: (UUID) -> Void
     let onLater: (UUID) -> Void
     let onDismiss: (UUID) -> Void
+    let onSuggestion: (UUID, String) -> Void
+    let onFollowUp: (UUID, _ voice: Bool) -> Void
     let canGoThere: () -> Bool
 
     private var job: BackgroundJob { presentation.entry.job }
     private var tone: CompanionTone { presentation.tone }
 
     var body: some View {
-        Group {
-            if job.isWorking {
-                // ✕ stops it: the tile goes.
-                AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
-                                 tone: tone,
-                                 progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
-                                 onStop: { onStop(job.id) })
-            } else {
-                card
-                    .frame(width: AgentDock.cardWidth - 22, alignment: .leading)
-                    .padding(11)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AgentDock.cardCorner, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: AgentDock.cardCorner).strokeBorder(.white.opacity(0.13), lineWidth: 0.7))
-            }
-        }
-        .padding(CapsuleController.cardMargin)
-        .fixedSize()
+        card
+            .padding(CapsuleController.cardMargin)
+            .fixedSize()
     }
 
     @ViewBuilder private var card: some View {
+        let id = job.id
         switch job.status {
         case .working:
-            EmptyView()
+            // ✕ stops it: the tile goes.
+            AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
+                             tone: tone,
+                             progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
+                             onStop: { onStop(id) })
         case .done(let summary):
-            VStack(alignment: .leading, spacing: 10) {
-                Text(summary).font(.system(size: 12, weight: .medium)).lineLimit(3)
-                HStack(spacing: 8) {
-                    action("go there!") { onGoThere(job.id) }
-                        .disabled(!canGoThere())
-                        .help(canGoThere() ? "" : "Finish the current question first")
-                    action("later, pls") { onLater(job.id) }
-                }
-            }
+            AgentDoneCard(title: job.question, summary: summary, suggestions: presentation.entry.suggestions ?? [],
+                          tone: tone, canGoThere: canGoThere(),
+                          onClose: { onDismiss(id) },
+                          onSuggestion: { onSuggestion(id, $0) },
+                          onFollowUpText: { onFollowUp(id, false) },
+                          onFollowUpVoice: { onFollowUp(id, true) },
+                          onGoThere: { onGoThere(id) },
+                          onLater: { onLater(id) })
         case .failed(let reason):
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Couldn't answer: \(reason)").font(.system(size: 12, weight: .medium)).lineLimit(3)
-                HStack { Spacer(); action("ok") { onDismiss(job.id) } }
-            }
+            AgentFailedCard(title: job.question, reason: reason, tone: tone, onClose: { onDismiss(id) })
         case .stopped:
             EmptyView()
         }
-    }
-
-    private func action(_ title: String, role: ButtonRole? = nil, perform: @escaping () -> Void) -> some View {
-        Button(role: role, action: perform) {
-            Text(title).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 10).padding(.vertical, 5)
-                .background(tone.color.opacity(0.85), in: Capsule())
-                .foregroundStyle(.white)
-        }
-        .buttonStyle(.plain)
     }
 }
 

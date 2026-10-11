@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
     private lazy var capsules = CapsuleController()
+    /// Done jobs whose result pill has been shown (or is waiting to be).
+    private var announcedJobs: Set<UUID> = []
+    private var askingSuggestions: Set<UUID> = []
     private let backgroundJobs = BackgroundJobs()
     private let chat = ChatController()
     private let confirm = ConfirmController()
@@ -70,13 +73,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         backgroundJobs.onChange = { [weak self] entries in
             self?.capsules.sync(entries)
             self?.statusBar?.updateBackgroundJobs(entries)
+            self?.announceFinished(entries)
         }
         capsules.canGoThere = { [weak self] in self.map { !$0.coordinator.isBusy } ?? false }
         capsules.onStop = { [weak self] in self?.backgroundJobs.stop($0) }
         capsules.onDismiss = { [weak self] in self?.backgroundJobs.remove($0) }
         capsules.onLater = { [weak self] in self?.capsules.fold($0) }
         capsules.onGoThere = { [weak self] in self?.goThere($0) }
-        capsules.onSeen = { [weak self] in self?.backgroundJobs.markSeen($0) }
+        capsules.onSeen = { [weak self] id in
+            self?.backgroundJobs.markSeen(id)
+            self?.suggestNext(for: id)
+        }
+        capsules.onSuggestion = { [weak self] id, text in
+            guard let self else { return }
+            goThere(id)
+            guard chat.isOpen else { return }
+            chat.model.draft = text
+            chat.model.send()  // as if typed: it's a follow-up in that chat
+        }
+        capsules.onFollowUp = { [weak self] id, voice in
+            guard let self else { return }
+            goThere(id)
+            guard chat.isOpen else { return }
+            if voice { coordinator.listenUntilClick() } else { chat.focus() }
+        }
         coordinator.onPeel = { [weak self] job in
             guard let self else { return [] }
             let messages = chat.stash()
@@ -401,6 +421,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The first time a done card opens: ask for its "suggested next:" pills.
+    private func suggestNext(for id: UUID) {
+        guard let entry = backgroundJobs.entries.first(where: { $0.id == id }), entry.suggestions == nil,
+              case .done = entry.job.status, !askingSuggestions.contains(id) else { return }
+        askingSuggestions.insert(id)
+        let question = entry.job.question, answer = entry.job.answer
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let suggestions = await coordinator.suggestNext(question: question, answer: answer)
+            askingSuggestions.remove(id)
+            // Slow or unusable: none this time; the next opening asks again.
+            if let suggestions { backgroundJobs.setSuggestions(suggestions, for: id) }
+        }
+    }
+
+    /// A job that has just finished shows its summary once by the companion (the result
+    /// pill), waiting while ClickBait is busy (listening, thinking, speaking), pointing or
+    /// touring, or walking through something; given up after 2 minutes.
+    private func announceFinished(_ entries: [BackgroundJobs.Entry]) {
+        for entry in entries where !announcedJobs.contains(entry.id) {
+            guard case .done(let summary) = entry.job.status, !summary.hasPrefix("your chat about") else { continue }
+            announcedJobs.insert(entry.id)
+            let id = entry.id
+            let tone: CompanionTone = entry.job.kind == .snip ? .capture : .processing
+            Task { @MainActor [weak self] in
+                let deadline = ContinuousClock.now + .seconds(120)
+                while let self, ContinuousClock.now < deadline {
+                    guard backgroundJobs.entries.contains(where: { $0.id == id }) else { return }  // gone, or opened there
+                    if !coordinator.isBusy, !overlay.isGuiding, !overlay.isTutoring, !overlay.isShowingWords {
+                        overlay.showJobResult(summary, tone: tone)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+        }
+        announcedJobs.formIntersection(entries.map(\.id))
+    }
+
     private func goThere(_ id: UUID) {
         guard !coordinator.isBusy,
               let entry = backgroundJobs.entries.first(where: { $0.id == id }),
@@ -485,6 +544,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 capsules.fold(working.id)
             }
+            // The done card with its suggestions (set here, so no model is asked).
+            Log.app.notice("Bench: result")
+            backgroundJobs.setSuggestions(["Show me the fixed code", "Why is it nil at launch?"], for: done.id)
+            capsules.expand(done.id)
+            try? await Task.sleep(for: .seconds(4))
+            capsules.fold(done.id)
             Log.app.notice("Bench: peel")
             for _ in 0..<3 {
                 if let last = backgroundJobs.entries.last { backgroundJobs.remove(last.id) }

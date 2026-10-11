@@ -67,6 +67,9 @@ public struct AskRequest: Sendable {
     public var askSubject = false
     /// Internet Mode's first step (`Prompt.lookupSystem`, text only): write the search words.
     public var lookupQuery = false
+    /// A finished background answer's card (`Prompt.nextSystem`, text only): up to two short
+    /// follow-up questions to offer under "suggested next:". Holds the answer.
+    public var suggestNextAfter: String?
     /// For that step: words read on this Mac near the pointer (never sent anywhere but Ollama),
     /// and the chat's earlier question for a follow-up like "look it up".
     public var screenWords: String?
