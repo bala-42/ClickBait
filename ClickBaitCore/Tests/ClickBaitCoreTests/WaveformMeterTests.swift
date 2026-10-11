@@ -4,8 +4,8 @@ import Testing
 
 struct WaveformMeterTests {
     @Test func risesAtOnceAndFallsLikeClickys() {
-        #expect(WaveformMeter.level(after: 0, rms: 0.05, dt: 1.0 / 120) == 0.51)  // 0.05 × 10.2
         #expect(WaveformMeter.level(after: 0, rms: 0.5, dt: 1.0 / 120) == 1)      // capped
+        #expect(WaveformMeter.level(after: 0, rms: 0.000_1, dt: 1.0 / 120) == 0)  // silence
         // One buffer's worth of time in silence: × 0.72.
         let oneBuffer = WaveformMeter.level(after: 1, rms: 0, dt: 1024.0 / 48_000)
         #expect(abs(oneBuffer - 0.72) < 1e-9)
@@ -14,6 +14,19 @@ struct WaveformMeterTests {
         for _ in 0..<12 { fast = WaveformMeter.level(after: fast, rms: 0, dt: 1.0 / 120) }
         for _ in 0..<6 { slow = WaveformMeter.level(after: slow, rms: 0, dt: 1.0 / 60) }
         #expect(abs(fast - slow) < 1e-9)
+    }
+
+    /// Measured on this Mac (speech from the speakers): the bars spread over the range
+    /// instead of pinning at the top (Clicky's ×10.2 hit the cap at RMS 0.035).
+    @Test func loudnessFollowsTheSoundWithoutPinning() {
+        func middle(_ rms: Double) -> Double {
+            WaveformMeter.barHeight(index: 2, level: WaveformMeter.loudness(rms: rms), time: 0, pulsing: false) - 3
+        }
+        #expect(middle(0.007) < 2)                                 // the room
+        #expect(middle(0.025) > 4 && middle(0.025) < 6.5)          // median speech
+        #expect(middle(0.068) > 7 && middle(0.068) < 9)            // loud speech
+        #expect(middle(0.15) > 9 && middle(0.15) < 10)             // a voice close to the mic
+        #expect(middle(0.025) < middle(0.068) && middle(0.068) < middle(0.15))
     }
 
     @Test func barsFollowTheVoiceInClickysProfile() {
