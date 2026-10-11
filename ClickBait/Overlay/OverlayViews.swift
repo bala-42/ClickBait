@@ -263,18 +263,9 @@ struct GuideLabelView: View {
     var body: some View {
         Group {
             if let label = model.guideLabel, !label.isEmpty {
-                Text(label)
-                    .font(.system(size: 12, weight: .semibold))
-                    // A tour's part names sit in the middle of their red pill (user's request),
-                    // across and up-down by the letters themselves.
-                    .wrapped(label, maxWidth: 240, alignment: model.isTouring ? .center : .leading)
-                    .offset(y: model.isTouring ? InkCentring.offset(for: label, maxWidth: 240) : 0)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .modifier(ToneFill(fill: model.tone.color.opacity(0.9), glow: model.tone.color.opacity(Glow.opacity),
-                                       shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
-                    .accessibilityLabel("ClickBait is pointing at \(model.guideTarget ?? label)")
-                    .contentTransition(.opacity)  // names crossfade between stops
+                // One pill that pops in (and a blue one types) anew for each label: a new
+                // view per label (`.id`) caused ~90 ms stalls on a tour (2026-10-11).
+                GuidePill(label: label, tone: model.tone, style: style, target: model.guideTarget)
             }
         }
         .animation(.easeInOut(duration: 0.22), value: model.guideLabel)
@@ -282,6 +273,113 @@ struct GuideLabelView: View {
         .fixedSize()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { model.guideLabelSize = $0 }
         .frame(width: OverlayModel.guideLabelCanvas.width, height: OverlayModel.guideLabelCanvas.height, alignment: .topLeading)
+    }
+
+    private var style: GuidePill.Style {
+        if model.isTouring { return .tour }
+        if model.isTutoring { return .walkthrough }
+        return .point
+    }
+}
+
+/// One guide label, after Clicky's (MIT) pointing bubble: it pops in from half size with a
+/// spring (response 0.4, damping 0.6), its glow starting bright (+1.0 opacity, +16 pt at
+/// half size) and settling as it grows. A blue point's words type themselves out, 30–60 ms
+/// a character; a lavender instruction and a red "~ name" only pop (they're long, or
+/// centred by their ink). The full text is laid out from the start, invisibly, so the pill
+/// never changes size while typing and its far-side placement holds. VoiceOver reads it
+/// whole. Reduce Motion: no pop, no typing, just the fade.
+private struct GuidePill: View {
+    enum Style { case point, walkthrough, tour }
+
+    let label: String
+    let tone: CompanionTone
+    let style: Style
+    let target: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 0 at the pop's start (half size, bright glow) → 1 settled; the spring may overshoot.
+    @State private var popped: CGFloat
+    @State private var typed: Int?
+
+    private static let maxWidth: CGFloat = 240
+
+    /// Starts where the pop starts (set here, not in the task, so no first frame shows the
+    /// pill full size); with Reduce Motion, already settled.
+    init(label: String, tone: CompanionTone, style: Style, target: String?) {
+        self.label = label
+        self.tone = tone
+        self.style = style
+        self.target = target
+        let calm = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        _popped = State(initialValue: calm ? 1 : 0)
+        _typed = State(initialValue: !calm && style == .point ? 0 : nil)
+    }
+
+    var body: some View {
+        let bright = max(1 - popped, -0.2)
+        // One text, always the whole label (it sizes the pill); what isn't typed yet is
+        // drawn clear. Two stacked texts (full + typed) caused ~90 ms stalls (2026-10-11).
+        text(typing(label, upTo: typed))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .modifier(ToneFill(fill: tone.color.opacity(0.9), glow: tone.color.opacity(Glow.opacity),
+                           shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+        // The pop's bright glow (+1.0 opacity, +16 pt), drawn once and faded out as the pill
+        // grows: animating the shadow's radius re-blurred it every frame (+0.12 s a tour).
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(tone.color)
+                .shadow(color: tone.color, radius: Glow.radius + 16)
+                .drawingGroup()
+                .opacity(Double(min(max(bright, 0), 1)))
+        }
+        .scaleEffect(0.5 + 0.5 * popped)
+        .animation(.easeInOut(duration: 0.25), value: tone)
+        .contentTransition(.opacity)  // names crossfade between stops
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("ClickBait is pointing at \(target ?? label)")
+        // Back to the pop's start in the same update as the new words (no full-size frame).
+        .onChange(of: label) { _, _ in
+            guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) {
+                popped = 0
+                typed = style == .point ? 0 : nil
+            }
+        }
+        .task(id: label) { await popIn() }
+    }
+
+    private func typing(_ text: String, upTo count: Int?) -> AttributedString {
+        guard let count, count < text.count else { return AttributedString(text) }
+        var shown = AttributedString(String(text.prefix(count)))
+        var hidden = AttributedString(String(text.dropFirst(count)))
+        hidden.foregroundColor = .clear
+        shown.append(hidden)
+        return shown
+    }
+
+    private func text(_ shown: AttributedString) -> some View {
+        Text(shown)
+            .font(.system(size: 12, weight: .semibold))
+            // The pill's width comes from the whole label, whatever is shown so far.
+            .wrapped(label, maxWidth: Self.maxWidth, alignment: style == .tour ? .center : .leading)
+            // A tour's part names sit in the middle of their red pill, up-down by their ink.
+            .offset(y: style == .tour ? InkCentring.offset(for: label, maxWidth: Self.maxWidth) : 0)
+    }
+
+    private func popIn() async {
+        guard !reduceMotion else { popped = 1; typed = nil; return }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { popped = 1 }
+        guard style == .point else { return }
+        for count in 1...max(label.count, 1) {
+            try? await Task.sleep(for: .milliseconds(Int.random(in: 30...60)))
+            guard !Task.isCancelled else { return }
+            typed = count
+        }
+        typed = nil  // all there: the full text shows
     }
 }
 
