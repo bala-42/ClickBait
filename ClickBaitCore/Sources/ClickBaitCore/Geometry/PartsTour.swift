@@ -9,7 +9,13 @@ public enum PartsTour {
     /// The marked area is (mostly) text — a paragraph, code, a message — rather than a
     /// figure: no parts to point at. Prose comes back from text recognition as long lines;
     /// diagrams and charts as short labels.
-    public static func isMostlyText(_ text: [TextBox], marked: Rect) -> Bool {
+    /// `colourfulShare` (`ImageMeasures`): with a picture filling the box (≥ 12% of it
+    /// saturated colour), it's a picture with a caption, never text — a colourful, unlabelled
+    /// brain diagram boxed with its page title got no tour (2026-10-11).
+    public static let pictureShare = 0.12
+
+    public static func isMostlyText(_ text: [TextBox], marked: Rect, colourfulShare: Double? = nil) -> Bool {
+        if let colourfulShare, colourfulShare >= pictureShare { return false }
         let slackX = marked.width * 0.1, slackY = marked.height * 0.1
         let inside = text.filter {
             $0.center.x >= marked.minX - slackX && $0.center.x <= marked.maxX + slackX

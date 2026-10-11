@@ -296,6 +296,9 @@ public enum Prompt {
                 Markers: 1–\(request.markCount).
                 The explanation: "\(request.question)"
                 """
+            if request.marksAreCells {
+                text += "\nThe markers number the cells of a red grid (each in its cell's top-left corner): give each name the cell holding most of that part."
+            }
             if let reference = request.reference {
                 text += """
 
@@ -373,8 +376,11 @@ public enum Prompt {
     }
 
     /// Asked of a first snip explanation while Wikipedia lookups are on (`AskRequest.askSubject`).
+    /// Asked as an optional last key, never forced: with a schema making it the first key,
+    /// qwen3.5:9b's "speech" ran on for 4,000+ characters until the token cap cut the reply
+    /// off, and the snip got no parts and no tour (2026-10-11).
     static let subjectLine = """
-        Also give "subject", first in the JSON: what it shows as an encyclopedia would title it, \
+        Also give "subject" as the last key: what it shows as an encyclopedia would title it, \
         1–4 words ("Rotator cuff", "Solar System", "Mona Lisa"), or "none" for a person or people, \
         text, code, a message or an app's screen.
         """

@@ -183,35 +183,10 @@ public struct OllamaProvider: LLMProvider {
         if ask.sortRequest { return sortSchema }
         if ask.planTutorial { return tutorialSchema }
         if ask.tutorialCheck != nil { return progressSchema }
-        if ask.askSubject, ask.snip != nil { return snipSubjectSchema }
         if ask.lookupQuery { return ["type": "object", "properties": ["query": ["type": "string"]], "required": ["query"]] }
         return nil
     }
 
-    /// A snip explanation whose first key is "subject": asked in the prompt alone,
-    /// qwen3.5:9b put it after "speech" or left it out (2026-10-10), too late to look up
-    /// while the rest streams. Ollama writes required properties first, then the others in
-    /// the order they arrive — and a Swift dictionary's order changes between runs (speech
-    /// came first 2 of 3 times with both required), so only "subject" is required.
-    static var snipSubjectSchema: [String: Any] { [
-        "type": "object",
-        "properties": [
-            "subject": ["type": "string"],
-            "speech": ["type": "string"],
-            "parts": [
-                "type": "array",
-                "maxItems": PartsTour.maxParts,
-                "items": [
-                    "type": "object",
-                    "properties": ["x": ["type": "number"], "y": ["type": "number"], "label": ["type": "string"]],
-                    "required": ["x", "y", "label"],
-                ] as [String: Any],
-            ] as [String: Any],
-            "code": ["type": "string"],
-            "language": ["type": "string"],
-        ],
-        "required": ["subject"],
-    ] }
 
     static var tutorialSchema: [String: Any] { [
         "type": "object",

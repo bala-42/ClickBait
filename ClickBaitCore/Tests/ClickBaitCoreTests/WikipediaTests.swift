@@ -93,9 +93,8 @@ struct WikipediaClientTests {
         #expect(!Prompt.userText(for: request).contains("\"subject\""))
         #expect(OllamaProvider.schema(for: request) == nil)
         request.askSubject = true
-        #expect(Prompt.userText(for: request).contains("Also give \"subject\", first in the JSON"))
-        let schema = try #require(OllamaProvider.schema(for: request))
-        #expect((schema["required"] as? [String]) == ["subject"])
+        #expect(Prompt.userText(for: request).contains("Also give \"subject\" as the last key"))
+        #expect(OllamaProvider.schema(for: request) == nil)  // never a forced shape: it made "speech" run on
     }
 }
 

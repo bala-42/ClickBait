@@ -903,7 +903,7 @@ final class AskCoordinator {
     }
 
     /// The whole reply to `request`, or nil if it fails or takes longer than `limit`.
-    private nonisolated static func reply(from provider: any LLMProvider, to request: AskRequest, within limit: Duration) async -> String? {
+    nonisolated static func reply(from provider: any LLMProvider, to request: AskRequest, within limit: Duration) async -> String? {
         await withTaskGroup(of: String?.self) { group in
             group.addTask {
                 var text = ""
@@ -1260,9 +1260,16 @@ final class AskCoordinator {
 
     /// A tour's stops on screen, labelled as guesses ("~ name"), each with the outline of the
     /// thing at its point where one stands out (found off the main thread).
-    private nonisolated static func tourPointers(_ stops: [Pointer], in view: SnipView) async -> [ScreenPointer] {
+    /// `known`: outlines the marks already have (close-up pixels, nil where they don't).
+    private nonisolated static func tourPointers(_ stops: [Pointer], outlines known: [PartOutline?] = [], in view: SnipView) async -> [ScreenPointer] {
         let start = ContinuousClock.now
-        let outlines = await Task.detached(priority: .userInitiated) { view.outlines(at: stops) }.value
+        let pointsPerPixel = view.crop.width / Double(view.image.width)
+        let outlines = await Task.detached(priority: .userInitiated) {
+            stops.enumerated().map { index, stop -> PartOutline? in
+                if index < known.count, let outline = known[index] { return outline.scaled(by: pointsPerPixel) }
+                return view.outlines(at: [stop]).first.flatMap { $0 }
+            }
+        }.value
         Log.ask.notice("Parts: outlines for \(outlines.compactMap { $0 }.count, privacy: .public) of \(stops.count, privacy: .public) in \(String(describing: ContinuousClock.now - start), privacy: .public) (the tip stops at their edges)")
         // Where each part is and how far its edges are, so a tip that's off can be read off:
         // the model's spot (close-up pixels) or the outline (points: nearest–farthest edge).
@@ -1291,52 +1298,6 @@ final class AskCoordinator {
                 cancellation.cancel()
             }
         }
-    }
-
-    /// Where a snip's named parts are. The model names things well but can't place them (it
-    /// laid eight diagonal planets out in an even row, 2026-10-06), so the things found on
-    /// this Mac are numbered on the close-up and the model says which number each name is.
-    /// Names it gives no mark keep their guessed spot only when no mark was named at all, and
-    /// never when the guesses look laid out rather than found (`PartsTour.looksMadeUp`).
-    private func placeParts(_ named: [Pointer], explanation: String, memory: SnipMemory, view: SnipView,
-                            provider: any LLMProvider) async -> [Pointer] {
-        var seen = Set<String>()
-        let unique = named.filter { seen.insert($0.label.lowercased()).inserted }.prefix(PartsTour.maxParts)
-        guard !unique.isEmpty else { return [] }
-        let names = unique.map(\.label)
-        let objects = await memory.objects?.value ?? []
-        if !objects.isEmpty, let image = ObjectFinder.marked(view.image, objects: objects),
-           let encoded = try? await ScreenshotEncoder.encodeInBackground(image), !Task.isCancelled {
-            var request = AskRequest(question: explanation, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
-                                     screenshotHeight: encoded.height, context: ScreenContext())
-            request.markNames = names
-            request.markCount = objects.count
-            request.reference = await memory.reference?.value
-            let start = ContinuousClock.now
-            if let reply = await Self.reply(from: provider, to: request,
-                                            within: ProviderOperation.labelTourParts.timeout), !Task.isCancelled {
-                let placed = ObjectMarks.placed(names: names, reply: reply, objects: objects)
-                Log.ask.notice("""
-                    Parts: \(placed.count, privacy: .public) of \(names.count, privacy: .public) named on \(objects.count, privacy: .public) \
-                    found things (\(String(describing: ContinuousClock.now - start), privacy: .public)): \
-                    \(placed.map { "\($0.label) at \(Int($0.x)),\(Int($0.y))" }.joined(separator: ", "), privacy: .public)
-                    """)
-                if !placed.isEmpty {
-                    if let reference = request.reference { onChatSource?(reference.credit) }
-                    return PartsTour.stops(placed, marked: view.marked)
-                }
-            } else {
-                Log.ask.notice("Parts: naming the marks gave no answer")
-            }
-        }
-        guard !Task.isCancelled else { return [] }
-        if PartsTour.looksMadeUp(Array(unique)) {
-            Log.ask.notice("Parts: the model's positions are laid out in an even row, not found; no tour")
-            return []
-        }
-        let faces = await Self.faces(in: view)
-        if !faces.isEmpty { Log.ask.notice("Parts: \(faces.count, privacy: .public) face(s) found; people placed on them") }
-        return PartsTour.stops(FaceSnapping.snap(Array(unique), to: faces), marked: view.marked)
     }
 
     struct WebLookupResult: Sendable {
@@ -1451,7 +1412,9 @@ final class AskCoordinator {
                 Log.ask.notice("Lookup: skipped, the snip shows a face")
                 return nil
             }
-            if let reading, PartsTour.isMostlyText(await TextReader.read(reading, within: .milliseconds(1500)), marked: view.marked) {
+            let share = await PartPlacer.colourfulShare(of: view)
+            if let reading, PartsTour.isMostlyText(await TextReader.read(reading, within: .milliseconds(1500)), marked: view.marked,
+                                                   colourfulShare: share) {
                 Log.ask.notice("Lookup: skipped, the snip is mostly text")
                 return nil
             }
@@ -2099,7 +2062,7 @@ final class AskCoordinator {
         if case .background(let jobID) = run.destination {
             var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
                                              scale: provider.coordinateScale)
-            if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
+            if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
             run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                     code: parsed.response.code, language: parsed.response.language)
             let finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
@@ -2117,7 +2080,7 @@ final class AskCoordinator {
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
                                          scale: provider.coordinateScale)
-        if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.clean(parsed.response.speech) }
+        if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
         // An ⌥⌘ explanation is about the text or area, never about where to click (and a
         // snip's close-up has no screen coordinates anyway).
         // A snip's "where is X?" may come back as pointers: treat them as parts (they're in
@@ -2185,7 +2148,7 @@ final class AskCoordinator {
         if state == .thinking || state == .speaking { state = .idle }
         // Snips: tour the named parts of what was marked — but only when the names aren't
         // already printed in the image (then a tour adds nothing). Where they are is worked
-        // out after the answer is shown (`placeParts`): on things found on this Mac where it
+        // out after the answer is shown (`PartPlacer`): on things found on this Mac where it
         // can, else the model's own guesses, so every pill is marked approximate: "~ jupiter".
         var named: [Pointer] = []
         var needsPartsLook = false
@@ -2197,7 +2160,8 @@ final class AskCoordinator {
             let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
             // Labelled figures (names already printed) and plain text (a paragraph, code)
             // get no tour: only unlabelled figures, diagrams, drawings and charts do.
-            let mostlyText = PartsTour.isMostlyText(text, marked: view.marked)
+            let share = await PartPlacer.colourfulShare(of: view)
+            let mostlyText = PartsTour.isMostlyText(text, marked: view.marked, colourfulShare: share)
             let labelled = mostlyText || (!printed.isEmpty && printed.count * 2 >= max(candidates.count, 1))
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
@@ -2247,9 +2211,16 @@ final class AskCoordinator {
                     \(String(describing: provider.coordinateScale), privacy: .public)
                     """)
             }
-            let stops = await placeParts(named, explanation: parsed.response.speech, memory: memory, view: view, provider: provider)
+            let placing = ContinuousClock.now
+            let objects = await memory.objects?.value ?? []
+            let reference = await memory.reference?.value
+            let placement = await PartPlacer.place(named, explanation: parsed.response.speech, view: view, objects: objects,
+                                                   reference: reference, provider: provider)
+            if placement.usedReference, let reference { onChatSource?(reference.credit) }
+            let stops = placement.stops
             guard !stops.isEmpty, !Task.isCancelled, answerFlowID == answerID else { return }
-            let tour = await Self.tourPointers(stops, in: view)
+            let tour = await Self.tourPointers(stops, outlines: placement.outlines, in: view)
+            Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) by \(placement.method, privacy: .public) starts \(String(describing: ContinuousClock.now - placing), privacy: .public) after the explanation")
             guard !Task.isCancelled, answerFlowID == answerID else { return }
             onTour?(tour)
         }

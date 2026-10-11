@@ -56,6 +56,8 @@ public struct AskRequest: Sendable {
     public var markNames: [String] = []
     /// How many marks are drawn, numbered from 1.
     public var markCount = 0
+    /// The marks are grid cells (each number sits in the top-left of its cell).
+    public var marksAreCells = false
     /// Background on what the snip shows (Wikipedia lookups on), for telling the named
     /// things apart when naming the marks.
     public var reference: WikiReference?

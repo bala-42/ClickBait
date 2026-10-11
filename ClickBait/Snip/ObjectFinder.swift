@@ -119,9 +119,13 @@ enum ObjectFinder {
         }
     }
 
+    /// Where the numbers go: above separate things (so they don't cover them), on regions
+    /// (packed parts: above would sit on a neighbour), or in grid cells (with their lines).
+    enum MarkStyle { case above, on, cells }
+
     /// A copy of the close-up with a numbered red badge by each thing (1 = `objects[0]`), for
     /// the model to name, `markedLongEdge` px on its long edge.
-    static func marked(_ image: CGImage, objects: [FoundObject]) -> CGImage? {
+    static func marked(_ image: CGImage, objects: [FoundObject], style: MarkStyle = .above) -> CGImage? {
         let scale = min(1, markedLongEdge / Double(max(image.width, image.height)))
         let width = Int((Double(image.width) * scale).rounded()), height = Int((Double(image.height) * scale).rounded())
         guard let context = CGContext(
@@ -133,8 +137,22 @@ enum ObjectFinder {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 17 * scale, nil)
         let radius = ObjectMarks.badgeRadius * scale
+        if style == .cells {
+            context.setStrokeColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.8)
+            context.setLineWidth(max(1, 2 * scale))
+            for object in objects {
+                context.stroke(CGRect(x: (object.center.x - object.width / 2) * scale,
+                                      y: Double(height) - (object.center.y + object.height / 2) * scale,
+                                      width: object.width * scale, height: object.height * scale))
+            }
+        }
         for (index, object) in objects.enumerated() {
-            let badge = ObjectMarks.badgeCenter(for: object)
+            let badge: Point = switch style {
+            case .above: ObjectMarks.badgeCenter(for: object)
+            case .on: object.center
+            case .cells: Point(x: object.center.x - object.width / 2 + ObjectMarks.badgeRadius + 4,
+                               y: object.center.y - object.height / 2 + ObjectMarks.badgeRadius + 4)
+            }
             let center = CGPoint(x: badge.x * scale, y: Double(height) - badge.y * scale)  // CG's y runs up
             context.setFillColor(red: 1, green: 0.1, blue: 0.1, alpha: 1)
             context.fillEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))

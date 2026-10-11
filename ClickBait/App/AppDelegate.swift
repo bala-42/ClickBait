@@ -44,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if TourBench.runIfRequested(settings: settings) { return }  // benchmarks tours, then quits
+        #endif
         terminateOtherInstances()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         Log.app.notice("ClickBait \(version, privacy: .public) launched")

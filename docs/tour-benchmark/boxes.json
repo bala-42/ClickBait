@@ -1,0 +1,60 @@
+{
+  "images": [
+    {
+      "name": "anatomy-organs",
+      "type": "connected coloured diagram",
+      "path": "/Users/ohbalaciao/Downloads/human-anatomy-organs-systems-vector-49696390.avif",
+      "ignoreBelowY": 1000,
+      "neverNamed": ["VectorStock"],
+      "parts": [
+        {"names": ["brain"], "boxes": [[260, 25, 415, 120]]},
+        {"names": ["thyroid", "thyroid gland"], "boxes": [[310, 232, 380, 280]]},
+        {"names": ["trachea", "windpipe"], "boxes": [[325, 270, 375, 385]]},
+        {"names": ["lungs", "lung", "left lung", "right lung"], "boxes": [[215, 345, 325, 510], [365, 345, 472, 510]]},
+        {"names": ["heart"], "boxes": [[322, 380, 395, 485]]},
+        {"names": ["liver"], "boxes": [[215, 505, 410, 600]]},
+        {"names": ["gallbladder", "gall bladder"], "boxes": [[255, 555, 300, 580]]},
+        {"names": ["stomach"], "boxes": [[380, 515, 458, 610]]},
+        {"names": ["kidneys", "kidney", "left kidney", "right kidney"], "boxes": [[275, 580, 315, 645], [365, 580, 405, 640]]},
+        {"names": ["aorta", "vena cava", "inferior vena cava", "blood vessels"], "boxes": [[315, 545, 365, 660]]},
+        {"names": ["large intestine", "colon"], "boxes": [[220, 615, 478, 830]]},
+        {"names": ["small intestine"], "boxes": [[265, 670, 435, 790]]},
+        {"names": ["appendix"], "boxes": [[320, 785, 365, 860]]}
+      ]
+    },
+    {
+      "name": "brain-midsagittal",
+      "type": "connected coloured diagram",
+      "path": "/Users/ohbalaciao/Downloads/brain-midsagittal-diagram.jpg",
+      "neverNamed": ["123RF"],
+      "parts": [
+        {"names": ["cerebrum", "cerebral cortex", "cortex", "cerebral hemisphere"], "boxes": [[30, 30, 1275, 820]], "exclude": [[300, 385, 1120, 1000]]},
+        {"names": ["corpus callosum"], "boxes": [[300, 385, 830, 600]]},
+        {"names": ["thalamus"], "boxes": [[500, 490, 700, 600]]},
+        {"names": ["hypothalamus"], "boxes": [[470, 600, 570, 700]]},
+        {"names": ["pituitary gland", "pituitary"], "boxes": [[510, 760, 595, 815]]},
+        {"names": ["midbrain", "mesencephalon"], "boxes": [[600, 600, 720, 720]]},
+        {"names": ["pons"], "boxes": [[630, 705, 830, 890]]},
+        {"names": ["medulla oblongata", "medulla", "brainstem", "brain stem"], "boxes": [[780, 780, 1095, 1040]]},
+        {"names": ["cerebellum"], "boxes": [[805, 475, 1240, 910]]}
+      ]
+    },
+    {
+      "name": "solar-system",
+      "type": "separate objects",
+      "path": "/Users/ohbalaciao/Downloads/Solar_System_NASA_Simple.jpg",
+      "note": "boxes proposed 2026-10-11, waiting for the user's corrections",
+      "parts": [
+        {"names": ["sun"], "boxes": [[0, 0, 153, 422]]},
+        {"names": ["mercury"], "boxes": [[169, 315, 193, 336]]},
+        {"names": ["venus"], "boxes": [[229, 278, 267, 315]]},
+        {"names": ["earth"], "boxes": [[299, 239, 336, 276]]},
+        {"names": ["mars"], "boxes": [[350, 197, 380, 228]]},
+        {"names": ["jupiter"], "boxes": [[440, 185, 535, 276]]},
+        {"names": ["saturn"], "boxes": [[526, 137, 689, 211]]},
+        {"names": ["uranus"], "boxes": [[675, 97, 729, 150]]},
+        {"names": ["neptune"], "boxes": [[754, 54, 803, 105]]}
+      ]
+    }
+  ]
+}

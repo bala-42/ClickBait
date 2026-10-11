@@ -3,6 +3,19 @@ import Foundation
 /// Removes the lead-in models put on explanations despite being told not to:
 /// "The highlighted text refers to amortization, which…" → "Amortization, which…".
 public enum ExplanationCleaner {
+    /// Explanations are 2–4 sentences (the prompt's rule); a reply that runs on past that is
+    /// cut there: one ran to 4,294 characters of sales talk about a stock diagram (2026-10-11).
+    public static let maxSentences = 4
+
+    /// The first `maxSentences` sentences of an explanation.
+    public static func limited(_ text: String) -> String {
+        var splitter = SentenceSplitter()
+        var sentences = splitter.feed(text)
+        if let rest = splitter.flush() { sentences.append(rest) }
+        guard sentences.count > maxSentences else { return text }
+        return sentences.prefix(maxSentences).joined(separator: " ")
+    }
+
     private static let subjects = [
         "the highlighted text", "the selected text", "this highlighted text", "this selected text", "the highlighted passage",
         "the selected passage", "the highlighted phrase", "the selected phrase", "the highlighted word", "the selected word",
