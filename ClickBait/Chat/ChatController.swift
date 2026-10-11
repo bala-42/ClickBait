@@ -290,7 +290,7 @@ final class ChatController {
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.recheckDesktop(shown, reason: "desktop switch finished") }
             }
-            for delay in [450, 700] {  // checks at ~0.8 s and ~1.5 s
+            for delay in [450, 700, 1_500] {  // checks at ~0.8 s, ~1.5 s and ~3 s
                 try? await Task.sleep(for: .milliseconds(delay))
                 guard !Task.isCancelled else { break }
                 recheckDesktop(shown, reason: "check")
@@ -309,7 +309,14 @@ final class ChatController {
 
     /// Not on the desktop in view (shown while the slide was still going): move it here.
     private func recheckDesktop(_ shown: NSPanel, reason: String) {
-        guard isStillHome(shown), !shown.isOnActiveSpace else { return }
+        guard isStillHome(shown) else {
+            trace("desktop \(reason): not at home any more (away \(isAway), tucked \(model.isTucked))")
+            return
+        }
+        guard !shown.isOnActiveSpace else {
+            trace("desktop \(reason): on the current desktop, visible \(shown.isVisible)")
+            return
+        }
         bringToCurrentDesktop(shown, fading: false)
         trace("moved to the current desktop (\(reason)); on it now: \(shown.isOnActiveSpace)")
     }

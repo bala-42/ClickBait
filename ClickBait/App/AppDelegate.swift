@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // it appeared, [let's see!] [later.] stays put. Both fade if ignored.
         chat.onReadyWhileAway = { [weak self] appName in
             guard let self else { return }
-            overlay.showShortAnswer("answer's ready in \(appName)")
+            overlay.showReadyNote("answer's ready in \(appName)", for: .seconds(10))
             guard !confirm.isShowing else { return }  // never over a question being asked
             let below = overlay.companionTopLeft
             readyPillShown = true
@@ -172,7 +172,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Went back on their own: the offer has done its job.
         chat.onBackHome = { [weak self] in
-            guard let self, readyPillShown else { return }
+            guard let self else { return }
+            overlay.clearShortAnswer()  // "answer's ready in …" has done its job too
+            guard readyPillShown else { return }
             readyPillShown = false
             confirm.hide()
         }

@@ -171,6 +171,7 @@ final class OverlayController {
     /// Takes down a short-answer pill without counting it as dismissing an answer.
     func clearShortAnswer() {
         guard case .answer = model.bubble else { return }
+        stickyNote = false
         dismissTask?.cancel()
         model.bubble = .idle
     }
@@ -179,9 +180,24 @@ final class OverlayController {
     func showShortAnswer(_ text: String) {
         endGuide()
         setCompanionHidden(false)
+        stickyNote = false
         model.bubble = .answer(text)
         scheduleDismiss(after: .seconds(5))
     }
+
+    /// "answer's ready in Safari": stays its full `time` even if the user clicks in other
+    /// apps meanwhile (a click took it away at once, 2026-10-12, so the answer seemed lost).
+    /// Esc, a new question or going back to that app still clear it.
+    func showReadyNote(_ text: String, for time: Duration) {
+        endGuide()
+        setCompanionHidden(false)
+        model.bubble = .answer(text)
+        stickyNote = true
+        scheduleDismiss(after: time)
+    }
+
+    /// The pill up is a ready note: a click elsewhere doesn't dismiss it.
+    private var stickyNote = false
 
     /// A background ClickBait finished: its summary by the companion, in the job's colour,
     /// for 5 s. Only when nothing else is saying anything (the caller waits for that).
@@ -218,6 +234,7 @@ final class OverlayController {
     func dismissAnswer() {
         dismissTask?.cancel()
         dismissTask = nil
+        stickyNote = false
         let wasShowing = model.bubble.isAnswer
         // Only an answer going away stops what produced it. A green "opened Safari" pill
         // timing out (3 s) used to cancel the tutorial still being planned in Safari:
@@ -1055,7 +1072,7 @@ final class OverlayController {
             guard let self else { return }
             if event.type == .leftMouseDown { onClick?(NSEvent.mouseLocation) }
             if guide?.isTutorial == true { return }  // the tutorial decides what a click means
-            if guide != nil { advanceGuide(reason: "click") } else { dismissAnswer() }
+            if guide != nil { advanceGuide(reason: "click") } else if !stickyNote { dismissAnswer() }
         }
 
         // Escape in ClickBait's own windows (typing in the chat). Esc in other apps is
