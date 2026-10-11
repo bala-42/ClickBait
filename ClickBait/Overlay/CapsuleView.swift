@@ -8,11 +8,71 @@ import SwiftUI
 final class CapsulePresentation {
     var entry: BackgroundJobs.Entry
     var isExpanded = false
-    var isMinimized = false
 
     init(entry: BackgroundJobs.Entry) { self.entry = entry }
+
+    var tone: CompanionTone { entry.job.kind == .snip ? .capture : .processing }
+
+    var status: AgentDock.Status {
+        switch entry.job.status {
+        case .working: .working
+        case .done: .done
+        case .failed: .failed
+        case .stopped: .stopped
+        }
+    }
 }
 
+/// A job's tile in the dock (`AgentTile`): spins while working, pulses when done until
+/// its card is opened, dimmed when it failed. A click opens or folds its card.
+struct DockTileView: View {
+    @Bindable var presentation: CapsulePresentation
+    let onToggle: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var beatStart = Date()
+
+    var body: some View {
+        let look = AgentDock.look(presentation.status, opened: presentation.entry.seen, reduceMotion: reduceMotion)
+        Button(action: onToggle) {
+            AgentTile(tone: presentation.tone, look: look, spinning: presentation.status == .working)
+                .contentShape(RoundedRectangle(cornerRadius: AgentDock.tileCorner, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        // The pulse: only an extra cached glow fades, paused unless it pulses (the spin is
+        // the triangle's own cached drawing).
+        .background {
+            if look.pulses {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                    AgentTile.glow(presentation.tone).opacity(0.4 * beat(at: context.date))
+                }
+            }
+        }
+        .padding(CapsuleController.tileMargin)
+        .accessibilityLabel(accessibilityLabel)
+        .onChange(of: look.pulses) { _, pulses in if pulses { beatStart = .now } }
+    }
+
+    /// 0…1…0: a 1.4 s beat when done; with Reduce Motion a slow 2.8 s one while working.
+    private func beat(at date: Date) -> Double {
+        let period = presentation.status == .working ? 2.8 : 1.4
+        let phase = date.timeIntervalSince(beatStart).truncatingRemainder(dividingBy: period) / period
+        return (1 - cos(phase * 2 * .pi)) / 2
+    }
+
+    private var accessibilityLabel: String {
+        let state: String
+        switch presentation.status {
+        case .working: state = "working"
+        case .done: state = "done"
+        case .failed: state = "failed"
+        case .stopped: state = "stopped"
+        }
+        return "Background ClickBait, \(state): \(presentation.entry.job.question)"
+    }
+}
+
+/// The card under a tile.
 struct CapsuleView: View {
     @Bindable var presentation: CapsulePresentation
     let onStop: (UUID) -> Void
@@ -20,58 +80,18 @@ struct CapsuleView: View {
     let onLater: (UUID) -> Void
     let onDismiss: (UUID) -> Void
     let canGoThere: () -> Bool
-    let onLayoutChange: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var job: BackgroundJob { presentation.entry.job }
-    private var tone: CompanionTone { job.kind == .snip ? .capture : .processing }
-    private var finished: Bool {
-        if case .working = job.status { return false }
-        return true
-    }
+    private var tone: CompanionTone { presentation.tone }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: CapsuleLayout.cardGap) {
-            if !presentation.isMinimized {
-                Button { presentation.isExpanded.toggle(); onLayoutChange() } label: {
-                    HStack(spacing: 1) {
-                        CompanionTriangle(tone: tone, pulsing: !finished && !reduceMotion,
-                                          spinning: !finished && !reduceMotion,
-                                          glowOpacity: Glow.opacity, glowRadius: Glow.radius)
-                            .scaleEffect(0.72)
-                            .frame(width: 30, height: 24)
-                        if finished {
-                            Circle().fill(tone.color).frame(width: 6, height: 6)
-                                .offset(x: 1, y: -8)
-                        }
-                    }
-                    .frame(width: CapsuleLayout.capsuleWidth, height: CapsuleLayout.capsuleHeight)
-                    .background {
-                        Capsule().fill(Color.black.opacity(0.42)).background(.ultraThinMaterial, in: Capsule())
-                    }
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.6))
-                    .shadow(color: tone.color.opacity(Glow.opacity), radius: Glow.radius)
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(presentation.isExpanded ? "Collapse background task" : "Expand background task")
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-
-            if presentation.isExpanded {
-                card
-                    .frame(width: CapsuleLayout.cardWidth, alignment: .leading)
-                    .padding(11)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.13), lineWidth: 0.7))
-                    .shadow(color: .black.opacity(0.22), radius: 14, y: 5)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .fixedSize()
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.86), value: presentation.isExpanded)
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.86), value: presentation.isMinimized)
+        card
+            .frame(width: AgentDock.cardWidth - 22, alignment: .leading)
+            .padding(11)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AgentDock.cardCorner, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: AgentDock.cardCorner).strokeBorder(.white.opacity(0.13), lineWidth: 0.7))
+            .padding(CapsuleController.cardMargin)
+            .fixedSize()
     }
 
     @ViewBuilder private var card: some View {

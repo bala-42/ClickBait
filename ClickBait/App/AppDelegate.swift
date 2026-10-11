@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        AgentDockRender.runIfRequested()  // renders and quits
         ChatRender.runIfRequested()  // renders and quits; leaves a running ClickBait alone
         if TourBench.runIfRequested(settings: settings) { return }  // benchmarks tours, then quits
         #endif
@@ -75,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         capsules.onDismiss = { [weak self] in self?.backgroundJobs.remove($0) }
         capsules.onLater = { [weak self] in self?.capsules.fold($0) }
         capsules.onGoThere = { [weak self] in self?.goThere($0) }
+        capsules.onSeen = { [weak self] in self?.backgroundJobs.markSeen($0) }
         coordinator.onPeel = { [weak self] job in
             guard let self else { return [] }
             let messages = chat.stash()
@@ -89,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         overlay.runBenchmarkIfRequested()
         runChatBenchmarkIfRequested()
+        runDockBenchmarkIfRequested()
         #endif
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches
@@ -451,6 +454,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     #if DEBUG
+    /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
+    /// working, one done) for 8 s, then three peels into the top slot, each sliding the
+    /// others down. Logged "Bench: …" per phase for the main-thread sampler.
+    private func runDockBenchmarkIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_BENCH_DOCK"] != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            func job(_ kind: BackgroundJob.Kind) -> BackgroundJob {
+                BackgroundJob(question: "why does this crash on launch", kind: kind, homeBundleID: nil, homePID: nil,
+                              conversation: Conversation())
+            }
+            Log.app.notice("Bench: dock")
+            let done = job(.answer)
+            backgroundJobs.add(done, task: nil)
+            backgroundJobs.complete(done.id, answer: "It's nil until Settings load.", conversation: Conversation())
+            backgroundJobs.add(job(.answer), task: nil)
+            backgroundJobs.add(job(.snip), task: nil)
+            try? await Task.sleep(for: .seconds(8))
+            Log.app.notice("Bench: peel")
+            for _ in 0..<3 {
+                if let last = backgroundJobs.entries.last { backgroundJobs.remove(last.id) }
+                let next = job(.snip)
+                backgroundJobs.add(next, task: nil)
+                let index = backgroundJobs.entries.firstIndex(where: { $0.id == next.id })
+                overlay.peel(to: index.flatMap { capsules.slotCenter(forIndex: $0) }, tone: .capture, completion: {})
+                try? await Task.sleep(for: .seconds(2))
+            }
+            Log.app.notice("Bench: done")
+            backgroundJobs.removeAll()
+        }
+    }
+
     /// Streams a canned answer into an open chat, ~12 updates a second as real answers come,
     /// with no model (`CLICKBAIT_BENCH_CHAT=1`): for the "Companion stalled" log and samples.
     private func runChatBenchmarkIfRequested() {

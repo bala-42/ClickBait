@@ -17,6 +17,8 @@ final class BackgroundJobs {
         var chatMessages: [ChatModel.Message] = []
         var snipMemory: AskCoordinator.SnipMemory?
         var progress: JobProgress = .uncounted
+        /// Its card has been opened since it finished: the tile stops pulsing.
+        var seen = false
         var id: UUID { job.id }
     }
 
@@ -26,12 +28,12 @@ final class BackgroundJobs {
     var onChange: (([Entry]) -> Void)?
 
     var count: Int { entries.count }
-    var hasRoom: Bool { count < CapsuleLayout.maxCapsules }
+    var hasRoom: Bool { count < AgentDock.maxTiles }
 
     @discardableResult
     func add(_ job: BackgroundJob, task: Task<Void, Never>?) -> Bool {
         guard hasRoom, !entries.contains(where: { $0.id == job.id }) else { return false }
-        entries.append(Entry(job: job, task: task))
+        entries.insert(Entry(job: job, task: task), at: 0)  // newest on top
         return true
     }
 
@@ -52,6 +54,12 @@ final class BackgroundJobs {
         entries[index].task = nil
         cancelSnipWork(in: entries[index])
         entries[index].snipMemory = nil
+    }
+
+    func markSeen(_ id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }), !entries[index].job.isWorking,
+              !entries[index].seen else { return }
+        entries[index].seen = true
     }
 
     func setSnipMemory(_ memory: AskCoordinator.SnipMemory?, for id: UUID) {

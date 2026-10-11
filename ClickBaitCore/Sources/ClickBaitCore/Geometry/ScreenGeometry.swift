@@ -32,6 +32,8 @@ public struct Rect: Equatable, Sendable {
     public var minX: Double { x }
     public var minY: Double { y }
     public var maxX: Double { x + width }
+    public var midX: Double { x + width / 2 }
+    public var midY: Double { y + height / 2 }
     public var maxY: Double { y + height }
 }
 

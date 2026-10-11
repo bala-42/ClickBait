@@ -1,6 +1,6 @@
 # Background ClickBaits — design
 
-Date: 2026-10-07 · Status: draft for review
+Date: 2026-10-07 · Status: built (capsules); amended 2026-10-11 to HeyClicky's agent dock, awaiting review
 
 ## Why
 
@@ -17,23 +17,28 @@ Out (later, each its own design):
 
 ## Behaviour
 
-### Peeling off
+### Peeling off (amended 2026-10-11: HeyClicky's spawn)
 - Allowed only while the model is writing a plain answer: after the instant-answer, order, sorting and walkthrough decisions have passed. Before that (transcribing, deciding), ⌃⌥ stays ignored as today.
-- Holding ⌃⌥ then: the companion stretches toward the top-right, snaps and glides (~0.45 s) to its capsule slot, the capsule fading in as it lands. At once a fresh triangle pops in (~0.2 s) at the cursor and starts listening — the same press is the next question.
-- Any speech from that answer stops; background answers never speak.
-- Reduce Motion: no stretch or glide; the capsule fades in.
+- Holding ⌃⌥ then **peels** it, timed from HeyClicky's demo video (102.5–103.2 s, stepped at 1/30 s; `AgentDock.spawn`):
+  1. 0–0.1 s: the companion turns the job's colour (Pumpkin answer, Strawberry snip; Shamrock for a future tidy-up) and grows to 2× with its glow.
+  2. 0.1–0.65 s: it flies to the top slot on `FlightArc`'s curve, swell and easing, but in a fixed 0.55 s (the video's flight; an ordinary flight of that distance would take 1.4 s). The new tile fades in at the slot during the first 30% and the older tiles slide down a slot at the same time, so the triangle flies into a tile that is already there. Past halfway it shrinks to the tile's 14 pt and turns upright.
+  3. As it leaves (0.1 s), a fresh Azure companion pops in at the cursor (scale 0 → 1 over 0.2 s) and listens. The same press is the next question.
+- Any speech from that answer stops; background answers never speak or point.
+- Reduce Motion: no flight. The tile fades in and the companion turns back to Azure.
 - A 4th while 3 exist: refused with a short pill "three's a crowd"; the answer carries on in front, nothing listens.
 - If the answer was a follow-up in an open chat, that chat steps away with it (hidden, conversation kept in the job).
 
-### The capsule
-- A dark translucent pill (~44×28 pt) with a mini triangle inside, a soft glow in its state colour (`Glow` settings): Pumpkin for an answer, Strawberry Red for a snip explanation.
-- Working: capsule and triangle pulse; the triangle keeps its turn-a-third spin.
-- Done: pulse stops, glow stays, a small dot of the same colour appears in its corner. No sound, no pop-up, no focus change, no dock bounce.
-- Failed: as done, and the card says why.
+### The tile (amended 2026-10-11, replaces the capsule)
+Measured from the video at ~2.1 px a point (`AgentDock`):
+- A dark rounded square, 33×33 pt, corner 10 pt (continuous), ~90% opaque (#26292A), a hairline edge, and a soft glow in the job's colour (drawn once and faded, never re-blurred).
+- Its triangle inside, 14 pt, pointing up, with the pills' softer glow.
+- A 6 pt status dot, centred 4.5 pt in from the top-right corner: Azure while working, Aqua green when done, grey when failed or stopped.
+- Working: the triangle turns a third at a time (the companion's spin, from its cached drawing). Done: the tile's glow pulses until the card is opened. Failed or stopped: dimmed and desaturated. Reduce Motion: working pulses slowly instead of spinning.
+- No sound, no pop-up, no focus change, no dock bounce.
 
-### Docking
-- Top-right of the main display (the one with the menu bar), 8 pt below the menu bar and 8 pt in from the right edge, stacked downward with 6 pt gaps, at most 3, oldest on top. When one goes, the others close up.
-- On every desktop, over full-screen apps, stationary in Mission Control; never in screenshots or screen sharing.
+### Docking (amended 2026-10-11)
+- Top-right of the main display (the one with the menu bar): one column, the first tile 32 pt below the menu bar, the tiles' right edge 27 pt from the screen's edge, 42 pt top to top, at most 3. **Newest on top**: a new job takes the top slot and the others slide down. When one goes, the ones below move up.
+- Each tile and card is its own small window (never a screen-sized one): on every desktop, over full-screen apps, stationary in Mission Control, never in screenshots or screen sharing.
 - Above normal windows, below system notification banners (a banner may pass over them).
 
 ### Progress bar (amended 2026-10-07)
@@ -43,12 +48,17 @@ Every expanded capsule shows a slim progress bar (3 pt, tone colour on a faint t
 - Reduce Motion: the sweep is replaced by a still, half-filled track; determinate bars just update.
 - Hidden once the job is done, failed or stopped.
 
-### Expanding
-Clicking a capsule unfolds a small card (~280 pt wide) beneath it, inside the screen. Lowercase buttons, like the existing [let's see!] [later.] pills:
-- Working: the question (one line, truncated), "working on it…", the progress bar, **[stop]** → cancels the job, removes the capsule.
-- Done: the summary (first one or two sentences of the answer, ≤140 characters), **[go there!]**, **[later, pls]**.
-- Failed: "Couldn't answer: <reason>", **[ok]** → removes it.
-- **[later, pls]** or a click anywhere else folds the card back to the capsule; the dot stays.
+### Cards (amended 2026-10-11: HeyClicky's cards)
+Clicking a tile hangs a card 8 pt under it, right edges lined up, kept on screen: 288 pt wide, corner 12 pt, dark see-through glass (blur, #1C1E1E at 84%, a 5% tint of the job's colour), a hairline edge and a glow in the job's colour. Padding: 14 pt at the sides, 15 pt at the top. The title row: the question in UPPERCASE (10 pt semibold, one line, truncated), a lowercase status badge in the job's colour (~36×15 pt), and a ✕ (14 pt circle). Clicking the tile again, or anywhere else, folds it.
+- **Working:** a terminal icon and the line the answer is writing now (12 pt grey, ≤2 lines, the latest streamed sentence), then the progress bar. ✕ = stop: it cancels the job and the tile goes.
+- **Done:** "done", the summary (13 pt semibold, ≤3 lines; `JobSummary`), then **suggested next:** up to 2 pill buttons (20 pt tall), written by the local model when the card first opens (text only, ~1 s, its own request; nothing is shown if it's slow or empty). A suggestion is sent as a typed follow-up in that job's chat (it goes there). **follow up:** [text] (the chat opens there with the field focused) and [voice] (the chat opens there, listening as with ⌃⌥). Then **[later, pls]** (folds the card, the tile stays) and **[go there!]** (the job's colour). ✕ dismisses the job.
+- **Failed:** "failed" in grey, "Couldn't answer: <reason>", ✕ removes it.
+
+### The result pill (added 2026-10-11)
+When a job finishes, its summary shows once in a pill beside the companion, wherever the cursor is (12.5 pt medium, white, on the job's colour, ≤2 lines, ≤330 pt wide, corner 4 pt). It fades after ~5 s. It waits while ClickBait is speaking, during a walkthrough or a tour, and while the user is holding a hotkey, then shows. The tile's dot turns Aqua green either way.
+
+### The menu bar
+"Background ClickBaits" stays: it lists the jobs and their status.
 
 ### Go there
 - Activates the app the question was asked in (if it's still running; otherwise stays where the user is) and reopens the chat there with the whole conversation, ready for follow-ups. The capsule goes away.
