@@ -24,10 +24,12 @@ extension OverlayController {
             }
             Log.app.notice("Bench: tour")
             tour(stops)
-            try? await Task.sleep(for: .seconds(16))
+            // Six parts, each a flight plus 2.4 s held from arrival.
+            try? await Task.sleep(for: .seconds(20))
             Log.app.notice("Bench: point")
             guide(to: [stops[3]], label: "this one!")
-            try? await Task.sleep(for: .seconds(4))
+            // A flight, 3 s held from arrival, and the flight home.
+            try? await Task.sleep(for: .seconds(5.5))
             Log.app.notice("Bench: done")
         }
     }

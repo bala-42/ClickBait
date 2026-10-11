@@ -536,14 +536,10 @@ final class OverlayController {
     /// The angle the triangle is turning toward, and how fast it's turning.
     private var wantedAngle = CompanionTriangle.restingAngle
     private var angleVelocity = 0.0
-    /// How long a blue point holds once it has arrived: enough to see it and read the label.
-    private static let dwell: CFTimeInterval = 1
-    /// Gives up even if the triangle never settles (targets kept being corrected).
-    private static let maxDwell: CFTimeInterval = 8
+    // Hold times live in `GuideTiming` (Core), all timed from arrival: 3 s for one blue
+    // target, 2 s each for several, 2.4 s per tour part; walkthrough steps wait for a click.
     /// The mouse this close to a blue target means it's been found.
     private static let reachedDistance: CGFloat = 24
-    /// Long enough to read a part's name and look at it.
-    private static let tourDwell: CFTimeInterval = 2.4
     /// Distance from the triangle's centre (its centroid) to its rounded tip — size/√3 less
     /// the corner radius — up to its pulse size, plus a gap.
     private static var tipDistance: CGFloat {
@@ -762,28 +758,23 @@ final class OverlayController {
         guard var guide else { return }
         let target = guide.targets[guide.index].appKit
         let point = CGPoint(x: target.x, y: target.y)
-        if !guide.isTutorial {
+        if let hold = GuideTiming.hold(isTour: guide.isTour, isTutorial: guide.isTutorial, targetCount: guide.targets.count) {
+            // Held from arrival (not from setting off); blue also ends when the mouse gets there.
             let clock = CACurrentMediaTime()
-            if guide.isTour {
-                if clock - guide.targetStarted > Self.tourDwell {
-                    advanceGuide(reason: "timeout")
-                    return
-                }
-            } else {
-                // Blue: hold a moment once arrived, or until the mouse gets there.
+            if let settledAt = guide.settledAt, clock - settledAt > hold {
+                advanceGuide(reason: "timeout")
+                return
+            }
+            if !guide.isTour {
                 let mouse = NSEvent.mouseLocation
-                if let settledAt = guide.settledAt, clock - settledAt > Self.dwell {
-                    advanceGuide(reason: "timeout")
-                    return
-                }
                 if hypot(mouse.x - point.x, mouse.y - point.y) < Self.reachedDistance {
                     advanceGuide(reason: "mouse reached it")
                     return
                 }
-                if clock - guide.targetStarted > Self.maxDwell {
-                    advanceGuide(reason: "never settled")
-                    return
-                }
+            }
+            if clock - guide.targetStarted > GuideTiming.maxStop {
+                advanceGuide(reason: "never settled")
+                return
             }
         }
         let reach = Self.tipDistance + guide.edge
@@ -791,6 +782,7 @@ final class OverlayController {
 
         var next = guide.center
         var heading: Double?
+        var progress: Double?  // nil: no flight (Reduce Motion), arrival is immediate
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             next = spot
             guide.velocity = .zero
@@ -803,9 +795,12 @@ final class OverlayController {
             if moved {
                 guide.flight = FlightArc(from: Point(x: next.x, y: next.y), to: Point(x: spot.x, y: spot.y))
                 guide.flightStarted = now
+                guide.settledAt = nil  // a new or corrected flight: not there yet
             }
             if let flight = guide.flight {
-                let progress = flight.progress(after: now - guide.flightStarted)
+                let flown = flight.progress(after: now - guide.flightStarted)
+                progress = flown
+                let progress = flown
                 let eased = FlightArc.smoothstep(progress)
                 let at = flight.point(at: eased)
                 next = progress >= 1 ? spot : CGPoint(x: at.x, y: at.y)
@@ -817,12 +812,6 @@ final class OverlayController {
         }
         let moving = next != guide.center
         guide.center = next
-        if !moving, guide.settledAt == nil { guide.settledAt = CACurrentMediaTime() }
-        self.guide = guide
-        if model.isGuideSettled == moving { model.isGuideSettled = !moving }  // pulse once arrived
-
-        let wanted: CAFrameRateRange = moving || isTurning || model.isPulsing || model.isSpinning ? Self.movingRate : Self.restingRate
-        if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
 
         // Point the vertex at the target (0° = up, clockwise; AppKit's y points up).
         // One heading per stop — from where the triangle will rest toward the target —
@@ -830,6 +819,23 @@ final class OverlayController {
         // wobble as it arrived).
         // While flying: facing the way it travels, until `turnInAt`.
         wantedAngle = heading ?? atan2(-guide.approach.dx, -guide.approach.dy) * 180 / .pi
+
+        // Arrived only once flown there and turned onto the target: the hold (and the pulse)
+        // count from here. (Counting from the first frame, before the flight had moved, a blue
+        // point left ~1 s after setting off.)
+        if guide.settledAt == nil,
+           GuideTiming.hasArrived(flightProgress: progress, distanceToSpot: hypot(spot.x - next.x, spot.y - next.y),
+                                  isTurning: isTurning) {
+            let clock = CACurrentMediaTime()
+            guide.settledAt = clock
+            Log.ask.notice("Guide: arrived at target \(guide.index + 1, privacy: .public) after \(String(format: "%.2f", clock - guide.targetStarted), privacy: .public) s")
+        }
+        self.guide = guide
+        let arrived = guide.settledAt != nil
+        if model.isGuideSettled != arrived { model.isGuideSettled = arrived }  // pulse once arrived
+
+        let wanted: CAFrameRateRange = moving || isTurning || model.isPulsing || model.isSpinning ? Self.movingRate : Self.restingRate
+        if link.preferredFrameRateRange != wanted { link.preferredFrameRateRange = wanted }
 
         bubbleStage?.setOrigin(NSPoint(x: next.x - Self.triangleInset,
                                        y: next.y + Self.triangleInset - OverlayModel.bubbleCanvas.height), anchor: next)
