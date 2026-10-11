@@ -482,8 +482,9 @@ struct CompanionBubbleView: View {
             popScale = reduceMotion ? 1 : 0
             popOpacity = reduceMotion ? 0 : 1
         }
+        let delay = model.companionPopDelay
         Task { @MainActor in
-            await Task.yield()
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) } else { await Task.yield() }
             withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.2, dampingFraction: 0.68)) {
                 popScale = 1
                 popOpacity = 1

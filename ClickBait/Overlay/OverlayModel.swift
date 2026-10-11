@@ -62,6 +62,9 @@ final class OverlayModel {
     /// Incremented when an answer peels away so the companion can pop back in for the
     /// next listen without tying the animation to the background job's lifetime.
     var companionPop = 0
+    /// How long the companion stays hidden before popping in: a peel's copy grows where it
+    /// is first (`AgentDock.growTime`).
+    var companionPopDelay: Double = 0
 
     /// How loud the user is right now while listening, 0…1 (drives the waveform).
     var waveLevel: Double = 0

@@ -71,74 +71,76 @@ final class OverlayController {
         return CGPoint(x: topLeft.x + Self.triangleInContent, y: topLeft.y - Self.triangleInContent)
     }
 
-    /// Peels a small copy of the current companion toward its new capsule. The real
-    /// companion immediately returns to the cursor and listens for the next question.
-    /// If motion is reduced or the capsule is on another display, only the capsule's
-    /// own fade is used.
+    /// The peel, after HeyClicky's spawn (`AgentDock.spawn`): a copy of the companion in the
+    /// job's colour grows at the cursor (0.1 s), then flies the arc into its tile (0.55 s),
+    /// shrinking and turning upright as it lands, while the real companion pops back in at
+    /// the cursor (Azure, listening) as the copy sets off. All of it is Core Animation
+    /// keyframes sampled from `AgentDock.spawn`: nothing in SwiftUI changes per frame.
+    /// Reduce Motion, or a tile on another display: no flight (the tile fades in).
     func peel(to target: CGPoint?, tone: CompanionTone, completion: @escaping @MainActor () -> Void) {
-        model.companionPop &+= 1
         let start = companionTriangleCenter
         guard let target,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
               let sourceScreen = NSScreen.screens.first(where: { $0.frame.contains(start) }),
               let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(target) }),
               sourceScreen.frame == targetScreen.frame else {
+            model.companionPopDelay = 0
+            model.companionPop &+= 1
             completion()
             return
         }
+        model.companionPopDelay = AgentDock.growTime
+        model.companionPop &+= 1
 
-        let size = CGSize(width: 44, height: 28)
-        let host = NSHostingView(rootView: CompanionTriangle(tone: tone, pulsing: false, spinning: true,
-                                                             glowOpacity: Glow.opacity, glowRadius: Glow.radius)
-            .scaleEffect(0.8)
+        // Room for the triangle at 2× with its glow and the swell.
+        let size = CGSize(width: 96, height: 96)
+        let host = NSHostingView(rootView: CompanionTriangle(tone: tone, pulsing: false, angle: 0)
             .frame(width: size.width, height: size.height))
         host.wantsLayer = true
         let stage = StagePanel(content: host, size: size, makePanel: Self.makePanel)
-        let startOrigin = CGPoint(x: start.x - size.width / 2, y: start.y - size.height / 2)
-        stage.setOrigin(startOrigin, anchor: start)
-
+        stage.setOrigin(CGPoint(x: start.x - size.width / 2, y: start.y - size.height / 2), anchor: start)
         guard let stageLayer = host.superview?.layer, let contentLayer = host.layer else {
             completion()
             return
         }
+        // Scale and turn about the triangle's centre (AppKit layers default to a corner).
+        contentLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        contentLayer.position = CGPoint(x: host.frame.midX, y: host.frame.midY)
 
         let flightID = UUID()
         peelFlightStages[flightID] = stage
-        let panelOrigin = stage.panel.frame.origin
-        let targetOrigin = CGPoint(x: target.x - panelOrigin.x - size.width / 2,
-                                   y: target.y - panelOrigin.y - size.height / 2)
-        let initialTransform = stageLayer.sublayerTransform
-        let finalTransform = CATransform3DMakeTranslation(targetOrigin.x, targetOrigin.y, 0)
-
+        let initial = stageLayer.sublayerTransform
+        let duration = AgentDock.growTime + AgentDock.flightTime
+        let samples = 40
+        let times = (0...samples).map { Double($0) / Double(samples) }
+        let frames = times.map {
+            AgentDock.spawn(at: $0 * duration, from: Point(x: start.x, y: start.y), to: Point(x: target.x, y: target.y))
+        }
         let travel = CAKeyframeAnimation(keyPath: "sublayerTransform")
-        travel.values = [NSValue(caTransform3D: initialTransform),
-                         NSValue(caTransform3D: initialTransform),
-                         NSValue(caTransform3D: finalTransform)]
-        travel.keyTimes = [0, 0.267, 1]
-        travel.timingFunctions = [CAMediaTimingFunction(name: .linear), CAMediaTimingFunction(name: .easeInEaseOut)]
-        travel.duration = 0.45
-
-        let direction = atan2(target.y - start.y, target.x - start.x)
-        let rotate = CATransform3DMakeRotation(direction, 0, 0, 1)
-        let stretch = CATransform3DConcat(
-            CATransform3DConcat(rotate, CATransform3DMakeScale(1.35, 0.8, 1)),
-            CATransform3DMakeRotation(-direction, 0, 0, 1)
-        )
-        let settled = CATransform3DMakeScale(0.8, 0.8, 1)
+        travel.values = frames.map { frame in
+            NSValue(caTransform3D: CATransform3DTranslate(initial, frame.center.x - start.x, frame.center.y - start.y, 0))
+        }
+        // The triangle's angle is clockwise; a layer's rotation turns it anticlockwise
+        // on screen (checked by rendering the layer tree, 2026-10-11).
         let shape = CAKeyframeAnimation(keyPath: "transform")
-        shape.values = [NSValue(caTransform3D: CATransform3DIdentity),
-                        NSValue(caTransform3D: stretch), NSValue(caTransform3D: settled)]
-        shape.keyTimes = [0, 0.267, 1]
-        shape.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeInEaseOut)]
-        shape.duration = 0.45
-
+        shape.values = frames.map { frame in
+            NSValue(caTransform3D: CATransform3DRotate(CATransform3DMakeScale(frame.scale, frame.scale, 1),
+                                                       -frame.angle * .pi / 180, 0, 0, 1))
+        }
+        // Gone into its tile on the last frames, where the tile's own triangle sits.
         let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = [1, 1, 0]
-        fade.keyTimes = [0, 0.72, 1]
-        fade.duration = 0.45
+        fade.keyTimes = [0, 0.94, 1]
+        for animation in [travel, shape, fade] {
+            animation.duration = duration
+            animation.calculationMode = .linear
+        }
+        travel.keyTimes = times.map { NSNumber(value: $0) }
+        shape.keyTimes = travel.keyTimes
 
-        stageLayer.sublayerTransform = finalTransform
-        contentLayer.transform = settled
+        let last = frames[frames.count - 1]
+        stageLayer.sublayerTransform = CATransform3DTranslate(initial, last.center.x - start.x, last.center.y - start.y, 0)
+        contentLayer.transform = CATransform3DMakeScale(last.scale, last.scale, 1)
         contentLayer.opacity = 0
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak panel = stage.panel] in
@@ -147,9 +149,9 @@ final class OverlayController {
             self?.peelFlightStages.removeValue(forKey: flightID)
             completion()
         }
-        stageLayer.add(travel, forKey: "capsule-peel-travel")
-        contentLayer.add(shape, forKey: "capsule-peel-shape")
-        contentLayer.add(fade, forKey: "capsule-peel-fade")
+        stageLayer.add(travel, forKey: "peel-travel")
+        contentLayer.add(shape, forKey: "peel-shape")
+        contentLayer.add(fade, forKey: "peel-fade")
         CATransaction.commit()
         stage.panel.orderFrontRegardless()
     }
