@@ -2,14 +2,33 @@ import AppKit
 import ClickBaitCore
 import SwiftUI
 
-/// The chat, styled after the Siri overlay: a Liquid Glass card with no hard lines,
-/// each question small and grey with its answer as the main text below, a soft
-/// "Ask ClickBait…" capsule, and a spring in from the companion's corner.
+/// The chat, in dark Aqua on glass (`AquaChrome.swift`): a see-through, blurred card with a
+/// graphite tint, faint pinstripes and a gel header; each question small and grey with its
+/// answer as the main text below, a recessed "Ask ClickBait…" capsule with a gel send
+/// button, and a spring in from the companion's corner.
+/// What's behind the chat, for renders only (Debug): `ImageRenderer` can't draw the
+/// window-server blur, so a render blurs this picture instead, the same for every look.
+struct ChatBackdrop {
+    var image: NSImage
+    /// Where the card's top-left sits on the picture, and the picture's size (pt).
+    var origin: CGPoint
+    var size: CGSize
+}
+
+extension EnvironmentValues {
+    @Entry var chatBackdrop: ChatBackdrop?
+    /// Renders only: show the close button hovered, and code blocks as just copied.
+    @Entry var chatRenderHover = false
+    @Entry var chatRenderCopied = false
+}
+
 struct ChatView: View {
     @Bindable var model: ChatModel
+    @Environment(\.chatBackdrop) private var backdrop
+    @Environment(\.chatRenderHover) private var renderHover
 
     static let width: CGFloat = 520
-    static let corner: CGFloat = 26
+    static let corner: CGFloat = AquaDark.corner
     nonisolated static let cardSpace = "chatCard"
     /// Header layout, shared with ChatController so the logo can open exactly on the
     /// companion's triangle.
@@ -23,6 +42,7 @@ struct ChatView: View {
     private static let maxTranscriptHeight: CGFloat = 380
     @State private var transcriptHeight: CGFloat = 0
     @State private var shown = false
+    @State private var closeHovered = false
     @FocusState private var fieldFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -37,9 +57,10 @@ struct ChatView: View {
         .coordinateSpace(.named(Self.cardSpace))
         // Empty parts of the card drag the window (SwiftUI content would otherwise
         // swallow the mouse-down before the window could move).
-        .background(WindowDragArea())
-        // A dark, blurred, see-through panel (the macOS heads-up material), like Siri's.
+        .background { if backdrop == nil { WindowDragArea() } }
+        // A dark, blurred, see-through panel (the macOS heads-up material) in dark Aqua.
         .background(SiriPanel())
+        .tint(AquaDark.link)  // links
         .clipShape(RoundedRectangle(cornerRadius: Self.corner, style: .continuous))
         .environment(\.colorScheme, .dark)
         .fixedSize(horizontal: false, vertical: true)
@@ -48,7 +69,8 @@ struct ChatView: View {
         // Grows from half size at the companion; the fade is the window's (animated by the
         // window server, smooth even while ClickBait is busy). Scaling the whole blurred card
         // up from 8% redrew too much per frame and stuttered.
-        .scaleEffect(shown && !model.isClosing && !model.isTucked ? 1 : (reduceMotion ? 1 : 0.5), anchor: model.companionAnchor)
+        .scaleEffect((shown || backdrop != nil) && !model.isClosing && !model.isTucked ? 1 : (reduceMotion ? 1 : 0.5),
+                     anchor: model.companionAnchor)
         .onAppear {
             // A beat later: the card has measured itself and knows where the companion is.
             DispatchQueue.main.async {
@@ -80,6 +102,8 @@ struct ChatView: View {
         .padding(.horizontal, Self.headerLeading)
         .padding(.top, Self.headerTop)
         .padding(.bottom, 4)
+        // The gel bar sits behind the header only; the logo's place is unchanged.
+        .background(AquaHeaderBar())
     }
 
     private var logo: some View {
@@ -97,26 +121,51 @@ struct ChatView: View {
     private var title: some View {
         Text("ClickBait")
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .opacity(0.8)
+            .foregroundStyle(AquaDark.textSecondary)
+            .shadow(color: .black.opacity(0.5), radius: 0, y: -0.5)  // Aqua's engraved title
     }
 
     private var closeButton: some View {
         Button {
             model.onClose?()
         } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .background(.primary.opacity(0.08), in: Circle())
+            // A small graphite gel button; its ✕ shows on hover, like Aqua's window buttons.
+            CloseGel(hovering: closeHovered || renderHover)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AquaPressStyle())
+        .onHover { closeHovered = $0 }
         .help("Close (Esc)")
         .accessibilityLabel("Close chat")
     }
 
-    private var transcript: some View {
+    @ViewBuilder private var transcript: some View {
+        if backdrop != nil {
+            // A render: no AppKit scroll view (ImageRenderer can't draw one).
+            transcriptContent
+        } else {
+            scrollingTranscript
+        }
+    }
+
+    private var transcriptContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(model.messages) { message in
+                MessageRow(message: message).id(message.id)
+            }
+            if model.isBusy, model.messages.last?.role != .assistant {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Thinking…").font(.system(size: 15)).foregroundStyle(AquaDark.textTertiary)
+                }
+                .id("busy")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+    }
+
+    private var scrollingTranscript: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -147,33 +196,46 @@ struct ChatView: View {
     private var inputRow: some View {
         // Centred: aligned at the bottom, the taller send button left a gap above the text.
         HStack(alignment: .center, spacing: 8) {
-            TextField(model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…", text: $model.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .lineLimit(1...4)
-                .focused($fieldFocused)
-                .onSubmit { model.send() }
-                .onChange(of: model.focusRequest) { _, _ in fieldFocused = true }
-                .onAppear { if model.focusRequest > 0 { fieldFocused = true } }
+            if backdrop != nil {
+                // A render: the field's words as text (ImageRenderer can't draw AppKit fields).
+                Text(model.draft.isEmpty ? placeholder : model.draft)
+                    .font(.system(size: 14))
+                    .foregroundStyle(model.draft.isEmpty ? AquaDark.textTertiary : AquaDark.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                TextField("", text: $model.draft,
+                          prompt: Text(placeholder).foregroundStyle(AquaDark.textTertiary), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .foregroundStyle(AquaDark.textPrimary)
+                    .accessibilityLabel(placeholder)
+                    .lineLimit(1...4)
+                    .focused($fieldFocused)
+                    .onSubmit { model.send() }
+                    .onChange(of: model.focusRequest) { _, _ in fieldFocused = true }
+                    .onAppear { if model.focusRequest > 0 { fieldFocused = true } }
+            }
             Button {
                 model.send()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(canSend ? Color.accentColor : Color.secondary.opacity(0.5))
+                // Aqua blue whenever it can send; graphite, without a glow, while there's
+                // nothing to send or an answer is still coming. Never the companion's colours.
+                SendGel(palette: canSend ? .blue : .graphite)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AquaPressStyle())
             .disabled(!canSend)
             .accessibilityLabel("Send")
         }
-        // A soft capsule like Siri's "Ask Siri…" field, no divider line above it.
+        // A recessed capsule, pressed into the glass.
         .padding(.leading, 14)
         .padding(.trailing, 6)
         .padding(.vertical, 7)
-        .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(AquaWell(shape: RoundedRectangle(cornerRadius: 18, style: .continuous)))
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
     }
+
+    private var placeholder: String { model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…" }
 
     private var canSend: Bool {
         !model.isBusy && !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -182,6 +244,7 @@ struct ChatView: View {
 
 private struct MessageRow: View {
     let message: ChatModel.Message
+    @Environment(\.colorSchemeContrast) private var contrast
 
     /// Inline markdown only (bold, italics, `code`, links); line breaks kept.
     static func markdown(_ text: String) -> AttributedString {
@@ -195,7 +258,7 @@ private struct MessageRow: View {
             // What was asked: small and grey, the answer below is the main text.
             Text(message.text)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(contrast == .increased ? AquaDark.textPrimary : AquaDark.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -206,7 +269,8 @@ private struct MessageRow: View {
                     switch segment {
                     case .text(let prose):
                         Text(Self.markdown(prose))
-                            .font(.system(size: 15.5))
+                            .font(.system(size: 15.5, weight: contrast == .increased ? .medium : .regular))
+                            .foregroundStyle(contrast == .increased ? .white : AquaDark.textPrimary)
                             .lineSpacing(3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -231,15 +295,14 @@ private struct CodeBlock: View {
     let language: String?
     let code: String
     @State private var copied = false
-
-    private static let background = Color(red: 0.09, green: 0.09, blue: 0.1)
+    @Environment(\.chatRenderCopied) private var renderCopied
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(language?.lowercased() ?? "code")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AquaDark.textTertiary)
                 Spacer()
                 Button {
                     NSPasteboard.general.clearContents()
@@ -247,11 +310,20 @@ private struct CodeBlock: View {
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.7))
+                    // A small graphite gel pill; "Copied" ticks in Aqua green.
+                    let done = copied || renderCopied
+                    HStack(spacing: 4) {
+                        Image(systemName: done ? "checkmark" : "doc.on.doc")
+                            .foregroundStyle(done ? AquaDark.aquaGreen : .white.opacity(0.85))
+                        Text(done ? "Copied" : "Copy").foregroundStyle(.white.opacity(0.95))
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 0, y: -0.5)
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(CopyGel())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AquaPressStyle())
                 .accessibilityLabel("Copy code")
             }
             .padding(.horizontal, 10)
@@ -270,22 +342,42 @@ private struct CodeBlock: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
         }
-        .background(Self.background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        // A darker, still see-through inset well, so code stays readable over anything.
+        .background(AquaWell(shape: RoundedRectangle(cornerRadius: 10, style: .continuous), darkness: 0.5, bordered: true))
         .environment(\.colorScheme, .dark)
     }
 }
 
-/// The panel behind the chat: the dark heads-up blur, darkened a touch, with two soft
-/// glows — the companion's current colour top-right (orange while thinking), a cooler
-/// one low in the middle.
+/// The panel behind the chat: the dark heads-up blur (kept: the panel stays see-through),
+/// with the dark Aqua tint, pinstripes, border and highlight on top (`AquaBody`).
 private struct SiriPanel: View {
+    @Environment(\.chatBackdrop) private var backdrop
+
     var body: some View {
         ZStack {
-            HUDBlur()
-            Color.black.opacity(0.28)
+            if let backdrop { RenderedBlur(backdrop: backdrop) } else { HUDBlur() }
+            AquaBody()
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// For renders: the picture behind the card, blurred and darkened about as the heads-up
+/// material does, so before/after renders show the same see-through.
+struct RenderedBlur: View {
+    let backdrop: ChatBackdrop
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Image(nsImage: backdrop.image)
+                .resizable()
+                .frame(width: backdrop.size.width, height: backdrop.size.height)
+                .offset(x: -backdrop.origin.x, y: -backdrop.origin.y)
+                .blur(radius: 24, opaque: true)
+            Color(white: 0.12).opacity(0.45)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
     }
 }
 
@@ -314,5 +406,51 @@ private struct WindowDragArea: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
+    }
+}
+
+/// The header's close button: a small round Aqua red gel, like the old window close
+/// button; its ✕ shows on hover.
+private struct CloseGel: View {
+    let hovering: Bool
+    @Environment(\.aquaPressed) private var pressed
+
+    var body: some View {
+        ZStack {
+            AquaGel(palette: .red, shape: Circle(), pressed: pressed)
+            Image(systemName: "xmark")
+                .font(.system(size: 7.5, weight: .heavy))
+                .foregroundStyle(AquaDark.hex(0x5A0B07).opacity(0.85))
+                .opacity(hovering ? 1 : 0)
+        }
+        .frame(width: 14, height: 14)
+        .frame(width: 20, height: 20)  // the same hit area as before
+        .contentShape(Circle())
+    }
+}
+
+/// The send button: a round Aqua blue gel, or graphite (no glow) when it can't send.
+private struct SendGel: View {
+    let palette: AquaPalette
+    @Environment(\.aquaPressed) private var pressed
+
+    var body: some View {
+        ZStack {
+            AquaGel(palette: palette, shape: Circle(), pressed: pressed)
+            Image(systemName: "arrow.up")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(palette.glow == nil ? 0.6 : 0.95))
+                .shadow(color: .black.opacity(0.3), radius: 0, y: -0.5)
+        }
+        .frame(width: 22, height: 22)
+    }
+}
+
+/// The code block's Copy pill: a small graphite gel lozenge.
+private struct CopyGel: View {
+    @Environment(\.aquaPressed) private var pressed
+
+    var body: some View {
+        AquaGel(palette: .graphite, shape: Capsule(), pressed: pressed)
     }
 }

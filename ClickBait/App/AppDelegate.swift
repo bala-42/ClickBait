@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        ChatRender.runIfRequested()  // renders and quits; leaves a running ClickBait alone
         if TourBench.runIfRequested(settings: settings) { return }  // benchmarks tours, then quits
         #endif
         terminateOtherInstances()
@@ -87,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
         #if DEBUG
         overlay.runBenchmarkIfRequested()
+        runChatBenchmarkIfRequested()
         #endif
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches
@@ -447,4 +449,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.endGuide()
         chat.close()
     }
+
+    #if DEBUG
+    /// Streams a canned answer into an open chat, ~12 updates a second as real answers come,
+    /// with no model (`CLICKBAIT_BENCH_CHAT=1`): for the "Companion stalled" log and samples.
+    private func runChatBenchmarkIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_BENCH_CHAT"] != nil else { return }
+        let answer = String(repeating: "The list of prices is **empty**, so `len(prices)` is 0 and Python can't divide by zero. ", count: 6)
+            + "\n\n```python\ntotal = sum(prices) / len(prices) if prices else 0\n```\n\nThen run it again with an empty cart."
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            Log.app.notice("Bench: chat open")
+            chat.open(logoAt: overlay.companionTriangleCenter)
+            chat.model.addUser("why does this crash?")
+            chat.model.isBusy = true
+            try? await Task.sleep(for: .seconds(1))
+            Log.app.notice("Bench: chat stream")
+            // The companion tours meanwhile, so a stall during streaming is logged.
+            if let screen = NSScreen.main?.frame {
+                overlay.tour((0..<4).map { index in
+                    let x = screen.midX + 300 * cos(Double(index) * .pi / 2), y = screen.midY + 200 * sin(Double(index) * .pi / 2)
+                    return ScreenPointer(label: "part \(index + 1)", appKit: Point(x: x, y: y), quartz: Point(x: x, y: screen.maxY - y))
+                })
+            }
+            var shown = 0
+            while shown < answer.count {
+                shown = min(answer.count, shown + 9)
+                chat.model.setAssistant(String(answer.prefix(shown)))
+                try? await Task.sleep(for: .milliseconds(83))
+            }
+            chat.model.isBusy = false
+            try? await Task.sleep(for: .seconds(1))
+            Log.app.notice("Bench: chat done")
+        }
+    }
+    #endif
 }
