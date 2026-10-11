@@ -2003,7 +2003,7 @@ final class AskCoordinator {
                 }
                 let newSpeech = extractor.feed(chunk)
                 if case .background(let jobID) = run.destination {
-                    backgroundJobs?.append(chunk, to: jobID)
+                    backgroundJobs?.append(chunk, speech: newSpeech, to: jobID)
                 } else if !newSpeech.isEmpty, !Task.isCancelled {
                     spokenSoFar += newSpeech
                     if chatShown, ContinuousClock.now - lastPartial >= .milliseconds(80) {

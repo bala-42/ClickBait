@@ -6,15 +6,31 @@ import SwiftUI
 @MainActor
 @Observable
 final class CapsulePresentation {
-    var entry: BackgroundJobs.Entry
+    /// What the card shows (it changes with every streamed word).
+    var entry: BackgroundJobs.Entry {
+        didSet {
+            let status = Self.status(of: entry.job)
+            if status != self.status { self.status = status }
+            if entry.seen != seen { seen = entry.seen }
+        }
+    }
     var isExpanded = false
+    /// What the tile shows, kept apart so streaming doesn't redraw it.
+    private(set) var status: AgentDock.Status
+    private(set) var seen: Bool
+    let tone: CompanionTone
+    let question: String
 
-    init(entry: BackgroundJobs.Entry) { self.entry = entry }
+    init(entry: BackgroundJobs.Entry) {
+        self.entry = entry
+        status = Self.status(of: entry.job)
+        seen = entry.seen
+        tone = entry.job.kind == .snip ? .capture : .processing
+        question = entry.job.question
+    }
 
-    var tone: CompanionTone { entry.job.kind == .snip ? .capture : .processing }
-
-    var status: AgentDock.Status {
-        switch entry.job.status {
+    private static func status(of job: BackgroundJob) -> AgentDock.Status {
+        switch job.status {
         case .working: .working
         case .done: .done
         case .failed: .failed
@@ -33,7 +49,7 @@ struct DockTileView: View {
     @State private var beatStart = Date()
 
     var body: some View {
-        let look = AgentDock.look(presentation.status, opened: presentation.entry.seen, reduceMotion: reduceMotion)
+        let look = AgentDock.look(presentation.status, opened: presentation.seen, reduceMotion: reduceMotion)
         Button(action: onToggle) {
             AgentTile(tone: presentation.tone, look: look, spinning: presentation.status == .working)
                 .contentShape(RoundedRectangle(cornerRadius: AgentDock.tileCorner, style: .continuous))
@@ -68,7 +84,7 @@ struct DockTileView: View {
         case .failed: state = "failed"
         case .stopped: state = "stopped"
         }
-        return "Background ClickBait, \(state): \(presentation.entry.job.question)"
+        return "Background ClickBait, \(state): \(presentation.question)"
     }
 }
 
@@ -85,24 +101,29 @@ struct CapsuleView: View {
     private var tone: CompanionTone { presentation.tone }
 
     var body: some View {
-        card
-            .frame(width: AgentDock.cardWidth - 22, alignment: .leading)
-            .padding(11)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AgentDock.cardCorner, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: AgentDock.cardCorner).strokeBorder(.white.opacity(0.13), lineWidth: 0.7))
-            .padding(CapsuleController.cardMargin)
-            .fixedSize()
+        Group {
+            if job.isWorking {
+                // ✕ stops it: the tile goes.
+                AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
+                                 tone: tone,
+                                 progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
+                                 onStop: { onStop(job.id) })
+            } else {
+                card
+                    .frame(width: AgentDock.cardWidth - 22, alignment: .leading)
+                    .padding(11)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AgentDock.cardCorner, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: AgentDock.cardCorner).strokeBorder(.white.opacity(0.13), lineWidth: 0.7))
+            }
+        }
+        .padding(CapsuleController.cardMargin)
+        .fixedSize()
     }
 
     @ViewBuilder private var card: some View {
         switch job.status {
         case .working:
-            VStack(alignment: .leading, spacing: 8) {
-                Text(job.question).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text("working on it…").font(.system(size: 11)).foregroundStyle(.secondary)
-                CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)
-                HStack { Spacer(); action("stop", role: .destructive) { onStop(job.id) } }
-            }
+            EmptyView()
         case .done(let summary):
             VStack(alignment: .leading, spacing: 10) {
                 Text(summary).font(.system(size: 12, weight: .medium)).lineLimit(3)
@@ -142,7 +163,7 @@ private struct CapsuleProgressBar: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion || isCounted)) { context in
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(tone.opacity(0.18))
+                    Capsule().fill(Color.white.opacity(0.1))
                     switch progress {
                     case .counted(let done, let total):
                         Capsule().fill(tone).frame(width: geometry.size.width * fraction(done, total))

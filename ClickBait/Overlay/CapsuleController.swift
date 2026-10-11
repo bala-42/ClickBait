@@ -92,7 +92,8 @@ final class CapsuleController {
         }
         for entry in entries {
             if let item = managed[entry.id] {
-                item.presentation.entry = entry
+                // Only what changed: each streamed word would otherwise redraw every tile.
+                if !item.presentation.entry.looksSame(as: entry) { item.presentation.entry = entry }
             } else {
                 managed[entry.id] = makeManaged(entry)
             }
@@ -200,7 +201,6 @@ final class CapsuleController {
         let visible = Self.rect(screen.visibleFrame)
         for (index, entry) in latestEntries.enumerated() {
             guard let slot = AgentDock.tile(index, in: visible), let item = managed[entry.id] else { continue }
-            item.presentation.entry = entry
             let tileFrame = CGRect(x: slot.x, y: slot.y, width: slot.width, height: slot.height)
                 .insetBy(dx: -Self.tileMargin, dy: -Self.tileMargin)
             place(item.tile, at: tileFrame, appearing: AgentDock.growTime)

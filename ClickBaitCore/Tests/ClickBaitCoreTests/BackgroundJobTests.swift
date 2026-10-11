@@ -66,6 +66,24 @@ struct JobSummaryTests {
     }
 }
 
+struct LiveLineTests {
+    @Test func beforeAnyWordsItSaysItsWorking() {
+        #expect(JobSummary.liveLine(from: "") == "working on it…")
+    }
+
+    @Test func showsTheSentenceBeingWritten() {
+        #expect(JobSummary.liveLine(from: "Blue light scatters most. Red passes thro") == "Red passes thro")
+        #expect(JobSummary.liveLine(from: "Blue light scatters most.") == "Blue light scatters most.")
+    }
+
+    @Test func longSentencesStopAtAWord() {
+        let long = String(repeating: "scattering ", count: 20)
+        let line = JobSummary.liveLine(from: long)
+        #expect(line.count <= JobSummary.liveLength)
+        #expect(line.hasSuffix("scattering…"))
+    }
+}
+
 struct CapsuleLayoutTests {
     private let visible = Rect(x: 0, y: 0, width: 1440, height: 875)
 

@@ -455,7 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if DEBUG
     /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
-    /// working, one done) for 8 s, then three peels into the top slot, each sliding the
+    /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
     /// others down. Logged "Bench: …" per phase for the main-thread sampler.
     private func runDockBenchmarkIfRequested() {
         guard ProcessInfo.processInfo.environment["CLICKBAIT_BENCH_DOCK"] != nil else { return }
@@ -472,6 +472,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backgroundJobs.add(job(.answer), task: nil)
             backgroundJobs.add(job(.snip), task: nil)
             try? await Task.sleep(for: .seconds(8))
+            // The running card open while its answer streams, ~12 updates a second.
+            Log.app.notice("Bench: card")
+            if let working = backgroundJobs.entries.first(where: { $0.job.isWorking }) {
+                capsules.expand(working.id)
+                let words = "The error means the optional was nil when it was force-unwrapped on line 42. ".split(separator: " ")
+                for index in 0..<72 {
+                    if ProcessInfo.processInfo.environment["CLICKBAIT_BENCH_DOCK"] != "still" {
+                        backgroundJobs.append("", speech: words[index % words.count] + " ", to: working.id)
+                    }
+                    try? await Task.sleep(for: .milliseconds(83))
+                }
+                capsules.fold(working.id)
+            }
             Log.app.notice("Bench: peel")
             for _ in 0..<3 {
                 if let last = backgroundJobs.entries.last { backgroundJobs.remove(last.id) }

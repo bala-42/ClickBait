@@ -17,14 +17,32 @@ final class BackgroundJobs {
         var chatMessages: [ChatModel.Message] = []
         var snipMemory: AskCoordinator.SnipMemory?
         var progress: JobProgress = .uncounted
+        /// What the answer has said so far (its spoken text), for the running card's line.
+        var liveText = ""
         /// Its card has been opened since it finished: the tile stops pulsing.
         var seen = false
         var id: UUID { job.id }
+
+        /// Everything a tile or card shows is the same.
+        func looksSame(as other: Entry) -> Bool {
+            job == other.job && liveText == other.liveText && seen == other.seen && progress == other.progress
+                && chatMessages.count == other.chatMessages.count
+        }
     }
 
     private(set) var entries: [Entry] = [] {
-        didSet { onChange?(entries) }
+        didSet {
+            guard !streaming else { return }
+            pendingChange?.cancel()
+            pendingChange = nil
+            onChange?(entries)
+        }
     }
+    /// Streamed words are passed on at most every 0.1 s (an answer streams ~30 chunks a
+    /// second); everything else at once.
+    private var streaming = false
+    private var pendingChange: Task<Void, Never>?
+    private static let streamInterval: Duration = .milliseconds(100)
     var onChange: (([Entry]) -> Void)?
 
     var count: Int { entries.count }
@@ -37,9 +55,19 @@ final class BackgroundJobs {
         return true
     }
 
-    func append(_ text: String, to id: UUID) {
+    func append(_ text: String, speech: String = "", to id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        streaming = true
         entries[index].job.append(text)
+        entries[index].liveText += speech
+        streaming = false
+        guard pendingChange == nil else { return }
+        pendingChange = Task { [weak self] in
+            try? await Task.sleep(for: Self.streamInterval)
+            guard !Task.isCancelled, let self else { return }
+            pendingChange = nil
+            onChange?(entries)
+        }
     }
 
     func complete(_ id: UUID, answer: String, conversation: Conversation) {

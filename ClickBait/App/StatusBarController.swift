@@ -75,7 +75,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func updateBackgroundJobs(_ entries: [BackgroundJobs.Entry]) {
+        // Streamed words change nothing the menu lists: rebuild only for new, gone or
+        // finished jobs.
+        let listed = { (list: [BackgroundJobs.Entry]) in list.map { "\($0.id) \($0.job.status)" } }
+        let changed = listed(entries) != listed(backgroundEntries)
         backgroundEntries = entries
+        guard changed else { return }
         backgroundCapsulesItem.isEnabled = !entries.isEmpty
         rebuildBackgroundCapsulesMenu()
     }
