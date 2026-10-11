@@ -116,9 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches
         // both. Esc typed in ClickBait's own chat comes through overlay.onEscape below.
+        // Esc is ClickBait's only while it is (or looks) busy, and then it never reaches the
+        // app in front (it can't close a dialog or a window, or leave full screen). It stops
+        // ClickBait and puts the companion back to idle blue; nothing else. Background jobs
+        // carry on. Idle, Esc passes through untouched.
         escape.isBusy = { [weak self] in
             guard let self else { return false }
-            return coordinator.isBusy || overlay.isGuiding || confirm.isShowing
+            return coordinator.ownsEscape || overlay.looksBusy || confirm.isShowing || readyPillShown
         }
         escape.onEscape = { [weak self] in _ = self?.overlay.onEscape?() }
         escape.onTypeToAsk = { [weak self] in self?.coordinator.startTypedChat() }
@@ -188,13 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 confirm.hide()
                 return true
             }
-            if coordinator.stopActivity() {
-                overlay.endGuide()
-                overlay.dismissAnswer()
-                return true
-            }
-            if overlay.isGuiding {
-                overlay.endGuide()
+            var stopped = coordinator.stopActivity()
+            // A card still up (stopActivity answers its own): Esc is "no".
+            if confirm.isShowing { confirm.cancel(); stopped = true }
+            if stopped || overlay.looksBusy {
+                overlay.resetToIdle()
                 return true
             }
             guard chat.isOpen else { return false }

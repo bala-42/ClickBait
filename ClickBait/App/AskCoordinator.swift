@@ -420,6 +420,12 @@ final class AskCoordinator {
             || snipper.isActive || pendingAction != nil || pendingReminder != nil || isRefining || (tutorial?.isActive ?? false)
     }
 
+    /// Esc belongs to ClickBait: anything `isBusy` counts, plus a walkthrough offer waiting
+    /// for its answer, an explanation still undoable, and an app opening for a walkthrough.
+    var ownsEscape: Bool {
+        isBusy || pendingOffer != nil || explainCommit != nil || isOpeningAppForTutorial
+    }
+
     /// Esc: stop whatever ClickBait is doing — listening, thinking, speaking, a snip,
     /// a pending "Do it?", a background second look. Returns false if nothing was
     /// going on (Esc then closes the chat instead).

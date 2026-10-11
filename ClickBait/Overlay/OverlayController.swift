@@ -482,6 +482,26 @@ final class OverlayController {
         model.isSnipThinking = on
     }
 
+    /// The companion shows ClickBait at work: listening, thinking, working, spinning,
+    /// pulsing, red over a snip, or pointing and touring. Esc belongs to ClickBait then.
+    var looksBusy: Bool {
+        switch model.bubble {
+        case .listening, .thinking, .explaining, .working: return true
+        default: break
+        }
+        return model.isSpinning || model.isPulsing || model.isSnipThinking || model.isSnipping || model.isTouring || isGuiding
+    }
+
+    /// After a taken Esc: back to idle blue at the cursor. Clears only ClickBait's own
+    /// pointing, red and words; nothing else on the Mac.
+    func resetToIdle() {
+        endGuide()
+        model.isSnipThinking = false
+        dismissTask?.cancel()
+        model.bubble = .idle
+        setCompanionHidden(false)
+    }
+
     /// Strawberry Red while the user marks part of the screen (hold ⌥⌘).
     func setSnipping(_ snipping: Bool) {
         if snipping { endGuide() }

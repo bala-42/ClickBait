@@ -116,6 +116,12 @@ final class ConfirmController {
     private var oneOffAnswer: ((Bool) -> Void)?
     private var choiceAnswer: ((ChoiceAnswer) -> Void)?
 
+    /// Esc on a card nobody else stopped: "no" (a choice card: as if it timed out), so
+    /// whoever asked hears back.
+    func cancel() {
+        if choiceAnswer != nil { answerChoice(.timedOut) } else { answer(false) }
+    }
+
     private func answerChoice(_ answer: ChoiceAnswer) {
         guard panel != nil, let choiceAnswer else { return }
         hide()

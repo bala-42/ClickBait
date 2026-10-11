@@ -9,10 +9,29 @@ extension OverlayController {
     func runBenchmarkIfRequested() {
         guard ProcessInfo.processInfo.environment["CLICKBAIT_BENCH"] != nil,
               let screen = NSScreen.main?.frame else { return }
+        // CLICKBAIT_BENCH=esc: a real Esc posted through the system while idle (it must pass
+        // to the app in front) and while spinning (it must be taken and end the spin).
+        let postsEsc = ProcessInfo.processInfo.environment["CLICKBAIT_BENCH"] == "esc"
+        func postEsc() {
+            let source = CGEventSource(stateID: .hidSystemState)
+            for down in [true, false] {
+                CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: down)?.post(tap: .cghidEventTap)
+                usleep(30_000)  // a real press: down, then up
+            }
+        }
         Task {
             try? await Task.sleep(for: .seconds(3))
+            if postsEsc { Log.app.notice("Bench: Esc while idle"); postEsc(); try? await Task.sleep(for: .seconds(0.5)) }
             Log.app.notice("Bench: spin")
             show(.thinking)
+            if postsEsc {
+                try? await Task.sleep(for: .seconds(2))
+                Log.app.notice("Bench: Esc while spinning")
+                postEsc()
+                try? await Task.sleep(for: .seconds(0.5))
+                Log.app.notice("Bench: after Esc, bubble \(String(describing: self.model.bubble), privacy: .public), spinning \(self.model.isSpinning, privacy: .public)")
+                return
+            }
             try? await Task.sleep(for: .seconds(6))
             show(.idle)
             // Six stops around the middle of the main screen, a 2.4 s tour each.
