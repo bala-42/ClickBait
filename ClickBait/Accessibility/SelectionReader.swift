@@ -13,12 +13,54 @@ enum SelectionReader {
         case copy
     }
 
-    static func read(frontmostPID: pid_t?, accessibilitySelection: String?) async -> (text: String, method: Method)? {
+    /// `beforeCopy` runs before the ⌘C fallback; false skips it (a double tap of ⌥⌘ came:
+    /// it needs no selection).
+    static func read(frontmostPID: pid_t?, accessibilitySelection: String?,
+                     beforeCopy: () async -> Bool = { true }) async -> (text: String, method: Method)? {
         if let text = accessibilitySelection?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             return (text, .accessibility)
         }
+        guard await beforeCopy() else { return nil }
+        // Nothing highlighted, the app's Copy is greyed out, and a ⌘C sent to it makes macOS
+        // play its alert sound (heard on every ⌥⌘ double tap, 2026-10-12): don't send it.
+        if let pid = frontmostPID {
+            let enabled = await Task.detached(priority: .userInitiated) { copyIsEnabled(pid: pid) }.value
+            if enabled == false {
+                Log.ask.notice("Explain: the app's Copy is disabled, so nothing is highlighted; no ⌘C sent")
+                return nil
+            }
+        }
         guard let text = await copySelection(), !text.isEmpty else { return nil }
         return (text, .copy)
+    }
+
+    /// Whether the app's ⌘C menu item (Edit ▸ Copy, found by its shortcut) is enabled: nil
+    /// if it has no such item Accessibility can read (then ⌘C is tried as before).
+    nonisolated static func copyIsEnabled(pid: pid_t) -> Bool? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.25)
+        func children(_ element: AXUIElement) -> [AXUIElement] {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success else { return [] }
+            return value as? [AXUIElement] ?? []
+        }
+        func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+            var value: CFTypeRef?
+            return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+        }
+        guard let menuBarValue = attribute(app, kAXMenuBarAttribute),
+              CFGetTypeID(menuBarValue) == AXUIElementGetTypeID() else { return nil }
+        let menuBar = unsafeDowncast(menuBarValue, to: AXUIElement.self)  // its type checked just above
+        for title in children(menuBar).prefix(12) {
+            for menu in children(title) {
+                for item in children(menu).prefix(60) {
+                    guard (attribute(item, kAXMenuItemCmdCharAttribute) as? String)?.uppercased() == "C",
+                          (attribute(item, kAXMenuItemCmdModifiersAttribute) as? Int) == 0 else { continue }  // 0 = ⌘ alone
+                    return attribute(item, kAXEnabledAttribute) as? Bool
+                }
+            }
+        }
+        return nil
     }
 
     private static func copySelection() async -> String? {

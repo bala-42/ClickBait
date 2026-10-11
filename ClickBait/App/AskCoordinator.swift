@@ -789,7 +789,13 @@ final class AskCoordinator {
         let startedAt = ContinuousClock.now
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         guard !Task.isCancelled else { return }
-        guard let (selected, method) = await SelectionReader.read(frontmostPID: pid, accessibilitySelection: snapshot.selectedText)
+        // The ⌘C fallback waits out a possible second tap: a double tap opens the chat and
+        // needs no selection (it used to send ⌘C on the first tap).
+        guard let (selected, method) = await SelectionReader.read(frontmostPID: pid, accessibilitySelection: snapshot.selectedText,
+                                                                  beforeCopy: { [weak self] in
+                                                                      await self?.explainCommit?.value
+                                                                      return !Task.isCancelled
+                                                                  })
         else {
             Log.ask.notice("Explain: no selection found (accessibility and copy both empty)")
             // Not while a second tap could still come: a double tap needs no selection.
