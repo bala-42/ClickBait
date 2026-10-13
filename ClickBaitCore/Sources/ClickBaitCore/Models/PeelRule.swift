@@ -126,6 +126,27 @@ public enum PeelRule {
 
     public static let suggestedPartsPrompt = "show me the parts"
 
+    // MARK: Peeling on its own
+
+    /// How long a highlight's or snip's explanation may take before it goes to the dock by
+    /// itself (user's rule, 2026-10-14), counted from its model request starting.
+    public static let autoPeelDelay: Duration = .milliseconds(500)
+
+    /// A first ⌥⌘ explanation or snip still working when `autoPeelDelay` has passed peels by
+    /// itself, as ⌃⌥ would: an explanation while it streams, a snip until its tour starts
+    /// (it then skips the tour). Spoken questions and follow-ups never do, nor anything when
+    /// the dock is full (it just finishes in front).
+    public static func autoPeels(_ situation: Situation) -> Bool {
+        guard situation.hasRoom else { return false }
+        switch situation.work {
+        case .answer: return situation.phase == .streaming
+        case .snip: return [.streaming, .explained, .partsLook, .tourPrep].contains(situation.phase)
+        }
+    }
+
+    /// The line shown instead of a tour whose snipped area no longer looks the same.
+    public static let movedPill = "that's moved — snip it again to tour it"
+
     // MARK: A queued peel resolving
 
     /// What the question turned out to be.

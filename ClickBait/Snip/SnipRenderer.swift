@@ -52,6 +52,27 @@ struct SnipView: @unchecked Sendable {
     let marked: Rect
     let primaryDisplayHeight: Double
 
+    /// What the user marked, back in global Quartz points (the region the snip was made from).
+    var markedOnScreen: Rect {
+        let perPoint = Double(image.width) / crop.width
+        return Rect(x: crop.x + marked.x / perPoint, y: crop.y + marked.y / perPoint,
+                    width: marked.width / perPoint, height: marked.height / perPoint)
+    }
+
+    /// The close-up as a `SnipMatch.side`² greyscale thumbnail, for "is it still there?".
+    var thumbnail: [UInt8] {
+        let side = SnipMatch.side
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+                                          bytesPerRow: side, space: CGColorSpaceCreateDeviceGray(),
+                                          bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        }
+        return pixels
+    }
+
     func screenPointer(_ part: Pointer) -> ScreenPointer {
         let perPoint = Double(image.width) / crop.width
         let quartz = Point(x: crop.x + part.x / perPoint, y: crop.y + part.y / perPoint)

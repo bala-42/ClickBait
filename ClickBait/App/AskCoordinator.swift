@@ -117,8 +117,9 @@ final class AskCoordinator {
     /// background keeps its own flow; this one is then nil or the next question's.
     @ObservationIgnored private var currentFlow: QuestionFlow?
     /// A queued peel turned out to be quick (a command, a walkthrough, an instant pick), or ⌃⌥
-    /// came for something already known to be: the short pill, in the job's colour. `true`
-    /// shows it at once; `false` waits until nothing else is being said.
+    /// came for something already known to be, or a returning snip's area has moved: the
+    /// short pill, in the job's colour. `true` shows it at once; `false` waits until nothing
+    /// else is being said.
     @ObservationIgnored var onQuickEnding: ((String, CompanionTone, Bool) -> Void)?
     @ObservationIgnored var onPeel: ((BackgroundJob) -> [ChatModel.Message])?
     @ObservationIgnored var onPeelRefused: (() -> Void)?
@@ -288,6 +289,8 @@ final class AskCoordinator {
     func restoreBackgroundConversation(_ restored: Conversation, snipMemory: SnipMemory? = nil) {
         conversation = restored
         chatShown = true
+        var snipMemory = snipMemory
+        snipMemory?.returnedFromBackground = true
         self.snipMemory = snipMemory
     }
 
@@ -703,6 +706,43 @@ final class AskCoordinator {
         guard startPeel(flow) != nil else { return false }
         Log.ask.notice("Peel queued: waiting for the answer to start")
         return true
+    }
+
+    /// `PeelRule.autoPeelDelay` after the explanation's model request starts: if it is still
+    /// working in front, peel it as ⌃⌥ would. Not before a second ⌥⌘ tap is ruled out (a
+    /// double tap drops the explanation instead).
+    private func scheduleAutoPeel(_ flow: QuestionFlow, _ run: AnswerRun) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: PeelRule.autoPeelDelay)
+            await self?.explainCommit?.value
+            self?.autoPeel(flow, run)
+        }
+    }
+
+    private func autoPeel(_ flow: QuestionFlow, _ run: AnswerRun) {
+        guard flow.run === run, activeAnswerRun === run, case .foreground = run.destination,
+              run.task?.isCancelled != true else { return }
+        let situation = PeelRule.Situation(phase: flow.phase, work: flow.work, kind: flow.kind,
+                                           hasRoom: backgroundJobs?.hasRoom ?? false)
+        guard PeelRule.autoPeels(situation) else {
+            if !situation.hasRoom, flow.phase.hasRun { Log.ask.notice("Auto-peel skipped: three's a crowd, finishing in front") }
+            return
+        }
+        if peel(flow, run, situation) {
+            Log.ask.notice("Auto-peeled after \(String(describing: PeelRule.autoPeelDelay), privacy: .public) (\(flow.work == .snip ? "snip" : "explanation", privacy: .public))")
+        }
+    }
+
+    /// Whether the snipped area still looks as it did: captured again and compared with
+    /// the close-up (`SnipMatch`, on this Mac, no model).
+    private func stillShows(_ view: SnipView) async -> Bool {
+        let center = NSPoint(x: view.crop.midX, y: view.primaryDisplayHeight - view.crop.midY)
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center),
+              let fresh = try? SnipRenderer.view(capture, region: view.markedOnScreen),
+              fresh.crop == view.crop else { return false }
+        let difference = SnipMatch.difference(view.thumbnail, fresh.thumbnail)
+        Log.ask.notice("Parts: snipped area differs by \(difference.map { String(format: "%.1f", $0) } ?? "?", privacy: .public) grey levels")
+        return SnipMatch.matches(view.thumbnail, fresh.thumbnail)
     }
 
     /// A flow for work that doesn't start from a spoken question or a snip (⌥⌘ explain, typed
@@ -2079,6 +2119,9 @@ final class AskCoordinator {
         /// What the snip shows, looked up on Wikipedia once the reply names its subject
         /// (`startLookup`), for naming the marks. Nil with lookups off.
         var reference: Task<WikiReference?, Never>?
+        /// Brought back from the dock ("go there!"): the screen may have changed since, so a
+        /// tour first checks the snipped area still looks the same.
+        var returnedFromBackground = false
     }
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
@@ -2354,6 +2397,8 @@ final class AskCoordinator {
                 attach(run, to: flow, appendingQuestion: queued)
                 Log.ask.notice("Peel joined: \(jobID.uuidString, privacy: .public)")
             }
+            // A first highlight or snip explanation goes to the dock by itself when slow.
+            if !queued, history.isEmpty, selectedText != nil || snip != nil { scheduleAutoPeel(flow, run) }
             if backgroundJobs?.entries.contains(where: { $0.job.isWorking && $0.id != flow.jobID }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
@@ -2441,6 +2486,10 @@ final class AskCoordinator {
             let finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
             settleChat(of: run, finalText: finalText)
             backgroundJobs?.setChatMessages(run.chatMessages, for: jobID)
+            // A snip sent away before its tour: the tour waits for "show me the parts".
+            if snip != nil, history.isEmpty, !(parsed.response.parts + parsed.response.pointers).isEmpty {
+                backgroundJobs?.setLeadingSuggestion(PeelRule.suggestedPartsPrompt, for: jobID)
+            }
             backgroundJobs?.complete(jobID, answer: finalText, conversation: run.conversation)
             return
         }
@@ -2599,6 +2648,13 @@ final class AskCoordinator {
             guard !stops.isEmpty, !Task.isCancelled, answerFlowID == answerID else { return }
             let tour = await Self.tourPointers(stops, outlines: placement.outlines, in: view)
             Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) by \(placement.method, privacy: .public) starts \(String(describing: ContinuousClock.now - placing), privacy: .public) after the explanation")
+            guard !Task.isCancelled, answerFlowID == answerID else { return }
+            if memory.returnedFromBackground, await !stillShows(view) {
+                guard !Task.isCancelled, answerFlowID == answerID else { return }
+                Log.ask.notice("Parts: the snipped area has changed since it was sent away; no tour")
+                onQuickEnding?(PeelRule.movedPill, .capture, true)
+                return
+            }
             guard !Task.isCancelled, answerFlowID == answerID else { return }
             flow.phase = .tour
             onTour?(tour)

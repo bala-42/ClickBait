@@ -152,3 +152,66 @@ struct PeelRuleTests {
         #expect(job.conversation.lastAnswer == "Blue light scatters most.")
     }
 }
+
+struct AutoPeelTests {
+    private func auto(_ phase: PeelRule.Phase, _ work: PeelRule.Work, room: Bool = true) -> Bool {
+        PeelRule.autoPeels(.init(phase: phase, work: work, hasRoom: room))
+    }
+
+    @Test func delayIsHalfASecond() {
+        #expect(PeelRule.autoPeelDelay == .milliseconds(500))
+    }
+
+    @Test func explanationPeelsOnlyWhileStreaming() {
+        #expect(auto(.streaming, .answer))
+        for phase: PeelRule.Phase in [.idle, .listening, .buildingRequest, .explained, .tour] {
+            #expect(!auto(phase, .answer))
+        }
+    }
+
+    @Test func snipPeelsUntilItsTourStarts() {
+        for phase: PeelRule.Phase in [.streaming, .explained, .partsLook, .tourPrep] {
+            #expect(auto(phase, .snip))
+            #expect(PeelRule.skipsTourAndSuggestsParts(.init(phase: phase, work: .snip)) == (phase != .streaming))
+        }
+        #expect(!auto(.tour, .snip))
+        #expect(!auto(.buildingRequest, .snip))
+    }
+
+    @Test func fullDockKeepsItInFront() {
+        #expect(!auto(.streaming, .answer, room: false))
+        #expect(!auto(.explained, .snip, room: false))
+    }
+}
+
+struct SnipMatchTests {
+    private let side = SnipMatch.side
+
+    private func picture(_ value: (Int, Int) -> Int) -> [UInt8] {
+        (0..<side * side).map { UInt8(clamping: value($0 % side, $0 / side)) }
+    }
+
+    @Test func samePictureMatches() {
+        let stripes = picture { x, _ in x % 4 < 2 ? 30 : 220 }
+        #expect(SnipMatch.matches(stripes, stripes))
+        #expect(SnipMatch.difference(stripes, stripes) == 0)
+    }
+
+    @Test func aBlinkingCaretStillMatches() {
+        let page = picture { _, y in y % 6 == 0 ? 40 : 235 }
+        var caret = page
+        for y in 10..<16 { caret[y * side + 20] = 0 }
+        #expect(SnipMatch.matches(page, caret))
+    }
+
+    @Test func aScrollDoesNot() {
+        let page = picture { _, y in y % 6 < 3 ? 40 : 235 }
+        let scrolled = picture { _, y in (y + 3) % 6 < 3 ? 40 : 235 }
+        #expect(!SnipMatch.matches(page, scrolled))
+    }
+
+    @Test func wrongSizesNeverMatch() {
+        #expect(!SnipMatch.matches([1, 2, 3], [1, 2, 3]))
+        #expect(SnipMatch.difference([], []) == nil)
+    }
+}
