@@ -122,7 +122,7 @@ public enum AgentDock {
 
     public enum Status: Sendable { case working, done, failed, stopped }
 
-    public enum Dot: String, Sendable { case azure, shamrock, grey }
+    public enum Dot: String, Sendable { case azure, aquaGreen, grey }
 
     public struct Look: Equatable, Sendable {
         public var dot: Dot
@@ -132,11 +132,11 @@ public enum AgentDock {
     }
 
     /// Working spins (a pulse with Reduce Motion), done pulses until opened, failed or
-    /// stopped is dimmed. The dot: Azure working, Shamrock done, grey otherwise.
+    /// stopped is dimmed. The dot: Azure working, Aqua green done, grey otherwise.
     public static func look(_ status: Status, opened: Bool, reduceMotion: Bool) -> Look {
         switch status {
         case .working: Look(dot: .azure, spins: !reduceMotion, pulses: reduceMotion, dimmed: false)
-        case .done: Look(dot: .shamrock, spins: false, pulses: !opened, dimmed: false)
+        case .done: Look(dot: .aquaGreen, spins: false, pulses: !opened, dimmed: false)
         case .failed, .stopped: Look(dot: .grey, spins: false, pulses: false, dimmed: true)
         }
     }

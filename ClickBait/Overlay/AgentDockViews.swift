@@ -5,8 +5,9 @@ import SwiftUI
 /// a column of dark tiles top-right, a card hanging under a clicked tile, and a result pill
 /// at the cursor when one finishes. These views only draw; `CapsuleController` places them.
 
-/// The dock's colours: its dots are ClickBait's state colours (`CompanionTone`: Azure
-/// working, Shamrock done), grey failed or stopped; plus the tiles' and card's glass.
+/// The dock's colours: its dots are ClickBait's own (Azure working, `CompanionTone.idle`;
+/// done in the chat's Aqua green, `AquaDark.aquaGreen` — its "Copied ✓" — never Shamrock,
+/// which means a Mac action), grey failed or stopped; plus the tiles' and card's glass.
 enum AgentDockStyle {
     static let tileFill = Color(red: 0.15, green: 0.16, blue: 0.165).opacity(0.9)
     static let cardFill = Color(red: 0.11, green: 0.12, blue: 0.12).opacity(0.84)
@@ -19,7 +20,7 @@ enum AgentDockStyle {
     static func dot(_ dot: AgentDock.Dot) -> Color {
         switch dot {
         case .azure: CompanionTone.idle.color
-        case .shamrock: CompanionTone.action.color
+        case .aquaGreen: AquaDark.aquaGreen
         case .grey: Color(white: 0.55)
         }
     }
