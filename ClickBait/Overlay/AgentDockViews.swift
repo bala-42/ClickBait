@@ -255,22 +255,3 @@ struct AgentFailedCard: View {
         .modifier(AgentCardChrome(tone: tone, blur: blur))
     }
 }
-
-/// The result at the cursor when a job finishes: its summary in a pill of the job's colour.
-struct AgentResultPill: View {
-    let text: String
-    let tone: CompanionTone
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 12.5, weight: .medium))
-            .foregroundStyle(.white)
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .frame(maxWidth: 330, alignment: .leading)
-            .background(tone.color, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .shadow(color: tone.color.opacity(Glow.opacity), radius: Glow.radius)
-    }
-}

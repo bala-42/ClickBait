@@ -83,8 +83,8 @@ enum AgentDockRender {
                     .offset(x: 26 / videoScale, y: 14 / videoScale)
                 CompanionTriangle(tone: .idle, pulsing: false)
                     .position(x: 105 / videoScale, y: 70 / videoScale)
-                AgentResultPill(text: "`config` is nil until Settings load; move the read into applicationDidFinishLaunching.",
-                                tone: .processing)
+                TinyPill(text: "`config` is nil until Settings load; move the read into applicationDidFinishLaunching.",
+                         tone: .processing)
                     .offset(x: 126 / videoScale, y: 70 / videoScale)
             }
         }), "pill")

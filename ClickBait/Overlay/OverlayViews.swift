@@ -167,8 +167,9 @@ struct CompanionTriangle: View {
 }
 
 /// A few words beside the triangle, in the guide label's style: "Compressed 3 files",
-/// "Screen Recording is off…". Wraps to a few lines for longer messages.
-private struct TinyPill: View {
+/// "Screen Recording is off…", a finished background job's summary. Wraps to a few lines
+/// for longer messages.
+struct TinyPill: View {
     let text: String
     /// Words only when nil (what was heard, the tutorial's "checking…").
     var symbol: String?
@@ -512,7 +513,7 @@ struct CompanionBubbleView: View {
         case .hint(let text):
             TinyPill(text: text, tone: model.tone)
         case .jobResult(let text, let tone):
-            AgentResultPill(text: text, tone: tone)
+            TinyPill(text: text, tone: tone)  // the job's colour, like every other pill
         }
     }
 }
