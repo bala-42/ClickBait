@@ -118,7 +118,7 @@ struct CapsuleView: View {
                              progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
                              onStop: { onStop(id) })
         case .done(let summary):
-            AgentDoneCard(title: job.question, summary: summary, suggestions: presentation.entry.suggestions ?? [],
+            AgentDoneCard(title: job.question, summary: summary, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
                           onClose: { onDismiss(id) },
                           onSuggestion: { onSuggestion(id, $0) },

@@ -112,7 +112,14 @@ final class AskCoordinator {
     @ObservationIgnored private var askTask: Task<Void, Never>?
     @ObservationIgnored var backgroundJobs: BackgroundJobs?
     @ObservationIgnored private var activeAnswerRun: AnswerRun?
-    @ObservationIgnored private var peelableRunID: UUID?
+    /// The spoken question or snip in progress (nil when none): how far it has got and what it
+    /// is known to be, which decides what ⌃⌥ does (`PeelRule`). A question sent to the
+    /// background keeps its own flow; this one is then nil or the next question's.
+    @ObservationIgnored private var currentFlow: QuestionFlow?
+    /// A queued peel turned out to be quick (a command, a walkthrough, an instant pick), or ⌃⌥
+    /// came for something already known to be: the short pill, in the job's colour. `true`
+    /// shows it at once; `false` waits until nothing else is being said.
+    @ObservationIgnored var onQuickEnding: ((String, CompanionTone, Bool) -> Void)?
     @ObservationIgnored var onPeel: ((BackgroundJob) -> [ChatModel.Message])?
     @ObservationIgnored var onPeelRefused: (() -> Void)?
     /// The open chat bubble's memory. Nil when no bubble is open; dropped on close.
@@ -143,6 +150,10 @@ final class AskCoordinator {
         switch event {
         case .askPressed: begin()
         case .askReleased:
+            // Only the press that started listening has a question to finish; an ignored press
+            // must not replace the task of the one being answered.
+            guard state == .listening, let flow = currentFlow, flow.phase == .listening, !flow.released else { break }
+            flow.released = true
             askTask = Task { await finish() }
         case .askCancelled: cancel(reason: "another key was pressed")
         case .explainPressed:
@@ -288,12 +299,12 @@ final class AskCoordinator {
         askTask = nil
         conversation = nil
         chatShown = false
-        pendingSnipView?.text.cancel()
-        pendingSnipView?.objects.cancel()
+        currentFlow?.pendingSnipView?.text.cancel()
+        currentFlow?.pendingSnipView?.objects.cancel()
         snipMemory?.text?.cancel()
         snipMemory?.objects?.cancel()
         snipMemory?.reference?.cancel()
-        pendingSnipView = nil
+        currentFlow?.pendingSnipView = nil
         snipMemory = nil
         invalidateAnswerFlow()
         if state == .thinking || state == .speaking { state = .idle }
@@ -480,16 +491,13 @@ final class AskCoordinator {
     }
 
     private func begin() {
-        if let run = activeAnswerRun, peelableRunID == run.id, state == .thinking || isAnswering {
-            guard let backgroundJobs, backgroundJobs.hasRoom else {
-                onPeelRefused?()
-                return
-            }
-            peel(run)
-        }
+        guard acceptsNewQuestion() else { return }
         stopRefining()
         tutorial?.stop(message: nil)  // a new question ends a tutorial
-        guard state != .listening, state != .thinking, !isAnswering else { return }
+        guard state != .listening, state != .thinking, !isAnswering else {
+            Log.ask.notice("⌃⌥ ignored: busy")
+            return
+        }
         speaker.stop()  // never record ClickBait talking
         errorResetTask?.cancel()
 
@@ -543,39 +551,272 @@ final class AskCoordinator {
         let provider = settings.makeProvider()
         self.provider = provider
         Task.detached(priority: .userInitiated) { await provider.warmUp() }
+        let flow = QuestionFlow(work: .answer, phase: .listening)
+        flow.provider = provider
+        flow.context = context
+        flow.homeBundleID = frontmost?.bundleIdentifier
+        flow.homePID = pid
+        currentFlow = flow
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
     }
 
-    private func peel(_ run: AnswerRun) {
-        guard case .foreground = run.destination, let backgroundJobs else { return }
-        let job = BackgroundJob(question: run.question, kind: run.kind, homeBundleID: run.homeBundleID,
-                                homePID: run.homePID, conversation: run.conversation)
-        guard backgroundJobs.add(job, task: run.task) else {
+    // MARK: - Sending a question to the background (⌃⌥ while it is orange)
+
+    /// Where the question in progress has got, as `PeelRule` sees it. A flow whose end was
+    /// missed (the state moved on without it) counts as idle rather than blocking ⌃⌥.
+    private var currentPhase: PeelRule.Phase {
+        guard let flow = currentFlow else { return .idle }
+        if flow.phase == .listening, state != .listening { return .idle }
+        if flow.phase.isPreRun, state != .thinking { return .idle }
+        return flow.phase
+    }
+
+    /// Stops the recording and starts thinking (orange): at the end of the release tail, or
+    /// early when ⌃⌥ is pressed during it. The capture and snapshot tasks move to the flow, so
+    /// the next question can start its own. The recorder stops before that question's starts.
+    private func endTail(_ flow: QuestionFlow, releasedAt: ContinuousClock.Instant) {
+        flow.samples = recorder.stop()
+        answerStartedAt = releasedAt
+        state = .thinking
+        flow.phase = .transcribing
+        pressedAt = nil
+        flow.captureTask = captureTask
+        flow.snapshotTask = snapshotTask
+        captureTask = nil
+        snapshotTask = nil
+    }
+
+    /// ⌃⌥ pressed: peel the question in progress (now, or as soon as its run exists), or say
+    /// why not. True when the press goes on to become the next question.
+    private func acceptsNewQuestion() -> Bool {
+        let flow = currentFlow
+        // Let go a moment ago and still in the tail: the companion is orange, so this press
+        // ends the tail now and counts as a press during transcribing.
+        if let flow, currentPhase == .listening, flow.released, let held = pressedAt.map({ ContinuousClock.now - $0 }),
+           held >= Self.minimumHold {
+            endTail(flow, releasedAt: .now)
+        }
+        let situation = PeelRule.Situation(phase: currentPhase, work: flow?.work ?? .answer,
+                                           kind: flow?.kind ?? .unknown, hasRoom: backgroundJobs?.hasRoom ?? false)
+        switch PeelRule.outcome(of: .chord, in: situation) {
+        case .startNew:
+            return true
+        case .peelNow:
+            guard let flow else { return true }
+            if let run = flow.run { return peel(flow, run, situation) }
+            return queuePeel(flow)
+        case .peelWhenReady:
+            guard let flow else { return true }
+            return queuePeel(flow)
+        case .tooQuick:
+            // Nothing to send away: the question finishes in the foreground, and this press
+            // doesn't become a new one (the answer is moments away, and the companion is busy).
+            Log.ask.notice("⌃⌥ ignored: that one is quick, nothing to send away")
+            onQuickEnding?(PeelRule.quickPill, flow?.work == .snip ? .capture : .processing, false)
+            return false
+        case .ignore(let reason):
+            if reason == .threesACrowd { onPeelRefused?() }
+            Log.ask.notice("⌃⌥ ignored: \(reason.logText, privacy: .public)")
+            return false
+        }
+    }
+
+    /// Makes the job's tile now (with the peel animation) and clears the foreground, so the
+    /// next question starts with fresh state and nothing of this one's.
+    private func startPeel(_ flow: QuestionFlow) -> BackgroundJob? {
+        guard let backgroundJobs else { return nil }
+        let run = flow.run
+        let snipChat = flow.work == .snip || (conversation?.isEmpty == false && snipMemory != nil)
+        let job = BackgroundJob(question: run?.question ?? flow.heard ?? (flow.work == .snip ? "" : "your question"),
+                                kind: run?.kind ?? (snipChat ? .snip : .answer),
+                                homeBundleID: flow.homeBundleID, homePID: flow.homePID,
+                                conversation: run?.conversation ?? conversation ?? Conversation())
+        let task = run?.task ?? askTask
+        guard backgroundJobs.add(job, task: task) else {
             onPeelRefused?()
-            return
+            return nil
         }
-        run.destination = .background(job.id)
-        run.chatMessages = onPeel?(job) ?? []
-        backgroundJobs.setSnipMemory(run.snipMemory, for: job.id)
-        if run.chatMessages.isEmpty {
-            run.chatMessages = [ChatModel.Message(role: .user, text: run.display)]
-        }
-        backgroundJobs.setChatMessages(run.chatMessages, for: job.id)
-        // The task belongs to the capsule now (its ✕ stops it): Esc, dismissing an answer or
+        flow.task = task
+        flow.jobID = job.id
+        flow.sentAway = true
+        flow.conversation = conversation
+        flow.snipMemory = snipMemory
+        flow.chatMessages = onPeel?(job) ?? []
+        // The task belongs to the tile now (its ✕ stops it): Esc, dismissing an answer or
         // closing a chat cancels `askTask`, which would silently kill the background answer.
-        if askTask == run.task { askTask = nil }
-        peelableRunID = nil
-        if answerFlowID == run.id { answerFlowID = nil }
-        finishAnswering(run.id)
+        if askTask == task { askTask = nil }
+        if let run {
+            if answerFlowID == run.id { answerFlowID = nil }
+            finishAnswering(run.id)
+            finishRefining(run.id)
+            if activeAnswerRun === run { activeAnswerRun = nil }
+        }
         speaker.stop()
         onSnipAnswering?(false)
         conversation = nil
         snipMemory = nil
         chatShown = false
-        activeAnswerRun = nil
+        if currentFlow === flow { currentFlow = nil }
         state = .idle
+        return job
+    }
+
+    /// The run joins its tile: its words, result and errors go to the job from here on.
+    private func attach(_ run: AnswerRun, to flow: QuestionFlow, appendingQuestion: Bool) {
+        guard let jobID = flow.jobID, let backgroundJobs else { return }
+        run.destination = .background(jobID)
+        run.task = flow.task
+        var messages = flow.chatMessages
+        if messages.isEmpty || appendingQuestion { messages.append(ChatModel.Message(role: .user, text: run.display)) }
+        run.chatMessages = messages
+        backgroundJobs.setSnipMemory(run.snipMemory, for: jobID)
+        backgroundJobs.setChatMessages(messages, for: jobID)
+        flow.joined = true
+    }
+
+    /// The answer is streaming: peel it. A snip whose explanation is already complete keeps
+    /// it in the done card and skips its tour, offering "show me the parts" instead.
+    private func peel(_ flow: QuestionFlow, _ run: AnswerRun, _ situation: PeelRule.Situation) -> Bool {
+        guard case .foreground = run.destination else {
+            Log.ask.notice("Peel skipped: the answer is already in the background")
+            return false
+        }
+        guard let job = startPeel(flow) else {
+            Log.ask.notice("Peel skipped: no free slot or no job list")
+            return false
+        }
+        attach(run, to: flow, appendingQuestion: false)
         Log.ask.notice("Peeled answer \(job.id.uuidString, privacy: .public) into a background capsule")
+        if run.explanation != nil {
+            let parts = PeelRule.skipsTourAndSuggestsParts(situation) && run.expectsTour != false
+            keepExplanation(of: run, jobID: job.id, suggestParts: parts)
+        }
+        return true
+    }
+
+    /// The run doesn't exist yet (transcribing, order check, element pick) or hasn't started
+    /// streaming: the tile is made now; the question carries on and its run joins the tile
+    /// when the model request starts (`respond`), or it ends as a command or an instant pick
+    /// (`settleQuick`).
+    private func queuePeel(_ flow: QuestionFlow) -> Bool {
+        guard startPeel(flow) != nil else { return false }
+        Log.ask.notice("Peel queued: waiting for the answer to start")
+        return true
+    }
+
+    /// A flow for work that doesn't start from a spoken question or a snip (⌥⌘ explain, typed
+    /// follow-ups), made when its answer starts so a streaming answer can still be peeled.
+    private func adHocFlow(snip: Bool) -> QuestionFlow {
+        let flow = QuestionFlow(work: snip ? .snip : .answer, phase: .buildingRequest)
+        flow.provider = provider
+        flow.context = context
+        flow.homeBundleID = frontmostBundleID
+        flow.homePID = frontmostPID
+        flow.task = askTask
+        if currentFlow == nil { currentFlow = flow }
+        return flow
+    }
+
+    private func keepExplanation(of run: AnswerRun, jobID: UUID, suggestParts: Bool) {
+        guard let text = run.explanation, let backgroundJobs else { return }
+        run.recordTurn?(&run.conversation)
+        run.recordTurn = nil
+        settleChat(of: run, finalText: text)
+        backgroundJobs.setChatMessages(run.chatMessages, for: jobID)
+        backgroundJobs.complete(jobID, answer: text, conversation: run.conversation)
+        if suggestParts { backgroundJobs.setLeadingSuggestion(PeelRule.suggestedPartsPrompt, for: jobID) }
+        run.task?.cancel()  // the tour: marks, placement and pointing never run
+        Log.ask.notice("Peel kept the explanation and skipped the tour: \(jobID.uuidString, privacy: .public)")
+    }
+
+    /// The answer's text goes into the run's chat messages: the last assistant message after
+    /// the last question, or a new one.
+    private func settleChat(of run: AnswerRun, finalText: String) {
+        let lastUser = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.user })
+        let lastAssistant = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.assistant })
+        if let lastUser, let lastAssistant, lastAssistant > lastUser {
+            run.chatMessages[lastAssistant].text = finalText
+        } else {
+            run.chatMessages.append(ChatModel.Message(role: .assistant, text: finalText))
+        }
+    }
+
+    /// A queued question turned out to need no model answer (`flow.kind` says which): per
+    /// `PeelRule.resolution` its tile goes. A command or walkthrough then runs as usual and an
+    /// instant pick points, as soon as the foreground is free (the next question may be
+    /// listening): at once if it is, else after waiting at most 10 s. Past that, or for a pick
+    /// whose capture is over 15 s old, it is dropped with a visible pill. The "quick" pill
+    /// shows only once the work actually starts. `resolvesPending`: this is the "yes" or the
+    /// day that answers a waiting question, which must not count as the foreground being busy.
+    private func settleQuick(_ flow: QuestionFlow, resolvesPending: Bool = false) async -> Bool {
+        guard let id = flow.jobID, !flow.joined else { return true }
+        let isPick = flow.kind == .instantPick
+        let tone: CompanionTone = flow.work == .snip ? .capture : .processing
+        let busy = isBusy || currentFlow != nil
+        let resolution = PeelRule.resolution(of: isPick ? .instantPick(foregroundBusy: busy) : .command)
+        backgroundJobs?.remove(id)
+        flow.jobID = nil
+        Log.ask.notice("""
+            Peel ended quick (\(isPick ? "instant pick" : "command", privacy: .public)): \
+            \(id.uuidString, privacy: .public) \(String(describing: resolution), privacy: .public)
+            """)
+        let stale = isPick && ContinuousClock.now - flow.startedAt > .seconds(15)
+        var free = !stale
+        if free { free = await waitForForeground(upTo: .seconds(10), resolvingPending: resolvesPending) }
+        guard free else {
+            Log.ask.notice("Queued \(isPick ? "pick" : "command", privacy: .public) dropped: \(stale ? "its screen is too old" : "the foreground stayed busy", privacy: .public)")
+            onQuickEnding?(Self.droppedPill, tone, false)
+            return false
+        }
+        currentFlow = flow
+        askTask = flow.task
+        provider = flow.provider
+        context = flow.context
+        frontmostPID = flow.homePID
+        frontmostBundleID = flow.homeBundleID
+        state = .thinking
+        if let pill = resolution.pill { onQuickEnding?(pill, tone, false) }
+        return true
+    }
+
+    static let droppedPill = "couldn't do that while you were busy — ask again"
+
+    private func foregroundIsFree(resolvingPending: Bool) -> Bool {
+        guard currentFlow == nil, state == .idle, !isAnswering, !isRefining, !speaker.isSpeaking,
+              !snipper.isActive else { return false }
+        return resolvingPending || (pendingAction == nil && pendingReminder == nil && !(tutorial?.isActive ?? false))
+    }
+
+    private func waitForForeground(upTo limit: Duration, resolvingPending: Bool) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while !foregroundIsFree(resolvingPending: resolvingPending) {
+            guard ContinuousClock.now < deadline, !Task.isCancelled else { return false }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return !Task.isCancelled
+    }
+
+    /// A queued question that ended without an answer starting (cancelled, nothing heard):
+    /// its tile goes rather than working forever. Also the flow's end.
+    private func end(_ flow: QuestionFlow) {
+        if currentFlow === flow { currentFlow = nil }
+        flow.pendingSnipView?.text.cancel()  // left over if the run never took it
+        flow.pendingSnipView?.objects.cancel()
+        flow.pendingSnipView = nil
+        guard let id = flow.jobID, !flow.joined, backgroundJobs?.job(id)?.isWorking == true else { return }
+        backgroundJobs?.remove(id)
+        Log.ask.notice("Peel dropped: the question ended before an answer started (\(id.uuidString, privacy: .public))")
+    }
+
+    /// A problem with the question: shown by the companion, or on the tile if it was sent away.
+    private func report(_ message: String, for flow: QuestionFlow) {
+        guard let id = flow.jobID, !flow.joined else {
+            show(error: message)
+            return
+        }
+        backgroundJobs?.fail(id, reason: message)
+        Log.ask.notice("Peel failed before an answer started: \(message, privacy: .private)")
     }
 
     /// Checks shared by ask and explain. Shows the reason and returns false if blocked.
@@ -594,7 +835,8 @@ final class AskCoordinator {
     }
 
     private func finish() async {
-        guard state == .listening, let pressedAt else { return }
+        guard state == .listening, let pressedAt, let flow = currentFlow else { return }
+        defer { end(flow) }
         let held = ContinuousClock.now - pressedAt
         guard held >= Self.minimumHold else {
             cancel(reason: "hold was too short")
@@ -603,11 +845,14 @@ final class AskCoordinator {
 
         let releasedAt = ContinuousClock.now
         try? await Task.sleep(for: Self.releaseTail)
-        guard state == .listening else { return }  // cancelled meanwhile
-        let samples = recorder.stop()
-        answerStartedAt = releasedAt
-        state = .thinking
-        self.pressedAt = nil
+        // A ⌃⌥ press during the tail already ended it (`endTail`).
+        if flow.samples == nil {
+            guard state == .listening else { return }  // cancelled meanwhile
+            endTail(flow, releasedAt: releasedAt)
+        }
+        guard let samples = flow.samples else { return }
+        let captureTask = flow.captureTask
+        let snapshotTask = flow.snapshotTask
 
         let capture: ScreenCapture
         do {
@@ -615,10 +860,9 @@ final class AskCoordinator {
             capture = try await captureTask.value
         } catch {
             Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
-            show(error: "Couldn't capture the screen: \(error.localizedDescription)")
+            report("Couldn't capture the screen: \(error.localizedDescription)", for: flow)
             return
         }
-        captureTask = nil
 
         let seconds = Double(samples.count) / AudioRecorder.sampleRate
         let audio = AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
@@ -634,17 +878,18 @@ final class AskCoordinator {
             """)
 
         if let snapshot = await snapshotTask?.value {
-            context.windowTitle = snapshot.windowTitle
-            context.focusedElement = snapshot.focusedElement
+            flow.context.windowTitle = snapshot.windowTitle
+            flow.context.focusedElement = snapshot.focusedElement
+            if currentFlow === flow { context = flow.context }
         }
 
         // Downscale and list what's clickable while Whisper runs.
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
-        let pid = frontmostPID
+        let pid = flow.homePID
         let elementsTask = Task { await Self.elements(in: capture, frontmostPID: pid) }
 
         guard !audio.isSilent else {
-            show(error: "I didn't hear anything. Check the microphone, hold ⌃⌥ and try again.")
+            report("I didn't hear anything. Check the microphone, hold ⌃⌥ and try again.", for: flow)
             return
         }
         let transcript: String
@@ -657,7 +902,7 @@ final class AskCoordinator {
                 """)
         } catch {
             Log.ask.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
-            show(error: "Couldn't understand the recording: \(error.localizedDescription)")
+            report("Couldn't understand the recording: \(error.localizedDescription)", for: flow)
             return
         }
 
@@ -673,13 +918,17 @@ final class AskCoordinator {
 
         guard !Task.isCancelled else { return }
         guard !transcript.isEmpty else {
-            show(error: "I didn't catch that. Hold Control+Option and try again.")
+            report("I didn't catch that. Hold Control+Option and try again.", for: flow)
             return
         }
+        flow.heard = transcript
+        if let id = flow.jobID { backgroundJobs?.rename(id, to: transcript) }
         // A day answers a reminder's "when?"; "cancel" drops it; anything else replaces it.
         if pendingReminder != nil {
             if let day = ReminderDay.parse(transcript) {
                 encoding.cancel()
+                flow.kind = .command
+                guard await settleQuick(flow, resolvesPending: true) else { return }
                 await resolveReminder(day)
                 return
             }
@@ -694,15 +943,19 @@ final class AskCoordinator {
         if pendingAction != nil {
             if let answer = CommandParser.confirmation(transcript) {
                 encoding.cancel()
+                flow.kind = .command
+                guard await settleQuick(flow, resolvesPending: true) else { return }
                 await resolvePending(answer)
                 return
             }
             dropPending()
         }
-        onTranscript?(transcript)
+        if flow.jobID == nil { onTranscript?(transcript) }
 
         if NoteReference.asksToSeeNote(transcript), ActionExecutor.lastNoteID.withLock({ $0 }) != nil {
             encoding.cancel()
+            flow.kind = .command
+            guard await settleQuick(flow) else { return }
             let reply = await showLastNote(speak: true)
             if chatShown, let reply {
                 onChatUserMessage?(transcript)
@@ -717,15 +970,20 @@ final class AskCoordinator {
            !isUnknownApp(command) {
             Log.ask.notice("Command recognised: \(command.name, privacy: .public)")
             encoding.cancel()
+            flow.kind = .command
+            guard await settleQuick(flow) else { return }
             _ = await perform(command)  // the outcome is already shown and spoken
             return
         }
 
         // An order in other words: ask the model which action it is (text only, ~1 s).
-        let understood = await understandOrder(transcript)
+        flow.phase = .orderCheck
+        let understood = await understandOrder(transcript, flow: flow)
         guard !Task.isCancelled else { return }  // Esc while checking
         if let (order, proposal) = understood {
             encoding.cancel()
+            flow.kind = .command
+            guard await settleQuick(flow) else { return }
             let message: String
             switch order {
             case .ready(let action): message = await handleProposal(action, request: proposal, speak: true)
@@ -744,11 +1002,12 @@ final class AskCoordinator {
         // "How do I…" with several clicks: walk them through it on screen.
         let elements = await elementsTask.value
         if await startTutorial(question: transcript, capture: capture, encoding: encoding, elements: elements,
-                               speak: true, display: transcript) { return }
+                               speak: true, display: transcript, flow: flow) { return }
+        flow.kind = .unknown  // not a walkthrough after all
 
         // With a chat open, a spoken question is a follow-up in it.
         await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt,
-                      speak: true, display: transcript, elements: elements)
+                      speak: true, display: transcript, elements: elements, flow: flow)
     }
 
     // MARK: - Explain highlighted text (⌥⌘)
@@ -984,8 +1243,9 @@ final class AskCoordinator {
         case failed(String)
     }
 
-    private func understandOrder(_ text: String) async -> (UnderstoodOrder, ActionRequest)? {
-        guard settings.commandsEnabled, CommandParser.looksLikeOrder(text), let provider else { return nil }
+    private func understandOrder(_ text: String, flow: QuestionFlow? = nil) async -> (UnderstoodOrder, ActionRequest)? {
+        guard settings.commandsEnabled, CommandParser.looksLikeOrder(text), let provider = flow?.provider ?? self.provider else { return nil }
+        let context = flow?.context ?? self.context
         // "Show me how to…" and "open YouTube" are walkthroughs, not orders: reading
         // "show me how to open youtube on chrome" as "open Chrome" just opened Chrome.
         if TutorialQuestion.asksForTutorial(text) || Websites.visit(in: text, installedApps: Array(AppLocator.installed().keys)) != nil {
@@ -1127,13 +1387,21 @@ final class AskCoordinator {
     /// clicks and walk the user through them in lavender. If the task lives in another
     /// app, open it first (green). Returns false to answer normally instead.
     private func startTutorial(question: String, capture: ScreenCapture, encoding: Task<EncodedScreenshot, Error>,
-                               elements: [ScreenElement], speak: Bool, display: String) async -> Bool {
+                               elements: [ScreenElement], speak: Bool, display: String, flow: QuestionFlow? = nil) async -> Bool {
         // Lavender while planning, once an app was opened for the walkthrough (green →
         // lavender, not green → idle blue → lavender). Dropped again if no tutorial starts.
-        tutorialPlanningShown = false
+        // A queued question until it is settled: not the foreground's, so it neither shows nor
+        // clears the planning colour, and reads its own context, provider and app.
+        var ownsPlanningUI = flow?.jobID == nil
+        let context = flow?.context ?? self.context
+        let homePID = flow?.homePID ?? frontmostPID
+        let provider = flow?.provider ?? self.provider
+        if ownsPlanningUI { tutorialPlanningShown = false }
         defer {
-            if tutorialPlanningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
-            tutorialPlanningShown = false
+            if ownsPlanningUI {
+                if tutorialPlanningShown, !(tutorial?.isActive ?? false) { onTutorialPlanning?(false) }
+                tutorialPlanningShown = false
+            }
         }
         // "Where" is showing where: always a blue point, never a walkthrough.
         if TutorialQuestion.asksWhere(question) { return false }
@@ -1157,12 +1425,19 @@ final class AskCoordinator {
             if let named, named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame {
                 findingHidden = true
             } else if let target = InstantAnswer.locateTargets(in: question).first {
-                let pid = frontmostPID
+                let pid = homePID
                 let path = await Task.detached(priority: .userInitiated) { AXInspector.menuPath(to: target, frontmostPID: pid) }.value
                 findingHidden = (path?.count ?? 0) >= 2
             }
         }
         guard asking || ordering || visiting || toSystemSettings || findingHidden, let provider, let tutorial else { return false }
+        // A walkthrough isn't sent away: a queued peel's tile goes and it runs once the foreground is free.
+        if let flow {
+            flow.kind = .command
+            guard await settleQuick(flow) else { return true }
+            ownsPlanningUI = true
+            tutorialPlanningShown = false
+        }
         if findingHidden { Log.ask.notice("Tutorial: what they're looking for isn't on screen; walking them there") }
         let startedIn = NSWorkspace.shared.frontmostApplication
         let apps = AppLocator.installed()
@@ -1706,15 +1981,24 @@ final class AskCoordinator {
         let provider = settings.makeProvider()
         self.provider = provider
         Task.detached(priority: .userInitiated) { await provider.warmUp() }
+        // Orange (and sendable) from the closed circle: its picture isn't a question yet, but
+        // a peel waits for the explanation to start.
+        let flow = QuestionFlow(work: .snip, phase: .buildingRequest)
+        flow.provider = provider
+        flow.context = context
+        flow.homeBundleID = frontmostBundleID
+        flow.homePID = frontmostPID
+        currentFlow = flow
         state = .thinking
         Log.ask.notice("Snip: \(kind.rawValue, privacy: .public) \(Int(region.width), privacy: .public)×\(Int(region.height), privacy: .public) pt")
-        askTask = Task { await finishSnip(kind, region: region, path: path) }
+        askTask = Task { await finishSnip(kind, region: region, path: path, flow: flow) }
     }
 
-    private func finishSnip(_ kind: SnipKind, region: Rect, path: [Point]) async {
+    private func finishSnip(_ kind: SnipKind, region: Rect, path: [Point], flow: QuestionFlow) async {
+        defer { end(flow) }
         let startedAt = ContinuousClock.now
         // Marked files in Finder become the selection, so "combine these" acts on them.
-        if frontmostBundleID == FileAction.requiredFrontmostApp, let pid = frontmostPID {
+        if flow.homeBundleID == FileAction.requiredFrontmostApp, let pid = flow.homePID {
             await selectMarkedFiles(kind: kind, region: region, path: path, finderPID: pid)
         }
         // The display holding the middle of the region.
@@ -1725,38 +2009,39 @@ final class AskCoordinator {
             capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center)
         } catch {
             Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
-            show(error: "Couldn't capture the screen: \(error.localizedDescription)")
+            report("Couldn't capture the screen: \(error.localizedDescription)", for: flow)
             return
         }
         guard !Task.isCancelled else { return }
         // The window's title tells the model what app/document the marked thing is in.
-        let pid = frontmostPID
+        let pid = flow.homePID
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
-        context.windowTitle = snapshot.windowTitle
+        flow.context.windowTitle = snapshot.windowTitle
+        if currentFlow === flow { context = flow.context }
         let view: SnipView
         do {
             view = try SnipRenderer.view(capture, region: region)
         } catch {
-            show(error: "Couldn't read that part of the screen.")
+            report("Couldn't read that part of the screen.", for: flow)
             return
         }
         let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(view.image) }
         // Printed labels, read on this Mac while the model answers (for the parts tour).
-        pendingSnipView?.text.cancel()
-        pendingSnipView?.objects.cancel()
-        snipMemory?.text?.cancel()
-        snipMemory?.objects?.cancel()
-        snipMemory?.reference?.cancel()
+        if flow.jobID == nil {  // sent away: the foreground's memory is the next question's
+            snipMemory?.text?.cancel()
+            snipMemory?.objects?.cancel()
+            snipMemory?.reference?.cancel()
+        }
         let text = Task { await TextReader.read(view.image) }
         let objects = Self.findObjects(in: view)
-        pendingSnipView = (view, text, objects)
+        flow.pendingSnipView = (view, text, objects)
         // No whole-screen context picture: with qwen2.5vl:7b it doubled the wait (8–13 s)
         // and made answers worse; the window title gives the context instead.
         let contextImage: Data? = nil
         await withTaskCancellationHandler {
             await respond(question: "", selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
                           speak: false, display: kind == .circled ? "Explain what I circled" : "Explain what I boxed",
-                          snip: kind, snipContext: contextImage)
+                          snip: kind, snipContext: contextImage, flow: flow)
         } onCancel: {
             text.cancel()
             objects.cancel()
@@ -1782,8 +2067,6 @@ final class AskCoordinator {
 
     /// The snip a chat started from: follow-ups resend its close-up and context picture.
     @ObservationIgnored private var snipMemory: SnipMemory?
-    /// The close-up's geometry and text recognition, handed from `finishSnip` to `respond`.
-    @ObservationIgnored private var pendingSnipView: (view: SnipView, text: Task<[TextBox], Never>, objects: Task<[FoundObject], Never>)?
 
     struct SnipMemory {
         var kind: SnipKind
@@ -1816,18 +2099,32 @@ final class AskCoordinator {
         display: String,
         snip: SnipKind? = nil,
         snipContext: Data? = nil,
-        elements: [ScreenElement] = []
+        elements: [ScreenElement] = [],
+        flow givenFlow: QuestionFlow? = nil
     ) async {
+        // ⌥⌘ explanations and typed follow-ups have no flow yet: this one's, so they can be peeled too.
+        let flow = givenFlow ?? adHocFlow(snip: snip != nil)
+        defer { if givenFlow == nil { end(flow) } }
+        // Sent to the background before this run existed: the chat, memory and conversation
+        // belong to the next question (or nothing), so this one keeps its own.
+        let queued = flow.jobID != nil
         let releasedAt = startedAt
-        answerStartedAt = startedAt
+        if !queued { answerStartedAt = startedAt }
         var spokeAnything = false
-        guard let provider else { return }
-        if conversation != nil, !chatShown { conversation = nil }  // an earlier pointing answer: start fresh
-        let history = conversation?.history ?? []
+        guard let provider = flow.provider else {
+            report("No model is set up for this question.", for: flow)
+            return
+        }
+        let context = flow.context
+        flow.phase = .buildingRequest
+        if !queued, conversation != nil, !chatShown { conversation = nil }  // an earlier pointing answer: start fresh
+        let history = (queued ? flow.conversation : conversation)?.history ?? []
         // Follow-ups in a snip's chat keep looking at what was marked, not a new screenshot.
-        let snipFollowUp = history.isEmpty ? nil : snipMemory
+        let snipFollowUp = history.isEmpty ? nil : (queued ? flow.snipMemory : snipMemory)
         let snip = snip ?? snipFollowUp?.kind
-        if conversation == nil {
+        if queued {
+            // nothing of the foreground to set up
+        } else if conversation == nil {
             conversation = Conversation()
             snipMemory = nil
             if !speak {  // explain: show the bubble right away, the answer streams into it
@@ -1843,15 +2140,15 @@ final class AskCoordinator {
         } else {
             onChatUserMessage?(display)
         }
-        let answerID = beginAnswerFlow()
+        let answerID = queued ? UUID() : beginAnswerFlow()
         let run = AnswerRun(id: answerID, question: question, kind: snip == nil ? .answer : .snip,
-                            homeBundleID: frontmostBundleID, homePID: frontmostPID,
-                            display: display, conversation: conversation ?? Conversation())
-        run.task = askTask
-        run.snipMemory = snipMemory
-        activeAnswerRun = run
+                            homeBundleID: flow.homeBundleID, homePID: flow.homePID,
+                            display: display, conversation: (queued ? flow.conversation : conversation) ?? Conversation())
+        run.task = queued ? flow.task : askTask
+        run.snipMemory = queued ? flow.snipMemory : snipMemory
+        flow.run = run
+        if !queued { activeAnswerRun = run }
         defer {
-            if peelableRunID == answerID { peelableRunID = nil }
             finishAnswering(answerID)
             if activeAnswerRun?.id == answerID { activeAnswerRun = nil }
         }
@@ -1862,7 +2159,7 @@ final class AskCoordinator {
         var encoding = encoding
         // "Show me the Share button in Safari" with Safari closed or behind: open or switch
         // to it first (green), take a fresh look, then point (blue).
-        if snip == nil, selectedText == nil, history.isEmpty, TutorialQuestion.isLocatingRequest(question) {
+        if snip == nil, selectedText == nil, history.isEmpty, flow.jobID == nil, TutorialQuestion.isLocatingRequest(question) {
             let apps = AppLocator.installed()
             if let named = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys)),
                named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
@@ -1894,7 +2191,9 @@ final class AskCoordinator {
                                      quartz: center)
             }
             Log.ask.notice("Instant pointer: \(found.count, privacy: .public) element(s) named exactly that")
-            onInstantPointer?(instant!)
+            flow.kind = .instantPick
+            guard await settleQuick(flow) else { return }
+            if let instant { onInstantPointer?(instant) }
         } else if !elements.isEmpty, snip == nil, selectedText == nil, !namesContent,
                   !targets.isEmpty || (targets.isEmpty && ImpliedPointer.isLocating(question)
                                          && !ImpliedPointer.normalized(question).hasPrefix("show me how")) {
@@ -1909,7 +2208,9 @@ final class AskCoordinator {
                                   context: context, elements: listed)
             pick.pickElement = true
             let pickStart = ContinuousClock.now
+            flow.phase = .elementPick
             let reply = await Self.reply(from: provider, to: pick, within: ProviderOperation.selectElement.timeout)
+            flow.phase = .buildingRequest
             let chosen = InstantAnswer.pickedIDs(in: reply ?? "").compactMap { id -> ScreenElement? in
                 guard let listing = listed.first(where: { $0.id == id }) else { return nil }
                 return elements.first(where: { $0.label == listing.label })
@@ -1928,14 +2229,16 @@ final class AskCoordinator {
                                          quartz: center)
                 }
                 Log.ask.notice("Picked \(chosen.count, privacy: .public) from the element list in \(String(describing: ContinuousClock.now - pickStart), privacy: .public)")
-                onInstantPointer?(instant!)
+                flow.kind = .instantPick
+                guard await settleQuick(flow) else { return }
+                if let instant { onInstantPointer?(instant) }
             } else {
                 Log.ask.notice("Nothing among \(listed.count, privacy: .public) listed elements fits (\(String(describing: ContinuousClock.now - pickStart), privacy: .public)); looking at the screen")
             }
         } else if !targets.isEmpty {
             Log.ask.notice("Instant pointer: no single exact match among \(elements.count, privacy: .public) elements; asking the model")
         }
-        pointedInstantly = instant != nil
+        if flow.jobID == nil { pointedInstantly = instant != nil }
         // Pointed already: the model would only add a sentence (~8 s of the GPU, and the
         // next question waited behind it). Say so ourselves and stop here.
         if let instant {
@@ -1943,7 +2246,7 @@ final class AskCoordinator {
             let names = instant.map(\.label).joined(separator: " and ")
             let response = AssistantResponse(speech: "Here's \(names).")
             if speak { speaker.speak(response.speech) }
-            conversation?.append(user: question, assistantSpeech: response.speech)
+            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: response.speech) }
             if state == .thinking { state = .idle }
             Log.ask.notice("Answered instantly, without the model")
             onAnswer?(response, instant)
@@ -1982,15 +2285,21 @@ final class AskCoordinator {
                 screenshot = try await encoding.value
             }
             if let snip, history.isEmpty {
-                snipMemory?.objects?.cancel()
-                snipMemory = SnipMemory(kind: snip, closeUp: screenshot, context: snipContext,
-                                        view: pendingSnipView?.view, text: pendingSnipView?.text,
-                                        objects: pendingSnipView?.objects)
-                pendingSnipView = nil
+                let pending = flow.pendingSnipView
+                let memory = SnipMemory(kind: snip, closeUp: screenshot, context: snipContext,
+                                        view: pending?.view, text: pending?.text, objects: pending?.objects)
+                flow.pendingSnipView = nil
+                if flow.jobID == nil {
+                    snipMemory?.objects?.cancel()
+                    snipMemory = memory
+                } else {  // sent away: the foreground's memory is the next question's
+                    flow.snipMemory?.objects?.cancel()
+                    flow.snipMemory = memory
+                }
             }
             // Only "where/how/click…" questions need something to point at; for the rest
             // the list would just slow the local model down. Never for snips.
-            if snip == nil, ImpliedPointer.isLocating(question) || conversation?.isEmpty == false {
+            if snip == nil, ImpliedPointer.isLocating(question) || !history.isEmpty {
                 listed = PromptElement.list(elements, geometry: capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height),
                                             question: question, limit: Self.maxListedElements)
             }
@@ -2039,9 +2348,13 @@ final class AskCoordinator {
             // The chat shows the words as they come, but at most ~12 times a second: redrawing
             // and resizing it for every fragment made the companion stutter while answering.
             var lastPartial = ContinuousClock.now - .seconds(1)
-            run.snipMemory = snipMemory
-            peelableRunID = answerID
-            if backgroundJobs?.entries.contains(where: { $0.job.isWorking }) == true {
+            run.snipMemory = flow.jobID == nil ? snipMemory : flow.snipMemory
+            flow.phase = .streaming
+            if let jobID = flow.jobID, !flow.joined {
+                attach(run, to: flow, appendingQuestion: queued)
+                Log.ask.notice("Peel joined: \(jobID.uuidString, privacy: .public)")
+            }
+            if backgroundJobs?.entries.contains(where: { $0.job.isWorking && $0.id != flow.jobID }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
             // A first snip explanation opens with its subject: with lookups on, it's looked up
@@ -2100,6 +2413,11 @@ final class AskCoordinator {
                 backgroundJobs?.fail(jobID, reason: error.localizedDescription)
                 return
             }
+            // Sent away but not joined yet: the tile shows it, not the next question's companion.
+            if flow.jobID != nil {
+                report(error.localizedDescription, for: flow)
+                return
+            }
             if state == .thinking { state = .idle }
             if chatShown {
                 onChatError?(error.localizedDescription)
@@ -2121,13 +2439,7 @@ final class AskCoordinator {
             run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                     code: parsed.response.code, language: parsed.response.language)
             let finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
-            let lastUser = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.user })
-            let lastAssistant = run.chatMessages.lastIndex(where: { $0.role == ChatModel.Message.Role.assistant })
-            if let lastUser, let lastAssistant, lastAssistant > lastUser {
-                run.chatMessages[lastAssistant].text = finalText
-            } else {
-                run.chatMessages.append(ChatModel.Message(role: .assistant, text: finalText))
-            }
+            settleChat(of: run, finalText: finalText)
             backgroundJobs?.setChatMessages(run.chatMessages, for: jobID)
             backgroundJobs?.complete(jobID, answer: finalText, conversation: run.conversation)
             return
@@ -2136,6 +2448,12 @@ final class AskCoordinator {
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
                                          scale: provider.coordinateScale)
         if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
+        // From here a peeled snip keeps its explanation and skips the tour.
+        run.explanation = parsed.response.displayText
+        let userText = Prompt.userText(for: request), speech = parsed.response.speech
+        let code = parsed.response.code, language = parsed.response.language
+        run.recordTurn = { $0.append(user: userText, assistantSpeech: speech, code: code, language: language) }
+        if snip != nil { flow.phase = .explained }
         // An ⌥⌘ explanation is about the text or area, never about where to click (and a
         // snip's close-up has no screen coordinates anyway).
         // A snip's "where is X?" may come back as pointers: treat them as parts (they're in
@@ -2198,9 +2516,11 @@ final class AskCoordinator {
         }
         run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                 code: parsed.response.code, language: parsed.response.language)
+        run.recordTurn = nil  // recorded: a peel from here on must not add it again
         if answerFlowID == answerID { conversation = run.conversation }
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
         if state == .thinking || state == .speaking { state = .idle }
+        if snip == nil { flow.phase = .explained }  // an answer stays peelable until here
         // Snips: tour the named parts of what was marked — but only when the names aren't
         // already printed in the image (then a tour adds nothing). Where they are is worked
         // out after the answer is shown (`PartPlacer`): on things found on this Mac where it
@@ -2221,6 +2541,7 @@ final class AskCoordinator {
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
             if !labelled { named = candidates }
+            run.expectsTour = !named.isEmpty || needsPartsLook
             Log.ask.notice("""
                 Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
                 (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public))
@@ -2249,6 +2570,7 @@ final class AskCoordinator {
             beginRefining(answerID)
             defer { finishRefining(answerID) }
             if needsPartsLook {
+                flow.phase = .partsLook
                 var partsRequest = AskRequest(question: parsed.response.speech, screenshotJPEG: memory.closeUp.jpeg,
                                               screenshotWidth: memory.closeUp.width, screenshotHeight: memory.closeUp.height,
                                               context: context)
@@ -2266,6 +2588,7 @@ final class AskCoordinator {
                     \(String(describing: provider.coordinateScale), privacy: .public)
                     """)
             }
+            flow.phase = .tourPrep
             let placing = ContinuousClock.now
             let objects = await memory.objects?.value ?? []
             let reference = await memory.reference?.value
@@ -2277,6 +2600,7 @@ final class AskCoordinator {
             let tour = await Self.tourPointers(stops, outlines: placement.outlines, in: view)
             Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) by \(placement.method, privacy: .public) starts \(String(describing: ContinuousClock.now - placing), privacy: .public) after the explanation")
             guard !Task.isCancelled, answerFlowID == answerID else { return }
+            flow.phase = .tour
             onTour?(tour)
         }
 
@@ -2709,6 +3033,7 @@ final class AskCoordinator {
         captureTask?.cancel()
         captureTask = nil
         pressedAt = nil
+        if currentFlow?.phase == .listening { currentFlow = nil }
         state = .idle
         Log.ask.notice("Cancelled: \(reason, privacy: .public)")
     }

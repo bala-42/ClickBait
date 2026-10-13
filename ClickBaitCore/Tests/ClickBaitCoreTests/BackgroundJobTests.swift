@@ -7,6 +7,13 @@ struct BackgroundJobTests {
                       homePID: 42, conversation: Conversation())
     }
 
+    @Test func aQueuedQuestionIsRenamedOnceHeard() {
+        var job = BackgroundJob(question: "your question", kind: .answer, homeBundleID: nil, homePID: nil, conversation: Conversation())
+        job.rename("what is a tilde")
+        #expect(job.question == "what is a tilde")
+        #expect(job.isWorking)
+    }
+
     @Test func startsWorkingWithNoAnswer() {
         let job = job()
         #expect(job.isWorking)

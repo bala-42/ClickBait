@@ -108,6 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return messages
         }
         coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
+        coordinator.onQuickEnding = { [weak self] text, tone, immediate in
+            guard let self else { return }
+            if immediate {
+                overlay.showJobResult(text, tone: tone, force: true)
+            } else {
+                showWhenQuiet(text, tone: tone, for: .seconds(60), while: { true })
+            }
+        }
         #if DEBUG
         overlay.runBenchmarkIfRequested()
         runChatBenchmarkIfRequested()
@@ -449,19 +457,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             announcedJobs.insert(entry.id)
             let id = entry.id
             let tone: CompanionTone = entry.job.kind == .snip ? .capture : .processing
-            Task { @MainActor [weak self] in
-                let deadline = ContinuousClock.now + .seconds(120)
-                while let self, ContinuousClock.now < deadline {
-                    guard backgroundJobs.entries.contains(where: { $0.id == id }) else { return }  // gone, or opened there
-                    if !coordinator.isBusy, !overlay.isGuiding, !overlay.isTutoring, !overlay.isShowingWords {
-                        overlay.showJobResult(summary, tone: tone)
-                        return
-                    }
-                    try? await Task.sleep(for: .milliseconds(500))
-                }
-            }
+            showWhenQuiet(summary, tone: tone, for: .seconds(120), while: { [weak self] in
+                self?.backgroundJobs.entries.contains(where: { $0.id == id }) ?? false  // gone, or opened there
+            })
         }
         announcedJobs.formIntersection(entries.map(\.id))
+    }
+
+    /// Shows a result pill once nothing else is being said, pointed at or walked through;
+    /// given up after `limit`, or as soon as `stillWanted` says no.
+    private func showWhenQuiet(_ text: String, tone: CompanionTone, for limit: Duration, while stillWanted: @escaping () -> Bool) {
+        Task { @MainActor [weak self] in
+            let deadline = ContinuousClock.now + limit
+            while let self, ContinuousClock.now < deadline {
+                guard stillWanted() else { return }
+                if !coordinator.isBusy, !overlay.isGuiding, !overlay.isTutoring, !overlay.isShowingWords {
+                    overlay.showJobResult(text, tone: tone)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
     }
 
     private func goThere(_ id: UUID) {

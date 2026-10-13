@@ -26,15 +26,15 @@ public enum PeelRule {
         case tour
 
         /// Between the words being heard and the answer's model request starting.
-        var isPreRun: Bool {
+        public var isPreRun: Bool {
             [.transcribing, .orderCheck, .elementPick, .buildingRequest].contains(self)
         }
 
         /// The answer run exists (streaming, or a snip's explanation is done).
-        var hasRun: Bool { [.streaming, .explained, .partsLook, .tourPrep].contains(self) }
+        public var hasRun: Bool { [.streaming, .explained, .partsLook, .tourPrep].contains(self) }
 
         /// Past streaming: an answer's pointing/tour, or a snip's explanation-done phases.
-        var isPastStreaming: Bool { [.explained, .partsLook, .tourPrep, .tour].contains(self) }
+        public var isPastStreaming: Bool { [.explained, .partsLook, .tourPrep, .tour].contains(self) }
     }
 
     public enum Work: Equatable, Sendable {

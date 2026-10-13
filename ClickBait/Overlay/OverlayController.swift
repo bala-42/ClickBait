@@ -201,8 +201,9 @@ final class OverlayController {
 
     /// A background ClickBait finished: its summary by the companion, in the job's colour,
     /// for 5 s. Only when nothing else is saying anything (the caller waits for that).
-    func showJobResult(_ text: String, tone: CompanionTone) {
-        guard !model.bubble.hasWords, !isGuiding else { return }
+    /// `force`: also over a question's own thinking words (a press that found nothing to send away).
+    func showJobResult(_ text: String, tone: CompanionTone, force: Bool = false) {
+        guard force || (!model.bubble.hasWords && !isGuiding) else { return }
         setCompanionHidden(false)
         model.bubble = .jobResult(text, tone)
         scheduleDismiss(after: .seconds(5))

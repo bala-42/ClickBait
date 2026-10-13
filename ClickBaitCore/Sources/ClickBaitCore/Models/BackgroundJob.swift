@@ -15,7 +15,9 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
     }
 
     public let id: UUID
-    public let question: String
+    /// What was asked. A spoken question sent away before it was transcribed starts with a
+    /// placeholder and is renamed once heard.
+    public private(set) var question: String
     public let kind: Kind
     public let homeBundleID: String?
     public let homePID: Int32?
@@ -35,6 +37,10 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
     }
 
     public var isWorking: Bool { status == .working }
+
+    public mutating func rename(_ question: String) {
+        self.question = question
+    }
 
     public mutating func append(_ text: String) {
         guard isWorking else { return }

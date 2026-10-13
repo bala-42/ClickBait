@@ -21,14 +21,25 @@ final class BackgroundJobs {
         var liveText = ""
         /// "suggested next:" for a done card: nil until asked (when it first opens).
         var suggestions: [String]?
+        /// A suggestion that comes before the asked-for ones (a snip peeled before its tour offers
+        /// "show me the parts").
+        var leadingSuggestion: String?
         /// Its card has been opened since it finished: the tile stops pulsing.
         var seen = false
         var id: UUID { job.id }
+
+        /// What a done card offers: the leading one, then the asked-for ones, without repeats.
+        var offeredSuggestions: [String] {
+            ([leadingSuggestion].compactMap { $0 } + (suggestions ?? [])).reduce(into: []) {
+                if !$0.contains($1) { $0.append($1) }
+            }
+        }
 
         /// Everything a tile or card shows is the same.
         func looksSame(as other: Entry) -> Bool {
             job == other.job && liveText == other.liveText && seen == other.seen && progress == other.progress
                 && chatMessages.count == other.chatMessages.count && suggestions == other.suggestions
+                && leadingSuggestion == other.leadingSuggestion
         }
     }
 
@@ -90,6 +101,16 @@ final class BackgroundJobs {
         guard let index = entries.firstIndex(where: { $0.id == id }), !entries[index].job.isWorking,
               !entries[index].seen else { return }
         entries[index].seen = true
+    }
+
+    func setLeadingSuggestion(_ suggestion: String, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].leadingSuggestion = suggestion
+    }
+
+    func rename(_ id: UUID, to question: String) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].job.rename(question)
     }
 
     func setSuggestions(_ suggestions: [String], for id: UUID) {
