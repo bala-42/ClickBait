@@ -86,7 +86,7 @@ struct AgentDockTests {
         #expect(working == .init(dot: .azure, spins: true, pulses: false, dimmed: false))
         let calm = AgentDock.look(.working, opened: false, reduceMotion: true)
         #expect(!calm.spins && calm.pulses)
-        #expect(AgentDock.look(.done, opened: false, reduceMotion: false) == .init(dot: .aquaGreen, spins: false, pulses: true, dimmed: false))
+        #expect(AgentDock.look(.done, opened: false, reduceMotion: false) == .init(dot: .shamrock, spins: false, pulses: true, dimmed: false))
         #expect(!AgentDock.look(.done, opened: true, reduceMotion: false).pulses)
         #expect(AgentDock.look(.failed, opened: false, reduceMotion: false) == .init(dot: .grey, spins: false, pulses: false, dimmed: true))
         #expect(AgentDock.look(.stopped, opened: false, reduceMotion: false).dimmed)
