@@ -6,6 +6,9 @@ public struct ScreenContext: Equatable, Sendable {
     public var windowTitle: String?
     /// e.g. `AXButton "Share"` — filled in once the accessibility inspector exists.
     public var focusedElement: String?
+    /// The front window's frame (AppKit's accessibility frame, top-left origin): with the
+    /// title, how "go there!" finds the window a background job came from. Not sent to the model.
+    public var windowFrame: Rect?
 
     public init(appName: String? = nil, windowTitle: String? = nil, focusedElement: String? = nil) {
         self.appName = appName

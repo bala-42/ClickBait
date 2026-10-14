@@ -1,4 +1,5 @@
 import ClickBaitCore
+import ScriptingBridge
 import AppKit
 
 @main
@@ -86,17 +87,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         capsules.onSuggestion = { [weak self] id, text in
             guard let self else { return }
-            goThere(id)
-            guard chat.isOpen else { return }
-            chat.model.draft = text
-            coordinator.nextTypedIsSuggestion = true  // slow → back to the dock (`PeelRule.suggestionAutoPeels`)
-            chat.model.send()  // as if typed: it's a follow-up in that chat
+            goThere(id) { [weak self] in
+                guard let self, chat.isOpen else { return }
+                // Its tour was placed in the dock: play it, no model asked.
+                if text == PeelRule.suggestedPartsPrompt, coordinator.playReadyTour() { return }
+                chat.model.draft = text
+                coordinator.nextTypedIsSuggestion = true  // slow → back to the dock
+                chat.model.send()  // as if typed: it's a follow-up in that chat
+            }
         }
-        capsules.onFollowUp = { [weak self] id, voice in
-            guard let self else { return }
-            goThere(id)
-            guard chat.isOpen else { return }
-            if voice { coordinator.listenUntilClick() } else { chat.focus() }
+        capsules.onFollowUpSend = { [weak self] id, text in self?.coordinator.askInBackground(text, jobID: id) }
+        capsules.onCardVoiceStart = { [weak self] in
+            // Nil is success: never `?? reason`, which turned every start into a failure.
+            guard let self else { return "ClickBait isn't ready." }
+            return coordinator.startCardRecording()
+        }
+        capsules.onCardVoiceCancel = { [weak self] in self?.coordinator.cancelCardRecording() }
+        capsules.cardMicrophoneLevel = { [weak self] in self?.coordinator.cardMicrophoneLevel ?? 0 }
+        capsules.onCardVoiceFinish = { [weak self] in
+            guard let self else { return .failure(AskCoordinator.CardVoiceError(message: "ClickBait isn't ready.")) }
+            return await coordinator.finishCardRecording()
         }
         coordinator.onPeel = { [weak self] job in
             guard let self else { return [] }
@@ -121,6 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.runBenchmarkIfRequested()
         runChatBenchmarkIfRequested()
         runDockBenchmarkIfRequested()
+        runCardVoiceTestIfRequested()
+        runGoThereTestIfRequested()
         #endif
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches
@@ -481,7 +493,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func goThere(_ id: UUID) {
+    /// `then`: once the chat is open in the home context (a clicked suggestion is sent then).
+    private func goThere(_ id: UUID, then: (() -> Void)? = nil) {
         guard !coordinator.isBusy,
               let entry = backgroundJobs.entries.first(where: { $0.id == id }),
               case .done = entry.job.status else { return }
@@ -522,8 +535,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         coordinator.restoreBackgroundConversation(job.conversation, snipMemory: entry.snipMemory)
-        homeApp?.activate()
-        chat.restore(messages, logoAt: invokedPoint ?? overlay.companionTriangleCenter, homeApp: homeApp)
+        let snipArea = entry.snipMemory?.view?.markedOnScreen
+        Task { @MainActor in
+            // Back to where it was asked first; the chat opens there once the move is done
+            // (it used to open at once, left behind on the desktop the user came from).
+            await returnHome(job, homeApp: homeApp)
+            let spot = chatSpot(snipArea: snipArea, homeApp: homeApp)
+            chat.restore(messages, logoAt: spot, homeApp: homeApp)
+            Log.app.notice("Go there: chat opened \(snipArea != nil ? "by the snipped area" : "in its window", privacy: .public)")
+            then?()
+        }
+    }
+
+    /// Brings back the tab, window and desktop a job was asked in, and returns once the move
+    /// is over. In Chrome or Safari the browser selects the exact tab, brings its window front
+    /// and switches to its desktop (accessibility can't see windows on other desktops).
+    /// Otherwise, or if the tab is gone: that window (un-minimised, raised), then its app.
+    private func returnHome(_ job: BackgroundJob, homeApp: NSRunningApplication?) async {
+        guard let homeApp else {
+            Log.app.notice("Go there: its app has quit")
+            return
+        }
+        let pid = homeApp.processIdentifier
+        let spaceChange = SpaceChangeWatch()
+        var found = false
+        if let tab = job.homeTab {
+            switch tab.browser {
+            case .chrome: found = await Task.detached(priority: .userInitiated) { ChromeTabs.select(tab, pid: pid) }.value
+            case .safari: found = (try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name)) == "true"
+            }
+            if found { Log.app.notice("Go there: its tab, by \(tab.browser.name, privacy: .public)") }
+        }
+        if !found {
+            let returned = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
+            AXInspector.bringToFront(pid: pid)
+            homeApp.activate()
+            Log.app.notice("Go there: \(job.homeTab != nil ? "the tab is gone; " : "", privacy: .public)\(returned.rawValue, privacy: .public)")
+        }
+        // In front, and the desktop switch (if any) over: the chat must open on the new one.
+        for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let switched = await spaceChange.wait(upTo: .milliseconds(700))
+        if switched { try? await Task.sleep(for: .milliseconds(150)) }  // the slide settles
+        Log.app.notice("""
+            Go there: app in front \(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, privacy: .public), \
+            desktop switched \(switched, privacy: .public)
+            """)
+    }
+
+    /// Where the chat comes back (AppKit): by the top-right of what was snipped, else inside
+    /// the home window's top right (its focused window, now on this desktop), else at the
+    /// companion.
+    private func chatSpot(snipArea: Rect?, homeApp: NSRunningApplication?) -> CGPoint {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        if let area = snipArea {
+            return CGPoint(x: area.maxX, y: primaryHeight - area.minY)
+        }
+        if let pid = homeApp?.processIdentifier, let frame = AXInspector.focusedWindowFrameOnScreen(pid: pid) {
+            return CGPoint(x: frame.maxX - 40, y: primaryHeight - frame.minY - 90)
+        }
+        return overlay.companionTriangleCenter
     }
 
     /// ✕ or Escape on the chat bubble: close it and forget the conversation.
@@ -537,6 +609,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
     /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
     /// others down. Logged "Bench: …" per phase for the main-thread sampler.
+    /// `CLICKBAIT_TEST_GOTHERE=<Chrome pid>`: a done job whose home is a tab that isn't
+    /// showing, in Chrome's back-most window with more than one tab; "go there!" on it; then
+    /// checks the tab is focused and showing, and the chat opened on this desktop inside it.
+    private func runGoThereTestIfRequested() {
+        guard let value = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GOTHERE"], let pid = pid_t(value) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            let target: BrowserTab? = await Task.detached { () -> BrowserTab? in
+                guard let app = SBApplication(processIdentifier: pid), let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
+                func value(_ object: SBObject, _ key: String) -> Any? {
+                    let raw = object.value(forKey: key)
+                    return (raw as? SBObject)?.get() ?? raw
+                }
+                for case let window as SBObject in windows.reversed() {
+                    guard let tabs = window.value(forKey: "tabs") as? SBElementArray, tabs.count > 1,
+                          let active = (value(window, "activeTabIndex") as? NSNumber)?.intValue else { continue }
+                    let pick = active == 1 ? 2 : 1
+                    guard let tab = tabs.object(at: pick - 1) as? SBObject,
+                          let id = value(tab, "id").flatMap({ Int("\($0)") }) else { continue }
+                    return BrowserTab(browser: .chrome, windowID: value(window, "id").flatMap { Int("\($0)") } ?? 0,
+                                      tab: id, title: value(tab, "title") as? String ?? "", url: "")
+                }
+                return nil
+            }.value
+            guard let target else {
+                Log.app.notice("GT: no window with a hidden tab")
+                return
+            }
+            var job = BackgroundJob(question: "go there test", kind: .answer, homeBundleID: "com.google.Chrome",
+                                    homePID: pid, conversation: Conversation())
+            job.homeTab = target
+            guard backgroundJobs.add(job, task: nil) else {
+                Log.app.notice("GT: dock full")
+                return
+            }
+            backgroundJobs.complete(job.id, answer: "Test answer.", conversation: Conversation())
+            try? await Task.sleep(for: .seconds(0.5))
+            goThere(job.id) {
+                let focused = AXInspector.focusedWindowTitle(pid: pid)
+                let window = AXInspector.focusedWindowFrameOnScreen(pid: pid)
+                let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+                let placement = self.chat.debugPlacement
+                let inside = placement.flatMap { chat -> Bool? in
+                    guard let window else { return nil }
+                    let top = primaryHeight - chat.frame.maxY  // the chat's top, in Quartz
+                    return chat.frame.midX >= window.minX && chat.frame.midX <= window.maxX && top >= window.minY && top <= window.maxY
+                }
+                Log.app.notice("""
+                    GT: front app pid \(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, privacy: .public); \
+                    shows target \(HomeWindow.tabMatches(target.title, page: focused ?? ""), privacy: .public); \
+                    chat on this desktop \(placement?.onThisDesktop ?? false, privacy: .public); \
+                    chat inside its window \(inside.map { "\($0)" } ?? "unknown", privacy: .public)
+                    """)
+            }
+        }
+    }
+
+    /// `CLICKBAIT_TEST_CARD_VOICE=1`: a done card's voice button records ~1.5 s, folding drops it,
+    /// then voice pressed twice fast (no model: nothing is transcribed).
+    private func runCardVoiceTestIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_TEST_CARD_VOICE"] != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            let done = BackgroundJob(question: "card voice test", kind: .answer, homeBundleID: nil, homePID: nil, conversation: Conversation())
+            backgroundJobs.add(done, task: nil)
+            backgroundJobs.complete(done.id, answer: "Test answer.", conversation: Conversation())
+            try? await Task.sleep(for: .seconds(0.5))
+            capsules.expand(done.id)
+            try? await Task.sleep(for: .seconds(0.5))
+            capsules.followUp(done.id, .tap(.voice))
+            Log.app.notice("Test: after voice: \(self.capsules.followUpState(done.id), privacy: .public), recording \(self.coordinator.isCardRecording, privacy: .public)")
+            try? await Task.sleep(for: .seconds(1.5))
+            Log.app.notice("Test: 1.5 s on: \(self.capsules.followUpState(done.id), privacy: .public), recording \(self.coordinator.isCardRecording, privacy: .public)")
+            capsules.followUp(done.id, .collapse)  // folding drops the recording, no model
+            Log.app.notice("Test: after fold: \(self.capsules.followUpState(done.id), privacy: .public), recording \(self.coordinator.isCardRecording, privacy: .public)")
+            capsules.followUp(done.id, .tap(.voice))
+            capsules.followUp(done.id, .tap(.voice))  // pressed while the mic starts: gives up
+            Log.app.notice("Test: rapid voice ×2: \(self.capsules.followUpState(done.id), privacy: .public), recording \(self.coordinator.isCardRecording, privacy: .public)")
+        }
+    }
+
     private func runDockBenchmarkIfRequested() {
         guard ProcessInfo.processInfo.environment["CLICKBAIT_BENCH_DOCK"] != nil else { return }
         Task { @MainActor in
@@ -618,4 +771,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     #endif
+}
+
+/// Whether the active desktop changes, from when it's made: "go there!" waits for the slide
+/// before opening the chat, so it opens on the new desktop.
+@MainActor
+private final class SpaceChangeWatch {
+    private var changed = false
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.changed = true }
+        }
+    }
+
+    /// True if it changed by the end of `limit`.
+    func wait(upTo limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while !changed, ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(40)) }
+        if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        observer = nil
+        return changed
+    }
 }

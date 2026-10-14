@@ -55,6 +55,8 @@ final class QuestionFlow {
     var context = ScreenContext()
     var homeBundleID: String?
     var homePID: Int32?
+    /// In Chrome or Safari: the tab it was asked in, being read from the browser.
+    var browserTab: Task<BrowserTab?, Never>?
     /// The answer's run, once created.
     var run: AnswerRun?
     var task: Task<Void, Never>?

@@ -21,6 +21,12 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
     public let kind: Kind
     public let homeBundleID: String?
     public let homePID: Int32?
+    /// The window it was asked in (title and frame when asked), for "go there!" to raise
+    /// that window rather than whichever of the app's is in front (`HomeWindow.best`).
+    public var homeWindowTitle: String?
+    public var homeWindowFrame: Rect?
+    /// In Chrome or Safari, the exact tab (`BrowserTab`): "go there!" asks the browser for it.
+    public var homeTab: BrowserTab?
     public var conversation: Conversation
     public private(set) var status: Status
     public private(set) var answer: String
@@ -56,6 +62,15 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
         self.answer = answer
         self.conversation = conversation
         status = .done(summary: summary)
+    }
+
+    /// A follow-up asked from the done card's mini-chat: working again in the same tile,
+    /// titled with the new question; the conversation carries on.
+    public mutating func reopen(asking question: String) {
+        guard case .done = status else { return }
+        self.question = question
+        answer = ""
+        status = .working
     }
 
     public mutating func fail(_ reason: String) {

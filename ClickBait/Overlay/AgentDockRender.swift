@@ -69,7 +69,7 @@ enum AgentDockRender {
                               summary: "`config` is nil until Settings load; move the read into `applicationDidFinishLaunching`.",
                               suggestions: ["Show me the fixed code", "Why is it nil at launch?"],
                               tone: .processing, blur: false,
-                              onClose: {}, onSuggestion: { _ in }, onFollowUpText: {}, onFollowUpVoice: {},
+                              onClose: {}, onSuggestion: { _ in },
                               onGoThere: {}, onLater: {})
                     .offset(x: tile.maxX - AgentDock.cardWidth, y: size.height - tile.minY + AgentDock.cardGap)
             }

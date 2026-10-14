@@ -6,6 +6,7 @@ import ClickBaitCore
 /// What the accessibility API says about the frontmost app when the hotkey is pressed.
 struct AXSnapshot: Sendable {
     var windowTitle: String?
+    var windowFrame: Rect?
     /// e.g. `AXTextField "Search"`.
     var focusedElement: String?
     /// Text highlighted in the focused element, if the app exposes it.
@@ -31,6 +32,7 @@ enum AXInspector {
             let app = element(AXUIElementCreateApplication(pid))
             if let window = app.element(kAXFocusedWindowAttribute) {
                 result.windowTitle = window.string(kAXTitleAttribute)
+                result.windowFrame = window.frame
             }
         }
 
@@ -217,8 +219,13 @@ enum AXInspector {
     /// the front: "go to YouTube" switches to it rather than opening another. Matches tab
     /// titles (Chrome's tabs are AX radio buttons, Safari's are tabs). False if none.
     static func selectTab(showing site: String, browserPID pid: pid_t) -> Bool {
-        guard isTrusted else { return false }
         let wanted = site.lowercased()
+        return selectTab(browserPID: pid) { $0.lowercased().contains(wanted) }
+    }
+
+    /// Presses the first tab (front window first) whose name `matches`, and raises its window.
+    static func selectTab(browserPID pid: pid_t, where matches: (String) -> Bool) -> Bool {
+        guard isTrusted else { return false }
         let app = element(AXUIElementCreateApplication(pid))
         let deadline = Date().addingTimeInterval(0.5)
         for window in app.children(kAXWindowsAttribute) {
@@ -229,8 +236,9 @@ enum AXInspector {
                 let role = node.string(kAXRoleAttribute) ?? ""
                 if role == "AXWebArea" { continue }
                 if role == "AXRadioButton" || role == "AXTab" || node.string(kAXSubroleAttribute) == "AXTabButton",
-                   node.name.lowercased().contains(wanted) {
+                   matches(node.name) {
                     node.perform(kAXPressAction)
+                    AXUIElementSetAttributeValue(window.ref, kAXMainAttribute as CFString, kCFBooleanTrue)
                     window.perform(kAXRaiseAction)
                     return true
                 }
@@ -240,11 +248,102 @@ enum AXInspector {
         return false
     }
 
+    /// "go there!": the app's window a background job came from (`HomeWindow.best`), brought
+    /// back from the Dock if minimised and raised to the front of its app. False when no
+    /// window matches (the caller still activates the app).
+    enum HomeReturn: String { case byTitle = "its window, by title", byTab = "its tab, selected", byFrame = "a window by frame only", none = "app only, its window wasn't found" }
+
+    /// The app's real window under `point` (Quartz): its accessibility windows are front to
+    /// back and only real ones — the window list also has a browser's invisible helper
+    /// windows (Chrome: full-screen and strip-shaped ones on top), which a snip's middle can
+    /// land on. Its title is the page shown (a browser's active tab).
+    static func window(at point: Point, pid: pid_t) -> (title: String?, frame: Rect)? {
+        guard isTrusted else { return nil }
+        for window in element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute) {
+            guard window.bool(kAXMinimizedAttribute) != true, let frame = window.frame,
+                  point.x >= frame.minX, point.x <= frame.maxX, point.y >= frame.minY, point.y <= frame.maxY else { continue }
+            return (window.string(kAXTitleAttribute), frame)
+        }
+        return nil
+    }
+
+    @discardableResult
+    static func raiseHomeWindow(pid: pid_t, title: String?, frame: Rect?) -> HomeReturn {
+        guard isTrusted, title != nil || frame != nil else { return .none }
+        let windows = element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute)
+        let described = windows.map { (title: $0.string(kAXTitleAttribute), frame: $0.frame) }
+        let index = HomeWindow.best(described, title: title, frame: frame)
+        // No window shows it now: it's a tab that's no longer in front (or windows stacked
+        // on one frame). Find the tab by its page title, select it and raise its window.
+        let byTitle = index.map { HomeWindow.titlesMatch(described[$0].title, title) } ?? false
+        if !byTitle, let title, selectTab(browserPID: pid, where: { HomeWindow.tabMatches($0, page: title) }) {
+            return .byTab
+        }
+        guard let index else { return .none }
+        let window = windows[index]
+        if window.bool(kAXMinimizedAttribute) == true {
+            AXUIElementSetAttributeValue(window.ref, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        }
+        AXUIElementSetAttributeValue(window.ref, kAXMainAttribute as CFString, kCFBooleanTrue)
+        window.perform(kAXRaiseAction)
+        return byTitle ? .byTitle : .byFrame
+    }
+
+    /// The app's focused window on the current desktop (Quartz), for placing the chat.
+    static func focusedWindowFrameOnScreen(pid: pid_t) -> Rect? {
+        guard isTrusted else { return nil }
+        return element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute)?.frame
+    }
+
+    #if DEBUG
+    /// For the "go there!" check (`CLICKBAIT_TEST_GOTHERE`): the focused window on the current desktop.
+    static func focusedWindowTitle(pid: pid_t) -> String? {
+        element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute)?.string(kAXTitleAttribute)
+    }
+
+    #endif
+
+    /// Brings the app to the front through accessibility. `NSRunningApplication.activate()`
+    /// asked by a background app (ClickBait never becomes active) can be quietly refused;
+    /// this isn't, and it switches to the app's Space.
+    static func bringToFront(pid: pid_t) {
+        guard isTrusted else { return }
+        AXUIElementSetAttributeValue(element(AXUIElementCreateApplication(pid)).ref,
+                                     kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    }
+
     /// The app whose window is under `point` (Quartz) — the one the user is looking at
     /// when the frontmost app's windows are on another display. From the window list
     /// (front to back, normal windows only), so ClickBait's own see-through overlays,
     /// which cover whole screens, never count.
     static func appPID(at point: Point) -> pid_t? {
+        window(at: point)?.pid
+    }
+
+    /// The app whose real window is in front under `point` (Quartz): the window list front to
+    /// back, each app checked against its accessibility windows, so a browser's invisible
+    /// helper windows (Chrome keeps full-screen ones on top) don't count.
+    static func appWithWindow(at point: Point) -> pid_t? {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        let own = getpid()
+        var checked = Set<pid_t>()
+        for window in windows {
+            guard (window[kCGWindowLayer as String] as? Int) == 0,
+                  let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != own, !checked.contains(pid),
+                  let bounds = window[kCGWindowBounds as String] as? [String: Double],
+                  let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"],
+                  point.x >= x, point.x <= x + width, point.y >= y, point.y <= y + height
+            else { continue }
+            checked.insert(pid)
+            if self.window(at: point, pid: pid) != nil { return pid }
+        }
+        return nil
+    }
+
+    /// The front normal window under `point` (Quartz): its app, title (needs Screen
+    /// Recording, else nil) and frame (Quartz, top-left origin, as accessibility frames are).
+    static func window(at point: Point) -> (pid: pid_t, title: String?, frame: Rect)? {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
         let own = getpid()
@@ -255,7 +354,8 @@ enum AXInspector {
                   let x = bounds["X"], let y = bounds["Y"], let width = bounds["Width"], let height = bounds["Height"],
                   point.x >= x, point.x <= x + width, point.y >= y, point.y <= y + height
             else { continue }
-            return pid
+            let title = (window[kCGWindowName as String] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return (pid, title, Rect(x: x, y: y, width: width, height: height))
         }
         return nil
     }

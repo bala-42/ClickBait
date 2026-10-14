@@ -58,8 +58,9 @@ final class AskCoordinator {
     /// A single tap explains at once but stays undoable until a second tap can no longer
     /// come; this ends that window (`commitExplain`).
     @ObservationIgnored private var explainCommit: Task<Void, Never>?
-    /// The next typed message is a done card's clicked suggestion that may peel by itself
-    /// (`PeelRule.suggestionAutoPeels`); read once by `sendTyped`.
+    /// The next typed message is a done card's clicked suggestion: it peels by itself after
+    /// `PeelRule.autoPeelDelay`, like a first explanation (user's rule, 2026-10-14). Read once
+    /// by `sendTyped`.
     @ObservationIgnored var nextTypedIsSuggestion = false
     /// The chat a provisional explanation detached: still on screen, put back by
     /// `undoExplain`, closed by `commitExplain`.
@@ -297,6 +298,26 @@ final class AskCoordinator {
         self.snipMemory = snipMemory
     }
 
+    /// "show me the parts" on a done card whose tour was placed in the dock: tour it now, if
+    /// the snipped area still looks the same. False when there is no such tour (then the
+    /// suggestion is asked as usual).
+    func playReadyTour() -> Bool {
+        guard var memory = snipMemory, let tour = memory.readyTour, let view = memory.view else { return false }
+        memory.readyTour = nil
+        snipMemory = memory
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if await stillShows(view) {
+                Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) placed in the dock")
+                onTour?(tour)
+            } else {
+                Log.ask.notice("Parts: the snipped area has changed since it was sent away; no tour")
+                onQuickEnding?(PeelRule.movedPill, .capture, true)
+            }
+        }
+        return true
+    }
+
     func closeChat() {
         tutorial?.stop(message: nil)
         guard conversation != nil, chatShown else { return }
@@ -319,7 +340,7 @@ final class AskCoordinator {
 
     /// A message typed into the open chat bubble. Replies to typed messages are text only.
     func sendTyped(_ text: String) {
-        let autoPeels = nextTypedIsSuggestion && PeelRule.suggestionAutoPeels(text)
+        let autoPeels = nextTypedIsSuggestion
         nextTypedIsSuggestion = false
         stopRefining()
         tutorial?.stop(message: nil)
@@ -396,6 +417,7 @@ final class AskCoordinator {
             }
             let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
             context.windowTitle = snapshot.windowTitle
+            context.windowFrame = snapshot.windowFrame
             context.focusedElement = snapshot.focusedElement
             let capture: ScreenCapture
             do {
@@ -499,6 +521,10 @@ final class AskCoordinator {
     }
 
     private func begin() {
+        guard !isCardRecording else {
+            Log.ask.notice("⌃⌥ ignored: a card's voice panel is recording")
+            return
+        }
         guard acceptsNewQuestion() else { return }
         stopRefining()
         tutorial?.stop(message: nil)  // a new question ends a tutorial
@@ -567,6 +593,137 @@ final class AskCoordinator {
         currentFlow = flow
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")
+    }
+
+    /// In Chrome or Safari: asks the browser which tab is showing in the window at `point`
+    /// (Quartz; its front window when nil), matched to the title accessibility saw there.
+    /// The first time, macOS asks to let ClickBait control the browser.
+    private func readBrowserTab(for flow: QuestionFlow, at point: Point?) {
+        guard let browser = BrowserTab.browser(for: flow.homeBundleID) else { return }
+        let title = flow.context.windowTitle
+        let pid = flow.homePID
+        flow.browserTab = Task {
+            let tabs: [BrowserTab]
+            switch browser {
+            case .chrome:
+                guard let pid else { return nil }
+                tabs = await Task.detached(priority: .userInitiated) { ChromeTabs.read(pid: pid, at: point) }.value
+            case .safari:
+                let output = try? await AppleScriptRunner.run(BrowserTab.safariCaptureScript(at: point), app: browser.name)
+                tabs = BrowserTab.parse(output ?? "", browser: browser)
+            }
+            let tab = BrowserTab.pick(tabs, title: title)
+            Log.ask.notice("Home tab: \(tab == nil ? "not found" : "read from \(browser.name)", privacy: .public)")
+            return tab
+        }
+    }
+
+    // MARK: - Follow-ups from a done card (its mini-chat, `FollowUpPanel`)
+
+    /// The microphone is on for a card's voice panel (not ⌃⌥ listening).
+    @ObservationIgnored private(set) var isCardRecording = false
+    /// Its loudness, for the card's waveform.
+    var cardMicrophoneLevel: Float { isCardRecording ? recorder.level : 0 }
+
+    /// Starts the microphone for a card's voice panel. Nil, or why it can't.
+    func startCardRecording() -> String? {
+        guard !isCardRecording else { return nil }
+        guard state == .idle, currentFlow == nil, !isAnswering else {
+            return "ClickBait is busy with a question. Try again in a moment."
+        }
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            return "Microphone access is off. Open Permissions… from the menu bar icon."
+        }
+        switch speech.state {
+        case .ready: break
+        case .notDownloaded, .downloading, .importing: return "The speech model isn't downloaded yet. Open Settings… → Speech."
+        case .loading: return "The speech model is still loading. Try again in a moment."
+        case .failed(let message): return message
+        }
+        speaker.stop()  // never record ClickBait talking
+        do {
+            try recorder.start()
+        } catch {
+            Log.input.error("Card voice: recorder failed to start: \(error.localizedDescription, privacy: .public)")
+            return "Couldn't start the microphone: \(error.localizedDescription)"
+        }
+        isCardRecording = true
+        Log.ask.notice("Card voice: recording")
+        return nil
+    }
+
+    /// The card's voice panel folded or switched mid-recording: the recording is dropped.
+    func cancelCardRecording() {
+        guard isCardRecording else { return }
+        _ = recorder.stop()
+        isCardRecording = false
+        Log.ask.notice("Card voice: recording dropped")
+    }
+
+    /// Stop: the words heard ("" when nothing was), or why not.
+    func finishCardRecording() async -> Result<String, CardVoiceError> {
+        guard isCardRecording else { return .failure(CardVoiceError(message: "The recording had already stopped.")) }
+        let samples = recorder.stop()
+        isCardRecording = false
+        let audio = AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        guard !audio.isSilent else {
+            Log.ask.notice("Card voice: silent")
+            return .success("")
+        }
+        do {
+            let text = try await speech.transcribe(audio.samples)
+            Log.ask.notice("Card voice: \(text.count, privacy: .public) characters heard")
+            return .success(text)
+        } catch {
+            Log.ask.error("Card voice: transcription failed: \(error.localizedDescription, privacy: .public)")
+            return .failure(CardVoiceError(message: "Couldn't understand the recording: \(error.localizedDescription)"))
+        }
+    }
+
+    struct CardVoiceError: Error {
+        let message: String
+    }
+
+    /// A follow-up typed or spoken into a done card's mini-chat: asked in the dock, the tile
+    /// working again (`BackgroundJobs.reopen`); the foreground is left alone. It runs as a
+    /// queued peel does (`respond` with the job's flow): the job's conversation and snip
+    /// memory, a text-only answer, no pointing or tour. Nil, or why it can't.
+    func askInBackground(_ text: String, jobID: UUID) -> String? {
+        guard let backgroundJobs, let entry = backgroundJobs.entries.first(where: { $0.id == jobID }),
+              case .done = entry.job.status else { return "That one isn't waiting for a follow-up any more." }
+        guard CGPreflightScreenCaptureAccess() else { return "Screen Recording is off. Open Permissions… from the menu bar icon." }
+        let job = entry.job
+        let flow = QuestionFlow(work: entry.snipMemory != nil ? .snip : .answer, phase: .buildingRequest)
+        flow.provider = settings.makeProvider()
+        let home = job.homePID.flatMap { NSRunningApplication(processIdentifier: pid_t($0)) }
+        flow.context = ScreenContext(appName: home?.localizedName, windowTitle: job.homeWindowTitle)
+        flow.context.windowFrame = job.homeWindowFrame
+        flow.homeBundleID = job.homeBundleID
+        flow.homePID = job.homePID
+        flow.jobID = jobID
+        flow.sentAway = true
+        flow.conversation = job.conversation
+        flow.snipMemory = entry.snipMemory
+        flow.chatMessages = entry.chatMessages
+        let blocklist = settings.blocklist
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let startedAt = ContinuousClock.now
+            let capture: ScreenCapture
+            do {
+                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist)
+            } catch {
+                report("Couldn't capture the screen: \(error.localizedDescription)", for: flow)
+                return
+            }
+            let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
+            await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
+                          speak: false, display: text, flow: flow)
+        }
+        flow.task = task
+        backgroundJobs.reopen(jobID, asking: text, task: task)
+        Log.ask.notice("Card follow-up asked in the dock: \(jobID.uuidString, privacy: .public)")
+        return nil
     }
 
     // MARK: - Sending a question to the background (⌃⌥ while it is orange)
@@ -680,6 +837,13 @@ final class AskCoordinator {
         run.chatMessages = messages
         backgroundJobs.setSnipMemory(run.snipMemory, for: jobID)
         backgroundJobs.setChatMessages(messages, for: jobID)
+        // The window it was asked in, for "go there!" (its context is complete by now), and
+        // in a browser its exact tab.
+        backgroundJobs.setHomeWindow(title: flow.context.windowTitle, frame: flow.context.windowFrame, for: jobID)
+        if flow.browserTab == nil { readBrowserTab(for: flow, at: nil) }
+        if let reading = flow.browserTab {
+            Task { @MainActor [weak self] in self?.backgroundJobs?.setHomeTab(await reading.value, for: jobID) }
+        }
         flow.joined = true
     }
 
@@ -924,6 +1088,7 @@ final class AskCoordinator {
 
         if let snapshot = await snapshotTask?.value {
             flow.context.windowTitle = snapshot.windowTitle
+            flow.context.windowFrame = snapshot.windowFrame
             flow.context.focusedElement = snapshot.focusedElement
             if currentFlow === flow { context = flow.context }
         }
@@ -1110,6 +1275,7 @@ final class AskCoordinator {
         }
         guard !Task.isCancelled else { return }
         context.windowTitle = snapshot.windowTitle
+        context.windowFrame = snapshot.windowFrame
         context.focusedElement = snapshot.focusedElement
         Log.ask.notice("Explain: \(selected.count, privacy: .public) characters selected via \(method.rawValue, privacy: .public)")
         if isExplainProvisional { pendingExcerpt = selected } else { onExplaining?(selected) }
@@ -1965,6 +2131,7 @@ final class AskCoordinator {
         let pid = app.processIdentifier
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         context = ScreenContext(appName: app.localizedName ?? name, windowTitle: snapshot.windowTitle)
+        context.windowFrame = snapshot.windowFrame
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist),
               let screenshot = try? await ScreenshotEncoder.encodeInBackground(capture.image) else { return nil }
         let elements = await Self.elements(in: capture, frontmostPID: pid)
@@ -2030,6 +2197,15 @@ final class AskCoordinator {
         // a peel waits for the explanation to start.
         let flow = QuestionFlow(work: .snip, phase: .buildingRequest)
         flow.provider = provider
+        // Home is the window under the middle of what was circled (it can be another app's
+        // than the front one, or on another display), so "go there!" returns to it.
+        let underPID = AXInspector.appWithWindow(at: Point(x: region.x + region.width / 2, y: region.y + region.height / 2))
+        if let underPID, underPID != frontmostPID, let app = NSRunningApplication(processIdentifier: underPID) {
+            frontmostPID = underPID
+            frontmostBundleID = app.bundleIdentifier
+            context = ScreenContext(appName: app.localizedName)
+            Log.ask.notice("Snip home: the app under the circle, not the front one")
+        }
         flow.context = context
         flow.homeBundleID = frontmostBundleID
         flow.homePID = frontmostPID
@@ -2062,6 +2238,18 @@ final class AskCoordinator {
         let pid = flow.homePID
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         flow.context.windowTitle = snapshot.windowTitle
+        flow.context.windowFrame = snapshot.windowFrame
+        // The window under the circle, not just the app's focused one: from accessibility,
+        // which lists only real windows (the window list has a browser's helper windows too).
+        let middle = Point(x: region.x + region.width / 2, y: region.y + region.height / 2)
+        if let pid, let under = await Task.detached(priority: .userInitiated, operation: { AXInspector.window(at: middle, pid: pid) }).value {
+            flow.context.windowTitle = under.title ?? snapshot.windowTitle
+            flow.context.windowFrame = under.frame
+            readBrowserTab(for: flow, at: middle)
+            Log.ask.notice("Snip home: the window under the circle (\(under.title == nil ? "untitled" : "titled", privacy: .public))")
+        } else {
+            Log.ask.notice("Snip home: no window under the circle; the app's focused one")
+        }
         if currentFlow === flow { context = flow.context }
         let view: SnipView
         do {
@@ -2127,6 +2315,9 @@ final class AskCoordinator {
         /// Brought back from the dock ("go there!"): the screen may have changed since, so a
         /// tour first checks the snipped area still looks the same.
         var returnedFromBackground = false
+        /// A tour placed while the snip was in the dock: "show me the parts" plays it without
+        /// asking the model again (`playReadyTour`).
+        var readyTour: [ScreenPointer]?
     }
 
     /// Whether the chat bubble is on screen. A spoken question doesn't open one until
@@ -2489,11 +2680,27 @@ final class AskCoordinator {
             if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
             run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                     code: parsed.response.code, language: parsed.response.language)
-            let finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
+            var finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
+            // A snip in the dock places its tour there too: it waits for "show me the parts".
+            var tourReady = false
+            if snip != nil, let memory = run.snipMemory, let view = memory.view {
+                let named = parsed.response.parts + parsed.response.pointers
+                if !named.isEmpty, await !isLabelled(named, memory: memory, view: view), !Task.isCancelled {
+                    let placed = await placeTour(named, explanation: parsed.response.speech, memory: memory, view: view,
+                                                 provider: provider)
+                    if !placed.tour.isEmpty, !Task.isCancelled {
+                        var ready = memory
+                        ready.readyTour = placed.tour
+                        backgroundJobs?.setSnipMemory(ready, for: jobID)
+                        if let credit = placed.credit { finalText += "\n\n" + credit }
+                        tourReady = true
+                    }
+                }
+            }
+            guard !Task.isCancelled else { return }
             settleChat(of: run, finalText: finalText)
             backgroundJobs?.setChatMessages(run.chatMessages, for: jobID)
-            // A snip sent away before its tour: the tour waits for "show me the parts".
-            if snip != nil, history.isEmpty, !(parsed.response.parts + parsed.response.pointers).isEmpty {
+            if tourReady || (snip != nil && history.isEmpty && !(parsed.response.parts + parsed.response.pointers).isEmpty) {
                 backgroundJobs?.setLeadingSuggestion(PeelRule.suggestedPartsPrompt, for: jobID)
             }
             backgroundJobs?.complete(jobID, answer: finalText, conversation: run.conversation)
@@ -2583,24 +2790,13 @@ final class AskCoordinator {
         var named: [Pointer] = []
         var needsPartsLook = false
         if snip != nil, let memory = snipMemory, let view = memory.view {
-            var text: [TextBox] = []
-            if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
-            guard !Task.isCancelled, answerFlowID == answerID else { return }
             let candidates = parsed.response.parts + snipPointers
-            let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
-            // Labelled figures (names already printed) and plain text (a paragraph, code)
-            // get no tour: only unlabelled figures, diagrams, drawings and charts do.
-            let share = await PartPlacer.colourfulShare(of: view)
-            let mostlyText = PartsTour.isMostlyText(text, marked: view.marked, colourfulShare: share)
-            let labelled = mostlyText || (!printed.isEmpty && printed.count * 2 >= max(candidates.count, 1))
+            let labelled = await isLabelled(candidates, memory: memory, view: view)
+            guard !Task.isCancelled, answerFlowID == answerID else { return }
             // Nothing named at all in a first explanation: a focused second look follows.
             needsPartsLook = !labelled && candidates.isEmpty && history.isEmpty
             if !labelled { named = candidates }
             run.expectsTour = !named.isEmpty || needsPartsLook
-            Log.ask.notice("""
-                Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
-                (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public))
-                """)
         }
         // A reply a pill can say ("Yep, it's on!") opens no chat: the companion says it.
         // Web answers always go to the chat, where their sources can show (spec decision 11).
@@ -2644,17 +2840,11 @@ final class AskCoordinator {
                     """)
             }
             flow.phase = .tourPrep
-            let placing = ContinuousClock.now
-            let objects = await memory.objects?.value ?? []
-            let reference = await memory.reference?.value
-            let placement = await PartPlacer.place(named, explanation: parsed.response.speech, view: view, objects: objects,
-                                                   reference: reference, provider: provider)
-            if placement.usedReference, let reference { onChatSource?(reference.credit) }
-            let stops = placement.stops
-            guard !stops.isEmpty, !Task.isCancelled, answerFlowID == answerID else { return }
-            let tour = await Self.tourPointers(stops, outlines: placement.outlines, in: view)
-            Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) by \(placement.method, privacy: .public) starts \(String(describing: ContinuousClock.now - placing), privacy: .public) after the explanation")
-            guard !Task.isCancelled, answerFlowID == answerID else { return }
+            let placed = await placeTour(named, explanation: parsed.response.speech, memory: memory, view: view,
+                                         provider: provider)
+            if let credit = placed.credit { onChatSource?(credit) }
+            let tour = placed.tour
+            guard !tour.isEmpty, !Task.isCancelled, answerFlowID == answerID else { return }
             if memory.returnedFromBackground, await !stillShows(view) {
                 guard !Task.isCancelled, answerFlowID == answerID else { return }
                 Log.ask.notice("Parts: the snipped area has changed since it was sent away; no tour")
@@ -2688,6 +2878,39 @@ final class AskCoordinator {
             Log.ask.notice("Close-up: withdrew \(pointers.count - kept.count, privacy: .public) pointer(s) that matched nothing on screen")
         }
         onPointersRefined?(kept)
+    }
+
+    /// Whether a tour of these parts adds nothing: the snip is mostly text (a paragraph,
+    /// code), or the names are already printed in it. Only unlabelled figures, diagrams,
+    /// drawings and charts get a tour.
+    private func isLabelled(_ candidates: [Pointer], memory: SnipMemory, view: SnipView) async -> Bool {
+        var text: [TextBox] = []
+        if let reading = memory.text { text = await TextReader.read(reading, within: .milliseconds(1500)) }
+        let printed = PartsMatcher.match(parts: candidates, speech: "", text: text).verified
+        let share = await PartPlacer.colourfulShare(of: view)
+        let mostlyText = PartsTour.isMostlyText(text, marked: view.marked, colourfulShare: share)
+        let labelled = mostlyText || (!printed.isEmpty && printed.count * 2 >= max(candidates.count, 1))
+        Log.ask.notice("""
+            Parts: \(candidates.count, privacy: .public) named, \(printed.count, privacy: .public) printed in the image \
+            (\(mostlyText ? "text, no tour" : labelled ? "labelled, no tour" : "unlabelled", privacy: .public))
+            """)
+        return labelled
+    }
+
+    /// Where the named parts are (`PartPlacer`) and the tour through them on screen. The
+    /// credit line when Wikipedia helped name them. Empty when nothing could be placed.
+    private func placeTour(_ named: [Pointer], explanation: String, memory: SnipMemory, view: SnipView,
+                           provider: any LLMProvider) async -> (tour: [ScreenPointer], credit: String?) {
+        let placing = ContinuousClock.now
+        let objects = await memory.objects?.value ?? []
+        let reference = await memory.reference?.value
+        let placement = await PartPlacer.place(named, explanation: explanation, view: view, objects: objects,
+                                               reference: reference, provider: provider)
+        let credit = placement.usedReference ? reference?.credit : nil
+        guard !placement.stops.isEmpty, !Task.isCancelled else { return ([], credit) }
+        let tour = await Self.tourPointers(placement.stops, outlines: placement.outlines, in: view)
+        Log.ask.notice("Parts: tour of \(tour.count, privacy: .public) stop(s) by \(placement.method, privacy: .public) starts \(String(describing: ContinuousClock.now - placing), privacy: .public) after the explanation")
+        return (tour, credit)
     }
 
     enum RefineResult {

@@ -32,6 +32,10 @@ private final class ChatPanel: NSPanel {
 final class ChatController {
     let model = ChatModel()
     private var panel: NSPanel?
+    #if DEBUG
+    /// For the "go there!" check: where the chat is, and whether it's on this desktop.
+    var debugPlacement: (frame: CGRect, onThisDesktop: Bool)? { panel.map { ($0.frame, $0.isOnActiveSpace) } }
+    #endif
 
     var isOpen: Bool { panel != nil }
     /// The centre of the companion's triangle now (AppKit): the card shrinks back into it

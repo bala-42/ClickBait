@@ -15,6 +15,8 @@ final class CapsulePresentation {
         }
     }
     var isExpanded = false
+    /// The done card's mini-chat.
+    var followUp = FollowUpPanel()
     /// What the tile shows, kept apart so streaming doesn't redraw it.
     private(set) var status: AgentDock.Status
     private(set) var seen: Bool
@@ -29,7 +31,7 @@ final class CapsulePresentation {
         question = entry.job.question
     }
 
-    private static func status(of job: BackgroundJob) -> AgentDock.Status {
+    static func status(of job: BackgroundJob) -> AgentDock.Status {
         switch job.status {
         case .working: .working
         case .done: .done
@@ -66,6 +68,7 @@ struct DockTileView: View {
         }
         .padding(CapsuleController.tileMargin)
         .accessibilityLabel(accessibilityLabel)
+        .help(presentation.question)  // the list, readable before picking one
         .onChange(of: look.pulses) { _, pulses in if pulses { beatStart = .now } }
     }
 
@@ -96,7 +99,8 @@ struct CapsuleView: View {
     let onLater: (UUID) -> Void
     let onDismiss: (UUID) -> Void
     let onSuggestion: (UUID, String) -> Void
-    let onFollowUp: (UUID, _ voice: Bool) -> Void
+    let onFollowUp: (UUID, FollowUpAction) -> Void
+    var microphoneLevel: () -> Float = { 0 }
     let canGoThere: () -> Bool
 
     private var job: BackgroundJob { presentation.entry.job }
@@ -116,14 +120,17 @@ struct CapsuleView: View {
             AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
                              tone: tone,
                              progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
+                             footer: presentation.followUp.isOpen ? miniChat(id, answering: true) : nil,
                              onStop: { onStop(id) })
         case .done(let summary):
             AgentDoneCard(title: job.question, summary: summary, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
                           onClose: { onDismiss(id) },
                           onSuggestion: { onSuggestion(id, $0) },
-                          onFollowUpText: { onFollowUp(id, false) },
-                          onFollowUpVoice: { onFollowUp(id, true) },
+                          followUp: presentation.followUp,
+                          onFollowUp: { onFollowUp(id, $0) },
+                          microphoneLevel: microphoneLevel,
+                          footer: miniChat(id, answering: false),
                           onGoThere: { onGoThere(id) },
                           onLater: { onLater(id) })
         case .failed(let reason):
@@ -131,6 +138,19 @@ struct CapsuleView: View {
         case .stopped:
             EmptyView()
         }
+    }
+
+    /// The open mini-chat: the follow-ups after the card's first question and answer.
+    private func miniChat(_ id: UUID, answering: Bool) -> AnyView {
+        let messages = presentation.entry.chatMessages.filter { $0.role != .error }
+        let firstAnswer = messages.firstIndex { $0.role == .assistant } ?? (messages.count - 1)
+        var thread = Array(messages.dropFirst(firstAnswer + 1))
+        // While answering, the question just asked is shown, its answer streams below it.
+        if answering, thread.last?.role == .assistant { thread.removeLast() }
+        return AnyView(FollowUpPanelView(panel: presentation.followUp, thread: thread, answering: answering,
+                                         liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
+                                         microphoneLevel: microphoneLevel,
+                                         onAction: { onFollowUp(id, $0) }))
     }
 }
 

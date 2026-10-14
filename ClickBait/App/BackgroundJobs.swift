@@ -118,9 +118,32 @@ final class BackgroundJobs {
         entries[index].suggestions = suggestions
     }
 
+    func setHomeWindow(title: String?, frame: Rect?, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].job.homeWindowTitle = title
+        entries[index].job.homeWindowFrame = frame
+    }
+
+    func setHomeTab(_ tab: BrowserTab?, for id: UUID) {
+        guard let tab, let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].job.homeTab = tab
+    }
+
     func setSnipMemory(_ memory: AskCoordinator.SnipMemory?, for id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].snipMemory = memory
+    }
+
+    /// A follow-up from the done card's mini-chat: the tile works again on it.
+    func reopen(_ id: UUID, asking question: String, task: Task<Void, Never>?) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].job.reopen(asking: question)
+        entries[index].task = task
+        entries[index].liveText = ""
+        entries[index].progress = .uncounted
+        entries[index].suggestions = nil
+        entries[index].leadingSuggestion = nil
+        entries[index].seen = false
     }
 
     func setTask(_ task: Task<Void, Never>?, for id: UUID) {
