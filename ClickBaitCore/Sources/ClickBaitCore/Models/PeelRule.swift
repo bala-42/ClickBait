@@ -136,8 +136,11 @@ public enum PeelRule {
     /// itself, as ⌃⌥ would: an explanation while it streams, a snip until its tour starts
     /// (it then skips the tour). Spoken questions and follow-ups never do, nor anything when
     /// the dock is full (it just finishes in front).
-    public static func autoPeels(_ situation: Situation) -> Bool {
-        guard situation.hasRoom else { return false }
+    /// `answeredAlready`: the explanation was complete when `autoPeelDelay` came — a fast
+    /// answer (≤ 0.5 s) stays in front with the companion it has; no peel, no new companion
+    /// at the cursor (user's rule, 2026-10-14).
+    public static func autoPeels(_ situation: Situation, answeredAlready: Bool = false) -> Bool {
+        guard situation.hasRoom, !answeredAlready else { return false }
         switch situation.work {
         case .answer: return situation.phase == .streaming
         case .snip: return [.streaming, .explained, .partsLook, .tourPrep].contains(situation.phase)

@@ -178,6 +178,16 @@ struct AutoPeelTests {
         #expect(!auto(.buildingRequest, .snip))
     }
 
+    /// ≤ 0.5 s: the answer is in before the peel would start, so the companion stays and no
+    /// new one appears at the cursor — for snips too, which otherwise peel until their tour.
+    @Test func aFastAnswerNeverPeels() {
+        for phase: PeelRule.Phase in [.streaming, .explained, .partsLook, .tourPrep] {
+            #expect(!PeelRule.autoPeels(.init(phase: phase, work: .snip), answeredAlready: true))
+            #expect(!PeelRule.autoPeels(.init(phase: phase, work: .answer), answeredAlready: true))
+        }
+        #expect(PeelRule.autoPeels(.init(phase: .explained, work: .snip), answeredAlready: false))  // slow: as before
+    }
+
     @Test func fullDockKeepsItInFront() {
         #expect(!auto(.streaming, .answer, room: false))
         #expect(!auto(.explained, .snip, room: false))

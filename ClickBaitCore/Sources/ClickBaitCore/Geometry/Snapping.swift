@@ -77,6 +77,22 @@ public enum Snapper {
         return SnapDecision(point: target, candidate: nil, reason: .noConfidentMatch, score: 0)
     }
 
+    /// Bigger than this in both directions, an element proves nothing about where the
+    /// pointer should be: a whole-window text area (Terminal's: 1508×2090 pt) contains
+    /// every guess.
+    public static let largeElement = (width: 640.0, height: 360.0)
+
+    /// Whether a snap confirms the pointer (no close-up check needed): a label match, or
+    /// landing inside an element that isn't huge. Inside a huge one the model's guess stands
+    /// unchecked otherwise (measured 2026-10-14: mid-screen in Terminal, "confirmed").
+    public static func confirms(_ decision: SnapDecision) -> Bool {
+        guard let candidate = decision.candidate else { return false }
+        if decision.reason == .containingElement {
+            return !(candidate.frame.width > largeElement.width && candidate.frame.height > largeElement.height)
+        }
+        return true
+    }
+
     /// Elements up to this size are "small": the pointer goes to their center.
     public static let smallElement = (width: 160.0, height: 80.0)
     /// How far inside a large element's edge the pointer is kept.

@@ -893,7 +893,9 @@ final class AskCoordinator {
               run.task?.isCancelled != true else { return }
         let situation = PeelRule.Situation(phase: flow.phase, work: flow.work, kind: flow.kind,
                                            hasRoom: backgroundJobs?.hasRoom ?? false)
-        guard PeelRule.autoPeels(situation) else {
+        // Complete when the 0.5 s came: a fast answer keeps the companion it has.
+        guard PeelRule.autoPeels(situation, answeredAlready: run.explanation != nil) else {
+            if run.explanation != nil { Log.ask.notice("Auto-peel skipped: answered within \(String(describing: PeelRule.autoPeelDelay), privacy: .public)") }
             if !situation.hasRoom, flow.phase.hasRun { Log.ask.notice("Auto-peel skipped: three's a crowd, finishing in front") }
             return
         }
@@ -2399,16 +2401,24 @@ final class AskCoordinator {
         var encoding = encoding
         // "Show me the Share button in Safari" with Safari closed or behind: open or switch
         // to it first (green), take a fresh look, then point (blue).
+        // Only when the request says so ("in Safari", "open Messages"): an app's name in a
+        // sentence is just a word (`TutorialQuestion.locatingApp`).
+        var switchedApp = false
         if snip == nil, selectedText == nil, history.isEmpty, flow.jobID == nil, TutorialQuestion.isLocatingRequest(question) {
             let apps = AppLocator.installed()
-            if let named = TutorialQuestion.taskApp(in: question, apps: Array(apps.keys)),
+            if let named = TutorialQuestion.locatingApp(in: question, apps: Array(apps.keys)),
                named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
                let ready = await openForTutorial(named, url: apps[named]) {
                 let screenshot = ready.1
                 capture = ready.0
                 encoding = Task { screenshot }
                 elements = ready.2
+                switchedApp = true
                 Log.ask.notice("Opened the app the question names, then looking (\(elements.count, privacy: .public) elements)")
+            }
+            if !switchedApp, TutorialQuestion.mentionedApp(in: question, apps: Array(apps.keys)) != nil,
+               TutorialQuestion.locatingApp(in: question, apps: Array(apps.keys)) == nil {
+                Log.ask.debug("An app's name in the question, not asked to go there: staying in the app in front")
             }
         }
         // "Where's the Share button?" with exactly one element named Share on screen: point
@@ -2424,7 +2434,21 @@ final class AskCoordinator {
         let found = targets.compactMap {
             InstantAnswer.uniqueElement(named: $0, in: elements) ?? InstantAnswer.closeElement(named: $0, in: elements)
         }
-        if !targets.isEmpty, found.count == targets.count {  // every one named exactly once, or none at all
+        // "Where do I type?": the focused field's caret, exact and instant, before any model —
+        // in the app that was in front when asked, never one switched to on the way.
+        let pidForCaret = flow.homePID
+        let caret = snip == nil && selectedText == nil && !switchedApp && InstantAnswer.asksWhereToType(question)
+            ? await Task.detached(priority: .userInitiated) { pidForCaret.flatMap { AXInspector.caretRect(pid: $0) } }.value
+            : nil
+        if let caret {
+            let spot = Point(x: caret.minX + 6, y: caret.midY)
+            instant = [ScreenPointer(label: "type here", appKit: Point(x: spot.x, y: Double(capture.primaryDisplayHeight) - spot.y),
+                                     quartz: spot)]
+            Log.ask.notice("Instant pointer: the text caret (where typing goes)")
+            flow.kind = .instantPick
+            guard await settleQuick(flow) else { return }
+            if let instant { onInstantPointer?(instant) }
+        } else if !targets.isEmpty, found.count == targets.count {  // every one named exactly once, or none at all
             instant = found.map { element in
                 let center = Point(x: element.frame.x + element.frame.width / 2, y: element.frame.y + element.frame.height / 2)
                 return ScreenPointer(label: element.label, appKit: Point(x: center.x, y: Double(capture.primaryDisplayHeight) - center.y),
@@ -2435,8 +2459,7 @@ final class AskCoordinator {
             guard await settleQuick(flow) else { return }
             if let instant { onInstantPointer?(instant) }
         } else if !elements.isEmpty, snip == nil, selectedText == nil, !namesContent,
-                  !targets.isEmpty || (targets.isEmpty && ImpliedPointer.isLocating(question)
-                                         && !ImpliedPointer.normalized(question).hasPrefix("show me how")) {
+                  !targets.isEmpty || InstantAnswer.allowsUnnamedPick(question) {
             // Any "where / which / what do I click" question, not only "where's the X": the
             // answer is usually something in the list ("where do I type my message?").
             // Not named exactly: let the model pick from the element list as text (~1.5 s)
@@ -2457,8 +2480,9 @@ final class AskCoordinator {
             }
             // "Back and forward": one element for each thing named, or the screenshot. And
             // each must plausibly be the thing named, or the model settled for a neighbour.
-            let fits = targets.isEmpty || chosen.count == targets.count
-                && zip(chosen, targets).allSatisfy { InstantAnswer.pick($0.label, fits: $1) }
+            let fits = targets.isEmpty
+                ? chosen.allSatisfy { InstantAnswer.unnamedPick($0.label, fits: question) }
+                : chosen.count == targets.count && zip(chosen, targets).allSatisfy { InstantAnswer.pick($0.label, fits: $1) }
             if !chosen.isEmpty {
                 Log.ask.notice("Pick for \(targets.isEmpty ? "(no named target)" : targets.joined(separator: " + "), privacy: .public): \(chosen.map { "\"\($0.label)\"" }.joined(separator: ", "), privacy: .public)\(fits ? "" : " — doesn't fit, reading the screen instead", privacy: .public)")
             }
@@ -2727,15 +2751,21 @@ final class AskCoordinator {
         }
         // Only "where / how / show me / click / open" questions get pointed at; the model
         // sometimes adds a pointer to anything (a corner of the screen for a general question).
-        if snip == nil, selectedText == nil, !parsed.response.pointers.isEmpty, !ImpliedPointer.isLocating(question) {
+        if snip == nil, selectedText == nil, !parsed.response.pointers.isEmpty, !InstantAnswer.allowsPointing(question) {
             Log.ask.notice("Dropped \(parsed.response.pointers.count, privacy: .public) pointer(s): not a where/how question")
             parsed.response.pointers = []
         }
         // Asked where something is, the answer names a listed element but doesn't point.
-        if snip == nil, selectedText == nil, parsed.response.pointers.isEmpty,
+        // Only for an explicit where-question, and only a control the user's own words name:
+        // otherwise any control the reply mentions got pointed at (the menu bar, 2026-10-14).
+        if snip == nil, selectedText == nil, parsed.response.pointers.isEmpty, InstantAnswer.allowsPointing(question),
            let implied = ImpliedPointer.find(question: question, speech: parsed.response.speech, elements: listed) {
-            Log.ask.notice("Pointer taken from the element list: the answer named it without pointing")
-            parsed.response.pointers = [implied]
+            if InstantAnswer.unnamedPick(implied.label, fits: question) {
+                Log.ask.notice("Pointer taken from the element list: the answer named it without pointing")
+                parsed.response.pointers = [implied]
+            } else {
+                Log.ask.debug("Not pointing at a control only the answer names")
+            }
         }
         let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
         let modelPointers = parsed.response.pointers.map { pointer in
@@ -3303,11 +3333,13 @@ final class AskCoordinator {
                 snapped.append((pointer, false))
                 continue
             }
+            let confirmed = Snapper.confirms(decision)
+            if !confirmed { Log.ask.notice("Snap inside a whole-window element: not confirmed, the close-up checks it") }
             snapped.append((moved ? ScreenPointer(
                 label: pointer.label,
                 appKit: geometry.appKitPoint(fromQuartz: decision.point),
                 quartz: decision.point
-            ) : pointer, true))
+            ) : pointer, confirmed))
         }
         return snapped
     }

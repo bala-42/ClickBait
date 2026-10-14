@@ -109,6 +109,57 @@ public enum InstantAnswer {
     /// Whether a picked element plausibly is the thing asked for: one of the target's words
     /// (or a synonym) is in its name. "October 27" → "Today" and "today's date" → "View"
     /// don't; "settings" → "Preferences" and "back" → "Go Back" do.
+    /// "Where do I type?": answered from the focused element's text caret, exactly and with
+    /// no model (`AXInspector.caretRect`). Measured 2026-10-14 in Terminal running Claude
+    /// Code: the caret sat on the `❯` prompt line, while the 9B model pointed mid-screen and
+    /// the snap accepted it inside the whole-window text area. Short questions only.
+    public static func asksWhereToType(_ question: String) -> Bool {
+        let text = ImpliedPointer.normalized(question)
+        guard text.split(separator: " ").count <= unnamedPickMaxWords else { return false }
+        let verbs = ["type", "write", "enter", "paste", "put my message", "put my text", "put text"]
+        let asks = ["where do i ", "where can i ", "where should i ", "where to ", "where would i ", "where am i supposed to "]
+        if asks.contains(where: { ask in verbs.contains { text.contains(ask + $0) } }) { return true }
+        let fields = ["input", "input field", "input box", "text box", "text field", "message box", "prompt", "chat box", "typing area"]
+        let whereIs = ["wheres the ", "where is the ", "where s the ", "show me the ", "point to the ", "find the "]
+        return whereIs.contains { opener in fields.contains { text.contains(opener + $0) } }
+    }
+
+    /// The longest spoken question that may take the quick list pick with no target named.
+    public static let unnamedPickMaxWords = 20
+
+    /// Whether a question that names no target may still have the model pick from the
+    /// element list (~1.5 s) and be pointed at at once: a short "where / which / what do I
+    /// click" question, not "show me how". Measured 2026-10-14: 92- and 245-character
+    /// spoken rambles that merely contained "where" were pointed at "Split pane" and
+    /// "Terminal" — any control the model settled on.
+    public static func allowsUnnamedPick(_ question: String) -> Bool {
+        allowsPointing(question) && !ImpliedPointer.normalized(question).hasPrefix("show me how")
+    }
+
+    /// Whether an answer may point at all (the model's pointers, or a control its words
+    /// name): an explicit, short request for a place on screen — "where / which / show me /
+    /// what do I click", ≤ 20 words. Voice alone never points: a spoken ramble that merely
+    /// contains "where" got pointers on the menu bar (2026-10-14).
+    public static func allowsPointing(_ question: String) -> Bool {
+        let words = ImpliedPointer.normalized(question).split(separator: " ").count
+        return words <= unnamedPickMaxWords && (ImpliedPointer.isLocating(question) || TutorialQuestion.isLocatingRequest(question))
+    }
+
+    /// An unnamed pick is kept only when the control it chose shares a word with the question
+    /// ("where do I type my message?" → "Message"); otherwise the screenshot answers instead.
+    public static func unnamedPick(_ label: String, fits question: String) -> Bool {
+        let filler: Set<String> = ["where", "wheres", "which", "what", "do", "does", "i", "is", "it", "click", "tap", "press",
+                                   "button", "find", "can", "how", "should", "you", "me", "show", "point", "in", "on", "here"]
+        let stop: Set<String> = ["the", "my", "a", "an", "of", "to", "s", "this", "that", "for", "with"]
+        let words = ImpliedPointer.normalized(question).split(separator: " ").map(String.init)
+            .filter { !filler.contains($0) && !stop.contains($0) }
+        let have = ImpliedPointer.normalized(label).split(separator: " ").map(String.init)
+        // The words themselves, not synonyms: "reply" ~ "message" let the Messages menu in.
+        return words.contains { word in
+            have.contains { $0 == word || ($0.count >= 4 && word.count >= 4 && ($0.hasPrefix(word) || word.hasPrefix($0))) }
+        }
+    }
+
     public static func pick(_ label: String, fits target: String) -> Bool {
         let stop: Set<String> = ["the", "my", "a", "an", "of", "to", "s", "this", "that", "for", "with"]
         let wanted = ImpliedPointer.normalized(target).split(separator: " ").map(String.init).filter { !stop.contains($0) }

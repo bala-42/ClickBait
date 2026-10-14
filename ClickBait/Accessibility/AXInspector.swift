@@ -289,6 +289,33 @@ enum AXInspector {
         return byTitle ? .byTitle : .byFrame
     }
 
+    /// Where typing would go in `pid`: the text caret of its focused element (Quartz), from
+    /// `AXSelectedTextRange` and `AXBoundsForRange` — exact and instant, no model. Nil when
+    /// nothing focused takes text or the app doesn't report the caret's place.
+    static func caretRect(pid: pid_t) -> Rect? {
+        guard isTrusted, let focused = element(AXUIElementCreateApplication(pid)).element(kAXFocusedUIElementAttribute),
+              let selection = focused.attribute(kAXSelectedTextRangeAttribute), CFGetTypeID(selection) == AXValueGetTypeID()
+        else { return nil }
+        var cfRange = CFRange()
+        // Type ID checked above.
+        guard AXValueGetValue(unsafeDowncast(selection, to: AXValue.self), .cfRange, &cfRange) else { return nil }
+        // An empty selection has no height (measured in Terminal): measure the character at
+        // the caret instead (the one before it at the very end).
+        if cfRange.length == 0 {
+            let count = (focused.attribute(kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue ?? 0
+            cfRange = CFRange(location: cfRange.location >= count && cfRange.location > 0 ? cfRange.location - 1 : cfRange.location, length: 1)
+        }
+        guard let range = AXValueCreate(.cfRange, &cfRange) else { return nil }
+        var bounds: AnyObject?
+        guard AXUIElementCopyParameterizedAttributeValue(focused.ref, kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                         range, &bounds) == .success,
+              let value = bounds, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        // Type ID checked above.
+        guard AXValueGetValue(unsafeDowncast(value, to: AXValue.self), .cgRect, &rect), rect.height > 0 else { return nil }
+        return Rect(x: rect.minX, y: rect.minY, width: max(rect.width, 1), height: rect.height)
+    }
+
     /// The app's focused window on the current desktop (Quartz), for placing the chat.
     static func focusedWindowFrameOnScreen(pid: pid_t) -> Rect? {
         guard isTrusted else { return nil }

@@ -460,6 +460,22 @@ public enum TutorialQuestion {
 
     /// An installed app the request names ("clear my Safari history" → "Safari"): the
     /// longest name found as whole words. `apps` are app names ("System Settings").
+    /// The app a "where's…" request explicitly sends ClickBait to before pointing: "in Safari",
+    /// "on Notes", "open Messages", "switch to Chrome" — or a Mac setting (System Settings).
+    /// A plain mention is just words (user's rule, 2026-10-14): "where do I type my message to
+    /// Claude" switched to the Claude app, then pointed at a caret there.
+    public static func locatingApp(in text: String, apps: [String]) -> String? {
+        let spoken = " " + ImpliedPointer.normalized(text) + " "
+        let leads = ["in", "on", "inside", "within", "open", "launch", "switch to", "go to", "using"]
+        let named = apps.filter { app in
+            let name = ImpliedPointer.normalized(app)
+            return name.count >= 4 && leads.contains { spoken.contains(" \($0) \(name) ") || spoken.contains(" \($0) the \(name) ") }
+        }.max { $0.count < $1.count }
+        if let named { return named }
+        guard isSystemSetting(text) else { return nil }
+        return apps.first { $0.caseInsensitiveCompare("System Settings") == .orderedSame }
+    }
+
     public static func mentionedApp(in text: String, apps: [String]) -> String? {
         let spoken = " " + ImpliedPointer.normalized(text) + " "
         return apps
