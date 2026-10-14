@@ -237,7 +237,7 @@ final class CapsuleController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
+        panel.level = WindowLayers.dock  // above the notch panel (`WindowLayers`)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.sharingType = .none
         panel.hidesOnDeactivate = false

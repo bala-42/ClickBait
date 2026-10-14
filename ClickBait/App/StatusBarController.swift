@@ -15,6 +15,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let backgroundCapsulesMenu = NSMenu()
     private let internetItem = NSMenuItem(title: "Internet: off 🔒", action: nil, keyEquivalent: "")
     private let recentItem = NSMenuItem(title: "Recent Searches", action: nil, keyEquivalent: "")
+    private let notchItem = NSMenuItem(title: "Notch Panel", action: nil, keyEquivalent: "")
+    private let volumeHUDItem = NSMenuItem(title: "Volume in the Notch", action: nil, keyEquivalent: "")
+    /// Turns the notch panel on or off (`NotchController`).
+    var onToggleNotch: ((Bool) -> Void)?
     private let recentMenu = NSMenu()
     private let settings: AppSettings
     private let onOpenSettings: () -> Void
@@ -106,6 +110,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         backgroundCapsulesItem.isEnabled = false
         menu.addItem(backgroundCapsulesItem)
         menu.addItem(recentItem)
+        notchItem.action = #selector(toggleNotch)
+        notchItem.target = self
+        notchItem.state = settings.notchPanelEnabled ? .on : .off
+        notchItem.toolTip = "A small panel at the notch: agents, modes, music, a note, clock and stats. Rest the pointer on the notch to open it."
+        menu.addItem(notchItem)
+        volumeHUDItem.action = #selector(toggleVolumeHUD)
+        volumeHUDItem.target = self
+        volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off
+        volumeHUDItem.toolTip = "The volume keys show their level in the notch instead of macOS's. Off: macOS's HUD as always."
+        menu.addItem(volumeHUDItem)
         menu.addItem(.separator())
 
         #if DEBUG
@@ -132,6 +146,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func openSettings() { onOpenSettings() }
     @objc private func openPermissions() { onOpenPermissions() }
     @objc private func toggleInternet() { settings.internet.toggle() }
+    @objc private func toggleVolumeHUD() {
+        settings.notchVolumeHUD.toggle()
+        volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off
+    }
+
+    @objc private func toggleNotch() {
+        let on = !settings.notchPanelEnabled
+        notchItem.state = on ? .on : .off
+        onToggleNotch?(on)
+    }
 
     /// The title is text and changes only here, when the switch is toggled — never per
     /// state (per-state status-item changes stalled the companion; spec decision 2).

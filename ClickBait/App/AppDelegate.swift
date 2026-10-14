@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
     private lazy var capsules = CapsuleController()
+    private lazy var notch = NotchController(settings: settings, jobs: backgroundJobs, companion: overlay.model)
     /// Done jobs whose result pill has been shown (or is waiting to be).
     private var announcedJobs: Set<UUID> = []
     private var askingSuggestions: Set<UUID> = []
@@ -69,10 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowCapsule: { [weak self] in self?.capsules.expand($0) }
         )
         self.statusBar = statusBar
+        statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
+        escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
+        notch.start()
         coordinator.backgroundJobs = backgroundJobs
         backgroundJobs.onChange = { [weak self] entries in
             self?.capsules.sync(entries)
+            self?.notch.jobsChanged()
             self?.statusBar?.updateBackgroundJobs(entries)
             self?.announceFinished(entries)
         }
@@ -133,6 +138,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runDockBenchmarkIfRequested()
         runCardVoiceTestIfRequested()
         runGoThereTestIfRequested()
+        if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH"] != nil {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                Log.app.notice("Notch test: collapsed \(self.notch.model.state == .collapsed, privacy: .public)")
+                if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_HUD"] != nil {
+                    Log.app.notice("Notch test: HUD \(self.notch.debugHUD(render: ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_RENDER"]), privacy: .public)")
+                    return
+                }
+                Log.app.notice("Notch test: \(self.notch.debugOpen(), privacy: .public)")
+                try? await Task.sleep(for: .seconds(0.5))
+                Log.app.notice("Notch test: 0.5 s on \(self.notch.debugFrame, privacy: .public)")
+                if let folder = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_RENDER"] { self.notch.debugRender(to: folder) }
+                try? await Task.sleep(for: .seconds(6))
+                self.notch.debugClose()
+                Log.app.notice("Notch test: closed → \(String(describing: self.notch.model.state), privacy: .public)")
+            }
+        }
         #endif
         overlay.onDismiss = { [weak self] in self?.coordinator.answerDismissed() }
         // Esc in other apps: taken only while ClickBait is busy, so it never reaches

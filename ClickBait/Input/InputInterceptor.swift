@@ -1,11 +1,14 @@
 import AppKit
 import ApplicationServices
+import ClickBaitCore
 
 /// Input ClickBait has to *take* rather than just watch (a global monitor can only
 /// watch), through an event tap allowed by the Accessibility permission:
 /// - Esc, only while ClickBait is busy, so it stops ClickBait without also closing a
 ///   dialog or leaving full screen in the app in front.
 /// - ⌥⌘ + right-click: opens a chat to type into, without the app's context menu.
+/// - The volume keys, when the notch HUD takes them (`onVolumeKey` says so); otherwise, or
+///   if anything fails, they go to macOS as always.
 /// Everything else passes through untouched.
 @MainActor
 final class InputInterceptor {
@@ -15,6 +18,10 @@ final class InputInterceptor {
     var onEscape: () -> Void = {}
     /// ⌥⌘ + right-click: ask by typing.
     var onTypeToAsk: () -> Void = {}
+    /// A volume key went down: true if the notch HUD handled it (the key is then taken).
+    var onVolumeKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
+    /// The key-up of a taken volume key is taken too.
+    fileprivate var swallowVolumeUp: Int?
     /// The matching right-mouse-up is taken too, so the app never sees half a click.
     fileprivate var swallowRightMouseUp = false
     /// The key-up of a taken Esc is taken too (and its repeats), so the app never sees half
@@ -33,6 +40,7 @@ final class InputInterceptor {
             | CGEventMask(1 << CGEventType.keyUp.rawValue)
             | CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
             | CGEventMask(1 << CGEventType.rightMouseUp.rawValue)
+            | CGEventMask(1 << 14)  // NX_SYSDEFINED: the volume keys
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: escapeTapCallback,
@@ -75,6 +83,23 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         MainActor.assumeIsolated { interceptor.reenable() }
         return Unmanaged.passUnretained(event)
+    }
+    if type.rawValue == 14 {
+        // Media keys: subtype 8; key code in data1's top 16 bits, state 0xA down / 0xB up.
+        guard let system = NSEvent(cgEvent: event), system.subtype.rawValue == 8 else { return Unmanaged.passUnretained(event) }
+        let code = (system.data1 & 0xFFFF_0000) >> 16, down = (system.data1 & 0xFF00) >> 8 == 0xA
+        guard let key = VolumeStep.key(forSystemCode: code) else { return Unmanaged.passUnretained(event) }
+        let fine = system.modifierFlags.contains(.option) && system.modifierFlags.contains(.shift)
+        let taken = MainActor.assumeIsolated { () -> Bool in
+            if !down {
+                defer { interceptor.swallowVolumeUp = nil }
+                return interceptor.swallowVolumeUp == code
+            }
+            guard interceptor.onVolumeKey(key, fine) else { return false }
+            interceptor.swallowVolumeUp = code
+            return true
+        }
+        return taken ? nil : Unmanaged.passUnretained(event)
     }
     if type == .rightMouseDown || type == .rightMouseUp {
         let flags = event.flags

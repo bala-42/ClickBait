@@ -25,7 +25,13 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode.</string>
+	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>ClickBait's notch panel shows your next few events. They stay on this Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>ClickBait's notch panel shows your next few events.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ClickBait's notch mirror shows your camera while its Mirror tab is open. Nothing is recorded or kept.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ClickBait contributors. Apache License 2.0.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -7,6 +7,9 @@ import Observation
 @Observable
 final class AppSettings {
     private enum Key {
+        static let notchPanel = "settings.notchPanel"
+        static let notchNote = "settings.notchNote"
+        static let notchVolumeHUD = "settings.notchVolumeHUD"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
         static let speechModel = "settings.speechModel"
@@ -77,6 +80,22 @@ final class AppSettings {
         didSet { defaults.set(allowedShortcuts, forKey: Key.allowedShortcuts) }
     }
 
+    /// The notch panel (`NotchController`): on unless turned off from the menu bar.
+    var notchPanelEnabled: Bool {
+        didSet { defaults.set(notchPanelEnabled, forKey: Key.notchPanel) }
+    }
+
+    /// The volume keys show ClickBait's HUD in the notch instead of macOS's (they still work
+    /// if this is off, or if ClickBait can't set the volume).
+    var notchVolumeHUD: Bool {
+        didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
+    }
+
+    /// The notch panel's quick note: on this Mac only.
+    var notchNote: String {
+        didSet { defaults.set(notchNote, forKey: Key.notchNote) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
@@ -89,6 +108,9 @@ final class AppSettings {
         speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
         commandsEnabled = defaults.object(forKey: Key.commandsEnabled) as? Bool ?? true
         allowedShortcuts = defaults.stringArray(forKey: Key.allowedShortcuts) ?? []
+        notchPanelEnabled = defaults.object(forKey: Key.notchPanel) as? Bool ?? true
+        notchNote = defaults.string(forKey: Key.notchNote) ?? ""
+        notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
         LegacyCloudSettings.remove(from: defaults)
     }
 
