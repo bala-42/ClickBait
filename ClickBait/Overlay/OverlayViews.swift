@@ -185,7 +185,7 @@ struct TinyPill: View {
             }
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
-                .wrapped(text, maxWidth: 270, alignment: .center)
+                .wrapped(text, maxWidth: 270)
                 .inkCentred(text, maxWidth: 270)
         }
         .padding(.horizontal, 9)
@@ -214,29 +214,38 @@ extension View {
     }
 }
 
-/// Moves one line of text so its visible letters, not its line box, are centred up-down:
-/// a line box leaves room for capitals above, so lowercase names ("~ mercury") sat 1–2 pt
-/// low in their pill (measured 9 pt above vs 5 pt below, 2026-10-06).
+/// Moves text so its visible letters, not its line boxes, are centred up-down: equal room
+/// above the first line's letters and below the last line's. A line box leaves room for
+/// capitals and accents above, so lowercase sat 1–2 pt low in its pill (measured 9 pt above
+/// vs 5 pt below, 2026-10-06), and wrapped text likewise (user's report, 2026-10-14). Lines
+/// are broken at the same width `wrapped` gives the text.
 enum InkCentring {
     static func offset(for text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold) -> CGFloat {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let widest = text.split(whereSeparator: \.isNewline)
+            .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        let width = min(ceil(widest) + 2, maxWidth)
+        let setter = CTFramesetterCreateWithAttributedString(attributed)
+        let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0),
+                                             CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 10_000), transform: nil), nil)
+        guard let lines = CTFrameGetLines(frame) as? [CTLine], let first = lines.first, let last = lines.last else { return 0 }
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-        let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        guard width <= maxWidth, !text.contains(where: \.isNewline) else { return 0 }  // one line only
-        let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-        guard !ink.isEmpty else { return 0 }
+        CTLineGetTypographicBounds(first, &ascent, &descent, &leading)
+        let top = CTLineGetBoundsWithOptions(first, .useGlyphPathBounds)
+        let bottom = CTLineGetBoundsWithOptions(last, .useGlyphPathBounds)
+        guard !top.isEmpty, !bottom.isEmpty else { return 0 }
         // SwiftUI's line is the font's height rounded up (15 pt for 12 pt semibold, not 14.1),
         // the extra below the baseline.
         let lineHeight = (ascent + descent + leading).rounded(.up)
-        let above = ascent - ink.maxY, below = lineHeight - ascent + ink.minY
+        let above = ascent - top.maxY, below = lineHeight - ascent + bottom.minY
         return -((above - below) / 2 * 2).rounded() / 2  // whole pixels on a 2× screen: crisp text
     }
 }
 
 extension View {
-    /// A pill's one line of text, moved so its letters (not its line box) are centred
-    /// up-down (`InkCentring`); wrapped text is left as it is.
+    /// A pill's text, moved so its letters (not its line boxes) are centred up-down
+    /// (`InkCentring`), one line or wrapped.
     func inkCentred(_ text: String, maxWidth: CGFloat = .greatestFiniteMagnitude, size: CGFloat = 12,
                     weight: NSFont.Weight = .semibold) -> some View {
         offset(y: InkCentring.offset(for: text, maxWidth: maxWidth, size: size, weight: weight))
@@ -376,8 +385,8 @@ private struct GuidePill: View {
         Text(shown)
             .font(.system(size: 12, weight: .semibold))
             // The pill's width comes from the whole label, whatever is shown so far.
-            // Every label sits in the middle of its pill, across and up-down by its ink.
-            .wrapped(label, maxWidth: Self.maxWidth, alignment: .center)
+            .wrapped(label, maxWidth: Self.maxWidth, alignment: style == .tour ? .center : .leading)
+            // Every label sits in the middle of its pill up-down, by its ink (wrapped too).
             .inkCentred(label, maxWidth: Self.maxWidth)
     }
 
