@@ -185,7 +185,8 @@ struct TinyPill: View {
             }
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
-                .wrapped(text, maxWidth: 270)
+                .wrapped(text, maxWidth: 270, alignment: .center)
+                .inkCentred(text, maxWidth: 270)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
@@ -230,6 +231,15 @@ enum InkCentring {
         let lineHeight = (ascent + descent + leading).rounded(.up)
         let above = ascent - ink.maxY, below = lineHeight - ascent + ink.minY
         return -((above - below) / 2 * 2).rounded() / 2  // whole pixels on a 2× screen: crisp text
+    }
+}
+
+extension View {
+    /// A pill's one line of text, moved so its letters (not its line box) are centred
+    /// up-down (`InkCentring`); wrapped text is left as it is.
+    func inkCentred(_ text: String, maxWidth: CGFloat = .greatestFiniteMagnitude, size: CGFloat = 12,
+                    weight: NSFont.Weight = .semibold) -> some View {
+        offset(y: InkCentring.offset(for: text, maxWidth: maxWidth, size: size, weight: weight))
     }
 }
 
@@ -366,9 +376,9 @@ private struct GuidePill: View {
         Text(shown)
             .font(.system(size: 12, weight: .semibold))
             // The pill's width comes from the whole label, whatever is shown so far.
-            .wrapped(label, maxWidth: Self.maxWidth, alignment: style == .tour ? .center : .leading)
-            // A tour's part names sit in the middle of their red pill, up-down by their ink.
-            .offset(y: style == .tour ? InkCentring.offset(for: label, maxWidth: Self.maxWidth) : 0)
+            // Every label sits in the middle of its pill, across and up-down by its ink.
+            .wrapped(label, maxWidth: Self.maxWidth, alignment: .center)
+            .inkCentred(label, maxWidth: Self.maxWidth)
     }
 
     private func popIn() async {

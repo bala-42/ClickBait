@@ -257,6 +257,7 @@ private struct ChoiceCard: View {
         Text(text)
             .font(.system(size: 12, weight: primary ? .bold : .semibold))
             .oneLine()
+            .inkCentred(text, weight: primary ? .bold : .semibold)
             .foregroundStyle(primary ? tone.color : .white)
             .padding(.horizontal, 11).padding(.vertical, 4)
             .background(primary ? .white : .white.opacity(0.2), in: Capsule())

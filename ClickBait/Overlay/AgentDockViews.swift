@@ -109,6 +109,7 @@ private struct AgentCardTitle: View {
             Spacer(minLength: 4)
             Text(badge)
                 .font(.system(size: 10, weight: .semibold))
+                .inkCentred(badge, size: 10)
                 .foregroundStyle(tone.color)
                 .padding(.horizontal, 7)
                 .frame(minWidth: 36, minHeight: 15)
@@ -240,6 +241,7 @@ struct AgentDoneCard: View {
             HStack(spacing: 4) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .medium)) }
                 Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                    .inkCentred(text, size: 11, weight: .medium)
             }
             .foregroundStyle(AgentDockStyle.title.opacity(0.88))
             .padding(.horizontal, 9)
