@@ -118,12 +118,6 @@ site/               The website (Next.js, static export)
 project.yml         XcodeGen spec
 ```
 
-## Credits
-
-The companion's look and motion are modelled on [Clicky](https://github.com/farzaa/clicky) by Farza
-(MIT License): its centroid-centred triangle, glow and pointing feel. ClickBait reimplements the
-formulas in its own drawing and motion code.
-
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
