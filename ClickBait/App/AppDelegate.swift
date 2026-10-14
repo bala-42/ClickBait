@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             goThere(id)
             guard chat.isOpen else { return }
             chat.model.draft = text
+            coordinator.nextTypedIsSuggestion = true  // slow → back to the dock (`PeelRule.suggestionAutoPeels`)
             chat.model.send()  // as if typed: it's a follow-up in that chat
         }
         capsules.onFollowUp = { [weak self] id, voice in

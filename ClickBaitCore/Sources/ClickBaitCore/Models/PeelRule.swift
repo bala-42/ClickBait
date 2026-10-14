@@ -144,6 +144,13 @@ public enum PeelRule {
         }
     }
 
+    /// A done card's suggestion, clicked, is asked in its chat and peels by itself after
+    /// `autoPeelDelay` like a first explanation, except "show me the parts": its tour runs in
+    /// front (user's rule, 2026-10-14). Typed and spoken follow-ups still only peel with ⌃⌥.
+    public static func suggestionAutoPeels(_ suggestion: String) -> Bool {
+        suggestion != suggestedPartsPrompt
+    }
+
     /// The line shown instead of a tour whose snipped area no longer looks the same.
     public static let movedPill = "that's moved — snip it again to tour it"
 

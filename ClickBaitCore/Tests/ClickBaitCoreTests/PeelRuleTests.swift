@@ -182,6 +182,11 @@ struct AutoPeelTests {
         #expect(!auto(.streaming, .answer, room: false))
         #expect(!auto(.explained, .snip, room: false))
     }
+
+    @Test func clickedSuggestionPeelsExceptTheParts() {
+        #expect(PeelRule.suggestionAutoPeels("Why is it nil at launch?"))
+        #expect(!PeelRule.suggestionAutoPeels(PeelRule.suggestedPartsPrompt))
+    }
 }
 
 struct SnipMatchTests {

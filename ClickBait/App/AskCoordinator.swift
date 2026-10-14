@@ -58,6 +58,9 @@ final class AskCoordinator {
     /// A single tap explains at once but stays undoable until a second tap can no longer
     /// come; this ends that window (`commitExplain`).
     @ObservationIgnored private var explainCommit: Task<Void, Never>?
+    /// The next typed message is a done card's clicked suggestion that may peel by itself
+    /// (`PeelRule.suggestionAutoPeels`); read once by `sendTyped`.
+    @ObservationIgnored var nextTypedIsSuggestion = false
     /// The chat a provisional explanation detached: still on screen, put back by
     /// `undoExplain`, closed by `commitExplain`.
     @ObservationIgnored private var detachedChat: (conversation: Conversation, snipMemory: SnipMemory?)?
@@ -316,6 +319,8 @@ final class AskCoordinator {
 
     /// A message typed into the open chat bubble. Replies to typed messages are text only.
     func sendTyped(_ text: String) {
+        let autoPeels = nextTypedIsSuggestion && PeelRule.suggestionAutoPeels(text)
+        nextTypedIsSuggestion = false
         stopRefining()
         tutorial?.stop(message: nil)
         guard conversation != nil, !isAnswering, state != .listening else { return }
@@ -404,7 +409,7 @@ final class AskCoordinator {
             if await startTutorial(question: text, capture: capture, encoding: encoding, elements: elements,
                                    speak: false, display: text) { return }
             await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
-                          speak: false, display: text, elements: elements)
+                          speak: false, display: text, elements: elements, autoPeels: autoPeels)
         }
     }
 
@@ -2143,7 +2148,8 @@ final class AskCoordinator {
         snip: SnipKind? = nil,
         snipContext: Data? = nil,
         elements: [ScreenElement] = [],
-        flow givenFlow: QuestionFlow? = nil
+        flow givenFlow: QuestionFlow? = nil,
+        autoPeels: Bool = false
     ) async {
         // ⌥⌘ explanations and typed follow-ups have no flow yet: this one's, so they can be peeled too.
         let flow = givenFlow ?? adHocFlow(snip: snip != nil)
@@ -2397,8 +2403,8 @@ final class AskCoordinator {
                 attach(run, to: flow, appendingQuestion: queued)
                 Log.ask.notice("Peel joined: \(jobID.uuidString, privacy: .public)")
             }
-            // A first highlight or snip explanation goes to the dock by itself when slow.
-            if !queued, history.isEmpty, selectedText != nil || snip != nil { scheduleAutoPeel(flow, run) }
+            // A first highlight or snip explanation, or a clicked suggestion, goes to the dock by itself when slow.
+            if !queued, autoPeels || (history.isEmpty && (selectedText != nil || snip != nil)) { scheduleAutoPeel(flow, run) }
             if backgroundJobs?.entries.contains(where: { $0.job.isWorking && $0.id != flow.jobID }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
