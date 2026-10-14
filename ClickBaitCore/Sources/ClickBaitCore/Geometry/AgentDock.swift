@@ -112,6 +112,26 @@ public enum AgentDock {
                           freshScale: FlightArc.smoothstep(fresh), docked: progress >= 1)
     }
 
+    /// The flying copy stays fully visible up to this share of the spawn, then fades into its
+    /// tile (where the tile's own triangle takes over).
+    public static let copyFadeStart = 0.94
+
+    /// How a peel is shown. `.flight`: the copy grows and flies into its tile while the fresh
+    /// companion pops in at the cursor. `.inPlace`, the safe fallback when the flight can't or
+    /// shouldn't run (Reduce Motion, no slot, the slot on another display, or nothing to
+    /// animate): no copy; the tile fades in and the companion pops back at once. The job, its
+    /// card and its task are the same either way; only the motion differs.
+    public enum PeelMotion: Equatable, Sendable { case flight, inPlace }
+
+    public static func peelMotion(reduceMotion: Bool, hasSlot: Bool, sameDisplay: Bool, canAnimate: Bool = true) -> PeelMotion {
+        reduceMotion || !hasSlot || !sameDisplay || !canAnimate ? .inPlace : .flight
+    }
+
+    /// How long the fresh companion stays hidden: while the copy grows in its place, or not at all.
+    public static func freshCompanionDelay(_ motion: PeelMotion) -> Double {
+        motion == .flight ? growTime : 0
+    }
+
     /// How far the older tiles have slid down their one slot (0…1) at `elapsed`: they make
     /// room while the new one flies, done as it lands.
     public static func slide(at elapsed: Double) -> Double {

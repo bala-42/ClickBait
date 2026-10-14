@@ -79,18 +79,24 @@ final class OverlayController {
     /// Reduce Motion, or a tile on another display: no flight (the tile fades in).
     func peel(to target: CGPoint?, tone: CompanionTone, completion: @escaping @MainActor () -> Void) {
         let start = companionTriangleCenter
-        guard let target,
-              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              let sourceScreen = NSScreen.screens.first(where: { $0.frame.contains(start) }),
-              let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(target) }),
-              sourceScreen.frame == targetScreen.frame else {
-            model.companionPopDelay = 0
+        // The safe fallback (`AgentDock.PeelMotion.inPlace`): the companion pops straight back,
+        // the tile fades in on its own; the job is unaffected.
+        let popInPlace = { [model] in
+            model.companionPopDelay = AgentDock.freshCompanionDelay(.inPlace)
             model.companionPop &+= 1
             completion()
+        }
+        let sameDisplay = target.map { target in
+            let source = NSScreen.screens.first(where: { $0.frame.contains(start) })
+            return source != nil && source?.frame == NSScreen.screens.first(where: { $0.frame.contains(target) })?.frame
+        } ?? false
+        let motion = AgentDock.peelMotion(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                                          hasSlot: target != nil, sameDisplay: sameDisplay)
+        guard motion == .flight, let target else {
+            Log.app.notice("Peel shown in place (no flight)")
+            popInPlace()
             return
         }
-        model.companionPopDelay = AgentDock.growTime
-        model.companionPop &+= 1
 
         // Room for the triangle at 2× with its glow and the swell.
         let size = CGSize(width: 96, height: 96)
@@ -100,9 +106,14 @@ final class OverlayController {
         let stage = StagePanel(content: host, size: size, makePanel: Self.makePanel)
         stage.setOrigin(CGPoint(x: start.x - size.width / 2, y: start.y - size.height / 2), anchor: start)
         guard let stageLayer = host.superview?.layer, let contentLayer = host.layer else {
-            completion()
+            // Nothing to animate: don't leave the unused stage behind.
+            stage.panel.close()
+            Log.app.notice("Peel shown in place: no layer to animate")
+            popInPlace()
             return
         }
+        model.companionPopDelay = AgentDock.freshCompanionDelay(.flight)
+        model.companionPop &+= 1
         // Scale and turn about the triangle's centre (AppKit layers default to a corner).
         contentLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         contentLayer.position = CGPoint(x: host.frame.midX, y: host.frame.midY)
@@ -130,7 +141,7 @@ final class OverlayController {
         // Gone into its tile on the last frames, where the tile's own triangle sits.
         let fade = CAKeyframeAnimation(keyPath: "opacity")
         fade.values = [1, 1, 0]
-        fade.keyTimes = [0, 0.94, 1]
+        fade.keyTimes = [0, NSNumber(value: AgentDock.copyFadeStart), 1]
         for animation in [travel, shape, fade] {
             animation.duration = duration
             animation.calculationMode = .linear
