@@ -17,20 +17,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let recentItem = NSMenuItem(title: "Recent Searches", action: nil, keyEquivalent: "")
     private let notchItem = NSMenuItem(title: "Notch Panel", action: nil, keyEquivalent: "")
     private let volumeHUDItem = NSMenuItem(title: "Volume in the Notch", action: nil, keyEquivalent: "")
+    private let spotifyArtItem = NSMenuItem(title: "Spotify Covers", action: nil, keyEquivalent: "")
     /// Turns the notch panel on or off (`NotchController`).
     var onToggleNotch: ((Bool) -> Void)?
     private let recentMenu = NSMenu()
     private let settings: AppSettings
-    private let onOpenSettings: () -> Void
     private let onOpenPermissions: () -> Void
     private let onDebugCapsuleTest: () -> Void
     private let onShowCapsule: (UUID) -> Void
     private var backgroundEntries: [BackgroundJobs.Entry] = []
 
-    init(settings: AppSettings, onOpenSettings: @escaping () -> Void, onOpenPermissions: @escaping () -> Void,
+    init(settings: AppSettings, onOpenPermissions: @escaping () -> Void,
          onDebugCapsuleTest: @escaping () -> Void = {}, onShowCapsule: @escaping (UUID) -> Void = { _ in }) {
         self.settings = settings
-        self.onOpenSettings = onOpenSettings
         self.onOpenPermissions = onOpenPermissions
         self.onDebugCapsuleTest = onDebugCapsuleTest
         self.onShowCapsule = onShowCapsule
@@ -120,13 +119,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off
         volumeHUDItem.toolTip = "The volume keys show their level in the notch instead of macOS's. Off: macOS's HUD as always."
         menu.addItem(volumeHUDItem)
+        let artMenu = NSMenu()
+        for (title, always) in [("Always", true), ("Only with Internet Mode 🌐", false)] {
+            let choice = NSMenuItem(title: title, action: #selector(chooseSpotifyArt(_:)), keyEquivalent: "")
+            choice.target = self
+            choice.representedObject = always
+            choice.state = settings.spotifyArtworkAlways == always ? .on : .off
+            artMenu.addItem(choice)
+        }
+        spotifyArtItem.submenu = artMenu
+        spotifyArtItem.toolTip = "Spotify's album covers are downloaded from its artwork link (Apple Music's come from your Mac)."
+        menu.addItem(spotifyArtItem)
         menu.addItem(.separator())
 
         #if DEBUG
         menu.addItem(item("Debug: Test Capsule (Local)", action: #selector(runDebugCapsuleTest), key: ""))
         menu.addItem(.separator())
         #endif
-        menu.addItem(item("Settings…", action: #selector(openSettings), key: ","))
         menu.addItem(item("Permissions…", action: #selector(openPermissions), key: ""))
         revealCaptureItem.action = #selector(revealLastCapture)
         revealCaptureItem.target = self
@@ -143,9 +152,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    @objc private func openSettings() { onOpenSettings() }
     @objc private func openPermissions() { onOpenPermissions() }
     @objc private func toggleInternet() { settings.internet.toggle() }
+    @objc private func chooseSpotifyArt(_ sender: NSMenuItem) {
+        guard let always = sender.representedObject as? Bool else { return }
+        settings.spotifyArtworkAlways = always
+        spotifyArtItem.submenu?.items.forEach { $0.state = ($0.representedObject as? Bool) == always ? .on : .off }
+    }
+
     @objc private func toggleVolumeHUD() {
         settings.notchVolumeHUD.toggle()
         volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off

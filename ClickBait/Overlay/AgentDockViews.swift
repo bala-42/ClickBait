@@ -519,9 +519,9 @@ struct AquaButtonStyle: ButtonStyle {
     var compact = false
     @Environment(\.isEnabled) private var isEnabled
 
-    static let top = Color(red: 0.78, green: 0.89, blue: 1.0)
-    static let bottom = Color(red: 0.47, green: 0.71, blue: 0.97)
-    static let rim = Color(red: 0.25, green: 0.50, blue: 0.82)
+    static let top = Color(red: 0.82, green: 0.92, blue: 0.99)
+    static let bottom = Color(red: 0.61, green: 0.79, blue: 0.92)
+    static let rim = Color(red: 0.36, green: 0.57, blue: 0.73)
 
     func makeBody(configuration: Configuration) -> some View {
         let deep = selected || configuration.isPressed
@@ -534,14 +534,16 @@ struct AquaButtonStyle: ButtonStyle {
             .background {
                 ZStack {
                     Capsule().fill(LinearGradient(colors: [Self.top, Self.bottom], startPoint: .top, endPoint: .bottom))
-                    Capsule().fill(LinearGradient(colors: [.white.opacity(0.7), .white.opacity(0.15)],
+                    Capsule().fill(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06)],
                                                   startPoint: .top, endPoint: .center))
-                        .padding(.horizontal, 3).padding(.top, 1).padding(.bottom, 9)
+                        .padding(.horizontal, 3).padding(.top, 1).padding(.bottom, 11)
                 }
-                .brightness(deep ? -0.12 : 0)
+                .brightness(deep ? -0.06 : 0)
                 .saturation(isEnabled ? 1 : 0.4)
             }
-            .overlay(Capsule().strokeBorder(Self.rim.opacity(0.8), lineWidth: 0.6))
+            .overlay(Capsule().strokeBorder(Self.rim.opacity(0.58), lineWidth: 0.7))
+            .shadow(color: Self.rim.opacity(deep ? 0.05 : 0.12), radius: 2, x: 0, y: 1)
             .contentShape(Capsule())
+            .animation(.easeOut(duration: 0.12), value: deep)
     }
 }

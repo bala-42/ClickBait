@@ -132,6 +132,34 @@ public enum PeelRule {
     /// itself (user's rule, 2026-10-14), counted from its model request starting.
     public static let autoPeelDelay: Duration = .milliseconds(500)
 
+    /// The two holds — Strawberry Red while a snip is worked out until its tour, Lavender while
+    /// a walkthrough is planned until it starts — follow one set of rules (user's rule,
+    /// 2026-10-14: "Lavender mode hold behavior must match Strawberry Red mode exactly"): still
+    /// working `autoPeelDelay` after it began, it goes to the dock (if there's room); while held
+    /// nothing is pointed at and no app is opened; when the hold ends the companion is back at
+    /// the cursor; the result waits on the card for the user's go (`resumeAction`).
+    public enum Hold: CaseIterable, Sendable {
+        case snip, walkthrough
+    }
+
+    public static func holdPeels(_ hold: Hold, stillWorking: Bool, answeredAlready: Bool = false, hasRoom: Bool) -> Bool {
+        stillWorking && !answeredAlready && hasRoom
+    }
+
+    /// While held: never.
+    public static func mayPoint(during hold: Hold) -> Bool { false }
+    public static func mayOpenApps(during hold: Hold) -> Bool { false }
+    /// After the hold: the companion is back at the cursor (the peel's fresh one), not left at
+    /// the dock.
+    public static func rejoinsCursor(after hold: Hold) -> Bool { true }
+
+    public static let walkthroughResumePrompt = "show me!"
+
+    /// What the card offers to carry on where the hold left off.
+    public static func resumeAction(_ hold: Hold) -> String {
+        hold == .snip ? suggestedPartsPrompt : walkthroughResumePrompt
+    }
+
     /// A first ⌥⌘ explanation or snip still working when `autoPeelDelay` has passed peels by
     /// itself, as ⌃⌥ would: an explanation while it streams, a snip until its tour starts
     /// (it then skips the tour). Spoken questions and follow-ups never do, nor anything when
@@ -141,6 +169,10 @@ public enum PeelRule {
     /// at the cursor (user's rule, 2026-10-14).
     public static func autoPeels(_ situation: Situation, answeredAlready: Bool = false) -> Bool {
         guard situation.hasRoom, !answeredAlready else { return false }
+        if situation.work == .snip {
+            let working = [.streaming, .explained, .partsLook, .tourPrep].contains(situation.phase)
+            return holdPeels(.snip, stillWorking: working, answeredAlready: answeredAlready, hasRoom: situation.hasRoom)
+        }
         switch situation.work {
         case .answer: return situation.phase == .streaming
         case .snip: return [.streaming, .explained, .partsLook, .tourPrep].contains(situation.phase)

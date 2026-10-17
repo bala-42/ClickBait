@@ -6,6 +6,7 @@ import Observation
 
 enum PermissionKind: CaseIterable, Identifiable {
     case microphone
+    case camera
     case screenRecording
     case accessibility
 
@@ -14,6 +15,7 @@ enum PermissionKind: CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .microphone: "Microphone"
+        case .camera: "Camera"
         case .screenRecording: "Screen Recording"
         case .accessibility: "Accessibility"
         }
@@ -23,6 +25,8 @@ enum PermissionKind: CaseIterable, Identifiable {
         switch self {
         case .microphone:
             "Lets ClickBait hear your question while you hold Control+Option."
+        case .camera:
+            "Optional: shows a live front-camera mirror inside the notch. Nothing is recorded or kept."
         case .screenRecording:
             "Lets ClickBait see the screen you're asking about. Screenshots never leave your Mac."
         case .accessibility:
@@ -33,6 +37,7 @@ enum PermissionKind: CaseIterable, Identifiable {
     var symbolName: String {
         switch self {
         case .microphone: "mic.fill"
+        case .camera: "camera.fill"
         case .screenRecording: "rectangle.dashed.badge.record"
         case .accessibility: "accessibility"
         }
@@ -41,6 +46,7 @@ enum PermissionKind: CaseIterable, Identifiable {
     var settingsURL: URL? {
         let anchor = switch self {
         case .microphone: "Privacy_Microphone"
+        case .camera: "Privacy_Camera"
         case .screenRecording: "Privacy_ScreenCapture"
         case .accessibility: "Privacy_Accessibility"
         }
@@ -54,7 +60,7 @@ enum PermissionStatus: Equatable {
     case denied
 }
 
-/// Tracks Microphone, Screen Recording and Accessibility access. macOS sends no
+/// Tracks Microphone, Camera, Screen Recording and Accessibility access. macOS sends no
 /// notifications for these, so status is polled while someone is watching.
 @MainActor
 @Observable
@@ -68,7 +74,9 @@ final class PermissionsManager {
     }
 
     var allGranted: Bool {
-        PermissionKind.allCases.allSatisfy { status(of: $0) == .granted }
+        PermissionKind.allCases
+            .filter { $0 != .camera }
+            .allSatisfy { status(of: $0) == .granted }
     }
 
     func status(of kind: PermissionKind) -> PermissionStatus {
@@ -113,6 +121,15 @@ final class PermissionsManager {
             } else {
                 openSettings(for: kind)
             }
+        case .camera:
+            if status(of: .camera) == .notDetermined {
+                Task {
+                    _ = await AVCaptureDevice.requestAccess(for: .video)
+                    refresh()
+                }
+            } else {
+                openSettings(for: kind)
+            }
         case .screenRecording:
             // Shows the prompt once and adds ClickBait to the list; later calls do nothing.
             if !CGRequestScreenCaptureAccess() {
@@ -138,6 +155,12 @@ final class PermissionsManager {
         switch kind {
         case .microphone:
             switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized: .granted
+            case .notDetermined: .notDetermined
+            default: .denied
+            }
+        case .camera:
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
             case .authorized: .granted
             case .notDetermined: .notDetermined
             default: .denied

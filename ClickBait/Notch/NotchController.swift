@@ -2,12 +2,13 @@ import AppKit
 import ClickBaitCore
 import SwiftUI
 
-/// The notch panel (`NotchPanel` holds its states and layout): one small, non-activating
-/// window over the notch. Collapsed it's notch-sized and black, so it disappears into the
-/// notch, with a small tab beside it when an agent is working or done; resting the pointer on
-/// it (or a click) opens the widgets, and moving away, a click or Escape closes them. Nothing
-/// samples or polls while it's closed. On a display without a notch it's a small pill under
-/// the menu bar. Clean-room: no boring.notch code or assets.
+/// The notch panel (`NotchPanel` holds its states, the GIF's sizes and springs; `NotchView`
+/// draws it): one small, non-activating window at the notch. Closed it's the notch; while music
+/// plays it shows the artwork and a visualizer in its wings; the pointer swells it at once and
+/// opens it 0.4 s later (or a click, a two-finger pull down, a file dragged onto it); Escape,
+/// its collapse control, or a push up closes it. Leaving does not collapse an open panel. The window grows at once and shrinks only once the closing
+/// spring has settled, so it never covers more of the menu bar than the black does. Nothing
+/// polls while it's closed. Clean-room: no boring.notch code or assets.
 @MainActor
 final class NotchController {
     /// Passes two-finger scrolls on to the pull-down gesture before SwiftUI sees them.
@@ -20,7 +21,7 @@ final class NotchController {
     }
 
     private final class Panel: NSPanel {
-        /// Only open, so the note can be typed into; still never activates ClickBait.
+        /// Only while open, so the note can be typed into; still never activates ClickBait.
         var takesKeyboard = false
         override var canBecomeKey: Bool { takesKeyboard }
         override var canBecomeMain: Bool { false }
@@ -28,144 +29,91 @@ final class NotchController {
         override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     }
 
+    /// The quick note, kept in `AppSettings`.
+    @MainActor @Observable
+    final class Note {
+        var text: String { didSet { save(text) } }
+        @ObservationIgnored private let save: (String) -> Void
+        init(text: String, save: @escaping (String) -> Void) {
+            self.text = text
+            self.save = save
+        }
+    }
+
     @MainActor @Observable
     final class Model {
         var state: NotchPanel.State = .hidden
-        var tabDot: AgentDock.Dot?
-        var hasNotch = true
-        var notchWidth: CGFloat = 0
-        var widgets: [any NotchWidget] = []
-        /// The companion's model: the panel glows in its state colour.
-        var companion: OverlayModel?
-        /// Home (music, events), Shelf (files, note) or Mirror (the camera).
-        var tab: Tab = .home
-        enum Tab { case home, shelf, mirror }
+        var notch: Rect?
+        /// Music playing: the artwork and visualizer in the wings.
+        var activity = false
+        /// The pointer is on it (the swell before it opens).
+        var hovering = false
         /// The volume HUD while it shows: the level (0…1) and whether muted.
         var hud: (level: Double, muted: Bool)?
+        var tab: Tab = .home
+        var settingsReturnTab: Tab = .home
+        enum Tab { case home, shelf, settings }
+        let note: Note
+        init(note: Note) { self.note = note }
     }
 
-    let model = Model()
+    let model: Model
     private let settings: AppSettings
-    private let jobs: BackgroundJobs
-    private var panel: Panel?
+    private let speech: SpeechModelManager
+    private let speaker: Speaker
+    private let searxng: SearXNGStatus
+    private let music = MusicBridge()
+    private let calendar = CalendarSource()
+    private let shelf = ShelfStore()
+    private var panels: [UInt32: Panel] = [:]
+    private var hoveredDisplays: Set<UInt32> = []
     private var hoverTask: Task<Void, Never>?
     private var hudTask: Task<Void, Never>?
+    private var frameTasks: [UInt32: Task<Void, Never>] = [:]
+    private var pausedTask: Task<Void, Never>?
     private var pull = PullGesture()
     private var escapeMonitors: [Any] = []
-    private var screenObserver: NSObjectProtocol?
-    private var spaceObserver: NSObjectProtocol?
-    private let allWidgets: [any NotchWidget]
+    private var observers: [NSObjectProtocol] = []
 
-    init(settings: AppSettings, jobs: BackgroundJobs, companion: OverlayModel) {
-        model.companion = companion
+    private var primaryPanel: Panel? {
+        if let screen = Self.screen, let id = Self.displayID(screen), let panel = panels[id] { return panel }
+        return panels.values.first
+    }
+
+    init(settings: AppSettings, speech: SpeechModelManager, speaker: Speaker) {
         self.settings = settings
-        self.jobs = jobs
-        allWidgets = [ClockWidget(), StatsWidget(), BatteryWidget(), ModesWidget(settings: settings),
-                      MusicWidget(), CalendarWidget(), MirrorWidget(),
-                      ShelfWidget(), NoteWidget(settings: settings)]
-        screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
-                                                                 object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.place(animated: false) }
+        self.speech = speech
+        self.speaker = speaker
+        searxng = SearXNGStatus(fetcher: settings.web)
+        model = Model(note: Note(text: settings.notchNote, save: { [weak settings] in settings?.notchNote = $0 }))
+        music.spotifyArtworkAllowed = { [weak settings] in
+            guard let settings else { return false }
+            return settings.spotifyArtworkAlways || settings.internet.isOn
         }
+        music.onChange = { [weak self] in self?.musicChanged() }
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                                                 object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.place() }
+        })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                                                            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.place() }
+        })
     }
 
     func start() {
         WindowLayers.check()
         apply(.enabled(settings.notchPanelEnabled))
-        // The screen's real shape can arrive after launch; and a full-screen desktop has none.
+        // The screen's real shape can arrive after launch.
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
-            self?.place(animated: false)
-        }
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.place(animated: false) }
+            self?.place()
         }
     }
-
-    #if DEBUG
-    /// `CLICKBAIT_TEST_NOTCH=1`: opens the panel, then reports its frame and layer.
-    func debugOpen() -> String {
-        apply(.clicked)
-        return "state \(model.state), frame \(panel?.frame ?? .zero), level \(panel?.level.rawValue ?? -1) (dock \(WindowLayers.dock.rawValue)), widgets \(model.widgets.map(\.id))"
-    }
-
-    func debugClose() { apply(.escape) }
-
-    /// Renders the open panel to `folder`/notch.png (the screen can't be captured here).
-    func debugRender(to folder: String) {
-        let size = NotchPanel.expandedSize
-        let view = NotchView(model: model, onHover: { _ in }, onTap: {}, onDragIn: {})
-            .frame(width: size.width, height: size.height)
-            .padding(30).background(Color(white: 0.75))
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
-            try? png.write(to: URL(fileURLWithPath: folder).appending(path: "notch.png"))
-        }
-    }
-
-    /// `CLICKBAIT_TEST_NOTCH_HUD`: one volume-up through the HUD, its wings rendered, then the
-    /// volume put back exactly.
-    func debugHUD(render folder: String?) -> String {
-        guard let before = SystemVolume.read() else { return "no output device volume" }
-        let taken = handleVolumeKey(.up, fine: false)
-        let after = SystemVolume.read()
-        let report = "taken \(taken), volume \(before.volume) → \(after?.volume ?? -1), hud \(model.hud != nil), frame \(panel?.frame ?? .zero)"
-        if let folder {
-            let size = CGSize(width: 185 + 2 * NotchPanel.hudWing, height: 32)
-            let view = NotchView(model: model, onHover: { _ in }, onTap: {}, onDragIn: {})
-                .frame(width: size.width, height: size.height).padding(20).background(Color(white: 0.75))
-            let renderer = ImageRenderer(content: view)
-            renderer.scale = 3
-            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
-               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
-                try? png.write(to: URL(fileURLWithPath: folder).appending(path: "hud.png"))
-            }
-        }
-        _ = SystemVolume.write(volume: before.volume, muted: before.muted)
-        return report + ", restored \(SystemVolume.read().map { abs($0.volume - before.volume) < 0.001 } ?? false)"
-    }
-
-    var debugFrame: String { "\(panel?.frame ?? .zero), visible \(panel?.isVisible ?? false)" }
-    #endif
 
     func setEnabled(_ enabled: Bool) {
         settings.notchPanelEnabled = enabled
         apply(.enabled(enabled))
-    }
-
-    /// A volume key (from `InputInterceptor`): set the volume ourselves and show the HUD in
-    /// the notch. False — the key goes to macOS untouched — when the HUD is off, the panel is
-    /// hidden or open, there's no notch, or the device won't take it.
-    func handleVolumeKey(_ key: VolumeStep.Key, fine: Bool) -> Bool {
-        guard settings.notchVolumeHUD, model.state == .collapsed, let screen = Self.screen,
-              Self.notch(on: screen) != nil, let now = SystemVolume.read() else { return false }
-        model.hasNotch = true
-        let next = VolumeStep.apply(key, volume: now.volume, muted: now.muted, fine: fine)
-        guard SystemVolume.write(volume: next.volume, muted: next.muted) else { return false }
-        let first = model.hud == nil
-        model.hud = (next.muted ? 0 : next.volume, next.muted)
-        if first { place(animated: true) }
-        hudTask?.cancel()
-        hudTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled, let self else { return }
-            model.hud = nil
-            place(animated: true)
-        }
-        return true
-    }
-
-    /// The dock changed: the collapsed tab shows what's waiting.
-    func jobsChanged() {
-        let tiles = jobs.entries.map { (CapsulePresentation.status(of: $0.job), $0.seen) }
-        let dot: AgentDock.Dot? = tiles.contains { $0.0 == .working || ($0.0 == .done && !$0.1) }
-            ? DockCollapse.handleDot(tiles) : nil
-        guard dot != model.tabDot else { return }
-        model.tabDot = dot
-        if model.state == .collapsed { place(animated: true) }
     }
 
     // MARK: State
@@ -173,25 +121,49 @@ final class NotchController {
     private func apply(_ event: NotchPanel.Event) {
         let before = model.state
         var event = event
-        if case .enabled(true) = event, Self.screen == nil { event = .displayAvailable(false) }
+        if case .enabled(true) = event, NSScreen.screens.isEmpty { event = .displayAvailable(false) }
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }
         model.state = after
+        if after != .expanded, model.tab == .settings { model.tab = .home }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         if after == .expanded {
-            model.widgets = allWidgets.filter(\.isAvailable)
-            model.widgets.forEach { $0.expanded() }
+            model.hovering = false
+            music.refresh()
+            calendar.refresh()
             watchEscape(true)
         } else if before == .expanded {
-            allWidgets.forEach { $0.collapsed() }
             watchEscape(false)
         }
-        place(animated: true)
+        place()
+    }
+
+    private func musicChanged() {
+        if music.hasTrack, music.isPlaying {
+            pausedTask?.cancel()
+            setActivity(true)
+        } else if !music.hasTrack {
+            setActivity(false)
+        } else {
+            // Paused: the wings stay a moment, then tuck away.
+            pausedTask?.cancel()
+            pausedTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self, !music.isPlaying else { return }
+                setActivity(false)
+            }
+        }
+    }
+
+    private func setActivity(_ on: Bool) {
+        guard model.activity != on else { return }
+        model.activity = on
+        place()
     }
 
     // MARK: Window
 
-    /// The display with the notch (the built-in one), else the main display.
+    /// The built-in display (with the notch), else the main one.
     private static var screen: NSScreen? {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 }
             ?? NSScreen.screens.first { CGDisplayIsBuiltin(($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) != 0 }
@@ -202,12 +174,9 @@ final class NotchController {
         Rect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height)
     }
 
-    /// Read fresh each time: at launch an agent app can be told there's no notch (inset 0, no
-    /// side areas — measured 2026-10-14), and full-screen desktops hide the menu bar.
     /// While the menu bar is hidden (a full-screen app's desktop) macOS reports no notch at all
-    /// — inset 0, no side areas (measured 2026-10-14) — though the camera housing is still there.
-    /// So the notch last seen on this display, at this size, is remembered (`UserDefaults`, by
-    /// display number) and used then.
+    /// — inset 0, no side areas, to every process (measured 2026-10-14) — though the camera
+    /// housing is still there; so the notch last seen on this display, at this size, is used.
     private static func notch(on screen: NSScreen) -> Rect? {
         let display = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? 0
         let key = "notch.lastSeen.\(display).\(Int(screen.frame.width))x\(Int(screen.frame.height))"
@@ -220,43 +189,78 @@ final class NotchController {
         return Rect(x: saved[0], y: saved[1], width: saved[2], height: saved[3])
     }
 
-    private func place(animated: Bool) {
-        guard let screen = Self.screen else {
+    /// The window for where things are now. Growing: at once, then the shape springs out inside
+    /// it. Shrinking: the shape springs in first; the window follows once it has settled.
+    private func place() {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else {
             apply(.displayAvailable(false))
             return
         }
-        let notch = Self.notch(on: screen)
-        model.hasNotch = notch != nil
-        Log.app.debug("""
-            Notch: screen \(String(describing: screen.frame), privacy: .public) visible \(String(describing: screen.visibleFrame), privacy: .public) \
-            inset \(screen.safeAreaInsets.top, privacy: .public) left \(String(describing: screen.auxiliaryTopLeftArea), privacy: .public) \
-            → notch \(notch.map { "\($0)" } ?? "none", privacy: .public)
-            """)
-        model.notchWidth = notch.map { CGFloat($0.width) } ?? 0
-        guard let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
-                                           notch: notch, showsTab: model.tabDot != nil, showsHUD: model.hud != nil) else {
-            panel?.orderOut(nil)
-            return
+        let primary = Self.screen ?? screens[0]
+        model.notch = Self.notch(on: primary)
+        let connectedIDs = Set(screens.compactMap(Self.displayID))
+        for displayID in panels.keys.filter({ !connectedIDs.contains($0) }) {
+            frameTasks.removeValue(forKey: displayID)?.cancel()
+            panels.removeValue(forKey: displayID)?.orderOut(nil)
         }
-        let target = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
-        let panel = self.panel ?? makePanel(target)
-        self.panel = panel
-        panel.takesKeyboard = model.state == .expanded
-        if !panel.isVisible { panel.setFrame(target, display: true); panel.orderFrontRegardless() }
-        guard panel.frame != target else { return }
-        if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrame(target, display: true)
+        for screen in screens {
+            guard let displayID = Self.displayID(screen),
+                  let notch = Self.notch(on: screen),
+                  let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
+                                               notch: notch, activity: model.activity,
+                                               hovering: model.hovering && model.state != .expanded, hud: model.hud != nil,
+                                               shelf: model.tab == .shelf, settings: model.tab == .settings) else {
+                // Displays without a physical notch still receive the same centered panel.
+                guard let displayID = Self.displayID(screen),
+                      let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
+                                                   notch: nil, activity: model.activity,
+                                                   hovering: model.hovering && model.state != .expanded, hud: model.hud != nil,
+                                                   shelf: model.tab == .shelf, settings: model.tab == .settings) else { continue }
+                positionPanel(frame, notch: nil, displayID: displayID)
+                continue
             }
-        } else {
-            panel.setFrame(target, display: true)
+            positionPanel(frame, notch: notch, displayID: displayID)
         }
-        if model.state != .expanded, panel.isKeyWindow { panel.resignKey() }
     }
 
-    private func makePanel(_ frame: CGRect) -> Panel {
+    private static func displayID(_ screen: NSScreen) -> UInt32? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    private func positionPanel(_ frame: Rect, notch: Rect?, displayID: UInt32) {
+        let target = CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+        let panel = panels[displayID] ?? makePanel(target, notch: notch, displayID: displayID)
+        panels[displayID] = panel
+        panel.takesKeyboard = model.state == .expanded
+        if !panel.isVisible { panel.setFrame(target, display: true); panel.orderFrontRegardless() }
+        if model.state != .expanded, panel.isKeyWindow { panel.resignKey() }
+        frameTasks[displayID]?.cancel()
+        let current = panel.frame
+        guard current != target else { return }
+
+        // Keep the top edge fixed so it remains attached to the physical notch. The damped
+        // oscillation adds one small overshoot on opening/closing without a long, floaty bounce.
+        frameTasks[displayID] = Task { @MainActor [weak panel] in
+            let duration = 0.42
+            let start = ProcessInfo.processInfo.systemUptime
+            let top = current.maxY
+            while !Task.isCancelled {
+                let progress = min(1, (ProcessInfo.processInfo.systemUptime - start) / duration)
+                let spring = 1 - exp(-14 * progress * duration) * cos(18 * progress * duration)
+                let width = current.width + (target.width - current.width) * spring
+                let height = current.height + (target.height - current.height) * spring
+                let frame = CGRect(x: target.midX - width / 2, y: top - height, width: width, height: height)
+                panel?.setFrame(frame, display: true)
+                if progress >= 1 { break }
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            guard !Task.isCancelled else { return }
+            panel?.setFrame(target, display: true)
+        }
+    }
+
+    private func makePanel(_ frame: CGRect, notch: Rect?, displayID: UInt32) -> Panel {
         let panel = Panel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -266,13 +270,47 @@ final class NotchController {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        let host = PullHostingView(rootView: NotchView(model: model, onHover: { [weak self] in self?.hovering($0) },
-                                                       onTap: { [weak self] in self?.apply(.clicked) },
-                                                       onDragIn: { [weak self] in self?.dragArrived() }))
+        let host = PullHostingView(rootView: NotchView(
+            model: model, notch: notch, music: music, calendar: calendar, shelf: shelf,
+            settings: settings, speech: speech, speaker: speaker, searxng: searxng,
+            onHover: { [weak self] in self?.hovering($0, on: displayID) },
+            onTap: { [weak self] in self?.apply(.clicked) },
+            onDragIn: { [weak self] in self?.dragArrived() },
+            onTabChange: { [weak self] tab in
+                guard let self else { return }
+                if tab == .settings, model.tab != .settings { model.settingsReturnTab = model.tab }
+                model.tab = tab
+                self.place()
+            },
+            onCollapse: { [weak self] in self?.apply(.escape) }))
         host.onScroll = { [weak self] in self?.scrolled($0) }
         host.autoresizingMask = [.width, .height]
         panel.contentView = host
         return panel
+    }
+
+    // MARK: Pointer and keys
+
+    /// The GIF's activation: the pointer arriving swells it at once; resting `hoverDelay` opens
+    /// it; leaving for `leaveDelay` closes it. A pass to the menu bar only swells it.
+    private func hovering(_ inside: Bool, on displayID: UInt32) {
+        hoverTask?.cancel()
+        if inside { hoveredDisplays.insert(displayID) } else { hoveredDisplays.remove(displayID) }
+        let hovering = !hoveredDisplays.isEmpty
+        if model.state == .expanded {
+            model.hovering = false
+            return
+        }
+        if model.state == .collapsed, model.hovering != hovering {
+            model.hovering = hovering
+            place()
+        }
+        let delay = hovering ? NotchPanel.hoverDelay : NotchPanel.leaveDelay
+        hoverTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.apply(hovering ? .hoverDwelled : .pointerLeft)
+        }
     }
 
     /// Two fingers on the trackpad over the notch: down opens, up closes (`PullGesture`).
@@ -291,20 +329,6 @@ final class NotchController {
         if model.state == .collapsed { apply(.clicked) }
     }
 
-    // MARK: Pointer and keys
-
-    /// Resting on it for `hoverDelay` opens it; away for `leaveDelay` closes it. A pass over
-    /// the notch on the way to the menu bar does neither.
-    private func hovering(_ inside: Bool) {
-        hoverTask?.cancel()
-        let delay = inside ? NotchPanel.hoverDelay : NotchPanel.leaveDelay
-        hoverTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled else { return }
-            self?.apply(inside ? .hoverDwelled : .pointerLeft)
-        }
-    }
-
     private func watchEscape(_ on: Bool) {
         escapeMonitors.forEach(NSEvent.removeMonitor)
         escapeMonitors.removeAll()
@@ -319,167 +343,92 @@ final class NotchController {
             return nil
         }) { escapeMonitors.append(local) }
     }
-}
 
-/// The notch's outline: flush with the top, its upper corners flaring out into the menu bar
-/// (`ear`, curving the other way, as the notch's own do), its lower corners rounded.
-struct NotchShape: InsettableShape {
-    var ear: CGFloat
-    var bottom: CGFloat
-    var inset: CGFloat = 0
+    // MARK: Volume HUD
 
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(ear, bottom) }
-        set { ear = newValue.first; bottom = newValue.second }
+    /// A volume key (from `InputInterceptor`): set the volume ourselves and show the HUD in the
+    /// notch's wings. False — the key goes to macOS untouched — when the HUD is off, the panel is
+    /// hidden or open, there's no notch, or the device won't take it.
+    func handleVolumeKey(_ key: VolumeStep.Key, fine: Bool) -> Bool {
+        guard settings.notchVolumeHUD, model.state == .collapsed, let screen = Self.screen,
+              Self.notch(on: screen) != nil, let now = SystemVolume.read() else { return false }
+        let next = VolumeStep.apply(key, volume: now.volume, muted: now.muted, fine: fine)
+        guard SystemVolume.write(volume: next.volume, muted: next.muted) else { return false }
+        let first = model.hud == nil
+        model.hud = (next.muted ? 0 : next.volume, next.muted)
+        if first { place() }
+        hudTask?.cancel()
+        hudTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, let self else { return }
+            model.hud = nil
+            place()
+        }
+        return true
     }
 
-    func inset(by amount: CGFloat) -> NotchShape {
-        var copy = self
-        copy.inset += amount
-        return copy
+    #if DEBUG
+    /// `CLICKBAIT_TEST_NOTCH`: opens the panel, then reports its state and layer.
+    func debugOpen() -> String {
+        apply(.clicked)
+        return "state \(model.state), level \(primaryPanel?.level.rawValue ?? -1) (dock \(WindowLayers.dock.rawValue)), displays \(panels.count)"
     }
 
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: inset, dy: inset)
-        let e = min(ear, r.width / 4), b = min(bottom, (r.height) / 2, (r.width - 2 * e) / 2)
-        var path = Path()
-        path.move(to: CGPoint(x: r.minX, y: r.minY))
-        // The left ear: a quarter curve from the top edge in to the body's side.
-        path.addQuadCurve(to: CGPoint(x: r.minX + e, y: r.minY + e), control: CGPoint(x: r.minX + e, y: r.minY))
-        path.addLine(to: CGPoint(x: r.minX + e, y: r.maxY - b))
-        path.addQuadCurve(to: CGPoint(x: r.minX + e + b, y: r.maxY), control: CGPoint(x: r.minX + e, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.maxX - e - b, y: r.maxY))
-        path.addQuadCurve(to: CGPoint(x: r.maxX - e, y: r.maxY - b), control: CGPoint(x: r.maxX - e, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.maxX - e, y: r.minY + e))
-        path.addQuadCurve(to: CGPoint(x: r.maxX, y: r.minY), control: CGPoint(x: r.maxX - e, y: r.minY))
-        path.closeSubpath()
-        return path
+    func debugClose() { apply(.escape) }
+
+    var debugFrame: String { "\(primaryPanel?.frame ?? .zero), visible \(primaryPanel?.isVisible ?? false), displays \(panels.count)" }
+
+    /// The pointer arriving and resting: the swell at once, then open after `hoverDelay`.
+    func debugHover() async -> String {
+        let before = primaryPanel?.frame.width ?? 0
+        let displayID = Self.screen.flatMap(Self.displayID) ?? 0
+        hovering(true, on: displayID)
+        try? await Task.sleep(for: .seconds(0.3))  // the swell animates; read it before it opens at 0.4 s
+        let swell = primaryPanel?.frame.width ?? 0
+        try? await Task.sleep(for: .seconds(NotchPanel.hoverDelay - 0.2))
+        let opened = model.state == .expanded
+        hovering(false, on: displayID)
+        try? await Task.sleep(for: .seconds(NotchPanel.leaveDelay + 0.8))
+        return "width \(before) → swell \(swell), opened \(opened), remains open \(model.state == .expanded), displays \(panels.count)"
     }
-}
 
-/// Black like the notch, so it grows out of it. Collapsed: empty over the notch, a dot in the
-/// tab when something waits. Open: a header row either side of the notch (the time; stats and
-/// mode switches) and dark Aqua cards below (music, agents, note).
-private struct NotchView: View {
-    let model: NotchController.Model
-    let onHover: (Bool) -> Void
-    let onTap: () -> Void
-    let onDragIn: () -> Void
-
-    private static let ear: CGFloat = 10
-
-    var body: some View {
-        let open = model.state == .expanded
-        let shape = NotchShape(ear: open ? Self.ear : 0, bottom: open ? 24 : 10)
-        ZStack(alignment: .top) {
-            shape.fill(Color.black)
-            if open {
-                // The chat's dark Aqua body (tint, pinstripes) fading in below the notch, its
-                // hairline along the sides and bottom; the top stays black into the notch.
-                ZStack {
-                    LinearGradient(colors: [AquaDark.tintTop, AquaDark.tintBottom], startPoint: .top, endPoint: .bottom)
-                        .opacity(AquaDark.tintOpacity * 2)
-                    Image(nsImage: AquaDark.pinstripes).resizable(resizingMode: .tile)
-                }
-                .clipShape(shape)
-                .mask(LinearGradient(colors: [.clear, .white], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.3)))
-                shape.stroke(AquaDark.border.opacity(0.7), lineWidth: 0.8)
-                    .mask(LinearGradient(colors: [.clear, .white], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.35)))
+    /// Renders the open panel and the closed music wings to `folder` (the screen can't be
+    /// captured here).
+    func debugRender(to folder: String) {
+        let cover = NSImage(size: NSSize(width: 200, height: 200), flipped: false) { rect in
+            NSGradient(colors: [NSColor(red: 0.15, green: 0.3, blue: 0.85, alpha: 1), NSColor(red: 0.85, green: 0.7, blue: 0.4, alpha: 1)])?
+                .draw(in: rect, angle: -40)
+            return true
+        }
+        music.debugFake(title: "Green Light", artist: "Lorde", duration: 234, position: 177, artwork: cover)
+        for (name, state, activity) in [("notch-open", NotchPanel.State.expanded, true), ("notch-wings", .collapsed, true)] {
+            let saved = (model.state, model.activity)
+            model.state = state
+            model.activity = activity
+            let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hovering: false, hud: false)
+            let view = NotchView(model: model, notch: model.notch, music: music, calendar: calendar, shelf: shelf,
+                settings: settings, speech: speech, speaker: speaker,
+                searxng: searxng,
+                onHover: { _ in }, onTap: {}, onDragIn: {}, onTabChange: { _ in }, onCollapse: {})
+                .frame(width: look.width + 2 * NotchPanel.ear + 60, height: look.height + 30)
+                .background(Color(red: 0.12, green: 0.16, blue: 0.22))
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: folder).appending(path: "\(name).png"))
             }
-            if open {
-                VStack(spacing: 10) {
-                    header
-                    HStack(spacing: 8) {
-                        ForEach(model.widgets.filter { $0.placement == Self.placement(for: model.tab) }, id: \.id) { widget in
-                            widget.view
-                        }
-                    }
-                }
-                .padding(.horizontal, Self.ear + 14)
-                .padding(.bottom, 14)
-                .transition(.opacity)
-            } else if let hud = model.hud {
-                hudWings(hud)
-            } else if let dot = model.tabDot {
-                HStack {
-                    Spacer()
-                    Circle().fill(AgentDockStyle.dot(dot)).frame(width: 7, height: 7)
-                        .shadow(color: AgentDockStyle.dot(dot).opacity(0.8), radius: 3)
-                        .padding(.trailing, 11)
-                }
-                .frame(maxHeight: .infinity)
-                .accessibilityLabel("Background ClickBaits waiting")
-            }
-        }
-        .contentShape(shape)
-        // Dragging a file onto the closed notch opens the shelf (no hover events mid-drag).
-        .dropDestination(for: URL.self) { _, _ in false } isTargeted: { if $0, !open { onDragIn() } }
-        .onHover(perform: onHover)
-        .onTapGesture { if !open { onTap() } }
-        .animation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: 0.2), value: open)
-        .accessibilityElement(children: open ? .contain : .ignore)
-        .accessibilityLabel(open ? "ClickBait notch panel" : "ClickBait notch panel, closed. Click to open.")
-        .accessibilityAddTraits(open ? [] : .isButton)
-    }
-
-    private static func placement(for tab: NotchController.Model.Tab) -> NotchPlacement {
-        switch tab {
-        case .home: .card
-        case .shelf: .shelf
-        case .mirror: .mirror
+            (model.state, model.activity) = saved
         }
     }
 
-    /// The volume HUD in the notch's wings: the speaker left of the notch, the level right of
-    /// it as a light-blue Aqua gel bar in a recessed well.
-    private func hudWings(_ hud: (level: Double, muted: Bool)) -> some View {
-        let symbol = hud.muted ? "speaker.slash.fill" : hud.level < 0.34 ? "speaker.wave.1.fill"
-            : hud.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-        return HStack(spacing: 0) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(AquaDark.textPrimary)
-                .frame(width: NotchPanel.hudWing)
-            Spacer(minLength: 0)
-            ZStack(alignment: .leading) {
-                AquaWell(shape: Capsule(), darkness: 0.5, bordered: true)
-                AquaGel(palette: .lightBlue, shape: Capsule()).frame(width: max(8, 64 * hud.level))
-            }
-            .frame(width: 64, height: 8)
-            .frame(width: NotchPanel.hudWing)
-        }
-        .frame(maxHeight: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(hud.muted ? "Volume muted" : "Volume \(Int((hud.level * 100).rounded())) percent")
+    /// `CLICKBAIT_TEST_NOTCH_HUD`: one volume-up through the HUD, then the volume put back exactly.
+    func debugHUD() -> String {
+        guard let before = SystemVolume.read() else { return "no output device volume" }
+        let taken = handleVolumeKey(.up, fine: false)
+        let after = SystemVolume.read()
+        _ = SystemVolume.write(volume: before.volume, muted: before.muted)
+        return "taken \(taken), volume \(before.volume) → \(after?.volume ?? -1), restored \(SystemVolume.read().map { abs($0.volume - before.volume) < 0.001 } ?? false)"
     }
-
-    /// Home, Shelf and Mirror, as small gel buttons (light blue: the one showing).
-    private var tabs: some View {
-        HStack(spacing: 4) {
-            tabButton(.home, symbol: "house.fill", label: "Home")
-            tabButton(.shelf, symbol: "tray.full.fill", label: "Shelf")
-            tabButton(.mirror, symbol: "camera.fill", label: "Mirror")
-        }
-    }
-
-    private func tabButton(_ tab: NotchController.Model.Tab, symbol: String, label: String) -> some View {
-        NotchGelButton(on: model.tab == tab, size: CGSize(width: 24, height: 18),
-                       action: { model.tab = tab }) {
-            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-        }
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(model.tab == tab ? .isSelected : [])
-    }
-
-    /// Beside the notch (it stays black in the middle): the leading widgets left of it, the
-    /// trailing ones right of it. Without a notch, one row across.
-    private var header: some View {
-        HStack(spacing: 10) {
-            ForEach(model.widgets.filter { $0.placement == .headerLeading && $0.id == "clock" }, id: \.id) { $0.view }
-            tabs
-            ForEach(model.widgets.filter { $0.placement == .headerLeading && $0.id != "clock" }, id: \.id) { $0.view }
-            Spacer(minLength: model.hasNotch ? model.notchWidth + 12 : 12)
-            ForEach(model.widgets.filter { $0.placement == .headerTrailing }, id: \.id) { $0.view }
-        }
-        .frame(height: model.hasNotch ? 32 : 26)
-        .padding(.top, model.hasNotch ? 0 : 6)
-    }
+    #endif
 }

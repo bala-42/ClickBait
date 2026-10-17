@@ -10,8 +10,10 @@ final class AppSettings {
         static let notchPanel = "settings.notchPanel"
         static let notchNote = "settings.notchNote"
         static let notchVolumeHUD = "settings.notchVolumeHUD"
+        static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
+        static let ignoreNotchInCaptures = "settings.ignoreNotchInCaptures"
         static let speechModel = "settings.speechModel"
         static let ollamaModel = "settings.ollamaModel"
         static let ollamaFastModel = "settings.ollamaFastModel"
@@ -85,10 +87,21 @@ final class AppSettings {
         didSet { defaults.set(notchPanelEnabled, forKey: Key.notchPanel) }
     }
 
+    /// Keep ClickBait's own notch and windows out of screen captures ClickBait takes.
+    var ignoreNotchInCaptures: Bool {
+        didSet { defaults.set(ignoreNotchInCaptures, forKey: Key.ignoreNotchInCaptures) }
+    }
+
     /// The volume keys show ClickBait's HUD in the notch instead of macOS's (they still work
     /// if this is off, or if ClickBait can't set the volume).
     var notchVolumeHUD: Bool {
         didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
+    }
+
+    /// Spotify's album covers in the notch are downloaded from its artwork link: always (true,
+    /// as the GIF), or only with Internet Mode on (false). Apple Music's come from the Mac.
+    var spotifyArtworkAlways: Bool {
+        didSet { defaults.set(spotifyArtworkAlways, forKey: Key.spotifyArtworkAlways) }
     }
 
     /// The notch panel's quick note: on this Mac only.
@@ -109,8 +122,10 @@ final class AppSettings {
         commandsEnabled = defaults.object(forKey: Key.commandsEnabled) as? Bool ?? true
         allowedShortcuts = defaults.stringArray(forKey: Key.allowedShortcuts) ?? []
         notchPanelEnabled = defaults.object(forKey: Key.notchPanel) as? Bool ?? true
+        ignoreNotchInCaptures = defaults.object(forKey: Key.ignoreNotchInCaptures) as? Bool ?? true
         notchNote = defaults.string(forKey: Key.notchNote) ?? ""
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
+        spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? true
         LegacyCloudSettings.remove(from: defaults)
     }
 

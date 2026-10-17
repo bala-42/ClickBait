@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ClickBaitCore
 
@@ -20,7 +21,8 @@ struct NotchPanelTests {
         state = NotchPanel.next(state, on: .enabled(true));   #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .hoverDwelled);    #expect(state == .expanded)
         state = NotchPanel.next(state, on: .hoverDwelled);    #expect(state == .expanded)  // stays
-        state = NotchPanel.next(state, on: .pointerLeft);     #expect(state == .collapsed)
+        state = NotchPanel.next(state, on: .pointerLeft);     #expect(state == .expanded)
+        state = NotchPanel.next(state, on: .clicked);         #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)  // nothing to close
@@ -30,39 +32,136 @@ struct NotchPanelTests {
         state = NotchPanel.next(state, on: .enabled(false));  #expect(state == .hidden)
     }
 
-    @Test func collapsedCoversOnlyTheNotch() {
-        let plain = NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch, showsTab: false)
-        #expect(plain == notch)  // menu-bar items either side stay clickable
-        let tab = NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch, showsTab: true)
-        #expect(tab?.width == notch.width + NotchPanel.tabWidth)
-        #expect(tab?.x == notch.x)
+    /// Sizes from the GIF (1 px = 0.746 pt).
+    @Test func shapesMatchTheGIF() {
+        let plain = NotchPanel.shape(.collapsed, notch: notch, activity: false, hovering: false, hud: false)
+        #expect(plain.width == notch.width && plain.height == notch.height)
+        let playing = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: false)
+        #expect(playing.width == notch.width + 80)  // 248 → 356 px
+        let hovered = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: true, hud: false)
+        #expect(hovered.width == playing.width + 30)  // the swell before it opens
+        let open = NotchPanel.shape(.expanded, notch: notch, activity: true, hovering: true, hud: false)
+        #expect(open.width == NotchPanel.expandedSize.width && open.height == NotchPanel.expandedSize.height)  // the Nook
+        let tray = NotchPanel.shape(.expanded, notch: notch, activity: false, hovering: false, hud: false, shelf: true)
+        #expect(tray.width == NotchPanel.shelfSize.width && tray.height == NotchPanel.shelfSize.height)
+        let hud = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: true)
+        #expect(hud.width == notch.width + 2 * NotchPanel.hudWing)  // the HUD wins over the music wings
+    }
+
+    @Test func collapsedCoversOnlyTheBlack() throws {
+        let frame = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch))
+        #expect(frame.width == notch.width + 2 * NotchPanel.ear)
+        #expect(abs(frame.midX - notch.midX) < 0.01)
+        #expect(frame.maxY == screen.maxY)
     }
 
     @Test func expandedHangsFromTheTopCentredOnTheNotch() throws {
-        let frame = try #require(NotchPanel.frame(.expanded, screen: screen, visible: visible, notch: notch, showsTab: false))
+        let frame = try #require(NotchPanel.frame(.expanded, screen: screen, visible: visible, notch: notch))
         #expect(frame.maxY == screen.maxY)
         #expect(abs(frame.midX - notch.midX) < 0.01)
         #expect(frame.height == NotchPanel.expandedSize.height)
-        #expect(frame.width >= notch.width)
     }
 
     @Test func withoutANotchItIsAPillUnderTheMenuBar() throws {
-        let pill = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: nil, showsTab: true))
-        #expect(pill.width == NotchPanel.pillSize.width)
+        let pill = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: nil))
+        #expect(pill.width == NotchPanel.pillSize.width + 2 * NotchPanel.ear)
         #expect(pill.maxY <= visible.maxY)
-        let open = try #require(NotchPanel.frame(.expanded, screen: screen, visible: visible, notch: nil, showsTab: false))
+        let open = try #require(NotchPanel.frame(.expanded, screen: screen, visible: visible, notch: nil))
         #expect(open.maxY <= visible.maxY)
         #expect(open.minX >= screen.minX && open.maxX <= screen.maxX)
     }
 
     @Test func hiddenHasNoFrame() {
-        #expect(NotchPanel.frame(.hidden, screen: screen, visible: visible, notch: notch, showsTab: true) == nil)
+        #expect(NotchPanel.frame(.hidden, screen: screen, visible: visible, notch: notch) == nil)
     }
 
     @Test func narrowScreensKeepItOnScreen() throws {
         let small = Rect(x: 0, y: 0, width: 400, height: 600)
-        let frame = try #require(NotchPanel.frame(.expanded, screen: small, visible: small, notch: nil, showsTab: false))
+        let frame = try #require(NotchPanel.frame(.expanded, screen: small, visible: small, notch: nil))
         #expect(frame.minX >= 0 && frame.maxX <= 400)
+    }
+
+    /// One restrained spring for opening, closing and tab changes (the Nook's, 2026-10-15).
+    @Test func openingAndClosingShareOneCalmSpring() {
+        #expect(NotchPanel.openSpring == NotchPanel.closeSpring)
+        #expect(NotchPanel.openSpring.damping > 0.8)  // no overshoot either way
+    }
+}
+
+struct CalendarStripTests {
+    @Test func sixDaysTodayThirdLikeTheGIF() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let wednesday = try #require(calendar.date(from: DateComponents(year: 2025, month: 8, day: 13)))
+        let days = CalendarStrip.days(around: wednesday, calendar: calendar, locale: Locale(identifier: "en_US"))
+        #expect(days.map(\.number) == [11, 12, 13, 14, 15, 16])
+        #expect(days.map(\.weekday) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
+        #expect(days.map(\.isToday) == [false, false, true, false, false, false])
+    }
+
+    @Test func monthAndYearChangesClampInvalidDays() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let leapDay = try #require(CalendarNavigation.date(year: 2024, month: 2, preservingDay: 29, calendar: calendar))
+        let nextYear = try #require(CalendarNavigation.date(year: 2025, month: 2, preservingDay: 29, calendar: calendar))
+        #expect(calendar.component(.day, from: leapDay) == 29)
+        #expect(calendar.component(.day, from: nextYear) == 28)
+        #expect(CalendarNavigation.monthDays(containing: leapDay, calendar: calendar).count == 29)
+        #expect(CalendarNavigation.monthDays(containing: nextYear, calendar: calendar).count == 28)
+    }
+
+    @Test func monthStepsCrossYearBoundariesAndClamp() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let january31 = try #require(CalendarNavigation.date(year: 2025, month: 1, preservingDay: 31, calendar: calendar))
+        let february = try #require(CalendarNavigation.addingMonths(1, to: january31, calendar: calendar))
+        #expect(calendar.dateComponents([.year, .month, .day], from: february) == DateComponents(year: 2025, month: 2, day: 28))
+        let december = try #require(CalendarNavigation.addingMonths(-1, to: january31, calendar: calendar))
+        #expect(calendar.dateComponents([.year, .month, .day], from: december) == DateComponents(year: 2024, month: 12, day: 31))
+        let january = try #require(CalendarNavigation.addingMonths(1, to: december, calendar: calendar))
+        #expect(calendar.dateComponents([.year, .month, .day], from: january) == DateComponents(year: 2025, month: 1, day: 31))
+    }
+
+    @Test func rapidDateRequestsMakeOlderAgendaResultsStale() {
+        var sequence = CalendarRequestSequence()
+        let first = sequence.next()
+        let second = sequence.next()
+        let third = sequence.next()
+        #expect(!sequence.isCurrent(first))
+        #expect(!sequence.isCurrent(second))
+        #expect(sequence.isCurrent(third))
+    }
+
+    @Test func todayReturnsTheCurrentLocalDayStart() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = try #require(calendar.date(from: DateComponents(year: 2025, month: 1, day: 1, hour: 23, minute: 45)))
+        let today = CalendarNavigation.today(now: now, calendar: calendar)
+        #expect(calendar.isDate(today, inSameDayAs: now))
+        #expect(calendar.component(.hour, from: today) == 0)
+        #expect(calendar.component(.day, from: today) == 1)
+    }
+}
+
+struct TrackTimeTests {
+    @Test func timesReadLikeTheGIF() {
+        #expect(TrackTime.text(177.9) == "2:57")
+        #expect(TrackTime.text(234) == "3:54")
+        #expect(TrackTime.text(3725) == "1:02:05")
+        #expect(TrackTime.text(-3) == "0:00")
+    }
+
+    @Test func draggingAlongTheBarSeeks() {
+        #expect(TrackTime.position(x: 50, width: 200, duration: 240) == 60)
+        #expect(TrackTime.position(x: -10, width: 200, duration: 240) == 0)
+        #expect(TrackTime.position(x: 500, width: 200, duration: 240) == 240)
+    }
+
+    @Test func playbackMovesOnOnlyWhilePlaying() {
+        let reading = Date(timeIntervalSince1970: 0)
+        #expect(TrackTime.now(reported: 10, at: reading, playing: true, duration: 100, now: reading.addingTimeInterval(5)) == 15)
+        #expect(TrackTime.now(reported: 10, at: reading, playing: false, duration: 100, now: reading.addingTimeInterval(5)) == 10)
+        #expect(TrackTime.now(reported: 98, at: reading, playing: true, duration: 100, now: reading.addingTimeInterval(5)) == 100)
     }
 }
 
@@ -93,8 +192,8 @@ struct PullGestureTests {
         #expect(gesture.add(deltaY: -10, inverted: true) == nil)
     }
 
-    @Test func hoverWaitsHalfASecond() {
-        #expect(NotchPanel.hoverDelay == 0.5)
+    @Test func hoverWaitsLikeTheGIF() {
+        #expect(NotchPanel.hoverDelay == 0.4)  // the GIF's
     }
 }
 
@@ -125,20 +224,9 @@ struct VolumeHUDTests {
         let screen = Rect(x: 0, y: 0, width: 1512, height: 982), visible = Rect(x: 0, y: 0, width: 1512, height: 945)
         let notch = Rect(x: 663.5, y: 945, width: 185, height: 37)
         let frame = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch,
-                                                  showsTab: true, showsHUD: true))
+                                                  activity: true, hud: true))
         #expect(frame.midX == notch.midX)
-        #expect(frame.width == notch.width + 2 * NotchPanel.hudWing)
+        #expect(frame.width == notch.width + 2 * NotchPanel.hudWing + 2 * NotchPanel.ear)
         #expect(frame.height == notch.height)
-    }
-}
-
-struct CPUUsageTests {
-    @Test func busyShareOfTheTicksBetweenSamples() {
-        let a = CPUUsage.Ticks(user: 100, system: 50, idle: 850, nice: 0)
-        let b = CPUUsage.Ticks(user: 130, system: 60, idle: 900, nice: 10)
-        #expect(CPUUsage.busy(from: a, to: b) == 0.5)  // 50 busy of 100
-        #expect(CPUUsage.busy(from: a, to: a) == nil)  // no time passed
-        let wrapped = CPUUsage.Ticks(user: 5, system: 60, idle: 900, nice: 0)
-        #expect(CPUUsage.busy(from: a, to: wrapped) ?? -1 >= 0)  // a wrapped counter never goes negative
     }
 }

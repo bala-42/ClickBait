@@ -27,7 +27,7 @@ final class CapsulePresentation {
         self.entry = entry
         status = Self.status(of: entry.job)
         seen = entry.seen
-        tone = entry.job.kind == .snip ? .capture : .processing
+        tone = entry.job.kind.tone
         question = entry.job.question
     }
 

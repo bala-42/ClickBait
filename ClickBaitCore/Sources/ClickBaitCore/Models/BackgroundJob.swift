@@ -5,6 +5,8 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case answer
         case snip
+        /// A walkthrough planned in the dock (Lavender): its card offers "show me!".
+        case walkthrough
     }
 
     public enum Status: Equatable, Sendable {

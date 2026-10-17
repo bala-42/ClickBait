@@ -18,7 +18,7 @@ public enum NotchPanel {
     public enum Event: Equatable, Sendable {
         /// The pointer rested on the notch for `hoverDelay`.
         case hoverDwelled
-        /// The pointer left the panel for `leaveDelay`.
+    /// The pointer left the collapsed notch's hover target for `leaveDelay`.
         case pointerLeft
         case clicked
         case escape
@@ -30,9 +30,9 @@ public enum NotchPanel {
         case displayAvailable(Bool)
     }
 
-    /// Long enough that passing over the notch on the way to the menu bar never opens it
-    /// (user's choice, 2026-10-14; was 0.25 s).
-    public static let hoverDelay = 0.5
+    /// The GIF's: the pointer arrives (the shape swells at once, `hoverBump`), then it opens
+    /// 0.4 s later (5.0 → 5.4 s). A pass over the notch to the menu bar is quicker than that.
+    public static let hoverDelay = 0.4
     public static let leaveDelay = 0.4
 
     public static func next(_ state: State, on event: Event) -> State {
@@ -40,12 +40,10 @@ public enum NotchPanel {
         case (_, .enabled(false)), (_, .displayAvailable(false)): .hidden
         case (.hidden, .enabled(true)), (.hidden, .displayAvailable(true)): .collapsed
         case (.collapsed, .hoverDwelled), (.collapsed, .clicked), (.collapsed, .pulledDown): .expanded
-        case (.expanded, .clicked), (.expanded, .escape), (.expanded, .pointerLeft), (.expanded, .pushedUp): .collapsed
+        case (.expanded, .clicked), (.expanded, .escape), (.expanded, .pushedUp): .collapsed
         default: state
         }
     }
-
-    // MARK: Layout
 
     /// The notch: between the menu bar's two usable areas at the top of the screen
     /// (`NSScreen.auxiliaryTopLeftArea` / `auxiliaryTopRightArea`, macOS 12). Nil without one.
@@ -54,38 +52,73 @@ public enum NotchPanel {
         return Rect(x: left.maxX, y: screen.maxY - topInset, width: right.minX - left.maxX, height: topInset)
     }
 
-    /// The side tab's width when collapsed with something to show.
-    public static let tabWidth = 30.0
+    // MARK: Layout — measured from the user's GIF (the design's source of truth, 2026-10-14):
+    // 601 frames; its notch is 248 px = 185 pt, so 1 GIF px = 0.746 pt.
+
+    /// The music "live activity": the black grows this much each side of the notch, with the
+    /// artwork on the left wing and a visualizer on the right (GIF: 248 → 356 px).
+    public static let activityWing = 40.0
+    /// The pointer arriving: the shape swells this much each side at once, before it opens
+    /// (GIF 5.0–5.4 s: 369 → 409 px).
+    public static let hoverBump = 15.0
     /// The volume HUD's wings, each side of the notch while it shows (collapsed only).
     public static let hudWing = 96.0
-    public static let expandedSize = (width: 680.0, height: 180.0)
+    /// Compact Nook panel, scaled to the proportions in the supplied NotchNook GIF.
+    public static let expandedSize = (width: 510.0, height: 164.0)
+    /// The Tray leaves a wide editor beside the file drop and AirDrop tile.
+    public static let shelfSize = (width: 670.0, height: 245.0)
+    /// Settings remain attached to the notch while opening a roomier in-panel layout.
+    public static let settingsSize = (width: 900.0, height: 620.0)
+    /// The top corners flare out into the menu bar this much (GIF: 8 px).
+    public static let ear = 6.0
     /// Without a notch: a small pill this size, top-centre under the menu bar.
     public static let pillSize = (width: 180.0, height: 26.0)
 
-    /// The panel's frame. Collapsed it covers only the notch (plus the tab on its right when
-    /// `showsTab`), so it never covers menu-bar items. Expanded it hangs from the top, centred
-    /// on the notch, kept on the screen. Without a notch: a pill under the menu bar.
-    public static func frame(_ state: State, screen: Rect, visible: Rect, notch: Rect?, showsTab: Bool,
-                             showsHUD: Bool = false) -> Rect? {
+    /// A shared, restrained spring keeps opening, closing and tab changes visually consistent.
+    public static let openSpring = (response: 0.42, damping: 0.86)
+    public static let closeSpring = (response: 0.42, damping: 0.86)
+
+    /// The black shape for a state: its size and bottom corner radius (not counting the ears).
+    public static func shape(_ state: State, notch: Rect?, activity: Bool, hovering: Bool, hud: Bool,
+                             shelf: Bool = false, settings: Bool = false)
+        -> (width: Double, height: Double, radius: Double) {
+        let expanded = settings ? settingsSize : shelf ? shelfSize : expandedSize
+        guard let notch else {
+            return state == .expanded
+                ? (expanded.width, expanded.height, 18)
+                : (pillSize.width, pillSize.height, pillSize.height / 2)
+        }
         switch state {
         case .hidden:
-            return nil
-        case .collapsed:
-            if let notch, showsHUD {
-                return Rect(x: notch.x - hudWing, y: notch.y, width: notch.width + 2 * hudWing, height: notch.height)
-            }
-            if let notch {
-                return Rect(x: notch.x, y: notch.y, width: notch.width + (showsTab ? tabWidth : 0), height: notch.height)
-            }
-            return Rect(x: screen.midX - pillSize.width / 2, y: visible.maxY - pillSize.height - 4,
-                        width: pillSize.width, height: pillSize.height)
+            return (0, 0, 0)
         case .expanded:
-            let width = min(max(expandedSize.width, (notch?.width ?? 0) + 2 * 60), screen.width - 16)
-            let centre = notch?.midX ?? screen.midX
-            let x = min(max(centre - width / 2, screen.minX + 8), screen.maxX - 8 - width)
-            let top = notch != nil ? screen.maxY : visible.maxY - 4
-            return Rect(x: x, y: top - expandedSize.height, width: width, height: expandedSize.height)
+            return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, 18)
+        case .collapsed:
+            var width = notch.width, height = notch.height, radius = 8.0
+            if hud {
+                width += 2 * hudWing; radius = 10
+            } else if activity {
+                width += 2 * activityWing; radius = 10
+            }
+            if hovering { width += 2 * hoverBump; height += 3 }
+            return (width, height, radius)
         }
+    }
+
+    /// The window: the shape plus its ears, centred on the notch and flush with the top (no
+    /// notch: under the menu bar), kept on the screen. Collapsed it covers only what the black
+    /// covers, so menu-bar items either side stay clickable.
+    public static func frame(_ state: State, screen: Rect, visible: Rect, notch: Rect?, activity: Bool = false,
+                             hovering: Bool = false, hud: Bool = false, shelf: Bool = false,
+                             settings: Bool = false) -> Rect? {
+        guard state != .hidden else { return nil }
+        let look = shape(state, notch: notch, activity: activity, hovering: hovering, hud: hud,
+                         shelf: shelf, settings: settings)
+        let width = min(look.width + 2 * ear, screen.width - 16)
+        let centre = notch?.midX ?? screen.midX
+        let x = min(max(centre - width / 2, screen.minX + 8), screen.maxX - 8 - width)
+        let top = notch != nil ? screen.maxY : visible.maxY - 4
+        return Rect(x: x, y: top - look.height, width: width, height: look.height)
     }
 }
 
@@ -144,23 +177,102 @@ public enum VolumeStep {
     }
 }
 
-/// CPU use from two samples of the processor tick counters (`host_statistics`'s user,
-/// system, idle and nice ticks): busy share of the ticks between them, 0…1. Pure.
-public enum CPUUsage {
-    public struct Ticks: Equatable, Sendable {
-        public var user, system, idle, nice: UInt64
-        public init(user: UInt64, system: UInt64, idle: UInt64, nice: UInt64) {
-            self.user = user
-            self.system = system
-            self.idle = idle
-            self.nice = nice
-        }
+
+/// The open notch's calendar strip, as in the GIF: six days, today third (two before, three
+/// after), each with its short weekday and day number. Pure.
+public enum CalendarStrip {
+    public struct Day: Equatable, Sendable {
+        public let weekday: String
+        public let number: Int
+        public let isToday: Bool
     }
 
-    public static func busy(from earlier: Ticks, to later: Ticks) -> Double? {
-        func delta(_ a: UInt64, _ b: UInt64) -> Double { b >= a ? Double(b - a) : 0 }  // a counter that wrapped counts as 0
-        let busy = delta(earlier.user, later.user) + delta(earlier.system, later.system) + delta(earlier.nice, later.nice)
-        let total = busy + delta(earlier.idle, later.idle)
-        return total > 0 ? busy / total : nil
+    public static func days(around today: Date, calendar: Calendar = .current, locale: Locale = .current) -> [Day] {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.dateFormat = "EEE"
+        return (-2...3).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            return Day(weekday: formatter.string(from: day), number: calendar.component(.day, from: day), isToday: offset == 0)
+        }
+    }
+}
+
+/// Date-only navigation for the notch calendar. Every operation preserves the selected day
+/// when possible and clamps it to the end of shorter months.
+public enum CalendarNavigation {
+    public static func today(now: Date = .now, calendar: Calendar = .current) -> Date {
+        calendar.startOfDay(for: now)
+    }
+
+    public static func date(year: Int, month: Int, preservingDay day: Int, calendar: Calendar = .current) -> Date? {
+        guard (1...12).contains(month) else { return nil }
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        components.year = year
+        components.month = month
+        components.day = 1
+        guard let first = calendar.date(from: components),
+              let range = calendar.range(of: .day, in: .month, for: first), !range.isEmpty else { return nil }
+        components.day = min(max(day, range.lowerBound), range.upperBound - 1)
+        return calendar.date(from: components)
+    }
+
+    public static func addingMonths(_ amount: Int, to date: Date, calendar: Calendar = .current) -> Date? {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day,
+              let first = self.date(year: year, month: month, preservingDay: 1, calendar: calendar),
+              let moved = calendar.date(byAdding: .month, value: amount, to: first) else { return nil }
+        let movedParts = calendar.dateComponents([.year, .month], from: moved)
+        guard let movedYear = movedParts.year, let movedMonth = movedParts.month else { return nil }
+        return self.date(year: movedYear, month: movedMonth, preservingDay: day, calendar: calendar)
+    }
+
+    public static func monthDays(containing date: Date, calendar: Calendar = .current) -> [Date] {
+        guard let interval = calendar.dateInterval(of: .month, for: date),
+              let count = calendar.range(of: .day, in: .month, for: date)?.count else { return [] }
+        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
+    }
+
+    public static func isSameDay(_ lhs: Date, _ rhs: Date, calendar: Calendar = .current) -> Bool {
+        calendar.isDate(lhs, inSameDayAs: rhs)
+    }
+}
+
+/// Identifies the newest agenda fetch so a slower response for an earlier date can be ignored.
+public struct CalendarRequestSequence: Sendable {
+    private var generation: UInt64 = 0
+
+    public init() {}
+
+    @discardableResult public mutating func next() -> UInt64 {
+        generation &+= 1
+        return generation
+    }
+
+    public func isCurrent(_ request: UInt64) -> Bool { request == generation }
+}
+
+/// A track's times as the GIF shows them ("2:57", "3:54", "1:02:05" past an hour), and the
+/// position a drag along the progress bar asks for. Pure.
+public enum TrackTime {
+    public static func text(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded(.down)))
+        let hours = total / 3600, minutes = total / 60 % 60, secs = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, secs) : String(format: "%d:%02d", minutes, secs)
+    }
+
+    /// Where along the bar (0…1) a point x is, kept on it.
+    public static func position(x: Double, width: Double, duration: Double) -> Double {
+        guard width > 0, duration > 0 else { return 0 }
+        return min(max(x / width, 0), 1) * duration
+    }
+
+    /// Where playback is now: the last reading, plus the time since while playing.
+    public static func now(reported: Double, at reading: Date, playing: Bool, duration: Double, now: Date = .now) -> Double {
+        let elapsed = playing ? now.timeIntervalSince(reading) : 0
+        return min(max(reported + elapsed, 0), max(duration, 0))
     }
 }

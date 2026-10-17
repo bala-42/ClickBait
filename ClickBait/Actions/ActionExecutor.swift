@@ -50,7 +50,8 @@ enum ActionExecutor {
         return true
     }
 
-    static func run(_ action: ResolvedAction, blocklist: AppBlocklist = .defaults) async throws -> String {
+    static func run(_ action: ResolvedAction, blocklist: AppBlocklist = .defaults,
+                    ignoreClickBait: Bool = true) async throws -> String {
         switch action {
         case .openApp(let name):
             guard let url = AppLocator.url(forAppNamed: name) else { throw ActionExecutionError.appNotFound(name) }
@@ -141,7 +142,7 @@ enum ActionExecutor {
             }
 
         case .screenshot(let kind):
-            return try await Screenshots.take(kind, blocklist: blocklist)
+            return try await Screenshots.take(kind, blocklist: blocklist, ignoreClickBait: ignoreClickBait)
 
         case .newFinderWindow:
             try await AppleScriptRunner.run("""
@@ -337,7 +338,7 @@ enum MediaKeys {
 /// Screenshots the user asked for, saved where macOS saves its own.
 enum Screenshots {
     @MainActor
-    static func take(_ kind: ScreenshotKind, blocklist: AppBlocklist) async throws -> String {
+    static func take(_ kind: ScreenshotKind, blocklist: AppBlocklist, ignoreClickBait: Bool = true) async throws -> String {
         let folder = saveFolder()
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
@@ -346,7 +347,7 @@ enum Screenshots {
         switch kind {
         case .full:
             // ScreenCaptureKit, so ClickBait's own triangle and pills aren't in it.
-            let capture = try await ScreenCapturer().captureDisplayUnderCursor(excluding: blocklist)
+            let capture = try await ScreenCapturer().captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait)
             guard let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil) else {
                 throw FileActionError.failed("couldn't save the screenshot")
             }

@@ -38,6 +38,7 @@ final class TutorialController {
     private var provider: (any LLMProvider)?
     private var context = ScreenContext()
     private var blocklist = AppBlocklist.defaults
+    private var ignoreClickBait = true
     private var loop: Task<Void, Never>?
 
     private var startedAt = Date()
@@ -97,13 +98,15 @@ final class TutorialController {
 
     /// `continues`: plan more once the steps run out (off when the steps are the whole task).
     func start(_ plan: TutorialPlan, goal: String, provider: any LLMProvider, context: ScreenContext,
-               blocklist: AppBlocklist, speak speakSteps: Bool, continues: Bool = true) {
+               blocklist: AppBlocklist, ignoreClickBait: Bool = true, speak speakSteps: Bool,
+               continues: Bool = true) {
         stop(message: nil)
         self.plan = plan
         self.goal = goal
         self.provider = provider
         self.context = context
         self.blocklist = blocklist
+        self.ignoreClickBait = ignoreClickBait
         self.speakSteps = speakSteps
         index = 0
         startedAt = Date()
@@ -476,7 +479,7 @@ final class TutorialController {
                 return
             }
         }
-        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait),
               let encoded = try? await ScreenshotEncoder.encodeInBackground(capture.image) else { finish(); return }
         guard isActive else { return }
         // One call: the planner answers "no steps" when the task is already finished.
@@ -627,7 +630,8 @@ final class TutorialController {
 
     /// A tiny grey copy of the screen compared with the last one: did anything change?
     private func sampleScreen() async {
-        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, width: 128) else { return }
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, width: 128,
+                                                                           ignoreClickBait: ignoreClickBait) else { return }
         let width = 32, height = 20
         var pixels = [UInt8](repeating: 0, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
@@ -661,7 +665,7 @@ final class TutorialController {
         checking = true
         lastModelCheck = Date()
         defer { checking = false }
-        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist),
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait),
               let encoded = try? await ScreenshotEncoder.encodeInBackground(capture.image), isActive else { return }
         var request = AskRequest(question: goal, screenshotJPEG: encoded.jpeg, screenshotWidth: encoded.width,
                                  screenshotHeight: encoded.height, context: context)

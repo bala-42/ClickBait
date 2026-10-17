@@ -16,6 +16,8 @@ final class BackgroundJobs {
         var task: Task<Void, Never>?
         var chatMessages: [ChatModel.Message] = []
         var snipMemory: AskCoordinator.SnipMemory?
+        /// A walkthrough planned in the dock: what "show me!" starts.
+        var walkthrough: PendingWalkthrough?
         var progress: JobProgress = .uncounted
         /// What the answer has said so far (its spoken text), for the running card's line.
         var liveText = ""
@@ -129,6 +131,11 @@ final class BackgroundJobs {
         entries[index].job.homeTab = tab
     }
 
+    func setWalkthrough(_ walkthrough: PendingWalkthrough, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].walkthrough = walkthrough
+    }
+
     func setSnipMemory(_ memory: AskCoordinator.SnipMemory?, for id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].snipMemory = memory
@@ -183,5 +190,27 @@ final class BackgroundJobs {
         entry.snipMemory?.text?.cancel()
         entry.snipMemory?.objects?.cancel()
         entry.snipMemory?.reference?.cancel()
+    }
+}
+
+/// A walkthrough planned while held in the dock (Lavender): started only when the user says
+/// "show me!" on its card.
+struct PendingWalkthrough {
+    /// The steps, when they could be planned where it was asked; nil when it needs `app` first.
+    let plan: TutorialPlan?
+    /// The app it happens in, when that isn't the one it was asked in: opened on "show me!".
+    let app: String?
+    let question: String
+    let display: String
+}
+
+extension BackgroundJob.Kind {
+    /// The tile's and peel's colour: what kind of hold it came from.
+    var tone: CompanionTone {
+        switch self {
+        case .answer: .processing
+        case .snip: .capture
+        case .walkthrough: .tutorial
+        }
     }
 }

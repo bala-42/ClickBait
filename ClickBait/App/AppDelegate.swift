@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
     private lazy var capsules = CapsuleController()
-    private lazy var notch = NotchController(settings: settings, jobs: backgroundJobs, companion: overlay.model)
+    private lazy var notch = NotchController(settings: settings, speech: speech, speaker: coordinator.speaker)
     /// Done jobs whose result pill has been shown (or is waiting to be).
     private var announcedJobs: Set<UUID> = []
     private var askingSuggestions: Set<UUID> = []
@@ -29,7 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where the companion was at the last hotkey press: the chat's place.
     private var invokedPoint: CGPoint?
     private lazy var tutorial = TutorialController(overlay: overlay)
-    private lazy var settingsWindow = SettingsWindowController(settings: settings, speech: speech, speaker: coordinator.speaker)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
     static func main() {
@@ -60,7 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusBar = StatusBarController(
             settings: settings,
-            onOpenSettings: { [weak self] in self?.settingsWindow.show() },
             onOpenPermissions: { [weak self] in self?.onboardingWindow.show() },
             onDebugCapsuleTest: { [weak self] in
                 #if DEBUG
@@ -77,7 +75,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.backgroundJobs = backgroundJobs
         backgroundJobs.onChange = { [weak self] entries in
             self?.capsules.sync(entries)
-            self?.notch.jobsChanged()
             self?.statusBar?.updateBackgroundJobs(entries)
             self?.announceFinished(entries)
         }
@@ -92,10 +89,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         capsules.onSuggestion = { [weak self] id, text in
             guard let self else { return }
+            let pending = backgroundJobs.entries.first(where: { $0.id == id })?.walkthrough
             goThere(id) { [weak self] in
                 guard let self, chat.isOpen else { return }
                 // Its tour was placed in the dock: play it, no model asked.
                 if text == PeelRule.suggestedPartsPrompt, coordinator.playReadyTour() { return }
+                // Its walkthrough was planned in the dock: start it now, back where it was asked.
+                if text == PeelRule.walkthroughResumePrompt, let pending { coordinator.resumeWalkthrough(pending); return }
                 chat.model.draft = text
                 coordinator.nextTypedIsSuggestion = true  // slow → back to the dock
                 chat.model.send()  // as if typed: it's a follow-up in that chat
@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backgroundJobs.setChatMessages(messages, for: job.id)
             let index = backgroundJobs.entries.firstIndex(where: { $0.id == job.id })
             let target = index.flatMap { capsules.slotCenter(forIndex: $0) }
-            let tone: CompanionTone = job.kind == .snip ? .capture : .processing
+            let tone = job.kind.tone
             overlay.peel(to: target, tone: tone, completion: {})
             return messages
         }
@@ -141,18 +141,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH"] != nil {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
-                Log.app.notice("Notch test: collapsed \(self.notch.model.state == .collapsed, privacy: .public)")
-                if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_HUD"] != nil {
-                    Log.app.notice("Notch test: HUD \(self.notch.debugHUD(render: ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_RENDER"]), privacy: .public)")
+                let env = ProcessInfo.processInfo.environment
+                Log.app.notice("Notch test: collapsed \(self.notch.model.state == .collapsed, privacy: .public), notch \(self.notch.model.notch.map { "\($0)" } ?? "none", privacy: .public)")
+                if env["CLICKBAIT_TEST_NOTCH_HUD"] != nil {
+                    Log.app.notice("Notch test: HUD \(self.notch.debugHUD(), privacy: .public)")
                     return
                 }
+                let hover = await self.notch.debugHover()
+                Log.app.notice("Notch test: hover \(hover, privacy: .public)")
+                if let folder = env["CLICKBAIT_TEST_NOTCH_RENDER"] { self.notch.debugRender(to: folder) }
                 Log.app.notice("Notch test: \(self.notch.debugOpen(), privacy: .public)")
-                try? await Task.sleep(for: .seconds(0.5))
-                Log.app.notice("Notch test: 0.5 s on \(self.notch.debugFrame, privacy: .public)")
-                if let folder = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_RENDER"] { self.notch.debugRender(to: folder) }
-                try? await Task.sleep(for: .seconds(6))
+                try? await Task.sleep(for: .seconds(0.7))
+                Log.app.notice("Notch test: open frame \(self.notch.debugFrame, privacy: .public)")
                 self.notch.debugClose()
-                Log.app.notice("Notch test: closed → \(String(describing: self.notch.model.state), privacy: .public)")
+                try? await Task.sleep(for: .seconds(1))
+                Log.app.notice("Notch test: closed → \(String(describing: self.notch.model.state), privacy: .public), frame \(self.notch.debugFrame, privacy: .public)")
             }
         }
         #endif
@@ -491,7 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard case .done(let summary) = entry.job.status, !summary.hasPrefix("your chat about") else { continue }
             announcedJobs.insert(entry.id)
             let id = entry.id
-            let tone: CompanionTone = entry.job.kind == .snip ? .capture : .processing
+            let tone = entry.job.kind.tone
             showWhenQuiet(summary, tone: tone, for: .seconds(120), while: { [weak self] in
                 self?.backgroundJobs.entries.contains(where: { $0.id == id }) ?? false  // gone, or opened there
             })

@@ -421,7 +421,7 @@ final class AskCoordinator {
             context.focusedElement = snapshot.focusedElement
             let capture: ScreenCapture
             do {
-                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist)
+                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: settings.ignoreNotchInCaptures)
             } catch {
                 onChatError?("Couldn't capture the screen: \(error.localizedDescription)")
                 return
@@ -570,7 +570,9 @@ final class AskCoordinator {
         // Capture at press time: the screen the user is asking about is the one they
         // were looking at when they started talking.
         let blocklist = settings.blocklist
-        captureTask = Task { [capturer] in try await capturer.captureDisplayUnderCursor(excluding: blocklist) }
+        captureTask = Task { [capturer, ignoreClickBait = settings.ignoreNotchInCaptures] in
+            try await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait)
+        }
         context = ScreenContext(appName: frontmost?.localizedName)
         let pid = frontmost?.processIdentifier
         frontmostPID = pid
@@ -711,7 +713,7 @@ final class AskCoordinator {
             let startedAt = ContinuousClock.now
             let capture: ScreenCapture
             do {
-                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist)
+                capture = try await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: settings.ignoreNotchInCaptures)
             } catch {
                 report("Couldn't capture the screen: \(error.localizedDescription)", for: flow)
                 return
@@ -908,7 +910,8 @@ final class AskCoordinator {
     /// the close-up (`SnipMatch`, on this Mac, no model).
     private func stillShows(_ view: SnipView) async -> Bool {
         let center = NSPoint(x: view.crop.midX, y: view.primaryDisplayHeight - view.crop.midY)
-        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center),
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center,
+                                                                          ignoreClickBait: settings.ignoreNotchInCaptures),
               let fresh = try? SnipRenderer.view(capture, region: view.markedOnScreen),
               fresh.crop == view.crop else { return false }
         let difference = SnipMatch.difference(view.thumbnail, fresh.thumbnail)
@@ -1284,7 +1287,8 @@ final class AskCoordinator {
 
         let capture: ScreenCapture
         do {
-            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist)
+            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist,
+                                                                   ignoreClickBait: settings.ignoreNotchInCaptures)
         } catch {
             Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
             show(error: "Couldn't capture the screen: \(error.localizedDescription)")
@@ -1539,6 +1543,15 @@ final class AskCoordinator {
     @ObservationIgnored var onSetupFinished: (() -> Void)?
     /// A walkthrough is being planned (true: lavender, spinning), or won't happen (false).
     @ObservationIgnored var onTutorialPlanning: ((Bool) -> Void)?
+    /// The walkthrough being planned now was sent to the dock (Lavender's hold, as a snip's
+    /// Strawberry Red one): its plan goes to that tile, never to the foreground.
+    @ObservationIgnored private var walkthroughJobID: UUID?
+    /// Planning is under way and may be held in the dock (`PeelRule.holdPeels`).
+    @ObservationIgnored private var walkthroughPlanning = false
+    /// A walkthrough was just declined: the answer that follows is words only — no app is
+    /// opened and nothing is pointed at (2026-10-14: after a lapsed "show me in Safari!" the
+    /// fallback answer opened Safari and pointed at its menu bar).
+    @ObservationIgnored private var answerInWordsOnly = false
     /// A hotkey brought ClickBait up (⌃⌥ held, ⌥⌘ tapped or double-tapped): the chat's
     /// place is where the companion is at this moment.
     @ObservationIgnored var onInvoked: (() -> Void)?
@@ -1586,6 +1599,105 @@ final class AskCoordinator {
         conversation?.append(user: question, assistantSpeech: text)
         if state == .thinking { state = .idle }
         onStepsWritten?(text)
+    }
+
+    // MARK: Lavender's hold (as Strawberry Red's: `PeelRule.Hold`)
+
+    /// Planning has begun: still at it after `autoPeelDelay`, it goes to the dock.
+    private func startWalkthroughHold(question: String) {
+        walkthroughPlanning = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: PeelRule.autoPeelDelay)
+            guard let self, walkthroughPlanning, walkthroughJobID == nil else { return }
+            let room = backgroundJobs?.hasRoom ?? false
+            guard PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: room) else {
+                Log.ask.notice("Walkthrough hold: three's a crowd, planning in front")
+                return
+            }
+            peelWalkthrough(question: question)
+        }
+    }
+
+    /// The planning goes to a Lavender tile: the companion flies there and a fresh one is at
+    /// the cursor (the hold ends for the foreground); the plan carries on in the background and
+    /// nothing is pointed at or opened until "show me!".
+    private func peelWalkthrough(question: String) {
+        guard let backgroundJobs else { return }
+        let job = BackgroundJob(question: question, kind: .walkthrough, homeBundleID: frontmostBundleID, homePID: frontmostPID,
+                                conversation: conversation ?? Conversation())
+        guard backgroundJobs.add(job, task: askTask) else { return }
+        walkthroughJobID = job.id
+        _ = onPeel?(job)
+        // The task belongs to the tile now: Esc or a new question mustn't cancel it.
+        askTask = nil
+        if tutorialPlanningShown { onTutorialPlanning?(false) }
+        tutorialPlanningShown = false
+        speaker.stop()
+        currentFlow = nil
+        if state == .thinking { state = .idle }
+        Log.ask.notice("Walkthrough hold: planning sent to the dock after \(String(describing: PeelRule.autoPeelDelay), privacy: .public)")
+    }
+
+    /// The plan is ready (or it needs its app first) in the dock: the card says what it'll do
+    /// and offers "show me!".
+    private func finishWalkthroughInDock(_ jobID: UUID, pending: PendingWalkthrough) {
+        guard let backgroundJobs else { return }
+        let text: String
+        if let plan = pending.plan, !plan.steps.isEmpty, pending.app == nil {
+            text = [plan.intro, plan.checklist(done: 0)].filter { !$0.isEmpty }.joined(separator: "\n")
+        } else if let app = pending.app {
+            text = "Ready to walk you through it in \(app). \"show me!\" opens \(app) and starts."
+        } else {
+            backgroundJobs.fail(jobID, reason: "Couldn't work out the steps.")
+            return
+        }
+        backgroundJobs.setChatMessages([ChatModel.Message(role: .user, text: pending.display),
+                                        ChatModel.Message(role: .assistant, text: text)], for: jobID)
+        backgroundJobs.setWalkthrough(pending, for: jobID)
+        backgroundJobs.complete(jobID, answer: text, conversation: conversation ?? Conversation())
+        backgroundJobs.setLeadingSuggestion(PeelRule.resumeAction(.walkthrough), for: jobID)
+        Log.ask.notice("Walkthrough hold: ready in the dock (\(pending.app == nil ? "steps planned" : "needs its app", privacy: .public))")
+    }
+
+    /// "show me!" on a walkthrough's card, once "go there!" has brought its window back: the
+    /// walkthrough starts now (and only now may it open an app, as a step needs it).
+    func resumeWalkthrough(_ pending: PendingWalkthrough) {
+        guard let tutorial else { return }
+        let apps = AppLocator.installed()
+        let installedName = { (name: String) in apps.keys.first { $0.caseInsensitiveCompare(name) == .orderedSame } }
+        let provider = self.provider ?? settings.makeProvider()
+        self.provider = provider
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        frontmostPID = frontmost?.processIdentifier
+        frontmostBundleID = frontmost?.bundleIdentifier
+        context = ScreenContext(appName: frontmost?.localizedName)
+        Log.ask.notice("Walkthrough hold: resumed from the dock")
+        askTask = Task {
+            var plan = pending.plan
+            // It happens in another app: open it now (the user said "show me!") and plan there,
+            // in front — they're waiting for it, so no second hold.
+            if let app = pending.app.flatMap(installedName), app.caseInsensitiveCompare(frontmost?.localizedName ?? "") != .orderedSame {
+                tutorialPlanningShown = false
+                showTutorialPlanning()
+                defer { if tutorialPlanningShown, !(tutorial.isActive) { onTutorialPlanning?(false) }; tutorialPlanningShown = false }
+                guard let ready = await openForTutorial(app, url: apps[app]) else { return }
+                context = ScreenContext(appName: app)
+                plan = await planTutorial(pending.question, capture: ready.0, screenshot: ready.1, elements: ready.2, provider: provider)?
+                    .separatingSetup(frontmostApp: app, isInstalledApp: { installedName($0) != nil })
+                guard let plan, !plan.steps.isEmpty else {
+                    show(error: "Couldn't work out the steps in \(app).")
+                    return
+                }
+                _ = await beginTutorial(plan, question: pending.question, startedIn: frontmost, speak: false,
+                                        display: pending.display, installedName: installedName, apps: apps,
+                                        provider: provider, tutorial: tutorial)
+                return
+            }
+            guard let plan, !plan.steps.isEmpty else { return }
+            _ = await beginTutorial(plan, question: pending.question, startedIn: frontmost, speak: false,
+                                    display: pending.display, installedName: installedName, apps: apps,
+                                    provider: provider, tutorial: tutorial)
+        }
     }
 
     /// Lavender and spinning from the moment it's known to be a walkthrough, not only once
@@ -1697,9 +1809,25 @@ final class AskCoordinator {
         // Said yes already ("show me in Safari!"): never asked a second time.
         var offered = false
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
-            // Ask before switching apps: no plan yet (it's made in that app), so a no gets a
-            // written answer instead.
-            guard await offerWalkthrough(opening: named) else { return false }
+            // It happens in another app, and no app opens during Lavender's hold: to the dock
+            // (as a snip's Strawberry Red hold), where "show me!" opens it and plans there.
+            if ownsPlanningUI, PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: backgroundJobs?.hasRoom ?? false) {
+                showTutorialPlanning()
+                try? await Task.sleep(for: PeelRule.autoPeelDelay)
+                guard !Task.isCancelled else { return true }
+                peelWalkthrough(question: question)
+                if let jobID = walkthroughJobID {
+                    walkthroughJobID = nil
+                    finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: nil, app: named, question: question, display: display))
+                }
+                return true
+            }
+            // A full dock: ask in front before switching apps (no plan yet: it's made in that app),
+            // so a no gets a written answer instead.
+            guard await offerWalkthrough(opening: named) else {
+                answerInWordsOnly = true
+                return false
+            }
             offered = true
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
             showTutorialPlanning()
@@ -1729,17 +1857,28 @@ final class AskCoordinator {
         var plan: TutorialPlan?
         for _ in 0..<2 {
             guard !Task.isCancelled else { return false }
-            plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider)?
+            plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider,
+                                      holdable: ownsPlanningUI && walkthroughJobID == nil)?
                 .separatingSetup(frontmostApp: context.appName, isInstalledApp: { installedName($0) != nil })
-            // The plan says it happens in another app: ask, then open it (green) and plan again there.
-            guard let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
+            // The plan says it happens in another app: ask, then open it (green) and plan again there —
+            // not while held in the dock (no app opens during a hold; "show me!" opens it later).
+            guard walkthroughJobID == nil, let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
             if !offered {
                 offered = true
-                guard await offerWalkthrough(opening: other) else { return false }
+                guard await offerWalkthrough(opening: other) else {
+                    answerInWordsOnly = true
+                    return false
+                }
             }
             guard let ready = await openForTutorial(other, url: url) else { return false }
             showTutorialPlanning()
             (capture, screenshot, elements) = ready
+        }
+        if let jobID = walkthroughJobID {
+            walkthroughJobID = nil
+            let elsewhere = plan?.app.flatMap(installedName)
+            finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: plan, app: elsewhere, question: question, display: display))
+            return true
         }
         guard !Task.isCancelled, let plan, let first = plan.steps.first else {
             onSetupFinished?()
@@ -2008,15 +2147,15 @@ final class AskCoordinator {
             onSetupFinished?()
             return ready
         }
-        tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist, speak: speak,
-                       continues: continues)
+        tutorial.start(plan, goal: question, provider: provider, context: context, blocklist: settings.blocklist,
+                       ignoreClickBait: settings.ignoreNotchInCaptures, speak: speak, continues: continues)
         return true
     }
 
     /// Plans from the app's menus and elements alone when Accessibility describes it
     /// (~1–2 s); otherwise (or if that finds nothing) from the screenshot (~10 s).
     private func planTutorial(_ question: String, capture: ScreenCapture, screenshot: EncodedScreenshot,
-                              elements: [ScreenElement], provider: any LLMProvider) async -> TutorialPlan? {
+                              elements: [ScreenElement], provider: any LLMProvider, holdable: Bool = false) async -> TutorialPlan? {
         let geometry = capture.geometry(imageWidth: screenshot.width, imageHeight: screenshot.height)
         var request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg, screenshotWidth: screenshot.width,
                                  screenshotHeight: screenshot.height, context: context,
@@ -2066,7 +2205,9 @@ final class AskCoordinator {
             Log.ask.notice("Tutorial: no sort needed (\(namesApp ? "a how-to naming an app" : "asked outright", privacy: .public))")
             showTutorialPlanning()
         }
+        if holdable { startWalkthroughHold(question: question) }
         let plan = await planned
+        walkthroughPlanning = false
         Log.ask.notice("""
             Tutorial plan: \(plan?.steps.count ?? 0, privacy: .public) step(s)\(plan?.app != nil ? " in another app" : "", privacy: .public) \
             in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(menus.count, privacy: .public) menu items)
@@ -2134,7 +2275,8 @@ final class AskCoordinator {
         let snapshot = await Task.detached(priority: .userInitiated) { AXInspector.snapshot(frontmostPID: pid) }.value
         context = ScreenContext(appName: app.localizedName ?? name, windowTitle: snapshot.windowTitle)
         context.windowFrame = snapshot.windowFrame
-        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist),
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: settings.blocklist,
+                                                                          ignoreClickBait: settings.ignoreNotchInCaptures),
               let screenshot = try? await ScreenshotEncoder.encodeInBackground(capture.image) else { return nil }
         let elements = await Self.elements(in: capture, frontmostPID: pid)
         return (capture, screenshot, elements)
@@ -2229,7 +2371,8 @@ final class AskCoordinator {
         let center = NSPoint(x: region.x + region.width / 2, y: primaryHeight - (region.y + region.height / 2))
         let capture: ScreenCapture
         do {
-            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center)
+            capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist, at: center,
+                                                                   ignoreClickBait: settings.ignoreNotchInCaptures)
         } catch {
             Log.capture.error("Screen capture failed: \(error.localizedDescription, privacy: .public)")
             report("Couldn't capture the screen: \(error.localizedDescription)", for: flow)
@@ -2344,6 +2487,10 @@ final class AskCoordinator {
         flow givenFlow: QuestionFlow? = nil,
         autoPeels: Bool = false
     ) async {
+        // A walkthrough was just declined: words only — no app opened, nothing pointed at.
+        let wordsOnly = answerInWordsOnly
+        answerInWordsOnly = false
+        if wordsOnly { Log.ask.debug("Answering in words only: the walkthrough was declined") }
         // ⌥⌘ explanations and typed follow-ups have no flow yet: this one's, so they can be peeled too.
         let flow = givenFlow ?? adHocFlow(snip: snip != nil)
         defer { if givenFlow == nil { end(flow) } }
@@ -2404,7 +2551,7 @@ final class AskCoordinator {
         // Only when the request says so ("in Safari", "open Messages"): an app's name in a
         // sentence is just a word (`TutorialQuestion.locatingApp`).
         var switchedApp = false
-        if snip == nil, selectedText == nil, history.isEmpty, flow.jobID == nil, TutorialQuestion.isLocatingRequest(question) {
+        if !wordsOnly, snip == nil, selectedText == nil, history.isEmpty, flow.jobID == nil, TutorialQuestion.isLocatingRequest(question) {
             let apps = AppLocator.installed()
             if let named = TutorialQuestion.locatingApp(in: question, apps: Array(apps.keys)),
                named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
@@ -2429,7 +2576,7 @@ final class AskCoordinator {
         // only holds controls, so a pick from it lands on the nearest button ("Today",
         // "View"); the screenshot can see the day.
         let namesContent = InstantAnswer.namesContent(question)
-        let targets = snip == nil && selectedText == nil && !namesContent ? InstantAnswer.locateTargets(in: question) : []
+        let targets = !wordsOnly && snip == nil && selectedText == nil && !namesContent ? InstantAnswer.locateTargets(in: question) : []
         if namesContent { Log.ask.notice("Finding content (a date, day or event), not a control: reading the screen") }
         let found = targets.compactMap {
             InstantAnswer.uniqueElement(named: $0, in: elements) ?? InstantAnswer.closeElement(named: $0, in: elements)
@@ -2437,7 +2584,7 @@ final class AskCoordinator {
         // "Where do I type?": the focused field's caret, exact and instant, before any model —
         // in the app that was in front when asked, never one switched to on the way.
         let pidForCaret = flow.homePID
-        let caret = snip == nil && selectedText == nil && !switchedApp && InstantAnswer.asksWhereToType(question)
+        let caret = !wordsOnly && snip == nil && selectedText == nil && !switchedApp && InstantAnswer.asksWhereToType(question)
             ? await Task.detached(priority: .userInitiated) { pidForCaret.flatMap { AXInspector.caretRect(pid: $0) } }.value
             : nil
         if let caret {
@@ -2458,7 +2605,7 @@ final class AskCoordinator {
             flow.kind = .instantPick
             guard await settleQuick(flow) else { return }
             if let instant { onInstantPointer?(instant) }
-        } else if !elements.isEmpty, snip == nil, selectedText == nil, !namesContent,
+        } else if !wordsOnly, !elements.isEmpty, snip == nil, selectedText == nil, !namesContent,
                   !targets.isEmpty || InstantAnswer.allowsUnnamedPick(question) {
             // Any "where / which / what do I click" question, not only "where's the X": the
             // answer is usually something in the list ("where do I type my message?").
@@ -2751,14 +2898,14 @@ final class AskCoordinator {
         }
         // Only "where / how / show me / click / open" questions get pointed at; the model
         // sometimes adds a pointer to anything (a corner of the screen for a general question).
-        if snip == nil, selectedText == nil, !parsed.response.pointers.isEmpty, !InstantAnswer.allowsPointing(question) {
+        if snip == nil, selectedText == nil, !parsed.response.pointers.isEmpty, wordsOnly || !InstantAnswer.allowsPointing(question) {
             Log.ask.notice("Dropped \(parsed.response.pointers.count, privacy: .public) pointer(s): not a where/how question")
             parsed.response.pointers = []
         }
         // Asked where something is, the answer names a listed element but doesn't point.
         // Only for an explicit where-question, and only a control the user's own words name:
         // otherwise any control the reply mentions got pointed at (the menu bar, 2026-10-14).
-        if snip == nil, selectedText == nil, parsed.response.pointers.isEmpty, InstantAnswer.allowsPointing(question),
+        if !wordsOnly, snip == nil, selectedText == nil, parsed.response.pointers.isEmpty, InstantAnswer.allowsPointing(question),
            let implied = ImpliedPointer.find(question: question, speech: parsed.response.speech, elements: listed) {
             if InstantAnswer.unnamedPick(implied.label, fits: question) {
                 Log.ask.notice("Pointer taken from the element list: the answer named it without pointing")
@@ -2996,7 +3143,8 @@ final class AskCoordinator {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist)
+                let capture = try await capturer.captureDisplayUnderCursor(excluding: settings.blocklist,
+                                                                           ignoreClickBait: settings.ignoreNotchInCaptures)
                 let screenshot = try await ScreenshotEncoder.encodeInBackground(capture.image)
                 guard !Task.isCancelled, let jobs = backgroundJobs, jobs.hasRoom else { return }
                 let request = AskRequest(question: question, screenshotJPEG: screenshot.jpeg,
@@ -3240,7 +3388,8 @@ final class AskCoordinator {
         case .success(let action):
             onActionStarted?(Self.workingMessage(for: action))
             do {
-                let confirmation = try await ActionExecutor.run(action, blocklist: settings.blocklist)
+                let confirmation = try await ActionExecutor.run(action, blocklist: settings.blocklist,
+                                                                ignoreClickBait: settings.ignoreNotchInCaptures)
                 Log.ask.notice("Action done: \(request.name, privacy: .public)")
                 if let started = answerStartedAt {
                     Log.ask.notice("Command finished \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
