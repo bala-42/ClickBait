@@ -1,6 +1,7 @@
 import ClickBaitCore
 import ScriptingBridge
 import AppKit
+import SwiftUI
 
 @main
 @MainActor
@@ -17,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private lazy var capsules = CapsuleController()
     private lazy var notch = NotchController(settings: settings, speech: speech, speaker: coordinator.speaker)
+    /// Blue highlights and arrows on screen (`GuidanceController`).
+    private lazy var guidance = GuidanceController()
     /// Done jobs whose result pill has been shown (or is waiting to be).
     private var announcedJobs: Set<UUID> = []
     private var askingSuggestions: Set<UUID> = []
@@ -138,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runDockBenchmarkIfRequested()
         runCardVoiceTestIfRequested()
         runGoThereTestIfRequested()
+        #if DEBUG
+        runGuidanceTestIfRequested()
+        #endif
         if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH"] != nil {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
@@ -634,6 +640,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
     /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
     /// others down. Logged "Bench: …" per phase for the main-thread sampler.
+    #if DEBUG
+    /// `CLICKBAIT_TEST_GUIDANCE` (=<folder> also renders it): a labelled highlight and an armed,
+    /// pulsing arrow at one region; checks the arrow is primary and on top, the labels apart, a
+    /// click outside does nothing, a click inside advances (and dismisses) only the armed guide,
+    /// a resize moves the box, and dismissing the rest clears the overlay.
+    private func runGuidanceTestIfRequested() {
+        guard let value = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GUIDANCE"] else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            let screen = NSScreen.screens.first?.frame ?? .zero
+            let region = CGRect(x: screen.midX - 150, y: screen.midY - 50, width: 300, height: 100)
+            var advanced = 0
+            let box = guidance.show(GuideRequest(kind: .highlight, target: .bounds(region), label: "Recent files", priority: 1))
+            let arrow = guidance.show(GuideRequest(kind: .arrow, target: .point(CGPoint(x: region.midX, y: region.midY)),
+                                                   label: "Click here", priority: 2, armed: true, pulse: true,
+                                                   onArmedClick: { advanced += 1 }))
+            let items = guidance.debugItems
+            let primary = items.last.map { "\($0.kind)" } ?? "none"
+            let labels = items.compactMap(\.labelFrame)
+            let apart = labels.count == 2 && !labels[0].intersects(labels[1])
+            if value != "1" {
+                let renderer = ImageRenderer(content: guidance.debugOverlay.frame(width: screen.width, height: screen.height)
+                    .background(Color(white: 0.92)))
+                renderer.scale = 1
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: value).appendingPathComponent("guidance.png"))
+                }
+            }
+            guidance.clicked(at: CGPoint(x: 5, y: 5))
+            let outside = advanced
+            guidance.clicked(at: CGPoint(x: region.midX + 4, y: region.midY + 3))
+            let inside = advanced, left = guidance.debugItems.count
+            box.update(target: .bounds(region.insetBy(dx: -40, dy: -20)))
+            let grown = guidance.debugItems.first?.box?.width ?? 0
+            box.dismiss()
+            arrow.dismiss()  // already gone: a no-op
+            Log.app.notice("Guidance test: primary \(primary, privacy: .public), labels apart \(apart), outside click advanced \(outside), inside click advanced \(inside), guides left \(left), resized box \(grown) (was \(region.width + 12)), cleared \(self.guidance.debugItems.isEmpty)")
+        }
+    }
+    #endif
+
     /// `CLICKBAIT_TEST_GOTHERE=<Chrome pid>`: a done job whose home is a tab that isn't
     /// showing, in Chrome's back-most window with more than one tab; "go there!" on it; then
     /// checks the tab is focused and showing, and the chat opened on this desktop inside it.

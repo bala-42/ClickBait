@@ -92,6 +92,33 @@ enum AXInspector {
     /// open menus first (context menus and an open menu-bar menu, submenus included),
     /// then the focused window, then the menu bar's titles. Stops at `budget` seconds —
     /// some apps (web views, Electron) have huge trees — so the list may be partial.
+    /// For guidance (`GuidanceController`): the frame (Quartz) of the element in the app's
+    /// focused window whose `AXIdentifier`, or else its name, is `id`; nil if none within the
+    /// budget.
+    static func frame(ofElement id: String, pid: pid_t, budget: TimeInterval = 0.2) -> Rect? {
+        guard isTrusted else { return nil }
+        let app = element(AXUIElementCreateApplication(pid))
+        guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else { return nil }
+        let wanted = id.lowercased()
+        let deadline = Date().addingTimeInterval(budget)
+        var queue = [window][...]
+        var byName: Rect?
+        var visited = 0
+        while let node = queue.popFirst(), visited < 2000, Date() < deadline {
+            visited += 1
+            if node.string("AXIdentifier")?.lowercased() == wanted, let frame = node.frame { return frame }
+            if byName == nil, node.name.lowercased() == wanted, let frame = node.frame { byName = frame }
+            queue.append(contentsOf: node.children(kAXChildrenAttribute))
+        }
+        return byName
+    }
+
+    /// For guidance: an accessibility node's frame (Quartz), as it is now.
+    static func frame(of node: AXUIElement) -> Rect? {
+        guard isTrusted else { return nil }
+        return element(node).frame
+    }
+
     static func visibleElements(frontmostPID pid: pid_t?, display: Rect, budget: TimeInterval = 0.4,
                                 limit: Int = 150) -> [ScreenElement] {
         guard isTrusted, let pid else { return [] }
