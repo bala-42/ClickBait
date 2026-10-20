@@ -78,6 +78,14 @@ struct NotchBean: View {
         }
     }
 
+    /// Nothing going on (idle, asleep, or only feeling the Mac): plain pearl, no state colour.
+    static func isResting(_ mood: Bean.Mood) -> Bool {
+        switch mood {
+        case .idle, .sleepy, .panicked, .warm, .tired: true
+        case .listening, .thinking, .working, .happy, .error: false
+        }
+    }
+
     /// Errors are Wine (user's pick over Burgundy and Tyrian, 2026-10-21).
     static let wine = Color(hex: 0x9B1B48)
 }
@@ -109,11 +117,13 @@ struct BeanFace: View {
             if solid {
                 BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
             } else {
+                // Plain pearl with a soft white glow at rest; a state tints it and glows its colour.
+                let resting = NotchBean.isResting(mood)
                 BeanShape()
                     .fill(LinearGradient(colors: [Self.pearlTop, Self.pearlBottom], startPoint: .top, endPoint: .bottom))
-                    .overlay(BeanShape().fill(tone.opacity(0.14)))
+                    .overlay(BeanShape().fill(tone.opacity(resting ? 0 : 0.14)))
                     .overlay(BeanShape().stroke(.white.opacity(0.6), lineWidth: 0.5))
-                    .shadow(color: tone.opacity(mood == .sleepy ? 0.25 : 0.65), radius: size * 0.22)
+                    .shadow(color: resting ? .white.opacity(mood == .sleepy ? 0.12 : 0.25) : tone.opacity(0.65), radius: size * 0.22)
             }
             face(width: width, height: height, blink: blink)
                 .offset(x: look.x * size * 0.06 + tremble, y: look.y * size * 0.04)
