@@ -532,7 +532,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             announcedJobs.insert(entry.id)
             let id = entry.id
             let tone = entry.job.kind.tone
-            showWhenQuiet(summary, tone: tone, for: .seconds(120), while: { [weak self] in
+            // A headline only (≤45 characters): the card has the whole answer.
+            let headline = entry.job.answer.isEmpty ? summary : JobSummary.headline(from: entry.job.answer)
+            showWhenQuiet(headline, tone: tone, for: .seconds(120), while: { [weak self] in
                 self?.backgroundJobs.entries.contains(where: { $0.id == id }) ?? false  // gone, or opened there
             })
         }

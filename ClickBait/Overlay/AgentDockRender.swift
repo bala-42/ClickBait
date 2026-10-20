@@ -67,6 +67,16 @@ enum AgentDockRender {
                 tiles(in: size, [(.capture, .working), (.action, .working), (.processing, .done)])
                 AgentDoneCard(title: "why does this crash on launch",
                               summary: "`config` is nil until Settings load; move the read into `applicationDidFinishLaunching`.",
+                              answer: """
+                                  `config` is nil until Settings load, so reading it in `init` crashes on launch. \
+                                  Move the read into `applicationDidFinishLaunching`, after `settings.load()`:
+                                  ```swift
+                                  func applicationDidFinishLaunching(_ note: Notification) {
+                                      settings.load()
+                                      let config = settings.config!
+                                  }
+                                  ```
+                                  """,
                               suggestions: ["Show me the fixed code", "Why is it nil at launch?"],
                               tone: .processing, blur: false,
                               onClose: {}, onSuggestion: { _ in },
@@ -83,7 +93,7 @@ enum AgentDockRender {
                     .offset(x: 26 / videoScale, y: 14 / videoScale)
                 CompanionTriangle(tone: .idle, pulsing: false)
                     .position(x: 105 / videoScale, y: 70 / videoScale)
-                TinyPill(text: "`config` is nil until Settings load; move the read into applicationDidFinishLaunching.",
+                TinyPill(text: JobSummary.headline(from: "`config` is nil until Settings load, so reading it in `init` crashes on launch."),
                          tone: .processing)
                     .offset(x: 126 / videoScale, y: 70 / videoScale)
             }

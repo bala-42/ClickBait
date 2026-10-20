@@ -159,11 +159,88 @@ struct AgentRunningCard: View {
     }
 }
 
+/// A done card's answer, whole: prose and code (with Copy), scrolling inside the card past
+/// `maxHeight` so a long answer never fills the screen; a short one stays compact.
+struct AgentAnswerBody: View {
+    let text: String
+    static let maxHeight: CGFloat = 260
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        Group {
+            if contentHeight > Self.maxHeight {
+                ScrollView(.vertical) { content }
+                    .frame(height: Self.maxHeight)
+            } else {
+                content
+            }
+        }
+        // Measured at its natural height, unseen, so it's known whether it needs to scroll.
+        .background(alignment: .top) {
+            content
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(MessageFormat.segments(text).enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case .text(let prose):
+                    // Inline markdown (bold, italics, `code`, links), as in the chat.
+                    Text((try? AttributedString(markdown: prose, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                        ?? AttributedString(prose))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AgentDockStyle.title)
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .code(_, let code):
+                    AgentCodeSnippet(code: code)
+                }
+            }
+        }
+    }
+}
+
+/// Code in a done card: monospaced, selectable, with a Copy button.
+private struct AgentCodeSnippet: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(code)
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(AgentDockStyle.title)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+                copied = true
+                Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
+            }
+            .buttonStyle(AquaButtonStyle(selected: copied))
+            .accessibilityLabel(copied ? "Copied" : "Copy code")
+        }
+        .padding(8)
+        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
 /// A finished job: its summary, up to two suggested next questions, follow up by text or
 /// voice, and go there! / later, pls.
 struct AgentDoneCard: View {
     let title: String
     let summary: String
+    /// The whole answer (user's rule, 2026-10-20: a proper answer isn't cut off on the card);
+    /// empty shows `summary`.
+    var answer = ""
     let suggestions: [String]
     let tone: CompanionTone
     var canGoThere = true
@@ -182,11 +259,7 @@ struct AgentDoneCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             AgentCardTitle(title: title, badge: "done", tone: tone, onClose: onClose)
-            Text(summary)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AgentDockStyle.title)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+            AgentAnswerBody(text: answer.isEmpty ? summary : answer)
                 .padding(.top, 10)
             if !suggestions.isEmpty {
                 label("suggested next:").padding(.top, 12)

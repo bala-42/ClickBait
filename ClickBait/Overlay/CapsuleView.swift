@@ -123,7 +123,7 @@ struct CapsuleView: View {
                              footer: presentation.followUp.isOpen ? miniChat(id, answering: true) : nil,
                              onStop: { onStop(id) })
         case .done(let summary):
-            AgentDoneCard(title: job.question, summary: summary, suggestions: presentation.entry.offeredSuggestions,
+            AgentDoneCard(title: job.question, summary: summary, answer: job.answer, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
                           onClose: { onDismiss(id) },
                           onSuggestion: { onSuggestion(id, $0) },
