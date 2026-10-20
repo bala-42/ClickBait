@@ -2663,6 +2663,18 @@ final class AskCoordinator {
             onAnswer?(response, instant)
             return
         }
+        // "How many days until Christmas?", "what's the date?": worked out here, exactly, in
+        // under 0.1 s. The model has no clock and counted 30 days instead of 66 (2026-10-20).
+        if snip == nil, selectedText == nil, history.isEmpty, let answer = DateFacts.instantAnswer(question, now: Date()) {
+            encoding.cancel()
+            let response = AssistantResponse(speech: answer)
+            if speak { speaker.speak(response.speech) }
+            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: response.speech) }
+            if state == .thinking { state = .idle }
+            Log.ask.notice("Answered a date question instantly, without the model")
+            onAnswer?(response, [])
+            return
+        }
         // Internet Mode (🌐): online only when the user's words ask (spec decision 3), never
         // for snips (their subject lookup is separate) or pointing. Starts now, alongside the
         // screenshot's encoding.
@@ -2741,6 +2753,14 @@ final class AskCoordinator {
                     webCredit = result.credit
                     if !result.needsScreen { request.screenshotJPEG = Data(); request.elements = [] }
                 }
+            }
+            // A plain question about the world: the model answers it the same from text, ~6 s
+            // sooner (reading the screenshot is most of its time).
+            if !request.screenshotJPEG.isEmpty,
+               ScreenNeed.isAboutTheWorld(question, selectedText: selectedText, snipped: snip != nil, followUp: !history.isEmpty) {
+                request.screenshotJPEG = Data()
+                request.elements = []
+                Log.ask.notice("About the world, not the screen: asking without the screenshot")
             }
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \

@@ -34,6 +34,34 @@ public enum DateFacts {
         return lines
     }
 
+    /// Questions ClickBait answers itself, without the model (under 0.1 s, always right):
+    /// "how many days until Christmas?" → "66 days until Christmas!"; "what's the date?",
+    /// "what day is it today?" → "It's Tuesday, 20 October." Nil for anything else.
+    public static func instantAnswer(_ question: String, now: Date, calendar: Calendar = .current) -> String? {
+        let text = ImpliedPointer.normalized(question)
+        if let count = daysUntil(question, now: now, calendar: calendar) {
+            // Only a plain "how many days until X": "plan my trip 3 days before Christmas" isn't one.
+            let plain = ["how many days", "days until", "days till", "days to", "days left", "how long until", "how long till"]
+                .contains { text.hasPrefix($0) }
+            guard plain, text.split(separator: " ").count <= 9 else { return nil }
+            switch count.days {
+            case 0: return "It's \(count.name) today!"
+            case 1: return "1 day until \(count.name)!"
+            default: return "\(count.days) days until \(count.name)!"
+            }
+        }
+        let asksDate = ["what s the date", "whats the date", "what is the date", "what s today s date",
+                        "whats todays date", "what is today s date", "what day is it", "what day is today",
+                        "what s the day today", "what date is it", "what is today"]
+        guard asksDate.contains(where: { text == $0 || text == $0 + " today" }) else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.dateFormat = "EEEE, d MMMM"
+        return "It's \(formatter.string(from: now))."
+    }
+
     /// "How many days until Christmas?" → Christmas, its next date, and the days to it (today
     /// not counted; 0 on the day). Nil when the question names no day.
     public static func daysUntil(_ question: String, now: Date, calendar: Calendar = .current) -> (name: String, date: Date, days: Int)? {

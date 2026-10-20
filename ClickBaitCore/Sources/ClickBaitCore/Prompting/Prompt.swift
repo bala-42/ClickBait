@@ -347,7 +347,7 @@ public enum Prompt {
         }
         var lines = [request.snip != nil
             ? "The close-up is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."
-            : request.screenshotJPEG.isEmpty && !request.web.isEmpty
+            : request.screenshotJPEG.isEmpty
             ? "No screenshot this time: the question isn't about the screen."
             : "The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
         let context = request.context
