@@ -318,11 +318,13 @@ private struct OpenNotch: View {
 
     private var header: some View {
         HStack(spacing: 0) {
+            NotchBean(mood: model.mood())
+                .padding(.leading, 12)
             HStack(spacing: 5) {
                 NotchHeaderTab(symbol: "house.fill", label: "Home", selected: model.tab == .home) { onTabChange(.home) }
                 NotchHeaderTab(symbol: "tray.fill", label: "Shelf", selected: model.tab == .shelf) { onTabChange(.shelf) }
             }
-            .padding(.leading, 14)
+            .padding(.leading, 8)
             Spacer()
             HStack(spacing: 14) {
                 NotchHeaderIcon(symbol: "gearshape", label: "ClickBait settings") { onTabChange(.settings) }

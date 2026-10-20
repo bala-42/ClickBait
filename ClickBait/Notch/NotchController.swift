@@ -53,6 +53,8 @@ final class NotchController {
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
         enum Tab { case home, shelf, settings }
+        /// The bean's mood, read from the companion (set by the app delegate).
+        var mood: @MainActor () -> Bean.Mood = { .idle }
         let note: Note
         init(note: Note) { self.note = note }
     }
@@ -419,6 +421,27 @@ final class NotchController {
                 try? png.write(to: URL(fileURLWithPath: folder).appending(path: "\(name).png"))
             }
             (model.state, model.activity) = saved
+        }
+        // Every mood, large then at header size, still (no breathing or blink).
+        let moods = Bean.Mood.allCases.map { mood in
+            VStack(spacing: 6) {
+                BeanFace(mood: mood, eyes: Bean.eyePairs(for: mood)[0], size: 64)
+                Text(mood.rawValue).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+            }
+        }
+        let sheet = VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 22) { ForEach(0..<moods.count, id: \.self) { moods[$0] } }
+            HStack(spacing: 22) {
+                ForEach(Bean.Mood.allCases, id: \.self) { BeanFace(mood: $0, eyes: Bean.eyePairs(for: $0)[0], size: 26) }
+            }
+        }
+        .padding(24)
+        .background(Color.black)
+        let renderer = ImageRenderer(content: sheet)
+        renderer.scale = 2
+        if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: folder).appending(path: "notch-bean.png"))
         }
     }
 

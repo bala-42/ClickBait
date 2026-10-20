@@ -1,0 +1,214 @@
+import AppKit
+import ClickBaitCore
+import SwiftUI
+
+/// The notch's bean (`Bean`): a pearl squircle, flatter at the bottom, with kaomoji eyes, a
+/// drawn mouth, a little blush, and a glow and badge in ClickBait's state colours. It breathes,
+/// blinks, looks toward the pointer, hops when the mood changes, wobbles on an error and dozes
+/// off after `Bean.sleepAfter` idle. Reduce Motion keeps it still (the eyes still change).
+struct NotchBean: View {
+    let mood: Bean.Mood
+    var size: CGFloat = 26
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
+    @State private var idleSince = Date()
+    @State private var hops = 0
+    @State private var wobbles = 0
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+            let now = timeline.date
+            let shown: Bean.Mood = mood == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter ? .sleepy : mood
+            BeanFace(mood: shown, eyes: shown == mood ? eyes : Bean.eyePairs(for: .sleepy)[0], size: size,
+                     time: reduceMotion ? 0 : now.timeIntervalSinceReferenceDate,
+                     look: reduceMotion ? .zero : Self.look())
+        }
+        .keyframeAnimator(initialValue: 0.0, trigger: hops) { content, lift in
+            content.offset(y: -lift)
+        } keyframes: { _ in
+            SpringKeyframe(size * 0.18, duration: 0.14)
+            SpringKeyframe(0, duration: 0.3, spring: .bouncy)
+        }
+        .keyframeAnimator(initialValue: 0.0, trigger: wobbles) { content, angle in
+            content.rotationEffect(.degrees(angle), anchor: .bottom)
+        } keyframes: { _ in
+            CubicKeyframe(-8, duration: 0.07)
+            CubicKeyframe(7, duration: 0.1)
+            CubicKeyframe(-4, duration: 0.1)
+            CubicKeyframe(0, duration: 0.12)
+        }
+        .onChange(of: mood, initial: true) { _, new in
+            eyes = Bean.eyes(for: new, avoiding: eyes)
+            idleSince = Date()
+            guard !reduceMotion else { return }
+            if new == .error { wobbles += 1 } else if new != .idle { hops += 1 }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("ClickBait, \(mood.rawValue)")
+    }
+
+    /// Where the pointer is from the notch (top middle of the main screen), -1…1 each way.
+    private static func look() -> CGPoint {
+        guard let screen = NSScreen.main else { return .zero }
+        let mouse = NSEvent.mouseLocation
+        let dx = (mouse.x - screen.frame.midX) / (screen.frame.width / 2)
+        let dy = (screen.frame.maxY - mouse.y) / screen.frame.height
+        return CGPoint(x: max(-1, min(1, dx)), y: max(0, min(1, dy * 2)))
+    }
+
+    /// The glow, tint and badge colour for each mood.
+    static func color(for mood: Bean.Mood) -> Color {
+        switch mood {
+        case .idle, .sleepy: CompanionTone.idle.color
+        case .listening, .thinking: CompanionTone.processing.color
+        case .working, .happy: CompanionTone.action.color
+        case .error: wine
+        }
+    }
+
+    /// Errors are Wine (user's pick over Burgundy and Tyrian, 2026-10-21).
+    static let wine = Color(hex: 0x9B1B48)
+}
+
+/// One frame of the bean, drawn from its mood, eyes, the clock (breathing and blinks) and
+/// where it's looking.
+struct BeanFace: View {
+    let mood: Bean.Mood
+    let eyes: String
+    let size: CGFloat
+    var time: TimeInterval = 0
+    var look: CGPoint = .zero
+
+    private static let pearlTop = Color(hex: 0xF3F3F6)
+    private static let pearlBottom = Color(hex: 0xC9CAD1)
+    private static let ink = Color(hex: 0x26272C)
+
+    var body: some View {
+        let tone = NotchBean.color(for: mood)
+        let breath = mood == .sleepy ? sin(time * 1.6) : sin(time * 2.4)
+        let squish = 0.025 * breath
+        let blink = time > 0 && time.truncatingRemainder(dividingBy: 4.3) < 0.12
+        let width = size, height = size * 0.86
+        ZStack {
+            BeanShape()
+                .fill(LinearGradient(colors: [Self.pearlTop, Self.pearlBottom], startPoint: .top, endPoint: .bottom))
+                .overlay(BeanShape().fill(tone.opacity(0.14)))
+                .overlay(BeanShape().stroke(.white.opacity(0.6), lineWidth: 0.5))
+                .shadow(color: tone.opacity(mood == .sleepy ? 0.25 : 0.65), radius: size * 0.22)
+            face(width: width, height: height, blink: blink)
+                .offset(x: look.x * size * 0.06, y: look.y * size * 0.04)
+        }
+        .frame(width: width, height: height)
+        .scaleEffect(x: 1 + squish, y: 1 - squish, anchor: .bottom)
+        .overlay(alignment: .topTrailing) { badge(tone: tone) }
+        .frame(width: width + size * 0.2, height: height + size * 0.2)
+    }
+
+    private func face(width: CGFloat, height: CGFloat, blink: Bool) -> some View {
+        let pair = eyes.split(separator: " ").map(String.init)
+        return VStack(spacing: height * 0.02) {
+            HStack(spacing: width * 0.2) {
+                ForEach(Array(pair.enumerated()), id: \.offset) { _, eye in
+                    Text(eye)
+                        .font(.system(size: size * 0.3, weight: .heavy, design: .rounded))
+                        .fixedSize()
+                        .frame(width: width * 0.16)
+                }
+            }
+            .scaleEffect(y: blink ? 0.1 : 1)
+            ZStack {
+                HStack(spacing: width * 0.42) {
+                    Ellipse().fill(Color(hex: 0xFF8FA3).opacity(0.35)).frame(width: width * 0.14, height: height * 0.08)
+                    Ellipse().fill(Color(hex: 0xFF8FA3).opacity(0.35)).frame(width: width * 0.14, height: height * 0.08)
+                }
+                BeanMouth(mouth: Bean.mouth(for: mood))
+                    .stroke(Self.ink, style: StrokeStyle(lineWidth: max(1, size * 0.05), lineCap: .round, lineJoin: .round))
+                    .frame(width: width * 0.16, height: height * 0.1)
+            }
+        }
+        .foregroundStyle(Self.ink)
+        .offset(y: height * 0.04)
+    }
+
+    @ViewBuilder private func badge(tone: Color) -> some View {
+        let mark: String? = switch mood {
+        case .thinking: "···"
+        case .error: "!"
+        case .happy: "✓"
+        case .sleepy: "z"
+        case .idle, .listening, .working: nil
+        }
+        if let mark {
+            Text(mark)
+                .font(.system(size: size * 0.24, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, size * 0.06)
+                .frame(minWidth: size * 0.36, minHeight: size * 0.36)
+                .background(tone, in: Capsule())
+                .overlay(Capsule().stroke(NotchPalette.ink, lineWidth: 1.5))
+        }
+    }
+}
+
+/// A wide squircle (superellipse): rounder on top, flatter at the bottom.
+struct BeanShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let a = rect.width / 2, b = rect.height / 2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        var path = Path()
+        for step in 0...96 {
+            let t = Double(step) / 96 * 2 * .pi
+            let c = cos(t), s = sin(t)
+            let n = s > 0 ? 3.4 : 2.3  // y grows downward: the bottom is the flatter half
+            let x = a * copysign(pow(abs(c), 2 / n), c)
+            let y = b * copysign(pow(abs(s), 2 / n), s)
+            let point = CGPoint(x: center.x + x, y: center.y + y)
+            if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The bean's own mouth, drawn in its frame.
+struct BeanMouth: Shape {
+    let mouth: Bean.Mouth
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch mouth {
+        case .smile:
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.2))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.2), control: CGPoint(x: rect.midX, y: rect.maxY))
+        case .grin:
+            path.move(to: CGPoint(x: rect.minX - rect.width * 0.15, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX + rect.width * 0.15, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY + rect.height * 0.6))
+            path.closeSubpath()
+        case .open:
+            path.addEllipse(in: CGRect(x: rect.midX - rect.height * 0.4, y: rect.minY, width: rect.height * 0.8, height: rect.height))
+        case .flat:
+            path.move(to: CGPoint(x: rect.minX + rect.width * 0.15, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.15, y: rect.midY))
+        case .frown:
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY))
+        }
+        return path
+    }
+}
+
+extension OverlayModel {
+    /// What the bean feels, from what the companion is doing.
+    var beanMood: Bean.Mood {
+        if isDictating { return bubble == .listening ? .listening : .thinking }
+        if isSnipThinking || isTutorialChecking { return .thinking }
+        return switch bubble {
+        case .listening: .listening
+        case .thinking, .explaining: .thinking
+        case .working: .working
+        case .done, .greeting, .jobResult: .happy
+        case .error: .error
+        case .idle, .answer, .hint: .idle
+        }
+    }
+}

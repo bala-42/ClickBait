@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         #endif
+        notch.model.mood = { [overlay] in overlay.model.beanMood }
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
         backgroundJobs.onDone = { [weak self] _ in
