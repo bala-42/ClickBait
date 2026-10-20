@@ -158,7 +158,8 @@ struct NotchView: View {
         let ear = CGFloat(NotchPanel.ear)
         let shape = NotchShape(ear: ear, bottom: CGFloat(look.radius))
         let place = BeanPlace(state: model.state, tab: model.tab, mirror: showingMirror, hud: model.hud != nil,
-                              greeting: model.greeting, width: CGFloat(look.width), height: CGFloat(look.height))
+                              greeting: model.greeting, cover: music.hasTrack && music.artwork != nil,
+                              width: CGFloat(look.width), height: CGFloat(look.height))
         ZStack(alignment: .top) {
             shape.fill(Color.black)
             Group {
@@ -223,7 +224,8 @@ struct NotchView: View {
 }
 
 /// Where the bean sits, in the island's own points (top-left origin): small on the peek's
-/// left, large on the home card's left, smaller beside the ask field; gone elsewhere.
+/// left, large on the home card's left (small on the cover's corner while a track has one),
+/// smaller beside the ask field; gone elsewhere.
 private struct BeanPlace {
     let x: CGFloat
     let y: CGFloat
@@ -231,11 +233,14 @@ private struct BeanPlace {
     let visible: Bool
 
     init(state: NotchPanel.State, tab: NotchController.Model.Tab, mirror: Bool, hud: Bool, greeting: Bool,
-         width: CGFloat, height: CGFloat) {
+         cover: Bool, width: CGFloat, height: CGFloat) {
         // Content starts under the 8 pt top and the 34 pt header; the bean sits a little low.
         let cardCentre: CGFloat = 99
         switch state {
         case .expanded where greeting: (x, y, size, visible) = (width / 2, 93, 78, true)
+        case .expanded where !mirror && tab == .home && cover:
+            let corner = FocusCard.coverCentre.x + 10 + FocusCard.coverSize / 2 - 4
+            (x, y, size, visible) = (corner, 42 + FocusCard.coverCentre.y + FocusCard.coverSize / 2 - 6, 24, true)
         case .expanded where !mirror && tab == .home: (x, y, size, visible) = (62, cardCentre, 66, true)
         case .expanded where !mirror && tab == .ask: (x, y, size, visible) = (52, cardCentre, 44, true)
         case .peek where !hud: (x, y, size, visible) = (40, height / 2, 20, true)
@@ -407,16 +412,31 @@ private struct OpenNotch: View {
     }
 }
 
-/// The home's left card. The bean sits on its left (`BeanPlace`); the words start at 108 pt:
+/// The home's left card. On its left: the track's cover with the bean small on its corner, or
+/// the bean large when there's no cover (`BeanPlace`). The words start at 108 pt:
 /// a dot, a title and a source, then two lines — the track's position and controls, or how
 /// to reach ClickBait. ↗ opens the player.
 private struct FocusCard: View {
     let music: MusicBridge
     let mood: Bean.Mood
 
+    /// The cover, in the card's points.
+    nonisolated static let coverSize: CGFloat = 66
+    nonisolated static let coverCentre = CGPoint(x: 52, y: 49)
+
     var body: some View {
         let accent = music.hasTrack ? NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist) : NotchBean.color(for: mood)
         ZStack(alignment: .topLeading) {
+            if music.hasTrack, music.artwork != nil {
+                Artwork(music: music, corner: 12)
+                    .frame(width: Self.coverSize, height: Self.coverSize)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                    .onTapGesture { music.openPlayer() }
+                    .help("Open \(music.player?.name ?? "the player")")
+                    .position(Self.coverCentre)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     Circle().fill(accent).frame(width: 7, height: 7)
