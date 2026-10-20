@@ -169,6 +169,7 @@ public struct OllamaProvider: LLMProvider {
         if ask.listParts { options["num_predict"] = partsReplyTokens }
         if ask.lookupQuery { options["num_predict"] = 60 }
         if ask.suggestNextAfter != nil { options["num_predict"] = 60 }
+        if ask.routeIntent { options["num_predict"] = 40 }
         // ~9 tokens a mark ("12": "Neptune",); 15 marks took 138.
         if !ask.markNames.isEmpty { options["num_predict"] = max(partsReplyTokens, ask.markCount * 14) }
         return options
@@ -182,6 +183,7 @@ public struct OllamaProvider: LLMProvider {
         if !ask.markNames.isEmpty { return marksSchema(for: ask) }
         if ask.pickElement { return pickSchema }
         if ask.sortRequest { return sortSchema }
+        if ask.routeIntent { return routeSchema }
         if ask.planTutorial { return tutorialSchema }
         if ask.tutorialCheck != nil { return progressSchema }
         if ask.lookupQuery { return ["type": "object", "properties": ["query": ["type": "string"]], "required": ["query"]] }
@@ -223,6 +225,15 @@ public struct OllamaProvider: LLMProvider {
         "type": "object",
         "properties": ["kind": ["type": "string", "enum": ["steps", "answer"]]],
         "required": ["kind"],
+    ] }
+
+    static var routeSchema: [String: Any] { [
+        "type": "object",
+        "properties": [
+            "intent": ["type": "string", "enum": IntentRouter.Intent.allCases.map(\.rawValue)],
+            "app": ["type": "string"],
+        ] as [String: Any],
+        "required": ["intent", "app"],
     ] }
 
     static var progressSchema: [String: Any] { [

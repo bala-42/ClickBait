@@ -50,6 +50,8 @@ final class QuestionFlow {
     let work: PeelRule.Work
     var phase: PeelRule.Phase
     var kind: PeelRule.Kind = .unknown
+    /// The model's answer pointed at something (for `IntentRouter`'s shadow comparison).
+    var pointed = false
     /// Captured at the press, so a newer question can't change what this one asks with.
     var provider: (any LLMProvider)?
     var context = ScreenContext()

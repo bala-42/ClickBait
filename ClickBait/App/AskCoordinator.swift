@@ -1019,12 +1019,58 @@ final class AskCoordinator {
     /// its tile goes rather than working forever. Also the flow's end.
     private func end(_ flow: QuestionFlow) {
         if currentFlow === flow { currentFlow = nil }
+        shadowRoute(flow)
         flow.pendingSnipView?.text.cancel()  // left over if the run never took it
         flow.pendingSnipView?.objects.cancel()
         flow.pendingSnipView = nil
         guard let id = flow.jobID, !flow.joined, backgroundJobs?.job(id)?.isWorking == true else { return }
         backgroundJobs?.remove(id)
         Log.ask.notice("Peel dropped: the question ended before an answer started (\(id.uuidString, privacy: .public))")
+    }
+
+    // MARK: IntentRouter, shadow mode (C3)
+
+    /// Off with `defaults write org.clickbait.ClickBait router.shadow -bool false`.
+    private static var routerShadowOn: Bool { UserDefaults.standard.object(forKey: "router.shadow") as? Bool ?? true }
+    private var routeCache = IntentRouter.Cache()
+    private var shadowTask: Task<Void, Never>?
+
+    /// After a question ends: what the router would have done, logged next to what ClickBait
+    /// did. Changes nothing. Waits until ClickBait is idle (it never shares the GPU with an
+    /// answer) and gives up if another question starts.
+    private func shadowRoute(_ flow: QuestionFlow) {
+        guard Self.routerShadowOn, let question = flow.heard, !question.isEmpty, let provider = flow.provider else { return }
+        let actual: IntentRouter.Intent
+        if tutorial?.isActive == true { actual = .tutorial }
+        else if flow.kind == .command { actual = .order }
+        else if flow.kind == .instantPick || flow.pointed { actual = .point }
+        else { actual = .answer }
+        let context = flow.context
+        shadowTask?.cancel()
+        shadowTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard let self, !Task.isCancelled, self.state == .idle, self.currentFlow == nil else { return }
+            let start = ContinuousClock.now
+            var route = self.routeCache.route(for: question)
+            let cached = route != nil
+            if route == nil {
+                var ask = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0, context: context)
+                ask.routeIntent = true
+                let apps = Array(AppLocator.installed().keys)
+                // Checked, then one retry on a bad reply (LTK's pattern); no bigger local model to escalate to yet.
+                for _ in 0..<2 where route == nil {
+                    guard self.state == .idle, !Task.isCancelled else { return }
+                    let reply = await Self.reply(from: provider, to: ask, within: ProviderOperation.classifyRequest.timeout)
+                    route = reply.flatMap { IntentRouter.parse($0, apps: apps) }
+                }
+                if let route { self.routeCache.store(route, for: question) }
+            }
+            let comparison = IntentRouter.Comparison(route: route, actual: actual)
+            Log.ask.notice("""
+                Router (shadow): \(comparison.summary, privacy: .public) in \(String(describing: ContinuousClock.now - start), privacy: .public)\
+                \(cached ? " (cached)" : "", privacy: .public)
+                """)
+        }
     }
 
     /// A problem with the question: shown by the companion, or on the tile if it was sent away.
@@ -2971,6 +3017,7 @@ final class AskCoordinator {
             Log.ask.notice("\(fromList.filter { $0 }.count, privacy: .public) pointer(s) on a listed element: exact")
         }
         let pointers = instant ?? snapped.map(\.pointer)
+        flow.pointed = !pointers.isEmpty
         Log.ask.notice("""
             Parsed reply: fallback=\(parsed.usedFallback, privacy: .public), \
             \(pointers.count, privacy: .public) pointer(s), \(parsed.droppedPointers, privacy: .public) dropped

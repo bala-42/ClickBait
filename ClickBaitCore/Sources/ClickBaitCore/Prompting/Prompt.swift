@@ -73,7 +73,8 @@ public enum Prompt {
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
         let text: String
-        if request.lookupQuery { text = lookupSystem }
+        if request.routeIntent { text = routeSystem }
+        else if request.lookupQuery { text = lookupSystem }
         else if request.suggestNextAfter != nil { text = nextSystem }
         else if request.pickElement { text = pickSystem }
         else if request.sortRequest { text = sortSystem }
@@ -98,6 +99,23 @@ public enum Prompt {
         "answer": the request is about content itself, not about using the Mac — explaining, fixing or improving code \
         or text, translating, facts, advice, maths. Examples: "how do I make this code faster" answer; "how do I say \
         thanks in Japanese" answer; "what does this function do" answer; "how do I fix this error" answer.
+        """
+
+    /// `IntentRouter` (shadow mode): one intent for a Mac user's request, and the app it names.
+    public static let routeSystem = """
+        Sort a Mac user's request into one intent. Reply {"intent": "...", "app": "..."}.
+        "answer": a question answered in words — facts, advice, maths, explaining something on screen. \
+        Examples: "why is the sky blue" answer; "what does this error mean" answer; "summarize this page" answer.
+        "point": where something is on screen. Examples: "where's the share button" point; "which one is the \
+        bold button" point.
+        "tutorial": how to do something in an app, step by step. Examples: "how do I turn on dark mode" tutorial; \
+        "how can I clear my history in Safari" tutorial; "show me how to add a signature in Mail" tutorial.
+        "order": do something now. Examples: "open Notes" order; "quit Safari" order; "turn the volume down" \
+        order; "zip these files" order; "remind me to call mum" order.
+        "clarify": it could mean two quite different things and nothing says which. Example: "open notes" \
+        while a note is on screen is still order; "do it" with nothing before is clarify.
+        "app": the app the request names, exactly as said, or "" when it names none. An app named only as a \
+        word ("my notes", "the music") is not an app.
         """
 
     /// Turns a how-to into steps ClickBait walks the user through on their own screen.
@@ -277,6 +295,10 @@ public enum Prompt {
 
     private static func baseUserText(for request: AskRequest) -> String {
         if request.sortRequest { return request.question }
+        if request.routeIntent {
+            let app = request.context.appName.flatMap { $0.isEmpty ? nil : "Frontmost app: \($0)\n" } ?? ""
+            return app + "Request: \(request.question)"
+        }
         if request.pickElement {
             return (["Elements:"] + request.elements.map { "\($0.id): \($0.kind) \"\($0.label)\"" } + ["", "The user asked: \(request.question)"])
                 .joined(separator: "\n")
