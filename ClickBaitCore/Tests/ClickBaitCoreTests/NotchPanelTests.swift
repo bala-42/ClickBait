@@ -19,11 +19,14 @@ struct NotchPanelTests {
     @Test func statesMoveAsExpected() {
         var state = NotchPanel.State.hidden
         state = NotchPanel.next(state, on: .enabled(true));   #expect(state == .collapsed)
-        state = NotchPanel.next(state, on: .hoverDwelled);    #expect(state == .expanded)
-        state = NotchPanel.next(state, on: .hoverDwelled);    #expect(state == .expanded)  // stays
-        state = NotchPanel.next(state, on: .pointerLeft);     #expect(state == .expanded)
-        state = NotchPanel.next(state, on: .clicked);         #expect(state == .collapsed)
+        state = NotchPanel.next(state, on: .pointerEntered);  #expect(state == .peek)
+        state = NotchPanel.next(state, on: .pointerEntered);  #expect(state == .peek)  // stays
         state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)
+        state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)  // a click inside keeps it open
+        state = NotchPanel.next(state, on: .openTimedOut);    #expect(state == .peek)
+        state = NotchPanel.next(state, on: .peekTimedOut);    #expect(state == .collapsed)
+        state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)  // straight from the notch
+        state = NotchPanel.next(state, on: .escape);          #expect(state == .peek)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)  // nothing to close
         state = NotchPanel.next(state, on: .displayAvailable(false)); #expect(state == .hidden)
@@ -34,17 +37,18 @@ struct NotchPanelTests {
 
     /// Sizes from the GIF (1 px = 0.746 pt).
     @Test func shapesMatchTheGIF() {
-        let plain = NotchPanel.shape(.collapsed, notch: notch, activity: false, hovering: false, hud: false)
+        let plain = NotchPanel.shape(.collapsed, notch: notch, activity: false, hud: false)
         #expect(plain.width == notch.width && plain.height == notch.height)
-        let playing = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: false)
+        let playing = NotchPanel.shape(.collapsed, notch: notch, activity: true, hud: false)
         #expect(playing.width == notch.width + 80)  // 248 → 356 px
-        let hovered = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: true, hud: false)
-        #expect(hovered.width == playing.width + 30)  // the swell before it opens
-        let open = NotchPanel.shape(.expanded, notch: notch, activity: true, hovering: true, hud: false)
+        let peek = NotchPanel.shape(.peek, notch: notch, activity: true, hud: false)
+        #expect(peek.width == notch.width + NotchPanel.peekWidth && peek.height == notch.height)
+        #expect(peek.radius == NotchPanel.compactCorner)
+        let open = NotchPanel.shape(.expanded, notch: notch, activity: true, hud: false)
         #expect(open.width == NotchPanel.expandedSize.width && open.height == NotchPanel.expandedSize.height)  // the Nook
-        let tray = NotchPanel.shape(.expanded, notch: notch, activity: false, hovering: false, hud: false, shelf: true)
+        let tray = NotchPanel.shape(.expanded, notch: notch, activity: false, hud: false, shelf: true)
         #expect(tray.width == NotchPanel.shelfSize.width && tray.height == NotchPanel.shelfSize.height)
-        let hud = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: true)
+        let hud = NotchPanel.shape(.collapsed, notch: notch, activity: true, hud: true)
         #expect(hud.width == notch.width + 2 * NotchPanel.hudWing)  // the HUD wins over the music wings
     }
 
@@ -90,9 +94,9 @@ struct NotchPanelTests {
     /// The open island: 640 × 160, corners 22, flush with the top.
     @Test func openIsland() throws {
         let notch = Rect(x: 600, y: 950, width: 185, height: 32)
-        let open = NotchPanel.shape(.expanded, notch: notch, activity: false, hovering: false, hud: false)
+        let open = NotchPanel.shape(.expanded, notch: notch, activity: false, hud: false)
         #expect(open.width == 640 && open.height == 160 && open.radius == NotchPanel.openCorner)
-        let wings = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: false)
+        let wings = NotchPanel.shape(.collapsed, notch: notch, activity: true, hud: false)
         #expect(wings.radius == NotchPanel.compactCorner)
         #expect(NotchPanel.ear == 0)
     }
@@ -178,7 +182,8 @@ struct TrackTimeTests {
 struct PullGestureTests {
     @Test func pullingDownOpensPushingUpCloses() {
         #expect(NotchPanel.next(.collapsed, on: .pulledDown) == .expanded)
-        #expect(NotchPanel.next(.expanded, on: .pushedUp) == .collapsed)
+        #expect(NotchPanel.next(.expanded, on: .pushedUp) == .peek)
+        #expect(NotchPanel.next(.peek, on: .pulledDown) == .expanded)
         #expect(NotchPanel.next(.expanded, on: .pulledDown) == .expanded)
         #expect(NotchPanel.next(.hidden, on: .pulledDown) == .hidden)
     }
@@ -202,8 +207,9 @@ struct PullGestureTests {
         #expect(gesture.add(deltaY: -10, inverted: true) == nil)
     }
 
-    @Test func hoverWaitsLikeTheGIF() {
-        #expect(NotchPanel.hoverDelay == 0.4)  // the GIF's
+    @Test func foldsLikeTheIsland() {
+        #expect(NotchPanel.openHold == 15)
+        #expect(NotchPanel.peekHold == 60)
     }
 }
 

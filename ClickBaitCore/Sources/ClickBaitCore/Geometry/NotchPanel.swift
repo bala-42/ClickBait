@@ -9,17 +9,21 @@ public enum NotchPanel {
     public enum State: Equatable, Sendable {
         /// Turned off, or no display to show it on.
         case hidden
-        /// Notch-sized and black, invisible over the notch; a small side tab shows when
-        /// something is worth a glance (an agent working or done).
+        /// Notch-sized and black, invisible over the notch; the music wings show while playing.
         case collapsed
+        /// The pointer came by: a small island `peekWidth` wider than the notch, the bean on
+        /// its left. Folds back after `peekHold` away from it.
+        case peek
         case expanded
     }
 
     public enum Event: Equatable, Sendable {
-        /// The pointer rested on the notch for `hoverDelay`.
-        case hoverDwelled
-    /// The pointer left the collapsed notch's hover target for `leaveDelay`.
-        case pointerLeft
+        /// The pointer came onto the notch.
+        case pointerEntered
+        /// The pointer stayed away from the peek for `peekHold`.
+        case peekTimedOut
+        /// The pointer stayed away from the open panel for `openHold`.
+        case openTimedOut
         case clicked
         case escape
         /// A two-finger swipe down on the notch (`PullGesture`), or up on the open panel.
@@ -30,17 +34,22 @@ public enum NotchPanel {
         case displayAvailable(Bool)
     }
 
-    /// The GIF's: the pointer arrives (the shape swells at once, `hoverBump`), then it opens
-    /// 0.4 s later (5.0 → 5.4 s). A pass over the notch to the menu bar is quicker than that.
-    public static let hoverDelay = 0.4
-    public static let leaveDelay = 0.4
+    /// The island's rhythm: the pointer coming by peeks at once; a click opens; the open panel
+    /// folds to the peek `openHold` after the pointer leaves it (or at once with Esc or ✕); the
+    /// peek folds away `peekHold` after the pointer leaves it.
+    public static let openHold = 15.0
+    public static let peekHold = 60.0
+    /// The peek: this much wider than the notch.
+    public static let peekWidth = 160.0
 
     public static func next(_ state: State, on event: Event) -> State {
         switch (state, event) {
         case (_, .enabled(false)), (_, .displayAvailable(false)): .hidden
         case (.hidden, .enabled(true)), (.hidden, .displayAvailable(true)): .collapsed
-        case (.collapsed, .hoverDwelled), (.collapsed, .clicked), (.collapsed, .pulledDown): .expanded
-        case (.expanded, .clicked), (.expanded, .escape), (.expanded, .pushedUp): .collapsed
+        case (.collapsed, .pointerEntered): .peek
+        case (.collapsed, .clicked), (.collapsed, .pulledDown), (.peek, .clicked), (.peek, .pulledDown): .expanded
+        case (.expanded, .escape), (.expanded, .pushedUp), (.expanded, .openTimedOut): .peek
+        case (.peek, .escape), (.peek, .pushedUp), (.peek, .peekTimedOut): .collapsed
         default: state
         }
     }
@@ -58,9 +67,6 @@ public enum NotchPanel {
     /// The music "live activity": the black grows this much each side of the notch, with the
     /// artwork on the left wing and a visualizer on the right (GIF: 248 → 356 px).
     public static let activityWing = 40.0
-    /// The pointer arriving: the shape swells this much each side at once, before it opens
-    /// (GIF 5.0–5.4 s: 369 → 409 px).
-    public static let hoverBump = 15.0
     /// The volume HUD's wings, each side of the notch while it shows (collapsed only).
     public static let hudWing = 96.0
     /// The open island (user's choice, 2026-10-20; ClickBait's colours): 640 wide, 160 tall — 8 top, a 34 pt header, 98 pt of
@@ -68,7 +74,7 @@ public enum NotchPanel {
     public static let expandedSize = (width: 640.0, height: 160.0)
     /// The shelf (files, AirDrop, note) gets taller cards for its file drop.
     public static let shelfSize = (width: 640.0, height: 176.0)
-    /// Corners: 22 open, 14 for the small island (wings, hover).
+    /// Corners: 22 open, 14 for the small island (wings, peek, HUD).
     public static let openCorner = 22.0
     public static let compactCorner = 14.0
     /// Settings remain attached to the notch while opening a roomier in-panel layout.
@@ -84,7 +90,7 @@ public enum NotchPanel {
     public static let closeCurve = (x1: 0.45, y1: 0.0, x2: 0.2, y2: 1.0, duration: 0.34)
 
     /// The black shape for a state: its size and bottom corner radius (not counting the ears).
-    public static func shape(_ state: State, notch: Rect?, activity: Bool, hovering: Bool, hud: Bool,
+    public static func shape(_ state: State, notch: Rect?, activity: Bool, hud: Bool,
                              shelf: Bool = false, settings: Bool = false)
         -> (width: Double, height: Double, radius: Double) {
         let expanded = settings ? settingsSize : shelf ? shelfSize : expandedSize
@@ -98,15 +104,12 @@ public enum NotchPanel {
             return (0, 0, 0)
         case .expanded:
             return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, openCorner)
+        case .peek:
+            return (notch.width + max(peekWidth, hud ? 2 * hudWing : 0), notch.height, compactCorner)
         case .collapsed:
-            var width = notch.width, height = notch.height, radius = 8.0
-            if hud {
-                width += 2 * hudWing; radius = compactCorner
-            } else if activity {
-                width += 2 * activityWing; radius = compactCorner
-            }
-            if hovering { width += 2 * hoverBump; height += 3; radius = compactCorner }
-            return (width, height, radius)
+            if hud { return (notch.width + 2 * hudWing, notch.height, compactCorner) }
+            if activity { return (notch.width + 2 * activityWing, notch.height, compactCorner) }
+            return (notch.width, notch.height, 8)
         }
     }
 
@@ -114,10 +117,10 @@ public enum NotchPanel {
     /// notch: under the menu bar), kept on the screen. Collapsed it covers only what the black
     /// covers, so menu-bar items either side stay clickable.
     public static func frame(_ state: State, screen: Rect, visible: Rect, notch: Rect?, activity: Bool = false,
-                             hovering: Bool = false, hud: Bool = false, shelf: Bool = false,
+                             hud: Bool = false, shelf: Bool = false,
                              settings: Bool = false) -> Rect? {
         guard state != .hidden else { return nil }
-        let look = shape(state, notch: notch, activity: activity, hovering: hovering, hud: hud,
+        let look = shape(state, notch: notch, activity: activity, hud: hud,
                          shelf: shelf, settings: settings)
         let width = min(look.width + 2 * ear, screen.width - 16)
         let centre = notch?.midX ?? screen.midX

@@ -143,8 +143,6 @@ struct NotchView: View {
     let speech: SpeechModelManager
     let speaker: Speaker
     let searxng: SearXNGStatus
-    let onHover: (Bool) -> Void
-    let onTap: () -> Void
     let onDragIn: () -> Void
     let onTabChange: (NotchController.Model.Tab) -> Void
     let onCollapse: () -> Void
@@ -155,11 +153,12 @@ struct NotchView: View {
 
     var body: some View {
         let open = model.state == .expanded
-        let look = NotchPanel.shape(model.state, notch: notch, activity: model.activity,
-                                    hovering: model.hovering && !open, hud: model.hud != nil,
+        let look = NotchPanel.shape(model.state, notch: notch, activity: model.activity, hud: model.hud != nil,
                                     shelf: model.tab == .shelf, settings: model.tab == .settings)
         let ear = CGFloat(NotchPanel.ear)
         let shape = NotchShape(ear: ear, bottom: CGFloat(look.radius))
+        let place = BeanPlace(state: model.state, tab: model.tab, mirror: showingMirror, hud: model.hud != nil,
+                              greeting: model.greeting, width: CGFloat(look.width), height: CGFloat(look.height))
         ZStack(alignment: .top) {
             shape.fill(Color.black)
             Group {
@@ -174,12 +173,15 @@ struct NotchView: View {
                                      onBack: { onTabChange(model.settingsReturnTab) }, onCollapse: onCollapse)
                             .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .top)))
                     } else {
-                        OpenNotch(model: model, music: music, calendar: calendar, shelf: shelf, settings: settings, art: art,
+                        OpenNotch(model: model, music: music, shelf: shelf, settings: settings,
                                   onTabChange: onTabChange, onMirror: { showingMirror = true }, onCollapse: onCollapse)
                             .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .top)))
                     }
                 } else if let hud = model.hud {
                     HUDWings(level: hud.level, muted: hud.muted)
+                } else if model.state == .peek {
+                    PeekContent(music: music)
+                        .transition(.opacity)
                 } else if model.activity {
                     ActivityWings(music: music, art: art)
                         .transition(.opacity)
@@ -188,20 +190,25 @@ struct NotchView: View {
             .padding(.horizontal, ear)
         }
         .frame(width: CGFloat(look.width) + 2 * ear, height: CGFloat(look.height))
+        // One bean, always there, so it springs from the peek into the open card and back.
+        .overlay(alignment: .topLeading) {
+            NotchBean(mood: model.greeting ? .happy : model.mood(), size: place.size, badge: !model.greeting)
+                .position(x: ear + place.x, y: place.y)
+                .opacity(place.visible ? 1 : 0)
+                .allowsHitTesting(place.visible)
+        }
         .contentShape(shape)
         .dropDestination(for: URL.self) { _, _ in false } isTargeted: { if $0, !open { onDragIn() } }
-        .onHover(perform: onHover)
-        .onTapGesture { if !open { onTap() } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : spring(open: open), value: open)
+        .animation(reduceMotion ? nil : spring(open: model.state != .collapsed), value: model.state)
         .animation(reduceMotion ? nil : spring(open: true), value: model.tab)
         .animation(reduceMotion ? nil : spring(open: true), value: look.width)
         .animation(reduceMotion ? nil : spring(open: true), value: look.height)
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: model.hovering)
         .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8), value: model.activity)
         .accessibilityElement(children: open ? .contain : .ignore)
         .accessibilityLabel(open ? "ClickBait notch" : model.activity ? "Now playing: \(music.title)" : "ClickBait notch, closed")
-        .accessibilityHint(open ? "" : "Rest the pointer here, or click, to open")
+        .accessibilityHint(open ? "" : "Click to open")
         .accessibilityAddTraits(open ? [] : .isButton)
     }
 
@@ -212,6 +219,47 @@ struct NotchView: View {
             return .timingCurve(c.x1, c.y1, c.x2, c.y2, duration: c.duration)
         }
         return .spring(response: NotchPanel.openSpring.response, dampingFraction: NotchPanel.openSpring.damping)
+    }
+}
+
+/// Where the bean sits, in the island's own points (top-left origin): small on the peek's
+/// left, large on the home card's left, smaller beside the ask field; gone elsewhere.
+private struct BeanPlace {
+    let x: CGFloat
+    let y: CGFloat
+    let size: CGFloat
+    let visible: Bool
+
+    init(state: NotchPanel.State, tab: NotchController.Model.Tab, mirror: Bool, hud: Bool, greeting: Bool,
+         width: CGFloat, height: CGFloat) {
+        // Content starts under the 8 pt top and the 34 pt header; the bean sits a little low.
+        let cardCentre: CGFloat = 99
+        switch state {
+        case .expanded where greeting: (x, y, size, visible) = (width / 2, 93, 78, true)
+        case .expanded where !mirror && tab == .home: (x, y, size, visible) = (62, cardCentre, 66, true)
+        case .expanded where !mirror && tab == .ask: (x, y, size, visible) = (52, cardCentre, 44, true)
+        case .peek where !hud: (x, y, size, visible) = (40, height / 2, 20, true)
+        default: (x, y, size, visible) = (46, 16, 6, false)
+        }
+    }
+}
+
+// MARK: - Peek
+
+/// The peek's right side: the visualizer while music plays (the bean is on the left).
+private struct PeekContent: View {
+    let music: MusicBridge
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+            if music.hasTrack {
+                Visualizer(playing: music.isPlaying, color: NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist))
+                    .frame(width: 18, height: 14)
+                    .padding(.trailing, 22)
+            }
+        }
+        .frame(maxHeight: .infinity)
     }
 }
 
@@ -285,15 +333,14 @@ private struct HUDWings: View {
 
 // MARK: - Open
 
-/// The open island: a 34 pt header (icon tabs left; settings, sounds and close right),
-/// then the cards. Home: the music card and Mirror; Shelf: files, AirDrop and the note.
+/// The open island: a 34 pt header (tabs left: home, ask, shelf; settings, sounds and close
+/// right), then 98 pt of cards. Home: the focus card (the bean on its left; the music, or
+/// ClickBait's keys) and four pills; Ask: a field for the chat; Shelf: files, AirDrop, note.
 private struct OpenNotch: View {
     let model: NotchController.Model
     let music: MusicBridge
-    let calendar: CalendarSource
     let shelf: ShelfStore
     @Bindable var settings: AppSettings
-    let art: Namespace.ID
     let onTabChange: (NotchController.Model.Tab) -> Void
     let onMirror: () -> Void
     let onCollapse: () -> Void
@@ -303,7 +350,11 @@ private struct OpenNotch: View {
             header.frame(height: 34)
             Group {
                 switch model.tab {
+                case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .ask:
+                    AskCard(onAsk: { text in onCollapse(); model.ask(text) })
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .shelf: ShelfView(shelf: shelf, note: model.note).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings: EmptyView()
                 }
@@ -318,16 +369,17 @@ private struct OpenNotch: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            NotchBean(mood: model.mood())
-                .padding(.leading, 12)
             HStack(spacing: 5) {
                 NotchHeaderTab(symbol: "house.fill", label: "Home", selected: model.tab == .home) { onTabChange(.home) }
-                NotchHeaderTab(symbol: "tray.fill", label: "Shelf", selected: model.tab == .shelf) { onTabChange(.shelf) }
+                NotchHeaderTab(symbol: "bubble.left.fill", label: "Ask ClickBait", selected: model.tab == .ask) { onTabChange(.ask) }
+                NotchHeaderTab(symbol: "plus", label: "Shelf", selected: model.tab == .shelf) { onTabChange(.shelf) }
             }
-            .padding(.leading, 8)
+            .padding(.leading, 14)
             Spacer()
             HStack(spacing: 14) {
-                NotchHeaderIcon(symbol: "gearshape", label: "ClickBait settings") { onTabChange(.settings) }
+                NotchHeaderIcon(symbol: model.tab == .settings ? "gearshape.fill" : "gearshape", label: "ClickBait settings") {
+                    onTabChange(.settings)
+                }
                 NotchHeaderIcon(symbol: settings.soundCues ? "speaker.wave.2" : "speaker.slash",
                                 label: settings.soundCues ? "Sounds on" : "Sounds off") { settings.soundCues.toggle() }
                 NotchHeaderIcon(symbol: "xmark", label: "Close", action: onCollapse)
@@ -339,68 +391,82 @@ private struct OpenNotch: View {
 
     private var home: some View {
         HStack(spacing: 10) {
-            MusicCard(music: music, art: art)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .notchCard()
-            MirrorTile(onTap: onMirror)
-                .frame(width: 98)
-                .notchCard()
+            FocusCard(music: music, mood: model.mood())
+                .frame(width: 322)
+                .notchCard(wash: FocusCard.wash(for: model.mood()))
+            IslandPills(pills: [
+                .init(name: "Ask", mood: .thinking, eyes: "• •") { onTabChange(.ask) },
+                .init(name: "Shelf", mood: .happy, eyes: "^ ^") { onTabChange(.shelf) },
+                .init(name: "Mirror", mood: .idle, eyes: "◕ ◕", action: onMirror),
+                .init(name: music.player?.name ?? "Music", mood: .idle, eyes: "ᵔ ᵔ") { music.openPlayer() },
+            ])
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .notchCard()
         }
         .frame(height: 98)
     }
 }
 
-/// The player card, for Music or Spotify: artwork (click opens the player), title and
-/// artist; position; shuffle, previous, play/pause, next, repeat; the player's volume. The
-/// accent is the artwork's colour.
-private struct MusicCard: View {
+/// The home's left card. The bean sits on its left (`BeanPlace`); the words start at 108 pt:
+/// a dot, a title and a source, then two lines — the track's position and controls, or how
+/// to reach ClickBait. ↗ opens the player.
+private struct FocusCard: View {
     let music: MusicBridge
-    let art: Namespace.ID
+    let mood: Bean.Mood
 
     var body: some View {
-        let accent = NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist)
-        Group {
-            if let error = music.error {
-                idle(dot: Color(hex: 0xF4505E), message: error)
-            } else if music.hasTrack {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 9) {
-                        Artwork(music: music, corner: 6)
-                            .matchedGeometryEffect(id: "art", in: art)
-                            .frame(width: 36, height: 36)
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-                            .onTapGesture { openPlayer() }
-                            .help("Open \(music.player?.name ?? "the player")")
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 5) {
-                                Circle().fill(accent).frame(width: 6, height: 6)
-                                Text(music.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                            }
-                            Text(music.artist).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.top, 10)
-                    TimelineView(.animation(minimumInterval: 0.5, paused: !music.isPlaying)) { context in
-                        PlayerProgress(position: music.currentPosition(at: context.date), duration: music.duration,
-                                       accent: accent, onSeek: { music.seek(to: $0) })
-                    }
-                    .padding(.top, 7)
-                    controls(accent: accent).padding(.top, 4)
+        let accent = music.hasTrack ? NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist) : NotchBean.color(for: mood)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Circle().fill(accent).frame(width: 7, height: 7)
+                    Text(music.hasTrack ? music.title : "ClickBait")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    Text(music.hasTrack ? music.artist : Self.status(mood))
+                        .font(.system(size: 11))
+                        .foregroundStyle(NotchPalette.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 2)
                 }
-                .padding(.horizontal, 12)
-            } else {
-                idle(dot: NotchPalette.tertiary, message: "Nothing playing")
+                .padding(.top, 6)
+                .padding(.trailing, 36)
+                Group {
+                    if music.hasTrack { player(accent: accent) } else { keys }
+                }
+                .frame(height: 44, alignment: .top)
+                .padding(.top, 6)
+                .padding(.trailing, 12)
+            }
+            .padding(.leading, 108)
+            .padding(.top, 4)
+            if music.player != nil {
+                Button { music.openPlayer() } label: {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(Color(hex: 0x5F646D))
+                        .frame(width: 16, height: 16)
+                        .background(Color.white.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Open \(music.player?.name ?? "the player")")
+                .padding(.top, 8)
+                .padding(.trailing, 10)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { music.refresh() }
     }
 
-    private func controls(accent: Color) -> some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 10) {
+    private func player(accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            TimelineView(.animation(minimumInterval: 0.5, paused: !music.isPlaying)) { context in
+                PlayerProgress(position: music.currentPosition(at: context.date), duration: music.duration,
+                               accent: accent, onSeek: { music.seek(to: $0) })
+            }
+            HStack(spacing: 12) {
                 PlayerIconButton(symbol: "shuffle", size: 10, tint: music.shuffling ? accent : NotchPalette.tertiary,
                                  label: music.shuffling ? "Shuffle on" : "Shuffle off") { music.setShuffling(!music.shuffling) }
                 PlayerIconButton(symbol: "backward.fill", size: 11, tint: NotchPalette.control, label: "Previous track") {
@@ -423,60 +489,173 @@ private struct MusicCard: View {
                 PlayerIconButton(symbol: "repeat", size: 10, tint: music.repeating ? accent : NotchPalette.tertiary,
                                  label: music.repeating ? "Repeat on" : "Repeat off") { music.setRepeating(!music.repeating) }
             }
-            Spacer(minLength: 8)
-            PlayerVolume(volume: music.volume, accent: accent) { music.setVolume($0) }
         }
     }
 
-    /// Nothing playing, or ClickBait may not control the player: a line, and the players to open.
-    private func idle(dot: Color, message: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Circle().fill(dot).frame(width: 7, height: 7)
-                Text("Music").font(.system(size: 12, weight: .semibold))
-            }
-            Text(message).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(2)
+    private var keys: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Hold ⌃⌥ to ask · fn ⌃ to dictate")
+                .font(.system(size: 11))
+                .foregroundStyle(NotchPalette.secondary)
+                .lineLimit(1)
             HStack(spacing: 12) {
                 ForEach(MusicBridge.Player.allCases, id: \.self) { player in
-                    Button("Open \(player.name)") { open(player) }
+                    Button("Open \(player.name)") { music.open(player) }
                         .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(NotchColors.artist.opacity(0.85))
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
     }
 
-    private func openPlayer() {
-        if let player = music.player { open(player) }
+    /// The card's wash: the state's colour rising from below while something is going on.
+    static func wash(for mood: Bean.Mood) -> Color? {
+        switch mood {
+        case .listening, .thinking, .working, .happy, .error: NotchBean.color(for: mood).opacity(0.45)
+        case .idle, .sleepy, .panicked, .warm, .tired: nil
+        }
     }
 
-    private func open(_ player: MusicBridge.Player) {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) {
-            NSWorkspace.shared.open(url)
+    private static func status(_ mood: Bean.Mood) -> String {
+        switch mood {
+        case .listening: "listening"
+        case .thinking: "thinking"
+        case .working: "on it"
+        case .happy: "done"
+        case .error: "something went wrong"
+        case .idle, .sleepy, .panicked, .warm, .tired: "ready"
         }
     }
 }
 
-private struct MirrorTile: View {
-    let onTap: () -> Void
+/// The home's right card: four pills, two by two, each with a small bean.
+private struct IslandPills: View {
+    struct Pill: Identifiable {
+        let name: String
+        let mood: Bean.Mood
+        let eyes: String
+        let action: () -> Void
+        var id: String { name }
+    }
+
+    let pills: [Pill]
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 6) {
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(NotchColors.bar)
-                Text("Mirror").font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.9))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], spacing: 4) {
+            ForEach(pills) { IslandPill(pill: $0) }
         }
-        .buttonStyle(PlayerPressStyle())
-        .help("Show the front camera in the notch")
-        .accessibilityLabel("Mirror. Show the front camera in the notch")
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct IslandPill: View {
+    let pill: IslandPills.Pill
+    @State private var hovering = false
+
+    var body: some View {
+        let color = NotchBean.color(for: pill.mood)
+        Button(action: pill.action) {
+            ZStack {
+                Capsule().fill(hovering ? color.opacity(0.18) : NotchPalette.ink)
+                Capsule().stroke(color.opacity(hovering ? 0.55 : 0.14), lineWidth: 1)
+                HStack(spacing: 0) {
+                    BeanFace(mood: pill.mood, eyes: pill.eyes, size: 22, badge: false, solid: true)
+                        .frame(width: 22, height: 22)
+                        .padding(.leading, 8)
+                    Spacer()
+                }
+                Text(pill.name)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hovering ? color : NotchPalette.tertiary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .shadow(color: color.opacity(hovering ? 0.35 : 0), radius: 10, y: 2)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(hovering ? 1.04 : 1)
+        .brightness(hovering ? 0.06 : 0)
+        .onHover { hover in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hovering = hover } }
+        .accessibilityLabel(pill.name)
+    }
+}
+
+/// The launch hello's card: sparkles twinkling around the bean (placed by `BeanPlace`).
+private struct GreetingCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private static let sparkles: [(x: Double, y: Double, r: Double, phase: Double)] = {
+        var random = SystemRandomNumberGenerator()
+        return (0..<90).map { _ in
+            (Double.random(in: 0...1, using: &random), Double.random(in: 0...1, using: &random),
+             Double.random(in: 0.4...1.2, using: &random), Double.random(in: 0...(2 * .pi), using: &random))
+        }
+    }()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            Canvas { context, size in
+                for spark in Self.sparkles {
+                    // Thicker away from the middle, where the bean is.
+                    let dx = spark.x - 0.5, dy = spark.y - 0.5
+                    guard dx * dx * 4 + dy * dy > 0.06 else { continue }
+                    let alpha = reduceMotion ? 0.5 : 0.25 + 0.6 * (sin(time * 2.2 + spark.phase) + 1) / 2
+                    let rect = CGRect(x: spark.x * size.width, y: spark.y * size.height, width: spark.r * 2, height: spark.r * 2)
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
+                }
+            }
+        }
+        .notchCard()
+        .accessibilityHidden(true)
+    }
+}
+
+/// The ask tab: a field for ClickBait's chat, with the bean beside it. Return sends it to the
+/// chat (and the notch folds).
+private struct AskCard: View {
+    let onAsk: (String) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Ask ClickBait").font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 8) {
+                TextField("Type a question, then Return", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($focused)
+                    .onSubmit(send)
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(text.isEmpty ? NotchPalette.tertiary : CompanionTone.processing.color)
+                }
+                .buttonStyle(.plain)
+                .disabled(text.isEmpty)
+                .accessibilityLabel("Ask")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(NotchPalette.ink, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
+        }
+        .padding(.leading, 86)
+        .padding(.trailing, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .notchCard(wash: CompanionTone.processing.color.opacity(0.22))
+        .onAppear { focused = true }
+    }
+
+    private func send() {
+        let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        text = ""
+        onAsk(question)
     }
 }
 

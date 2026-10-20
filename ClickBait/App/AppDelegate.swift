@@ -95,6 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         notch.model.mood = { [overlay] in overlay.model.beanMood }
+        notch.model.ask = { [weak self] text in
+            guard let self else { return }
+            coordinator.startTypedChat(trigger: "notch")
+            chat.model.draft = text
+            chat.model.send()
+        }
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
         backgroundJobs.onDone = { [weak self] _ in

@@ -13,6 +13,7 @@ import SwiftUI
 struct NotchBean: View {
     let mood: Bean.Mood
     var size: CGFloat = 26
+    var badge = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vitals = MacVitals()
     @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
@@ -28,7 +29,7 @@ struct NotchBean: View {
             let shown: Bean.Mood = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter ? .sleepy : base
             BeanFace(mood: shown, eyes: shown == base ? eyes : Bean.eyePairs(for: .sleepy)[0], size: size,
                      time: reduceMotion ? 0 : now.timeIntervalSinceReferenceDate,
-                     look: reduceMotion ? .zero : Self.look())
+                     look: reduceMotion ? .zero : Self.look(), badge: badge)
         }
         .keyframeAnimator(initialValue: 0.0, trigger: hops) { content, lift in
             content.offset(y: -lift)
@@ -89,6 +90,9 @@ struct BeanFace: View {
     let size: CGFloat
     var time: TimeInterval = 0
     var look: CGPoint = .zero
+    var badge = true
+    /// A pill's small bean: filled with its colour (no pearl, no glow).
+    var solid = false
 
     private static let pearlTop = Color(hex: 0xF3F3F6)
     private static let pearlBottom = Color(hex: 0xC9CAD1)
@@ -102,11 +106,15 @@ struct BeanFace: View {
         let tremble = mood == .panicked && time > 0 ? CGFloat(sin(time * 60)) * size * 0.025 : 0
         let width = size, height = size * 0.86
         ZStack {
-            BeanShape()
-                .fill(LinearGradient(colors: [Self.pearlTop, Self.pearlBottom], startPoint: .top, endPoint: .bottom))
-                .overlay(BeanShape().fill(tone.opacity(0.14)))
-                .overlay(BeanShape().stroke(.white.opacity(0.6), lineWidth: 0.5))
-                .shadow(color: tone.opacity(mood == .sleepy ? 0.25 : 0.65), radius: size * 0.22)
+            if solid {
+                BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
+            } else {
+                BeanShape()
+                    .fill(LinearGradient(colors: [Self.pearlTop, Self.pearlBottom], startPoint: .top, endPoint: .bottom))
+                    .overlay(BeanShape().fill(tone.opacity(0.14)))
+                    .overlay(BeanShape().stroke(.white.opacity(0.6), lineWidth: 0.5))
+                    .shadow(color: tone.opacity(mood == .sleepy ? 0.25 : 0.65), radius: size * 0.22)
+            }
             face(width: width, height: height, blink: blink)
                 .offset(x: look.x * size * 0.06 + tremble, y: look.y * size * 0.04)
             if mood == .panicked {
@@ -118,7 +126,7 @@ struct BeanFace: View {
         }
         .frame(width: width, height: height)
         .scaleEffect(x: 1 + squish, y: 1 - squish, anchor: .bottom)
-        .overlay(alignment: .topTrailing) { badge(tone: tone) }
+        .overlay(alignment: .topTrailing) { if badge { badgeView(tone: tone) } }
         .frame(width: width + size * 0.2, height: height + size * 0.2)
     }
 
@@ -138,7 +146,7 @@ struct BeanFace: View {
                 let flush = mood == .warm
                 HStack(spacing: width * (flush ? 0.36 : 0.42)) {
                     ForEach(0..<2, id: \.self) { _ in
-                        Ellipse().fill(Color(hex: 0xFF8FA3).opacity(flush ? 0.8 : 0.35))
+                        Ellipse().fill(Color(hex: 0xFF8FA3).opacity(solid ? 0 : flush ? 0.8 : 0.35))
                             .frame(width: width * (flush ? 0.2 : 0.14), height: height * (flush ? 0.11 : 0.08))
                     }
                 }
@@ -151,7 +159,7 @@ struct BeanFace: View {
         .offset(y: height * 0.04)
     }
 
-    @ViewBuilder private func badge(tone: Color) -> some View {
+    @ViewBuilder private func badgeView(tone: Color) -> some View {
         let mark: String? = switch mood {
         case .thinking: "···"
         case .error: "!"

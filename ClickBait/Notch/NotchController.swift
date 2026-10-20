@@ -46,15 +46,17 @@ final class NotchController {
         var notch: Rect?
         /// Music playing: the artwork and visualizer in the wings.
         var activity = false
-        /// The pointer is on it (the swell before it opens).
-        var hovering = false
         /// The volume HUD while it shows: the level (0…1) and whether muted.
         var hud: (level: Double, muted: Bool)?
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
-        enum Tab { case home, shelf, settings }
+        enum Tab { case home, ask, shelf, settings }
         /// The bean's mood, read from the companion (set by the app delegate).
         var mood: @MainActor () -> Bean.Mood = { .idle }
+        /// The launch hello: the open island shows only the bean, big, among sparkles.
+        var greeting = false
+        /// A question typed in the ask tab: goes to ClickBait's chat (set by the app delegate).
+        var ask: @MainActor (String) -> Void = { _ in }
         let note: Note
         init(note: Note) { self.note = note }
     }
@@ -68,8 +70,9 @@ final class NotchController {
     private let calendar = CalendarSource()
     private let shelf = ShelfStore()
     private var panels: [UInt32: Panel] = [:]
-    private var hoveredDisplays: Set<UInt32> = []
-    private var hoverTask: Task<Void, Never>?
+    private var pointerInside = false
+    private var holdTask: Task<Void, Never>?
+    private var pointerMonitors: [Any] = []
     private var hudTask: Task<Void, Never>?
     private var frameTasks: [UInt32: Task<Void, Never>] = [:]
     private var pausedTask: Task<Void, Never>?
@@ -105,13 +108,32 @@ final class NotchController {
 
     func start() {
         WindowLayers.check()
+        watchPointer()
         apply(.enabled(settings.notchPanelEnabled))
-        // The screen's real shape can arrive after launch.
+        // The screen's real shape can arrive after launch; then the hello.
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.place()
+            try? await Task.sleep(for: .seconds(0.5))
+            self?.greet()
         }
     }
+
+    /// Opens on the hello for `greetTime`, then folds to the peek (unless the pointer is on it).
+    private func greet() {
+        guard model.state == .collapsed || model.state == .peek else { return }
+        model.tab = .home
+        model.greeting = true
+        apply(.clicked)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.greetTime))
+            guard let self, model.greeting else { return }
+            model.greeting = false
+            if model.state == .expanded, !pointerInside { apply(.escape) }
+        }
+    }
+
+    static let greetTime = 2.6
 
     func setEnabled(_ enabled: Bool) {
         settings.notchPanelEnabled = enabled
@@ -128,9 +150,9 @@ final class NotchController {
         guard after != before else { return }
         model.state = after
         if after != .expanded, model.tab == .settings { model.tab = .home }
+        if after != .expanded { model.greeting = false }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         if after == .expanded {
-            model.hovering = false
             music.refresh()
             calendar.refresh()
             watchEscape(true)
@@ -138,6 +160,7 @@ final class NotchController {
             watchEscape(false)
         }
         place()
+        pointerChanged()
     }
 
     private func musicChanged() {
@@ -210,14 +233,12 @@ final class NotchController {
             guard let displayID = Self.displayID(screen),
                   let notch = Self.notch(on: screen),
                   let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
-                                               notch: notch, activity: model.activity,
-                                               hovering: model.hovering && model.state != .expanded, hud: model.hud != nil,
+                                               notch: notch, activity: model.activity, hud: model.hud != nil,
                                                shelf: model.tab == .shelf, settings: model.tab == .settings) else {
                 // Displays without a physical notch still receive the same centered panel.
                 guard let displayID = Self.displayID(screen),
                       let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
-                                                   notch: nil, activity: model.activity,
-                                                   hovering: model.hovering && model.state != .expanded, hud: model.hud != nil,
+                                                   notch: nil, activity: model.activity, hud: model.hud != nil,
                                                    shelf: model.tab == .shelf, settings: model.tab == .settings) else { continue }
                 positionPanel(frame, notch: nil, displayID: displayID)
                 continue
@@ -275,8 +296,6 @@ final class NotchController {
         let host = PullHostingView(rootView: NotchView(
             model: model, notch: notch, music: music, calendar: calendar, shelf: shelf,
             settings: settings, speech: speech, speaker: speaker, searxng: searxng,
-            onHover: { [weak self] in self?.hovering($0, on: displayID) },
-            onTap: { [weak self] in self?.apply(.clicked) },
             onDragIn: { [weak self] in self?.dragArrived() },
             onTabChange: { [weak self] tab in
                 guard let self else { return }
@@ -293,25 +312,55 @@ final class NotchController {
 
     // MARK: Pointer and keys
 
-    /// The GIF's activation: the pointer arriving swells it at once; resting `hoverDelay` opens
-    /// it; leaving for `leaveDelay` closes it. A pass to the menu bar only swells it.
-    private func hovering(_ inside: Bool, on displayID: UInt32) {
-        hoverTask?.cancel()
-        if inside { hoveredDisplays.insert(displayID) } else { hoveredDisplays.remove(displayID) }
-        let hovering = !hoveredDisplays.isEmpty
-        if model.state == .expanded {
-            model.hovering = false
+    /// The pointer, read from every mouse move (a non-activating panel gets no hover events
+    /// while another app is in front): coming onto the notch peeks at once; a click on the notch
+    /// or the peek opens it. Leaving starts the fold: the open panel back to the peek after
+    /// `openHold`, the peek away after `peekHold`.
+    private func watchPointer() {
+        let moved: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: moved) {
+            pointerMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { event in
+            moved(event)
+            return event
+        }) { pointerMonitors.append(local) }
+        if let click = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window is Panel else { return }
+                self.model.greeting = false
+                guard self.model.state == .collapsed || self.model.state == .peek else { return }
+                self.apply(.clicked)
+            }
+            return event
+        }) { pointerMonitors.append(click) }
+    }
+
+    private func pointerMoved() {
+        guard model.state != .hidden else { return }
+        let mouse = NSEvent.mouseLocation
+        let inside = panels.values.contains { $0.isVisible && $0.frame.insetBy(dx: -6, dy: -6).contains(mouse) }
+        guard inside != pointerInside else { return }
+        pointerInside = inside
+        pointerChanged()
+    }
+
+    private func pointerChanged() {
+        holdTask?.cancel()
+        if pointerInside {
+            if model.state == .collapsed { apply(.pointerEntered) }
             return
         }
-        if model.state == .collapsed, model.hovering != hovering {
-            model.hovering = hovering
-            place()
+        let fold: (NotchPanel.Event, Double)
+        switch model.state {
+        case .expanded: fold = (.openTimedOut, NotchPanel.openHold)
+        case .peek: fold = (.peekTimedOut, NotchPanel.peekHold)
+        default: return
         }
-        let delay = hovering ? NotchPanel.hoverDelay : NotchPanel.leaveDelay
-        hoverTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+        holdTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(fold.1))
             guard !Task.isCancelled else { return }
-            self?.apply(hovering ? .hoverDwelled : .pointerLeft)
+            self?.apply(fold.0)
         }
     }
 
@@ -320,7 +369,6 @@ final class NotchController {
         guard event.hasPreciseScrollingDeltas else { return }  // a mouse wheel isn't a pull
         let ended = event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .began
         if let pulled = pull.add(deltaY: Double(event.scrollingDeltaY), inverted: event.isDirectionInvertedFromDevice, ended: ended) {
-            hoverTask?.cancel()
             apply(pulled)
         }
     }
@@ -328,7 +376,7 @@ final class NotchController {
     /// A file dragged onto the closed notch: open on the shelf, ready to drop.
     private func dragArrived() {
         model.tab = .shelf
-        if model.state == .collapsed { apply(.clicked) }
+        if model.state != .expanded { apply(.clicked) }
     }
 
     private func watchEscape(_ on: Bool) {
@@ -352,7 +400,7 @@ final class NotchController {
     /// notch's wings. False — the key goes to macOS untouched — when the HUD is off, the panel is
     /// hidden or open, there's no notch, or the device won't take it.
     func handleVolumeKey(_ key: VolumeStep.Key, fine: Bool) -> Bool {
-        guard settings.notchVolumeHUD, model.state == .collapsed, let screen = Self.screen,
+        guard settings.notchVolumeHUD, model.state == .collapsed || model.state == .peek, let screen = Self.screen,
               Self.notch(on: screen) != nil, let now = SystemVolume.read() else { return false }
         let next = VolumeStep.apply(key, volume: now.volume, muted: now.muted, fine: fine)
         guard SystemVolume.write(volume: next.volume, muted: next.muted) else { return false }
@@ -380,18 +428,16 @@ final class NotchController {
 
     var debugFrame: String { "\(primaryPanel?.frame ?? .zero), visible \(primaryPanel?.isVisible ?? false), displays \(panels.count)" }
 
-    /// The pointer arriving and resting: the swell at once, then open after `hoverDelay`.
+    /// The pointer coming onto the notch: it peeks at once; leaving starts the fold.
     func debugHover() async -> String {
         let before = primaryPanel?.frame.width ?? 0
-        let displayID = Self.screen.flatMap(Self.displayID) ?? 0
-        hovering(true, on: displayID)
-        try? await Task.sleep(for: .seconds(0.3))  // the swell animates; read it before it opens at 0.4 s
-        let swell = primaryPanel?.frame.width ?? 0
-        try? await Task.sleep(for: .seconds(NotchPanel.hoverDelay - 0.2))
-        let opened = model.state == .expanded
-        hovering(false, on: displayID)
-        try? await Task.sleep(for: .seconds(NotchPanel.leaveDelay + 0.8))
-        return "width \(before) → swell \(swell), opened \(opened), remains open \(model.state == .expanded), displays \(panels.count)"
+        pointerInside = true
+        pointerChanged()
+        try? await Task.sleep(for: .seconds(0.6))
+        let peek = model.state == .peek, width = primaryPanel?.frame.width ?? 0
+        pointerInside = false
+        pointerChanged()
+        return "width \(before) → peek \(peek) at \(width), displays \(panels.count)"
     }
 
     /// Renders the open panel and the closed music wings to `folder` (the screen can't be
@@ -403,15 +449,18 @@ final class NotchController {
             return true
         }
         music.debugFake(title: "Green Light", artist: "Lorde", duration: 234, position: 177, artwork: cover)
-        for (name, state, activity) in [("notch-open", NotchPanel.State.expanded, true), ("notch-wings", .collapsed, true)] {
+        for (name, state, activity) in [("notch-open", NotchPanel.State.expanded, true), ("notch-wings", .collapsed, true),
+                                        ("notch-peek", .peek, true), ("notch-greeting", .expanded, true), ("notch-empty", .expanded, false)] {
+            model.greeting = name == "notch-greeting"
             let saved = (model.state, model.activity)
             model.state = state
             model.activity = activity
-            let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hovering: false, hud: false)
+            if !activity { music.debugClear() }
+            let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hud: false)
             let view = NotchView(model: model, notch: model.notch, music: music, calendar: calendar, shelf: shelf,
                 settings: settings, speech: speech, speaker: speaker,
                 searxng: searxng,
-                onHover: { _ in }, onTap: {}, onDragIn: {}, onTabChange: { _ in }, onCollapse: {})
+                onDragIn: {}, onTabChange: { _ in }, onCollapse: {})
                 .frame(width: look.width + 2 * NotchPanel.ear + 60, height: look.height + 30)
                 .background(Color(red: 0.12, green: 0.16, blue: 0.22))
             let renderer = ImageRenderer(content: view)

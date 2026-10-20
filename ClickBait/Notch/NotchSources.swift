@@ -86,6 +86,26 @@ final class MusicBridge {
         self.artwork = artwork
         tint = Self.averageColor(artwork)
     }
+
+    #endif
+
+    /// Brings the player forward (Music when none has played yet).
+    func openPlayer() { open(player ?? .music) }
+
+    func open(_ player: Player) {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    #if DEBUG
+    /// For the notch render: nothing playing.
+    func debugClear() {
+        player = nil
+        title = ""
+        isPlaying = false
+        artwork = nil
+    }
     #endif
 
     /// Players running now, Music first.
