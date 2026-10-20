@@ -26,4 +26,17 @@ struct BeanTests {
         #expect(Bean.mouth(for: .error) == .frown)
         #expect(Bean.mouth(for: .listening) == .open)
     }
+
+    @Test func vitalsInOrder() {
+        func mood(_ cpu: Double, hot: Bool = false, battery: Double? = nil, charging: Bool = false) -> Bean.Mood? {
+            Bean.mood(for: .init(cpu: cpu, hot: hot, battery: battery, charging: charging))?.mood
+        }
+        #expect(mood(0.2) == nil)
+        #expect(mood(0.95, hot: true, battery: 0.05) == .panicked)
+        #expect(mood(0.3, hot: true, battery: 0.05) == .warm)
+        #expect(mood(0.3, battery: 0.05) == .sleepy)
+        #expect(mood(0.3, battery: 0.15) == .tired)
+        #expect(mood(0.3, battery: 0.05, charging: true) == nil)
+        #expect(Bean.mood(for: .init(cpu: 0.94, hot: false, battery: nil, charging: false))?.reason == "CPU 94 %")
+    }
 }

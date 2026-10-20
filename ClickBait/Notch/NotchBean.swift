@@ -1,25 +1,32 @@
 import AppKit
 import ClickBaitCore
+import IOKit.ps
 import SwiftUI
 
 /// The notch's bean (`Bean`): a pearl squircle, flatter at the bottom, with kaomoji eyes, a
 /// drawn mouth, a little blush, and a glow and badge in ClickBait's state colours. It breathes,
 /// blinks, looks toward the pointer, hops when the mood changes, wobbles on an error and dozes
 /// off after `Bean.sleepAfter` idle. Reduce Motion keeps it still (the eyes still change).
+/// While nothing else is going on it feels the Mac (`Bean.mood(for:)`, `MacVitals`, read only
+/// while it's on screen): panicked at full load, flushed when hot, tired or asleep on a low
+/// battery; pointing at it says why.
 struct NotchBean: View {
     let mood: Bean.Mood
     var size: CGFloat = 26
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var vitals = MacVitals()
     @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
     @State private var idleSince = Date()
     @State private var hops = 0
     @State private var wobbles = 0
 
     var body: some View {
+        let felt = mood == .idle ? vitals.felt : nil
+        let base = felt?.mood ?? mood
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
             let now = timeline.date
-            let shown: Bean.Mood = mood == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter ? .sleepy : mood
-            BeanFace(mood: shown, eyes: shown == mood ? eyes : Bean.eyePairs(for: .sleepy)[0], size: size,
+            let shown: Bean.Mood = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter ? .sleepy : base
+            BeanFace(mood: shown, eyes: shown == base ? eyes : Bean.eyePairs(for: .sleepy)[0], size: size,
                      time: reduceMotion ? 0 : now.timeIntervalSinceReferenceDate,
                      look: reduceMotion ? .zero : Self.look())
         }
@@ -37,14 +44,18 @@ struct NotchBean: View {
             CubicKeyframe(-4, duration: 0.1)
             CubicKeyframe(0, duration: 0.12)
         }
-        .onChange(of: mood, initial: true) { _, new in
+        .onChange(of: base, initial: true) { _, new in
             eyes = Bean.eyes(for: new, avoiding: eyes)
-            idleSince = Date()
+            if new != .idle { idleSince = Date() }
             guard !reduceMotion else { return }
-            if new == .error { wobbles += 1 } else if new != .idle { hops += 1 }
+            if new == .error || new == .panicked { wobbles += 1 } else if new != .idle, new != .tired, new != .sleepy { hops += 1 }
         }
+        .onChange(of: mood) { _, _ in idleSince = Date() }
+        .onAppear { vitals.start() }
+        .onDisappear { vitals.stop() }
+        .help(felt?.reason ?? "")
         .accessibilityElement()
-        .accessibilityLabel("ClickBait, \(mood.rawValue)")
+        .accessibilityLabel("ClickBait, \(base.rawValue)\(felt.map { ", \($0.reason)" } ?? "")")
     }
 
     /// Where the pointer is from the notch (top middle of the main screen), -1…1 each way.
@@ -59,7 +70,7 @@ struct NotchBean: View {
     /// The glow, tint and badge colour for each mood.
     static func color(for mood: Bean.Mood) -> Color {
         switch mood {
-        case .idle, .sleepy: CompanionTone.idle.color
+        case .idle, .sleepy, .panicked, .warm, .tired: CompanionTone.idle.color
         case .listening, .thinking: CompanionTone.processing.color
         case .working, .happy: CompanionTone.action.color
         case .error: wine
@@ -88,6 +99,7 @@ struct BeanFace: View {
         let breath = mood == .sleepy ? sin(time * 1.6) : sin(time * 2.4)
         let squish = 0.025 * breath
         let blink = time > 0 && time.truncatingRemainder(dividingBy: 4.3) < 0.12
+        let tremble = mood == .panicked && time > 0 ? CGFloat(sin(time * 60)) * size * 0.025 : 0
         let width = size, height = size * 0.86
         ZStack {
             BeanShape()
@@ -96,7 +108,13 @@ struct BeanFace: View {
                 .overlay(BeanShape().stroke(.white.opacity(0.6), lineWidth: 0.5))
                 .shadow(color: tone.opacity(mood == .sleepy ? 0.25 : 0.65), radius: size * 0.22)
             face(width: width, height: height, blink: blink)
-                .offset(x: look.x * size * 0.06, y: look.y * size * 0.04)
+                .offset(x: look.x * size * 0.06 + tremble, y: look.y * size * 0.04)
+            if mood == .panicked {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: size * 0.2))
+                    .foregroundStyle(Color(hex: 0x8FD3FF))
+                    .offset(x: -width * 0.36, y: -height * 0.18)
+            }
         }
         .frame(width: width, height: height)
         .scaleEffect(x: 1 + squish, y: 1 - squish, anchor: .bottom)
@@ -115,11 +133,14 @@ struct BeanFace: View {
                         .frame(width: width * 0.16)
                 }
             }
-            .scaleEffect(y: blink ? 0.1 : 1)
+            .scaleEffect(y: blink ? 0.1 : mood == .tired ? 0.6 : 1)
             ZStack {
-                HStack(spacing: width * 0.42) {
-                    Ellipse().fill(Color(hex: 0xFF8FA3).opacity(0.35)).frame(width: width * 0.14, height: height * 0.08)
-                    Ellipse().fill(Color(hex: 0xFF8FA3).opacity(0.35)).frame(width: width * 0.14, height: height * 0.08)
+                let flush = mood == .warm
+                HStack(spacing: width * (flush ? 0.36 : 0.42)) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Ellipse().fill(Color(hex: 0xFF8FA3).opacity(flush ? 0.8 : 0.35))
+                            .frame(width: width * (flush ? 0.2 : 0.14), height: height * (flush ? 0.11 : 0.08))
+                    }
                 }
                 BeanMouth(mouth: Bean.mouth(for: mood))
                     .stroke(Self.ink, style: StrokeStyle(lineWidth: max(1, size * 0.05), lineCap: .round, lineJoin: .round))
@@ -136,7 +157,7 @@ struct BeanFace: View {
         case .error: "!"
         case .happy: "✓"
         case .sleepy: "z"
-        case .idle, .listening, .working: nil
+        case .idle, .listening, .working, .panicked, .warm, .tired: nil
         }
         if let mark {
             Text(mark)
@@ -210,5 +231,74 @@ extension OverlayModel {
         case .error: .error
         case .idle, .answer, .hint: .idle
         }
+    }
+}
+
+/// The Mac's load, heat and battery for the bean, every 3 s while it's on screen. Read only:
+/// processor ticks (`host_statistics`), `ProcessInfo.thermalState`, and the power source.
+@MainActor @Observable
+final class MacVitals {
+    private(set) var felt: (mood: Bean.Mood, reason: String)?
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var lastTicks: (busy: UInt64, total: UInt64)?
+
+    func start() {
+        guard task == nil else { return }
+        task = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.sample()
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        lastTicks = nil
+        felt = nil
+    }
+
+    private func sample() {
+        let ticks = Self.cpuTicks()
+        var cpu = 0.0
+        if let ticks, let last = lastTicks, ticks.total > last.total {
+            cpu = Double(ticks.busy &- last.busy) / Double(ticks.total - last.total)
+        }
+        lastTicks = ticks
+        let thermal = ProcessInfo.processInfo.thermalState
+        let power = Self.battery()
+        let next = Bean.mood(for: .init(cpu: cpu, hot: thermal == .serious || thermal == .critical,
+                                        battery: power?.level, charging: power?.charging ?? false))
+        if next?.mood != felt?.mood || next?.reason != felt?.reason { felt = next }
+    }
+
+    /// Busy and total processor ticks since boot, all cores.
+    private static func cpuTicks() -> (busy: UInt64, total: UInt64)? {
+        var info = host_cpu_load_info()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        let user = UInt64(info.cpu_ticks.0), system = UInt64(info.cpu_ticks.1)
+        let idle = UInt64(info.cpu_ticks.2), nice = UInt64(info.cpu_ticks.3)
+        return (user + system + nice, user + system + idle + nice)
+    }
+
+    /// The internal battery's level and whether it's on power; nil without one.
+    private static func battery() -> (level: Double, charging: Bool)? {
+        guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for source in sources {
+            guard let info = IOPSGetPowerSourceDescription(blob, source)?.takeUnretainedValue() as? [String: Any],
+                  info[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  let current = info[kIOPSCurrentCapacityKey] as? Int,
+                  let max = info[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
+            return (Double(current) / Double(max), info[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue)
+        }
+        return nil
     }
 }

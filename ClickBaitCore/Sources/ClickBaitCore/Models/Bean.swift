@@ -21,8 +21,14 @@ public enum Bean {
         case happy
         /// Something went wrong.
         case error
-        /// Nothing has happened for a while.
+        /// Nothing has happened for a while, or the battery is nearly empty.
         case sleepy
+        /// The processor is flat out: trembling eyes and a sweat drop.
+        case panicked
+        /// The Mac is running hot: flushed cheeks.
+        case warm
+        /// The battery is low: heavy eyelids.
+        case tired
     }
 
     /// The mouth drawn under the eyes.
@@ -49,6 +55,9 @@ public enum Bean {
         case .happy: ["^ ^", "ᗒ ᗕ", "≧ ≦", "✧ ✧"]
         case .error: ["× ×", "; ;", "ಥ ಥ", "@ @"]
         case .sleepy: ["- -", "_ _", "︶ ︶"]
+        case .panicked: ["⊙ ⊙", "◎ ◎", "O O"]
+        case .warm: ["≖ ≖", "ᵕ ᵕ", "• •"]
+        case .tired: ["◡ ◡", "ᴗ ᴗ", "= ="]
         }
     }
 
@@ -61,6 +70,9 @@ public enum Bean {
         case .happy: .grin
         case .error: .frown
         case .sleepy: .flat
+        case .panicked: .open
+        case .warm: .smile
+        case .tired: .flat
         }
     }
 
@@ -74,6 +86,41 @@ public enum Bean {
     public static func eyes(for mood: Mood, avoiding previous: String?) -> String {
         var random = SystemRandomNumberGenerator()
         return eyes(for: mood, avoiding: previous, using: &random)
+    }
+
+    /// How the Mac is doing, read while the bean is on screen.
+    public struct Vitals: Equatable, Sendable {
+        /// All cores together, 0…1.
+        public var cpu: Double
+        /// `ProcessInfo.thermalState` is serious or critical.
+        public var hot: Bool
+        /// 0…1, nil without a battery.
+        public var battery: Double?
+        public var charging: Bool
+
+        public init(cpu: Double, hot: Bool, battery: Double?, charging: Bool) {
+            self.cpu = cpu
+            self.hot = hot
+            self.battery = battery
+            self.charging = charging
+        }
+    }
+
+    /// Full load above this.
+    public static let panicLoad = 0.9
+
+    /// What the Mac makes the bean feel, and why (shown on hover), when something stands out:
+    /// full load first, then heat, then the battery (sleepy under 10 %, tired under 20 %;
+    /// plugging in wakes it). Only used while nothing else is going on.
+    public static func mood(for vitals: Vitals) -> (mood: Mood, reason: String)? {
+        if vitals.cpu >= panicLoad { return (.panicked, "CPU \(Int((vitals.cpu * 100).rounded())) %") }
+        if vitals.hot { return (.warm, "Your Mac is warm") }
+        if let battery = vitals.battery, !vitals.charging {
+            let percent = "Battery \(Int((battery * 100).rounded())) %"
+            if battery < 0.1 { return (.sleepy, percent) }
+            if battery < 0.2 { return (.tired, percent) }
+        }
+        return nil
     }
 
     /// Idle this long and the bean dozes off.
