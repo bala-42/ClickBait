@@ -283,8 +283,17 @@ public enum Prompt {
         if !request.web.isEmpty { text += "\n\n" + webBlock(request.web) }
         // A plain ask gets today's date, and any "days until …" worked out: the model has no
         // clock and counts days badly ("30 days until Christmas" on 20 October).
+        // An app the request names gets its card (`AppCards`): the real menus, not guessed ones.
         if system(for: request) == system {
-            text = DateFacts.lines(for: request.question, now: request.now).joined(separator: "\n") + "\n" + text
+            var facts = DateFacts.lines(for: request.question, now: request.now)
+            if let card = AppCards.card(for: request.question, frontmost: request.context.appName, planning: false) {
+                facts.append(AppCards.block(card))
+            }
+            text = facts.joined(separator: "\n") + "\n" + text
+        } else if request.planTutorial,
+                  let card = AppCards.card(for: request.question, frontmost: request.context.appName, planning: true) {
+            // A walkthrough: the named app's card, or the card of the app it happens in.
+            text += "\n\n" + AppCards.block(card)
         }
         // Qwen 3.5 answers on its 0–1000 scale whatever it's told; saying so made it
         // refuse to point (19/39 vs 27/39). Only the element list is in its scale, and
