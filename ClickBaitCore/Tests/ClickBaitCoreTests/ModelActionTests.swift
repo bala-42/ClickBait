@@ -14,12 +14,12 @@ struct ModelActionTests {
     }
 
     @Test func riskyActionsNeedConfirmation() {
-        #expect(ActionCatalog.needsConfirmation(.file(.moveToTrash)))
-        #expect(ActionCatalog.needsConfirmation(.file(.moveTo(.documents))))
-        #expect(ActionCatalog.needsConfirmation(.quitApp("Safari")))
-        #expect(!ActionCatalog.needsConfirmation(.file(.compress)))
-        #expect(!ActionCatalog.needsConfirmation(.openApp("Safari")))
-        #expect(!ActionCatalog.needsConfirmation(.newFolder(in: .downloads, name: "X")))
+        #expect(ActionPolicy.decide(.file(.moveToTrash), from: .modelGuess) == .ask)
+        #expect(ActionPolicy.decide(.file(.moveTo(.documents)), from: .modelGuess) == .ask)
+        #expect(ActionPolicy.decide(.quitApp("Safari"), from: .modelGuess) == .ask)
+        #expect(ActionPolicy.decide(.file(.compress), from: .modelGuess) == .ask)  // guessed: asks now (2026-10-20)
+        #expect(ActionPolicy.decide(.openApp("Safari"), from: .modelGuess) == .ask)
+        #expect(ActionPolicy.decide(.newFolder(in: .downloads, name: "X"), from: .modelGuess) == .ask)
         #expect(ActionCatalog.confirmationQuestion(for: .file(.moveTo(.documents)), fileCount: 3) == "Move the 3 selected items to Documents?")
     }
 

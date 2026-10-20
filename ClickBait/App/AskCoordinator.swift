@@ -387,6 +387,10 @@ final class AskCoordinator {
             let answerID = beginAnswerFlow()
             askTask = Task {
                 defer { finishAnswering(answerID) }
+                if let action = asksFirst(command) {
+                    onChatReply?(await handleOrder(action, request: command, speak: false, from: .clearOrder))
+                    return
+                }
                 switch await perform(command, speak: false) {
                 case .success(let confirmation): onChatReply?(confirmation + ".")
                 case .failure(let message): onChatError?(message)
@@ -410,7 +414,7 @@ final class AskCoordinator {
                 let answerID = beginAnswerFlow()
                 defer { finishAnswering(answerID) }
                 switch order {
-                case .ready(let action): onChatReply?(await handleProposal(action, request: proposal, speak: false))
+                case .ready(let action): onChatReply?(await handleOrder(action, request: proposal, speak: false, from: .modelGuess))
                 case .failed(let reason): onChatError?(reason)
                 }
                 return
@@ -1187,6 +1191,10 @@ final class AskCoordinator {
             encoding.cancel()
             flow.kind = .command
             guard await settleQuick(flow) else { return }
+            if let action = asksFirst(command) {
+                await handleOrder(action, request: command, speak: true, from: .clearOrder)
+                return
+            }
             _ = await perform(command)  // the outcome is already shown and spoken
             return
         }
@@ -1201,7 +1209,7 @@ final class AskCoordinator {
             guard await settleQuick(flow) else { return }
             let message: String
             switch order {
-            case .ready(let action): message = await handleProposal(action, request: proposal, speak: true)
+            case .ready(let action): message = await handleOrder(action, request: proposal, speak: true, from: .modelGuess)
             case .failed(let reason):
                 message = reason
                 speaker.speak(reason)
@@ -1360,12 +1368,20 @@ final class AskCoordinator {
         if timedOut { show(error: "Reminder not added — no day was picked.") }
     }
 
-    /// An order the rules didn't catch but the model understood: safe actions run now;
-    /// ones that move, rename, bin or quit something are asked about first.
-    /// Returns what to show in the chat: the question asked, or the result.
+    /// A clear order that `ActionPolicy` says asks first (binning files, quitting an app), or nil.
+    private func asksFirst(_ command: ActionRequest) -> ResolvedAction? {
+        guard case .success(let action) = ActionCatalog.resolve(command, allowedShortcuts: settings.allowedShortcuts),
+              ActionPolicy.decide(action, from: .clearOrder) == .ask else { return nil }
+        return action
+    }
+
+    /// An order, said clearly or guessed by the model: `ActionPolicy` decides whether it runs
+    /// now or is asked about first. Returns what to show in the chat: the question asked, or
+    /// the result.
     @discardableResult
-    private func handleProposal(_ action: ResolvedAction, request proposal: ActionRequest, speak: Bool) async -> String {
-        if ActionCatalog.needsConfirmation(action) {
+    private func handleOrder(_ action: ResolvedAction, request proposal: ActionRequest, speak: Bool,
+                             from source: ActionPolicy.Source) async -> String {
+        if ActionPolicy.decide(action, from: source) == .ask {
             var count: Int?
             if case .file = action { count = try? await FinderSelection.read().count }
             if count == 0 {
@@ -1376,13 +1392,13 @@ final class AskCoordinator {
             }
             pendingAction = (proposal, speak, chatShown)
             let question = ActionCatalog.confirmationQuestion(for: action, fileCount: count)
-            Log.ask.notice("Understood order \(proposal.name, privacy: .public): asking first")
+            Log.ask.notice("Order \(proposal.name, privacy: .public) (\(source.rawValue, privacy: .public)): asking first")
             if speak { speaker.speak(question) }
             if state == .thinking { state = .idle }
             onConfirmRequest?(question)
             return question
         }
-        Log.ask.notice("Understood order \(proposal.name, privacy: .public): running")
+        Log.ask.notice("Order \(proposal.name, privacy: .public) (\(source.rawValue, privacy: .public)): running")
         switch await perform(proposal, speak: speak) {
         case .success(let confirmation): return confirmation + "."
         case .failure(let message): return message

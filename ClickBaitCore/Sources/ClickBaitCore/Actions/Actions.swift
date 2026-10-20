@@ -205,28 +205,13 @@ public enum ActionCatalog {
         }
     }
 
-    /// Actions that change or remove things the user can't simply undo by looking: they
-    /// run straight away only for clear, rule-recognised orders; a model's proposal
-    /// asks first.
-    public static func needsConfirmation(_ action: ResolvedAction) -> Bool {
-        switch action {
-        case .quitApp, .runShortcut, .setWiFi(false), .lockScreen, .sleepDisplay: true
-        case .file(let file):
-            switch file {
-            case .moveToTrash, .moveTo, .moveToFolder, .rename, .moveIntoNewFolder: true
-            case .compress, .merge, .convertImages, .shrink, .copyTo, .copyToFolder: false  // only make new files
-            }
-        default: false
-        }
-    }
-
     /// The question asked before a confirmed action ("Move the selected files to Documents?").
     public static func confirmationQuestion(for action: ResolvedAction, fileCount: Int?) -> String {
         let files = fileCount.map { $0 == 1 ? "the selected item" : "the \($0) selected items" } ?? "the selected items"
         return switch action {
         case .quitApp(let name): "Quit \(name)?"
         case .runShortcut(let name): "Run the shortcut “\(name)”?"
-        case .setWiFi: "Turn Wi-Fi off?"
+        case .setWiFi(false): "Turn Wi-Fi off?"
         case .lockScreen: "Lock the screen?"
         case .sleepDisplay: "Turn off the display?"
         case .file(.moveToTrash): "Move \(files) to the Trash?"
@@ -234,6 +219,21 @@ public enum ActionCatalog {
         case .file(.moveToFolder(let folder)): "Move \(files) into “\(folder)”?"
         case .file(.rename(let name)): "Rename \(files) to “\(name)”?"
         case .file(.moveIntoNewFolder(let name)): "Move \(files) into a new folder\(name.map { " called “\($0)”" } ?? "")?"
+        case .file(.copyTo(let place)): "Copy \(files) to \(place.displayName)?"
+        case .file(.copyToFolder(let folder)): "Copy \(files) into “\(folder)”?"
+        case .file(.compress): "Zip \(files)?"
+        case .file(.merge): "Combine \(files) into one PDF?"
+        case .file(.convertImages(let format)): "Convert \(files) to \(format.rawValue.uppercased())?"
+        case .file(.shrink): "Make smaller copies of \(files)?"
+        case .openApp(let name): "Open \(name)?"
+        case .setVolume(let percent): "Set the volume to \(percent)%?"
+        case .setMuted(let muted): muted ? "Mute the sound?" : "Unmute the sound?"
+        case .setDarkMode(let on): on ? "Turn on Dark Mode?" : "Turn off Dark Mode?"
+        case .setWiFi(true): "Turn Wi-Fi on?"
+        case .newFolder(let place, let name):
+            "Make a new folder\(name.map { " called “\($0)”" } ?? "")\(place.map { " in \($0.displayName)" } ?? "")?"
+        case .makeNote(let text): "Make a note: “\(text.prefix(60))”?"
+        case .addReminder(let text): "Add a reminder: “\(text.prefix(60))”?"
         default: "Go ahead?"
         }
     }
