@@ -10,7 +10,8 @@ import SwiftUI
 // MARK: - Music
 
 /// Music or Spotify: what's playing (from the notifications they post on every change, and one
-/// Apple Events read when the panel opens), play/pause/next/previous and seeking (macOS asks
+/// Apple Events read when the panel opens), play/pause/next/previous, seeking, shuffle, repeat
+/// and the player's volume (macOS asks
 /// once per player), and the artwork — Music's from the Mac, Spotify's downloaded from its
 /// own artwork link (always, or only with Internet Mode: `AppSettings.spotifyArtworkAlways`).
 /// Never launches a player that isn't running.
@@ -32,6 +33,10 @@ final class MusicBridge {
     private(set) var position = 0.0
     private(set) var positionAt = Date()
     private(set) var artwork: NSImage?
+    private(set) var shuffling = false
+    private(set) var repeating = false
+    /// The player's own volume, 0–100.
+    private(set) var volume = 50
     /// The artwork's colour, for the artist's name, the progress bar and the visualizer.
     private(set) var tint: NSColor?
     private(set) var error: String?
@@ -127,7 +132,7 @@ final class MusicBridge {
         let script = player == .music ? """
             tell application id "com.apple.Music"
                 if it is running then
-                    set out to (player state as text)
+                    set out to (player state as text) & linefeed & (shuffle enabled as text) & linefeed & (song repeat as text) & linefeed & (sound volume as text)
                     try
                         set t to current track
                         set out to out & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (player position as text) & linefeed & (duration of t as text)
@@ -138,7 +143,7 @@ final class MusicBridge {
             """ : """
             tell application id "com.spotify.client"
                 if it is running then
-                    set out to (player state as text)
+                    set out to (player state as text) & linefeed & (shuffling as text) & linefeed & (repeating as text) & linefeed & (sound volume as text)
                     try
                         set t to current track
                         set out to out & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (player position as text) & linefeed & ((duration of t) / 1000 as text) & linefeed & (artwork url of t)
@@ -152,15 +157,21 @@ final class MusicBridge {
                 let lines = (try await AppleScriptRunner.run(script, app: player.name) ?? "").components(separatedBy: "\n")
                 let number = { (i: Int) in lines.count > i ? Double(lines[i].replacingOccurrences(of: ",", with: ".")) : nil }
                 isPlaying = lines.first == "playing"
-                if lines.count >= 5 {
-                    title = lines[1]
-                    artist = lines[2]
-                    position = number(3) ?? position
+                // state, shuffle, repeat, volume; then the track: name, artist, position, duration (, artwork link).
+                if lines.count >= 4 {
+                    shuffling = lines[1] == "true"
+                    repeating = !["off", "false"].contains(lines[2])
+                    volume = number(3).map { Int($0) } ?? volume
+                }
+                if lines.count >= 8 {
+                    title = lines[4]
+                    artist = lines[5]
+                    position = number(6) ?? position
                     positionAt = .now
-                    duration = number(4) ?? duration
+                    duration = number(7) ?? duration
                 }
                 error = nil
-                loadArtwork(player, url: lines.count >= 6 ? lines[5] : nil)
+                loadArtwork(player, url: lines.count >= 9 ? lines[8] : nil)
                 onChange?()
             } catch {
                 self.error = "Allow ClickBait to control \(player.name) in System Settings → Privacy & Security → Automation."
@@ -184,6 +195,23 @@ final class MusicBridge {
                 self.error = "Allow ClickBait to control \(player.name) in System Settings → Privacy & Security → Automation."
             }
         }
+    }
+
+    func setShuffling(_ on: Bool) {
+        shuffling = on
+        send(player == .music ? "set shuffle enabled to \(on)" : "set shuffling to \(on)")
+    }
+
+    /// Repeat on repeats the whole list (Music's "all"), as Spotify does.
+    func setRepeating(_ on: Bool) {
+        repeating = on
+        send(player == .music ? "set song repeat to \(on ? "all" : "off")" : "set repeating to \(on)")
+    }
+
+    /// The player's own volume (not the Mac's), 0–100.
+    func setVolume(_ level: Int) {
+        volume = min(max(level, 0), 100)
+        send("set sound volume to \(volume)")
     }
 
     /// The progress bar dragged to `seconds`.

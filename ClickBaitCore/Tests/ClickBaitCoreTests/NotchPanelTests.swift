@@ -81,10 +81,20 @@ struct NotchPanelTests {
         #expect(frame.minX >= 0 && frame.maxX <= 400)
     }
 
-    /// One restrained spring for opening, closing and tab changes (the Nook's, 2026-10-15).
-    @Test func openingAndClosingShareOneCalmSpring() {
-        #expect(NotchPanel.openSpring == NotchPanel.closeSpring)
-        #expect(NotchPanel.openSpring.damping > 0.8)  // no overshoot either way
+    /// The notch motion (2026-10-20): a lively spring open, a quick ease-out closed.
+    @Test func islandMotion() {
+        #expect(NotchPanel.openSpring == (response: 0.5, damping: 0.72))
+        #expect(NotchPanel.closeCurve.duration == 0.34)
+    }
+
+    /// The open island: 640 × 160, corners 22, flush with the top.
+    @Test func openIsland() throws {
+        let notch = Rect(x: 600, y: 950, width: 185, height: 32)
+        let open = NotchPanel.shape(.expanded, notch: notch, activity: false, hovering: false, hud: false)
+        #expect(open.width == 640 && open.height == 160 && open.radius == NotchPanel.openCorner)
+        let wings = NotchPanel.shape(.collapsed, notch: notch, activity: true, hovering: false, hud: false)
+        #expect(wings.radius == NotchPanel.compactCorner)
+        #expect(NotchPanel.ear == 0)
     }
 }
 

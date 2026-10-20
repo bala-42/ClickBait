@@ -63,20 +63,25 @@ public enum NotchPanel {
     public static let hoverBump = 15.0
     /// The volume HUD's wings, each side of the notch while it shows (collapsed only).
     public static let hudWing = 96.0
-    /// Compact Nook panel, scaled to the proportions in the supplied NotchNook GIF.
-    public static let expandedSize = (width: 510.0, height: 164.0)
-    /// The Tray leaves a wide editor beside the file drop and AirDrop tile.
-    public static let shelfSize = (width: 670.0, height: 245.0)
+    /// The open island (user's choice, 2026-10-20; ClickBait's colours): 640 wide, 160 tall — 8 top, a 34 pt header, 98 pt of
+    /// cards, 10 bottom.
+    public static let expandedSize = (width: 640.0, height: 160.0)
+    /// The shelf (files, AirDrop, note) gets taller cards for its file drop.
+    public static let shelfSize = (width: 640.0, height: 176.0)
+    /// Corners: 22 open, 14 for the small island (wings, hover).
+    public static let openCorner = 22.0
+    public static let compactCorner = 14.0
     /// Settings remain attached to the notch while opening a roomier in-panel layout.
     public static let settingsSize = (width: 900.0, height: 620.0)
-    /// The top corners flare out into the menu bar this much (GIF: 8 px).
-    public static let ear = 6.0
+    /// The top corners flare out into the menu bar this much: none, flush with the top.
+    public static let ear = 0.0
     /// Without a notch: a small pill this size, top-centre under the menu bar.
     public static let pillSize = (width: 180.0, height: 26.0)
 
-    /// A shared, restrained spring keeps opening, closing and tab changes visually consistent.
-    public static let openSpring = (response: 0.42, damping: 0.86)
-    public static let closeSpring = (response: 0.42, damping: 0.86)
+    /// Motion: opening and tab changes spring with a little bounce; closing eases
+    /// out quickly (a timing curve, 0.34 s), with no bounce.
+    public static let openSpring = (response: 0.5, damping: 0.72)
+    public static let closeCurve = (x1: 0.45, y1: 0.0, x2: 0.2, y2: 1.0, duration: 0.34)
 
     /// The black shape for a state: its size and bottom corner radius (not counting the ears).
     public static func shape(_ state: State, notch: Rect?, activity: Bool, hovering: Bool, hud: Bool,
@@ -85,22 +90,22 @@ public enum NotchPanel {
         let expanded = settings ? settingsSize : shelf ? shelfSize : expandedSize
         guard let notch else {
             return state == .expanded
-                ? (expanded.width, expanded.height, 18)
+                ? (expanded.width, expanded.height, openCorner)
                 : (pillSize.width, pillSize.height, pillSize.height / 2)
         }
         switch state {
         case .hidden:
             return (0, 0, 0)
         case .expanded:
-            return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, 18)
+            return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, openCorner)
         case .collapsed:
             var width = notch.width, height = notch.height, radius = 8.0
             if hud {
-                width += 2 * hudWing; radius = 10
+                width += 2 * hudWing; radius = compactCorner
             } else if activity {
-                width += 2 * activityWing; radius = 10
+                width += 2 * activityWing; radius = compactCorner
             }
-            if hovering { width += 2 * hoverBump; height += 3 }
+            if hovering { width += 2 * hoverBump; height += 3; radius = compactCorner }
             return (width, height, radius)
         }
     }

@@ -174,8 +174,8 @@ struct NotchView: View {
                                      onBack: { onTabChange(model.settingsReturnTab) }, onCollapse: onCollapse)
                             .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .top)))
                     } else {
-                        OpenNotch(model: model, music: music, calendar: calendar, shelf: shelf, art: art,
-                                  onTabChange: onTabChange, onMirror: { showingMirror = true })
+                        OpenNotch(model: model, music: music, calendar: calendar, shelf: shelf, settings: settings, art: art,
+                                  onTabChange: onTabChange, onMirror: { showingMirror = true }, onCollapse: onCollapse)
                             .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .top)))
                     }
                 } else if let hud = model.hud {
@@ -205,9 +205,13 @@ struct NotchView: View {
         .accessibilityAddTraits(open ? [] : .isButton)
     }
 
+    /// The motion: a lively spring opening (and for tab changes), a quick ease-out closing.
     private func spring(open: Bool) -> Animation {
-        let s = open ? NotchPanel.openSpring : NotchPanel.closeSpring
-        return .spring(response: s.response, dampingFraction: s.damping)
+        guard open else {
+            let c = NotchPanel.closeCurve
+            return .timingCurve(c.x1, c.y1, c.x2, c.y2, duration: c.duration)
+        }
+        return .spring(response: NotchPanel.openSpring.response, dampingFraction: NotchPanel.openSpring.damping)
     }
 }
 
@@ -281,144 +285,176 @@ private struct HUDWings: View {
 
 // MARK: - Open
 
+/// The open island: a 34 pt header (icon tabs left; settings, sounds and close right),
+/// then the cards. Home: the music card and Mirror; Shelf: files, AirDrop and the note.
 private struct OpenNotch: View {
     let model: NotchController.Model
     let music: MusicBridge
     let calendar: CalendarSource
     let shelf: ShelfStore
+    @Bindable var settings: AppSettings
     let art: Namespace.ID
     let onTabChange: (NotchController.Model.Tab) -> Void
     let onMirror: () -> Void
+    let onCollapse: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
+        VStack(spacing: 0) {
+            header.frame(height: 34)
             Group {
                 switch model.tab {
-                case .home: home.transition(.opacity)
-                case .shelf: ShelfView(shelf: shelf, note: model.note).transition(.opacity)
+                case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .shelf: ShelfView(shelf: shelf, note: model.note).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings: EmptyView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 10)
         }
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .foregroundStyle(NotchPalette.text)
     }
 
-    /// Nook and Tray at left, settings and battery at right, like the GIF.
     private var header: some View {
         HStack(spacing: 0) {
-            tab(.home, symbol: "sparkle", label: "Nook")
-            tab(.shelf, symbol: "tray.fill", label: "Tray").padding(.leading, 8)
-            Spacer(minLength: 18)
-            Button { onTabChange(.settings) } label: {
-                Image(systemName: "gearshape.circle").font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("ClickBait settings")
-        }
-        .padding(.leading, 22)
-        .padding(.trailing, 12)
-        .frame(height: CGFloat(model.notch?.height ?? 30))
-    }
-
-    private func tab(_ tab: NotchController.Model.Tab, symbol: String, label: String) -> some View {
-        Button { onTabChange(tab) } label: {
             HStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
-                Text(label).font(.system(size: 10, weight: .semibold))
+                NotchHeaderTab(symbol: "house.fill", label: "Home", selected: model.tab == .home) { onTabChange(.home) }
+                NotchHeaderTab(symbol: "tray.fill", label: "Shelf", selected: model.tab == .shelf) { onTabChange(.shelf) }
             }
-            .foregroundStyle(model.tab == tab ? Color.white : NotchColors.dim)
-            .padding(.horizontal, 9).padding(.vertical, 5)
-            .background(model.tab == tab ? Color.white.opacity(0.12) : .clear, in: Capsule())
+            .padding(.leading, 14)
+            Spacer()
+            HStack(spacing: 14) {
+                NotchHeaderIcon(symbol: "gearshape", label: "ClickBait settings") { onTabChange(.settings) }
+                NotchHeaderIcon(symbol: settings.soundCues ? "speaker.wave.2" : "speaker.slash",
+                                label: settings.soundCues ? "Sounds on" : "Sounds off") { settings.soundCues.toggle() }
+                NotchHeaderIcon(symbol: "xmark", label: "Close", action: onCollapse)
+            }
+            .padding(.trailing, 16)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(model.tab == tab ? .isSelected : [])
+        .frame(maxHeight: .infinity)
     }
 
-    /// The GIF's compact row: music, two app tiles, and Mirror.
     private var home: some View {
-        HStack(spacing: 11) {
-            NookMusic(music: music, art: art)
-                .frame(width: 226, height: 94, alignment: .leading)
-            Rectangle().fill(Color.white.opacity(0.1)).frame(width: 1, height: 92)
-            VStack(spacing: 8) {
-                NookAppTile(title: "Spotify", symbol: "sparkles", bundleID: "com.spotify.client")
-                NookAppTile(title: "Music", symbol: "sparkles", bundleID: "com.apple.Music")
-            }
-            .frame(width: 111)
+        HStack(spacing: 10) {
+            MusicCard(music: music, art: art)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .notchCard()
             MirrorTile(onTap: onMirror)
-                .frame(width: 76, height: 76)
+                .frame(width: 98)
+                .notchCard()
         }
-        .padding(.horizontal, 15)
-        .padding(.top, 10)
-        .padding(.bottom, 9)
+        .frame(height: 98)
     }
 }
 
-private struct NookMusic: View {
+/// The player card, for Music or Spotify: artwork (click opens the player), title and
+/// artist; position; shuffle, previous, play/pause, next, repeat; the player's volume. The
+/// accent is the artwork's colour.
+private struct MusicCard: View {
     let music: MusicBridge
     let art: Namespace.ID
 
     var body: some View {
-        HStack(spacing: 11) {
-            ZStack(alignment: .bottomTrailing) {
-                Artwork(music: music, corner: 9)
-                    .matchedGeometryEffect(id: "art", in: art)
-                    .frame(width: 78, height: 78)
-                if let player = music.player { PlayerBadge(player: player).offset(x: 4, y: 4) }
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(music.hasTrack ? music.title : "Nothing playing")
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(.white).lineLimit(1)
-                Text(music.hasTrack ? music.artist : "Music or Spotify")
-                    .font(.system(size: 10)).foregroundStyle(NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist)).lineLimit(1)
-                HStack(spacing: 15) {
-                    nookControl("backward.end.fill", label: "Previous track") { music.send("previous track") }
-                    nookControl(music.isPlaying ? "pause.fill" : "play.fill", label: music.isPlaying ? "Pause" : "Play") { music.send("playpause") }
-                    nookControl("forward.end.fill", label: "Next track") { music.send("next track") }
+        let accent = NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist)
+        Group {
+            if let error = music.error {
+                idle(dot: Color(hex: 0xF4505E), message: error)
+            } else if music.hasTrack {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 9) {
+                        Artwork(music: music, corner: 6)
+                            .matchedGeometryEffect(id: "art", in: art)
+                            .frame(width: 36, height: 36)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                            .onTapGesture { openPlayer() }
+                            .help("Open \(music.player?.name ?? "the player")")
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 5) {
+                                Circle().fill(accent).frame(width: 6, height: 6)
+                                Text(music.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                            }
+                            Text(music.artist).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 10)
+                    TimelineView(.animation(minimumInterval: 0.5, paused: !music.isPlaying)) { context in
+                        PlayerProgress(position: music.currentPosition(at: context.date), duration: music.duration,
+                                       accent: accent, onSeek: { music.seek(to: $0) })
+                    }
+                    .padding(.top, 7)
+                    controls(accent: accent).padding(.top, 4)
                 }
-                .padding(.top, 3)
+                .padding(.horizontal, 12)
+            } else {
+                idle(dot: NotchPalette.tertiary, message: "Nothing playing")
             }
-            Spacer(minLength: 0)
         }
-        .padding(6)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.09), lineWidth: 1))
-        .accessibilityElement(children: .contain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { music.refresh() }
     }
 
-    private func nookControl(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                .frame(width: 16, height: 16)
+    private func controls(accent: Color) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 10) {
+                PlayerIconButton(symbol: "shuffle", size: 10, tint: music.shuffling ? accent : NotchPalette.tertiary,
+                                 label: music.shuffling ? "Shuffle on" : "Shuffle off") { music.setShuffling(!music.shuffling) }
+                PlayerIconButton(symbol: "backward.fill", size: 11, tint: NotchPalette.control, label: "Previous track") {
+                    music.send("previous track")
+                }
+                Button { music.send("playpause") } label: {
+                    ZStack {
+                        Circle().fill(NotchPalette.text)
+                        Image(systemName: music.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 8.5, weight: .bold)).foregroundStyle(NotchPalette.ink)
+                            .offset(x: music.isPlaying ? 0 : 1)
+                    }
+                    .frame(width: 20, height: 20)
+                }
+                .buttonStyle(PlayerPressStyle())
+                .accessibilityLabel(music.isPlaying ? "Pause" : "Play")
+                PlayerIconButton(symbol: "forward.fill", size: 11, tint: NotchPalette.control, label: "Next track") {
+                    music.send("next track")
+                }
+                PlayerIconButton(symbol: "repeat", size: 10, tint: music.repeating ? accent : NotchPalette.tertiary,
+                                 label: music.repeating ? "Repeat on" : "Repeat off") { music.setRepeating(!music.repeating) }
+            }
+            Spacer(minLength: 8)
+            PlayerVolume(volume: music.volume, accent: accent) { music.setVolume($0) }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
-}
 
-private struct NookAppTile: View {
-    let title: String
-    let symbol: String
-    let bundleID: String
-
-    var body: some View {
-        Button {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                NSWorkspace.shared.open(url)
+    /// Nothing playing, or ClickBait may not control the player: a line, and the players to open.
+    private func idle(dot: Color, message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle().fill(dot).frame(width: 7, height: 7)
+                Text("Music").font(.system(size: 12, weight: .semibold))
             }
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(NotchColors.bar)
-                Text(title).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.92)).lineLimit(1)
-                Spacer(minLength: 0)
+            Text(message).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(2)
+            HStack(spacing: 12) {
+                ForEach(MusicBridge.Player.allCases, id: \.self) { player in
+                    Button("Open \(player.name)") { open(player) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(NotchColors.artist.opacity(0.85))
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 40)
         }
-        .buttonStyle(NotchControlButtonStyle())
-        .accessibilityLabel("Open \(title)")
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+    }
+
+    private func openPlayer() {
+        if let player = music.player { open(player) }
+    }
+
+    private func open(_ player: MusicBridge.Player) {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 
@@ -434,8 +470,9 @@ private struct MirrorTile: View {
                 Text("Mirror").font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.9))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(NotchControlButtonStyle())
+        .buttonStyle(PlayerPressStyle())
         .help("Show the front camera in the notch")
         .accessibilityLabel("Mirror. Show the front camera in the notch")
     }
@@ -944,24 +981,26 @@ private struct AirDropPad: View {
         Button {
             sender.send(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
         } label: {
-            VStack(spacing: 7) {
+            VStack(spacing: 5) {
                 Image(systemName: symbol(sender.status))
-                    .font(.system(size: 23, weight: .medium))
+                    .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(NotchColors.bar)
                     .symbolEffect(.pulse, isActive: targeted || isChoosing(sender.status))
                     .contentTransition(.symbolEffect(.replace))
-                Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
                 Text(subtitle(sender.status))
-                    .font(.system(size: 10)).foregroundStyle(NotchColors.dim)
+                    .font(.system(size: 10)).foregroundStyle(NotchPalette.secondary)
                     .multilineTextAlignment(.center).lineLimit(2)
                     .padding(.horizontal, 8)
             }
-            .frame(width: 145)
+            .frame(width: 120)
             .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(NotchControlButtonStyle(cornerRadius: 17))
+        .buttonStyle(PlayerPressStyle())
+        .notchCard(wash: targeted ? NotchColors.bar.opacity(0.45) : nil)
         .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(NotchColors.bar, lineWidth: 1.5)
                 .opacity(targeted ? 1 : 0)
         }
@@ -1005,7 +1044,8 @@ private struct AirDropPad: View {
     }
 }
 
-/// Files dropped here (drag out to use, click to show in Finder) and the quick note.
+/// Cards: the files dropped here (drag out to use, click to select, right-click to
+/// show in Finder), the AirDrop pad and the quick note.
 private struct ShelfView: View {
     let shelf: ShelfStore
     @Bindable var note: NotchController.Note
@@ -1013,133 +1053,106 @@ private struct ShelfView: View {
     @FocusState private var noteFocused: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Files Tray").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                        Text("Collect files to share")
-                            .font(.system(size: 10)).foregroundStyle(NotchColors.dim)
-                    }
-                    Spacer()
-                    Text("\(shelf.files.count) / 12")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.78))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08), in: Capsule())
-                }
-                HStack(spacing: 7) {
-                    if shelf.files.count > 1 {
-                        Button(shelf.selectedFiles.count == shelf.files.count ? "Clear selection" : "Select all") {
-                            if shelf.selectedFiles.count == shelf.files.count { shelf.clearSelection() }
-                            else { shelf.selectAll() }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(NotchColors.bar)
-                    }
-                    Spacer(minLength: 0)
-                    if !shelf.selectedFiles.isEmpty {
-                        ZStack {
-                            Capsule().fill(NotchColors.bar.opacity(0.16))
-                            MultiFileDragHandle(urls: shelf.files.filter { shelf.selectedFiles.contains($0) })
-                            Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(NotchColors.bar)
-                                .padding(.horizontal, 9).padding(.vertical, 5)
-                                .allowsHitTesting(false)
-                        }
-                        .fixedSize()
-                        .accessibilityElement()
-                        .accessibilityLabel("Drag \(shelf.selectedFiles.count) selected files together")
-                        .accessibilityHint("Drag this control to share the selected files together")
-                    }
-                }
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(targeted ? 0.065 : 0.025))
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(targeted ? NotchColors.bar : Color.white.opacity(0.2),
-                                      style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [5, 5] : []))
-                    if shelf.files.isEmpty {
-                        VStack(spacing: 5) {
-                            Image(systemName: "tray.and.arrow.down.fill")
-                                .font(.system(size: 16, weight: .medium)).foregroundStyle(NotchColors.bar)
-                                .frame(width: 34, height: 34).background(NotchColors.bar.opacity(0.13), in: Circle())
-                            Text(targeted ? "Release to add files" : "Drop files to collect")
-                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.88))
-                            Text("Select several, then send them together")
-                                .font(.system(size: 9)).foregroundStyle(NotchColors.dim)
-                        }
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 9) { ForEach(shelf.files, id: \.self) { file($0) } }
-                                .padding(.horizontal, 7).padding(.vertical, 4)
-                        }
-                    }
-                }
-                .frame(minHeight: 100, maxHeight: .infinity)
-                .dropDestination(for: URL.self) { urls, _ in
-                    let files = urls.filter(\.isFileURL)
-                    shelf.add(files)
-                    return !files.isEmpty
-                } isTargeted: { targeted = $0 }
-                .accessibilityLabel(shelf.files.isEmpty ? "Files Tray, empty. Drop files here." : "Files Tray, \(shelf.files.count) files")
-            }
-            .padding(9)
-            .frame(width: 210)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.09), lineWidth: 1))
-
+        HStack(spacing: 10) {
+            files
             AirDropPad(shelf: shelf)
+            noteCard
+        }
+        .frame(height: 124)
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("NOTES", systemImage: "pencil.line")
-                        .font(.system(size: 13, weight: .bold)).foregroundStyle(NotchColors.dim)
-                    Spacer(minLength: 4)
-                    Button(action: appendBullet) {
-                        Label("Add bullet", systemImage: "list.bullet")
+    /// Files: a count, select all and drag-the-selection, and the drop area.
+    private var files: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Files").font(.system(size: 12, weight: .semibold))
+                Text("\(shelf.files.count)/12").font(.system(size: 10).monospacedDigit()).foregroundStyle(NotchPalette.tertiary)
+                Spacer(minLength: 4)
+                if shelf.files.count > 1 {
+                    Button(shelf.selectedFiles.count == shelf.files.count ? "Clear" : "Select all") {
+                        if shelf.selectedFiles.count == shelf.files.count { shelf.clearSelection() } else { shelf.selectAll() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(NotchColors.bar)
+                }
+                if !shelf.selectedFiles.isEmpty {
+                    ZStack {
+                        Capsule().fill(NotchColors.bar.opacity(0.16))
+                        MultiFileDragHandle(urls: shelf.files.filter { shelf.selectedFiles.contains($0) })
+                        Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(NotchColors.bar)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                    }
-                    .buttonStyle(NotchControlButtonStyle())
-                    .accessibilityHint("Adds a bullet point at the end of the note")
-                }
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $note.text)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(.white)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.clear)
-                        .tint(NotchColors.bar)
-                        .focused($noteFocused)
-                        .accessibilityLabel("Quick note")
-                    if note.text.isEmpty {
-                        Text("Write a note…")
-                            .font(.system(size: 16))
-                            .foregroundStyle(NotchColors.dim)
-                            .padding(.leading, 5)
-                            .padding(.top, 8)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
                             .allowsHitTesting(false)
+                    }
+                    .fixedSize()
+                    .accessibilityElement()
+                    .accessibilityLabel("Drag \(shelf.selectedFiles.count) selected files together")
+                    .accessibilityHint("Drag this control to share the selected files together")
+                }
+            }
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(targeted ? NotchColors.bar : Color.white.opacity(0.12),
+                                  style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [4, 4] : []))
+                if shelf.files.isEmpty {
+                    VStack(spacing: 4) {
+                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchColors.bar)
+                        Text(targeted ? "Release to add" : "Drop files here")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
+                    }
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) { ForEach(shelf.files, id: \.self) { file($0) } }
+                            .padding(.horizontal, 5)
                     }
                 }
             }
-            .padding(14)
-            .frame(width: 250)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(noteFocused ? NotchColors.bar.opacity(0.58) : Color.white.opacity(0.08),
-                              lineWidth: noteFocused ? 1.1 : 1))
-            .animation(.easeOut(duration: 0.14), value: noteFocused)
+            .frame(maxHeight: .infinity)
+            .dropDestination(for: URL.self) { urls, _ in
+                let files = urls.filter(\.isFileURL)
+                shelf.add(files)
+                return !files.isEmpty
+            } isTargeted: { targeted = $0 }
+            .accessibilityLabel(shelf.files.isEmpty ? "Shelf, empty. Drop files here." : "Shelf, \(shelf.files.count) files")
         }
-        .padding(.horizontal, 15)
-        .padding(.top, 7)
-        .padding(.bottom, 7)
+        .padding(10)
+        .frame(width: 250)
+        .notchCard(wash: targeted ? NotchColors.bar.opacity(0.35) : nil)
+    }
+
+    private var noteCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Note").font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 4)
+                NotchHeaderIcon(symbol: "list.bullet", label: "Add bullet", action: appendBullet)
+            }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $note.text)
+                    .font(.system(size: 13))
+                    .foregroundColor(NotchPalette.text)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .tint(NotchColors.bar)
+                    .focused($noteFocused)
+                    .accessibilityLabel("Quick note")
+                if note.text.isEmpty {
+                    Text("Write a note…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(NotchPalette.tertiary)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .notchCard()
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .strokeBorder(NotchColors.bar.opacity(noteFocused ? 0.5 : 0), lineWidth: 1))
+        .animation(.easeOut(duration: 0.14), value: noteFocused)
     }
 
     private func appendBullet() {
@@ -1152,12 +1165,12 @@ private struct ShelfView: View {
 
     private func file(_ url: URL) -> some View {
         let selected = shelf.selectedFiles.contains(url)
-        return VStack(spacing: 3) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 42, height: 42)
+        return VStack(spacing: 2) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 32, height: 32)
             Text(url.lastPathComponent).font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.82)).lineLimit(1).frame(width: 72)
+                .foregroundStyle(NotchPalette.secondary).lineLimit(1).frame(width: 54)
         }
-        .frame(width: 76, height: 78)
+        .frame(width: 58, height: 62)
         .background(selected ? NotchColors.bar.opacity(0.16) : Color.white.opacity(0.045),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
