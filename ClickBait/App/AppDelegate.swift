@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
+    private lazy var greeter = Greeter(settings: settings, overlay: overlay)
     private lazy var capsules = CapsuleController()
     private lazy var notch = NotchController(settings: settings, speech: speech, speaker: coordinator.speaker)
     /// "Remember with ClickBait" in the Services menu.
@@ -78,6 +79,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
+        greeter.start()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GREETING"] != nil {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                self?.overlay.showGreeting(Greeting.line(at: Date(), recent: []).text)
+            }
+        }
+        #endif
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
         backgroundJobs.onDone = { [weak self] _ in

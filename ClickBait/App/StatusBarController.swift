@@ -19,6 +19,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let volumeHUDItem = NSMenuItem(title: "Volume in the Notch", action: nil, keyEquivalent: "")
     private let spotifyArtItem = NSMenuItem(title: "Spotify Covers", action: nil, keyEquivalent: "")
     private let soundsItem = NSMenuItem(title: "Sounds", action: nil, keyEquivalent: "")
+    private let greetingsItem = NSMenuItem(title: "Greetings", action: nil, keyEquivalent: "")
     /// Turns the notch panel on or off (`NotchController`).
     var onToggleNotch: ((Bool) -> Void)?
     private let recentMenu = NSMenu()
@@ -142,6 +143,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         soundsItem.state = settings.soundCues ? .on : .off
         soundsItem.toolTip = "A soft sound when a background ClickBait is done, and when ClickBait needs your yes."
         menu.addItem(soundsItem)
+        greetingsItem.action = #selector(toggleGreetings)
+        greetingsItem.target = self
+        greetingsItem.state = settings.greetings ? .on : .off
+        greetingsItem.toolTip = "A hello by the cursor on the first wake of the day, or after a long time away."
+        menu.addItem(greetingsItem)
         menu.addItem(.separator())
 
         #if DEBUG
@@ -177,6 +183,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleSounds() {
         settings.soundCues.toggle()
         soundsItem.state = settings.soundCues ? .on : .off
+    }
+
+    @objc private func toggleGreetings() {
+        settings.greetings.toggle()
+        greetingsItem.state = settings.greetings ? .on : .off
     }
 
     @objc private func toggleVolumeHUD() {

@@ -197,6 +197,38 @@ struct TinyPill: View {
     }
 }
 
+/// The hello on coming back, typed out letter by letter (`Greeting.charactersPerSecond`) in
+/// a `TinyPill` sized for the whole line from the start, so it doesn't grow as it types.
+/// Reduce Motion: the whole line at once. VoiceOver reads the whole line.
+struct GreetingPill: View {
+    let text: String
+    let tone: CompanionTone
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = 0
+
+    var body: some View {
+        let characters = Array(text)
+        TinyPill(text: text, tone: tone)
+            .hidden()
+            .overlay(alignment: .topLeading) {
+                TinyPill(text: String(characters.prefix(reduceMotion ? characters.count : shown)), tone: tone)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .opacity(shown > 0 || reduceMotion ? 1 : 0)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .task(id: text) {
+                shown = 0
+                guard !reduceMotion else { return }
+                for count in 1...max(characters.count, 1) {
+                    try? await Task.sleep(for: .seconds(1 / Greeting.charactersPerSecond))
+                    if Task.isCancelled { return }
+                    shown = count
+                }
+            }
+    }
+}
+
 extension View {
     /// Text that's as wide as it needs up to `maxWidth`, then wraps onto as many lines
     /// as it takes. Measured explicitly: inside the overlay's fixed-size layout SwiftUI
@@ -533,6 +565,8 @@ struct CompanionBubbleView: View {
             TinyPill(text: text, tone: model.tone)
         case .jobResult(let text, let tone):
             TinyPill(text: text, tone: tone)  // the job's colour, like every other pill
+        case .greeting(let text):
+            GreetingPill(text: text, tone: model.tone)
         }
     }
 }

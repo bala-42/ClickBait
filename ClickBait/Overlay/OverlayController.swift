@@ -220,6 +220,19 @@ final class OverlayController {
         scheduleDismiss(after: .seconds(5))
     }
 
+    /// A hello on coming back: typed out, held briefly, gone (`Greeting.timing`). Only when
+    /// the companion has nothing else to say; false when it was busy.
+    @discardableResult
+    func showGreeting(_ text: String) -> Bool {
+        guard model.bubble == .idle, !isGuiding, !model.isSnipping, !model.isTutoring else { return false }
+        setCompanionHidden(false)
+        stickyNote = false
+        model.bubble = .greeting(text)
+        let timing = Greeting.timing(for: text)
+        scheduleDismiss(after: .seconds(timing.typing + timing.hold))
+        return true
+    }
+
     /// A command is running (green, pulsing) — file actions can take a while.
     func showWorking(_ message: String) {
         endGuide()
@@ -1137,7 +1150,7 @@ final class OverlayController {
 private extension OverlayModel.Bubble {
     var isAnswer: Bool {
         switch self {
-        case .answer, .done, .error, .jobResult: return true  // a click or Escape clears these
+        case .answer, .done, .error, .jobResult, .greeting: return true  // a click or Escape clears these
         default: return false
         }
     }

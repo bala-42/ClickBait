@@ -11,6 +11,7 @@ final class AppSettings {
         static let notchNote = "settings.notchNote"
         static let notchVolumeHUD = "settings.notchVolumeHUD"
         static let soundCues = "settings.soundCues"
+        static let greetings = "settings.greetings"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
@@ -99,6 +100,10 @@ final class AppSettings {
     var soundCues: Bool {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
+    /// A hello by the cursor on the first wake of the day or after a long time away.
+    var greetings: Bool {
+        didSet { defaults.set(greetings, forKey: Key.greetings) }
+    }
     var notchVolumeHUD: Bool {
         didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
     }
@@ -131,6 +136,7 @@ final class AppSettings {
         notchNote = defaults.string(forKey: Key.notchNote) ?? ""
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
+        greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? true
         LegacyCloudSettings.remove(from: defaults)
     }
