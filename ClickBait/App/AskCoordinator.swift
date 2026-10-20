@@ -378,6 +378,14 @@ final class AskCoordinator {
             }
             dropPendingReminder()
         }
+        // "remember …" / "forget …": the user's own facts (`Memory`), answered in the chat.
+        if let command = Memory.command(in: text) {
+            onChatUserMessage?(text)
+            let reply = MemoryStore.shared.reply(to: command)
+            Log.ask.notice("Memory (typed): \(reply.ok ? "done" : "not done", privacy: .public)")
+            if reply.ok { onChatReply?(reply.message) } else { onChatError?(reply.message) }
+            return
+        }
         // Typed orders run like spoken ones ("combine these files"), answered in the chat.
         if settings.commandsEnabled,
            let command = CommandParser.parse(text, allowedShortcuts: settings.allowedShortcuts),
@@ -1226,6 +1234,18 @@ final class AskCoordinator {
                 onChatUserMessage?(transcript)
                 onChatReply?(reply)
             }
+            return
+        }
+
+        // "remember …" / "forget …": the user's own facts (`Memory`), no model.
+        if let command = Memory.command(in: transcript) {
+            encoding.cancel()
+            flow.kind = .command
+            guard await settleQuick(flow) else { return }
+            let reply = MemoryStore.shared.reply(to: command)
+            Log.ask.notice("Memory (spoken): \(reply.ok ? "done" : "not done", privacy: .public)")
+            speaker.speak(reply.message)
+            if reply.ok { state = .speaking; onActionDone?(reply.message) } else { show(error: reply.message) }
             return
         }
 
@@ -2803,6 +2823,7 @@ final class AskCoordinator {
                 elements: listed
             )
             request.contextJPEG = snipFollowUp?.context ?? snipContext
+            request.remembered = MemoryStore.shared.memory.block(for: question)
             request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn
             if let lookup {
                 // What the lookup found within its ~4 s; a question not about the screen is

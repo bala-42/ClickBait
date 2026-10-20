@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let overlay = OverlayController()
     private lazy var capsules = CapsuleController()
     private lazy var notch = NotchController(settings: settings, speech: speech, speaker: coordinator.speaker)
+    /// "Remember with ClickBait" in the Services menu.
+    private let servicesProvider = ServicesProvider()
     /// Blue highlights and arrows on screen (`GuidanceController`).
     private lazy var guidance = GuidanceController()
     /// Done jobs whose result pill has been shown (or is waiting to be).
@@ -51,6 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.servicesProvider = servicesProvider
+        NSUpdateDynamicServices()
         #if DEBUG
         AgentDockRender.runIfRequested()  // renders and quits
         ChatRender.runIfRequested()  // renders and quits; leaves a running ClickBait alone
@@ -268,6 +272,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !coordinator.isBusy, coordinator.state != .thinking { chat.untuck() }
         }
         chat.model.onClose = { [weak self] in self?.closeChat() }
+        // C5: keep a line (Remember) or the whole chat (Save) — only on the user's click.
+        chat.model.onRemember = { [weak self] in
+            guard let self, let answer = chat.model.messages.last(where: { $0.role == .assistant })?.text else { return }
+            let prose = MessageFormat.segments(answer).compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: " ")
+            let first = prose.split(separator: ".", maxSplits: 1).first.map(String.init) ?? prose
+            guard let line = RememberPrompt.confirm(String(first.prefix(160))) else { return }
+            let reply = MemoryStore.shared.reply(to: .remember(line))
+            if reply.ok { flashKept("Remembered") } else { RememberPrompt.tell(reply.message) }
+        }
+        chat.model.onSaveAnswer = { [weak self] in
+            guard let self else { return }
+            let turns: [(role: SavedAnswer.Role, text: String)] = chat.model.messages.compactMap { message in
+                switch message.role {
+                case .user: (.user, message.text)
+                case .assistant: (.assistant, message.text)
+                case .error: nil
+                }
+            }
+            guard let file = AnswerArchive.save(turns) else { RememberPrompt.tell("Couldn't save this answer."); return }
+            flashKept("Saved")
+            AnswerArchive.reveal(file)
+        }
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
@@ -640,6 +666,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
     /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
     /// others down. Logged "Bench: …" per phase for the main-thread sampler.
+    /// "Saved" / "Remembered" in the chat's header for a moment.
+    private func flashKept(_ note: String) {
+        chat.model.keptNote = note
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            self?.chat.model.keptNote = nil
+        }
+    }
+
     #if DEBUG
     /// `CLICKBAIT_TEST_GUIDANCE` (=<folder> also renders it): a labelled highlight and an armed,
     /// pulsing arrow at one region; checks the arrow is primary and on top, the labels apart, a

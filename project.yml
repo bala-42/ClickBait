@@ -40,6 +40,14 @@ targets:
         LSApplicationCategoryType: public.app-category.productivity
         LSUIElement: true
         NSHumanReadableCopyright: "Copyright © 2026 ClickBait contributors. Apache License 2.0."
+        NSServices:
+          - NSMenuItem:
+              default: Remember with ClickBait
+            NSMessage: rememberSelection
+            NSPortName: ClickBait
+            NSSendTypes:
+              - NSStringPboardType
+              - public.utf8-plain-text
         NSMicrophoneUsageDescription: "ClickBait listens while you hold Control+Option so it can hear your question."
         NSAppleEventsUsageDescription: "ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel."
         NSCalendarsFullAccessUsageDescription: "ClickBait's notch calendar shows events for the date you select. They stay on this Mac."

@@ -289,6 +289,7 @@ public enum Prompt {
             if let card = AppCards.card(for: request.question, frontmost: request.context.appName, planning: false) {
                 facts.append(AppCards.block(card))
             }
+            if let remembered = request.remembered { facts.append(remembered) }
             text = facts.joined(separator: "\n") + "\n" + text
         } else if request.planTutorial,
                   let card = AppCards.card(for: request.question, frontmost: request.context.appName, planning: true) {

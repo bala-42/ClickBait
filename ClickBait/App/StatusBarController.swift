@@ -109,6 +109,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         backgroundCapsulesItem.isEnabled = false
         menu.addItem(backgroundCapsulesItem)
         menu.addItem(recentItem)
+        let remembered = item("Remembered…", action: #selector(openRemembered), key: "")
+        remembered.toolTip = "What you asked ClickBait to remember, one line each. Edit or delete freely."
+        menu.addItem(remembered)
+        let saved = item("Saved Answers…", action: #selector(openSavedAnswers), key: "")
+        saved.toolTip = "Answers you saved from the chat, as text files."
+        menu.addItem(saved)
         notchItem.action = #selector(toggleNotch)
         notchItem.target = self
         notchItem.state = settings.notchPanelEnabled ? .on : .off
@@ -153,6 +159,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openPermissions() { onOpenPermissions() }
+    @objc private func openRemembered() { MemoryStore.shared.reveal() }
+    @objc private func openSavedAnswers() { AnswerArchive.reveal() }
     @objc private func toggleInternet() { settings.internet.toggle() }
     @objc private func chooseSpotifyArt(_ sender: NSMenuItem) {
         guard let always = sender.representedObject as? Bool else { return }

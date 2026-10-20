@@ -88,6 +88,7 @@ struct ChatView: View {
         HStack(spacing: 8) {
             if model.isFlipped {
                 closeButton
+                keepButtons
                 Spacer()
                 title
                 logo
@@ -95,6 +96,7 @@ struct ChatView: View {
                 logo
                 title
                 Spacer()
+                keepButtons
                 closeButton
             }
         }
@@ -123,6 +125,29 @@ struct ChatView: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AquaDark.textSecondary)
             .shadow(color: .black.opacity(0.5), radius: 0, y: -0.5)  // Aqua's engraved title
+    }
+
+    /// Remember a line from this answer, or save the whole chat as a file (C5).
+    @ViewBuilder private var keepButtons: some View {
+        if let note = model.keptNote {
+            Text(note)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AquaDark.textSecondary)
+                .transition(.opacity)
+        } else if model.canKeep {
+            HStack(spacing: 10) {
+                Button { model.onRemember?() } label: { Image(systemName: "brain") }
+                    .help("Remember a line from this answer")
+                    .accessibilityLabel("Remember a line from this answer")
+                Button { model.onSaveAnswer?() } label: { Image(systemName: "square.and.arrow.down") }
+                    .help("Save this answer as a file")
+                    .accessibilityLabel("Save this answer as a file")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AquaDark.textSecondary)
+            .transition(.opacity)
+        }
     }
 
     private var closeButton: some View {

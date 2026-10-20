@@ -44,6 +44,12 @@ final class ChatModel {
 
     @ObservationIgnored var onSend: ((String) -> Void)?
     @ObservationIgnored var onClose: (() -> Void)?
+    /// The header's Remember and Save buttons (C5): shown once there's an answer.
+    @ObservationIgnored var onRemember: (() -> Void)?
+    @ObservationIgnored var onSaveAnswer: (() -> Void)?
+    /// Set for a moment after Save or Remember worked ("Saved", "Remembered").
+    var keptNote: String?
+    var canKeep: Bool { !isBusy && messages.contains { $0.role == .assistant } }
     /// The card's drawn size, so the window can fit it exactly (the space around a
     /// clickable window would otherwise swallow clicks).
     @ObservationIgnored var cardSize: CGSize = .zero {
