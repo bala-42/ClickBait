@@ -71,7 +71,7 @@ struct NotchBean: View {
     /// The glow, tint and badge colour for each mood.
     static func color(for mood: Bean.Mood) -> Color {
         switch mood {
-        case .idle, .sleepy, .panicked, .warm, .tired: CompanionTone.idle.color
+        case .idle, .sleepy, .panicked, .warm, .tired, .hello: CompanionTone.idle.color
         case .listening, .thinking: CompanionTone.processing.color
         case .working, .happy: CompanionTone.action.color
         case .error: wine
@@ -81,7 +81,7 @@ struct NotchBean: View {
     /// Nothing going on (idle, asleep, or only feeling the Mac): plain pearl, no state colour.
     static func isResting(_ mood: Bean.Mood) -> Bool {
         switch mood {
-        case .idle, .sleepy, .panicked, .warm, .tired: true
+        case .idle, .sleepy, .panicked, .warm, .tired, .hello: true
         case .listening, .thinking, .working, .happy, .error: false
         }
     }
@@ -175,7 +175,7 @@ struct BeanFace: View {
         case .error: "!"
         case .happy: "✓"
         case .sleepy: "z"
-        case .idle, .listening, .working, .panicked, .warm, .tired: nil
+        case .idle, .listening, .working, .panicked, .warm, .tired, .hello: nil
         }
         if let mark {
             Text(mark)

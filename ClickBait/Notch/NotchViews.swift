@@ -192,7 +192,7 @@ struct NotchView: View {
         .frame(width: CGFloat(look.width) + 2 * ear, height: CGFloat(look.height))
         // One bean, always there, so it springs from the peek into the open card and back.
         .overlay(alignment: .topLeading) {
-            NotchBean(mood: model.greeting ? .happy : model.mood(), size: place.size, badge: !model.greeting)
+            NotchBean(mood: model.greeting ? .hello : model.mood(), size: place.size)
                 .position(x: ear + place.x, y: place.y)
                 .opacity(place.visible ? 1 : 0)
                 .allowsHitTesting(place.visible)
@@ -513,7 +513,7 @@ private struct FocusCard: View {
     static func wash(for mood: Bean.Mood) -> Color? {
         switch mood {
         case .listening, .thinking, .working, .happy, .error: NotchBean.color(for: mood).opacity(0.45)
-        case .idle, .sleepy, .panicked, .warm, .tired: nil
+        case .idle, .sleepy, .panicked, .warm, .tired, .hello: nil
         }
     }
 
@@ -524,7 +524,7 @@ private struct FocusCard: View {
         case .working: "on it"
         case .happy: "done"
         case .error: "something went wrong"
-        case .idle, .sleepy, .panicked, .warm, .tired: "ready"
+        case .idle, .sleepy, .panicked, .warm, .tired, .hello: "ready"
         }
     }
 }

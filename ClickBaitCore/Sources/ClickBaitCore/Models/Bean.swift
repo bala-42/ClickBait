@@ -17,8 +17,10 @@ public enum Bean {
         case thinking
         /// A command is running.
         case working
-        /// A command finished, or a hello.
+        /// A command finished.
         case happy
+        /// Saying hello when the island opens at launch: happy, but pearl.
+        case hello
         /// Something went wrong.
         case error
         /// Nothing has happened for a while, or the battery is nearly empty.
@@ -53,6 +55,7 @@ public enum Bean {
         case .thinking: ["◔ ◔", "¬ ¬", "◑ ◑", "˘ ˘"]
         case .working: ["> <", "• •", "ò ó"]
         case .happy: ["^ ^", "ᗒ ᗕ", "≧ ≦", "✧ ✧"]
+        case .hello: ["^ ^", "ᵔ ᵔ", "≧ ≦"]
         case .error: ["× ×", "; ;", "ಥ ಥ", "@ @"]
         case .sleepy: ["- -", "_ _", "︶ ︶"]
         case .panicked: ["⊙ ⊙", "◎ ◎", "O O"]
@@ -67,7 +70,7 @@ public enum Bean {
         case .listening: .open
         case .thinking: .flat
         case .working: .flat
-        case .happy: .grin
+        case .happy, .hello: .grin
         case .error: .frown
         case .sleepy: .flat
         case .panicked: .open
