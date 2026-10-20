@@ -10,6 +10,7 @@ final class AppSettings {
         static let notchPanel = "settings.notchPanel"
         static let notchNote = "settings.notchNote"
         static let notchVolumeHUD = "settings.notchVolumeHUD"
+        static let soundCues = "settings.soundCues"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
@@ -94,6 +95,10 @@ final class AppSettings {
 
     /// The volume keys show ClickBait's HUD in the notch instead of macOS's (they still work
     /// if this is off, or if ClickBait can't set the volume).
+    /// A soft sound when a background job is done, and when ClickBait needs a yes (C6).
+    var soundCues: Bool {
+        didSet { defaults.set(soundCues, forKey: Key.soundCues) }
+    }
     var notchVolumeHUD: Bool {
         didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
     }
@@ -125,6 +130,7 @@ final class AppSettings {
         ignoreNotchInCaptures = defaults.object(forKey: Key.ignoreNotchInCaptures) as? Bool ?? true
         notchNote = defaults.string(forKey: Key.notchNote) ?? ""
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
+        soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? true
         LegacyCloudSettings.remove(from: defaults)
     }

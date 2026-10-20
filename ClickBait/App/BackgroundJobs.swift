@@ -21,6 +21,8 @@ final class BackgroundJobs {
         var progress: JobProgress = .uncounted
         /// What the answer has said so far (its spoken text), for the running card's line.
         var liveText = ""
+        /// What it's doing before the answer starts ("Reading your screen…").
+        var stage: JobStage?
         /// "suggested next:" for a done card: nil until asked (when it first opens).
         var suggestions: [String]?
         /// A suggestion that comes before the asked-for ones (a snip peeled before its tour offers
@@ -89,6 +91,15 @@ final class BackgroundJobs {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].job.complete(answer: answer, conversation: conversation)
         entries[index].task = nil
+        onDone?(id)
+    }
+
+    /// A job finished (its done sound, C6).
+    var onDone: ((UUID) -> Void)?
+
+    func setStage(_ stage: JobStage?, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }), entries[index].stage != stage else { return }
+        entries[index].stage = stage
     }
 
     func fail(_ id: UUID, reason: String) {

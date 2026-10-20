@@ -117,7 +117,7 @@ struct CapsuleView: View {
         switch job.status {
         case .working:
             // ✕ stops it: the tile goes.
-            AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
+            AgentRunningCard(title: job.question, liveLine: JobSummary.liveLine(from: presentation.entry.liveText, stage: presentation.entry.stage),
                              tone: tone,
                              progressBar: AnyView(CapsuleProgressBar(progress: presentation.entry.progress, tone: tone.color)),
                              footer: presentation.followUp.isOpen ? miniChat(id, answering: true) : nil,
@@ -148,7 +148,7 @@ struct CapsuleView: View {
         // While answering, the question just asked is shown, its answer streams below it.
         if answering, thread.last?.role == .assistant { thread.removeLast() }
         return AnyView(FollowUpPanelView(panel: presentation.followUp, thread: thread, answering: answering,
-                                         liveLine: JobSummary.liveLine(from: presentation.entry.liveText),
+                                         liveLine: JobSummary.liveLine(from: presentation.entry.liveText, stage: presentation.entry.stage),
                                          microphoneLevel: microphoneLevel,
                                          onAction: { onFollowUp(id, $0) }))
     }

@@ -18,6 +18,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let notchItem = NSMenuItem(title: "Notch Panel", action: nil, keyEquivalent: "")
     private let volumeHUDItem = NSMenuItem(title: "Volume in the Notch", action: nil, keyEquivalent: "")
     private let spotifyArtItem = NSMenuItem(title: "Spotify Covers", action: nil, keyEquivalent: "")
+    private let soundsItem = NSMenuItem(title: "Sounds", action: nil, keyEquivalent: "")
     /// Turns the notch panel on or off (`NotchController`).
     var onToggleNotch: ((Bool) -> Void)?
     private let recentMenu = NSMenu()
@@ -136,6 +137,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         spotifyArtItem.submenu = artMenu
         spotifyArtItem.toolTip = "Spotify's album covers are downloaded from its artwork link (Apple Music's come from your Mac)."
         menu.addItem(spotifyArtItem)
+        soundsItem.action = #selector(toggleSounds)
+        soundsItem.target = self
+        soundsItem.state = settings.soundCues ? .on : .off
+        soundsItem.toolTip = "A soft sound when a background ClickBait is done, and when ClickBait needs your yes."
+        menu.addItem(soundsItem)
         menu.addItem(.separator())
 
         #if DEBUG
@@ -166,6 +172,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         guard let always = sender.representedObject as? Bool else { return }
         settings.spotifyArtworkAlways = always
         spotifyArtItem.submenu?.items.forEach { $0.state = ($0.representedObject as? Bool) == always ? .on : .off }
+    }
+
+    @objc private func toggleSounds() {
+        settings.soundCues.toggle()
+        soundsItem.state = settings.soundCues ? .on : .off
     }
 
     @objc private func toggleVolumeHUD() {

@@ -26,10 +26,12 @@ public enum JobSummary {
     /// The line a running card shows: the sentence the answer is writing now (the last one,
     /// finished or not), from its start, ending "…" if it's longer than `liveLength`.
     /// Before any words: "working on it…".
-    public static func liveLine(from speech: String) -> String {
+    /// `stage`: what the job is doing before its answer starts (`JobStage`), instead of the
+    /// plain "working on it…" (C6, 2026-10-20).
+    public static func liveLine(from speech: String, stage: JobStage? = nil) -> String {
         let prose = CoordinateScrubber.scrub(MessageFormat.spokenText(speech)).text
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prose.isEmpty else { return "working on it…" }
+        guard !prose.isEmpty else { return stage?.text ?? "working on it…" }
         var splitter = SentenceSplitter()
         var sentences = splitter.feed(prose)
         if let rest = splitter.flush(), !rest.isEmpty { sentences.append(rest) }

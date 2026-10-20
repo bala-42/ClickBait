@@ -819,6 +819,7 @@ final class AskCoordinator {
         flow.task = task
         flow.jobID = job.id
         flow.sentAway = true
+        backgroundJobs.setStage(flow.stage, for: job.id)
         flow.conversation = conversation
         flow.snipMemory = snipMemory
         flow.chatMessages = onPeel?(job) ?? []
@@ -1034,6 +1035,12 @@ final class AskCoordinator {
         guard let id = flow.jobID, !flow.joined, backgroundJobs?.job(id)?.isWorking == true else { return }
         backgroundJobs?.remove(id)
         Log.ask.notice("Peel dropped: the question ended before an answer started (\(id.uuidString, privacy: .public))")
+    }
+
+    /// What the question is doing now, for its tile if it is (or later gets) sent away (C6).
+    private func setStage(_ stage: JobStage, of flow: QuestionFlow) {
+        flow.stage = stage
+        if let id = flow.jobID { backgroundJobs?.setStage(stage, for: id) }
     }
 
     // MARK: IntentRouter, shadow mode (C3)
@@ -1709,6 +1716,7 @@ final class AskCoordinator {
                                 conversation: conversation ?? Conversation())
         guard backgroundJobs.add(job, task: askTask) else { return }
         walkthroughJobID = job.id
+        backgroundJobs.setStage(.planningSteps, for: job.id)
         _ = onPeel?(job)
         // The task belongs to the tile now: Esc or a new question mustn't cancel it.
         askTask = nil
@@ -2768,6 +2776,7 @@ final class AskCoordinator {
         if let lookupReason {
             if settings.internet.isOn {
                 let capturedImage = capture
+                setStage(.lookingUp, of: flow)
                 lookup = Task {
                     await lookUp(question: question, reason: lookupReason, selectedText: selectedText,
                                  capture: capturedImage, history: history, provider: provider)
@@ -2845,6 +2854,7 @@ final class AskCoordinator {
                 request.elements = []
                 Log.ask.notice("About the world, not the screen: asking without the screenshot")
             }
+            setStage(request.screenshotJPEG.isEmpty ? .thinking : .readingScreen, of: flow)
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))

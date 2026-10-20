@@ -80,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.start()
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
+        backgroundJobs.onDone = { [weak self] _ in
+            guard let self else { return }
+            SoundCues.play(.done, enabled: settings.soundCues)
+        }
         backgroundJobs.onChange = { [weak self] entries in
             self?.capsules.sync(entries)
             self?.statusBar?.updateBackgroundJobs(entries)
@@ -311,6 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         confirm.onAnswer = { [weak self] yes in self?.coordinator.answerConfirmation(yes) }
         coordinator.onConfirmRequest = { [weak self] question in
             guard let self else { return }
+            SoundCues.play(.needsYou, enabled: settings.soundCues)
             readyPillShown = false  // a real question replaces the offer
             coordinator.answerOffer(false)
             confirm.show(question, at: overlay.companionTopLeft)

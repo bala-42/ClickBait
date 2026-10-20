@@ -50,6 +50,8 @@ final class QuestionFlow {
     let work: PeelRule.Work
     var phase: PeelRule.Phase
     var kind: PeelRule.Kind = .unknown
+    /// What it's doing before the answer starts, for its tile if it's sent away (C6).
+    var stage: JobStage?
     /// The model's answer pointed at something (for `IntentRouter`'s shadow comparison).
     var pointed = false
     /// Captured at the press, so a newer question can't change what this one asks with.
