@@ -263,6 +263,11 @@ public enum Prompt {
         }
         var text = baseUserText(for: request)
         if !request.web.isEmpty { text += "\n\n" + webBlock(request.web) }
+        // A plain ask gets today's date, and any "days until …" worked out: the model has no
+        // clock and counts days badly ("30 days until Christmas" on 20 October).
+        if system(for: request) == system {
+            text = DateFacts.lines(for: request.question, now: request.now).joined(separator: "\n") + "\n" + text
+        }
         // Qwen 3.5 answers on its 0–1000 scale whatever it's told; saying so made it
         // refuse to point (19/39 vs 27/39). Only the element list is in its scale, and
         // its header doesn't name a unit.

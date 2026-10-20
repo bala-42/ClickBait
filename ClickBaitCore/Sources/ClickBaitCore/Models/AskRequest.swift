@@ -93,6 +93,8 @@ public struct AskRequest: Sendable {
     public var tutorialCheck: (plan: TutorialPlan, expected: Int)?
     /// Text only: which ClickBait action (if any) is this order? See `Prompt.orderSystem`.
     public var interpretOrder = false
+    /// When it was asked: today's date for the prompt (`DateFacts`).
+    public var now = Date()
 
     public init(
         question: String,
