@@ -120,6 +120,14 @@ public enum NotchPanel {
         let top = notch != nil ? screen.maxY : visible.maxY - 4
         return Rect(x: x, y: top - look.height, width: width, height: look.height)
     }
+
+    /// What the AirDrop pad sends: the files dropped on it; else the shelf's selection, in
+    /// shelf order; else every file on the shelf. Files only, each once.
+    public static func airDropItems(dropped: [URL] = [], shelf: [URL], selected: Set<URL>) -> [URL] {
+        var seen = Set<URL>()
+        let chosen = !dropped.isEmpty ? dropped : selected.isEmpty ? shelf : shelf.filter(selected.contains)
+        return chosen.filter { $0.isFileURL && seen.insert($0).inserted }
+    }
 }
 
 /// Pull down to open, push up to close: two-finger scrolls over the notch, added up within one
@@ -271,6 +279,14 @@ public enum TrackTime {
     }
 
     /// Where playback is now: the last reading, plus the time since while playing.
+    /// What the AirDrop pad sends: the files dropped on it; else the shelf's selection, in
+    /// shelf order; else every file on the shelf. Files only, each once.
+    public static func airDropItems(dropped: [URL] = [], shelf: [URL], selected: Set<URL>) -> [URL] {
+        var seen = Set<URL>()
+        let chosen = !dropped.isEmpty ? dropped : selected.isEmpty ? shelf : shelf.filter(selected.contains)
+        return chosen.filter { $0.isFileURL && seen.insert($0).inserted }
+    }
+
     public static func now(reported: Double, at reading: Date, playing: Bool, duration: Double, now: Date = .now) -> Double {
         let elapsed = playing ? now.timeIntervalSince(reading) : 0
         return min(max(reported + elapsed, 0), max(duration, 0))

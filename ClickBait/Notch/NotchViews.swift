@@ -13,20 +13,6 @@ private struct MultiFileDragHandle: NSViewRepresentable {
     func updateNSView(_ view: MultiFileDragView, context: Context) { view.urls = urls }
 }
 
-private struct SharePickerAnchor: NSViewRepresentable {
-    @Binding var view: NSView?
-
-    func makeNSView(context: Context) -> NSView {
-        let host = NSView(frame: .zero)
-        DispatchQueue.main.async { view = host }
-        return host
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if view !== nsView { DispatchQueue.main.async { view = nsView } }
-    }
-}
-
 private final class MultiFileDragView: NSView, NSDraggingSource {
     var urls: [URL]
     private var mouseDownPoint: NSPoint?
@@ -946,14 +932,84 @@ private struct WeekView: View {
 
 // MARK: - Shelf
 
+/// The shelf's AirDrop pad. Drop files on it, or click it to send the shelf's selection (all of
+/// the shelf when nothing is selected): macOS's own AirDrop window opens with the people and
+/// devices nearby (`AirDropSender`). The pad says what it will send, then how it went.
+private struct AirDropPad: View {
+    let shelf: ShelfStore
+    @State private var targeted = false
+
+    var body: some View {
+        let sender = shelf.airDrop
+        Button {
+            sender.send(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
+        } label: {
+            VStack(spacing: 7) {
+                Image(systemName: symbol(sender.status))
+                    .font(.system(size: 23, weight: .medium))
+                    .foregroundStyle(NotchColors.bar)
+                    .symbolEffect(.pulse, isActive: targeted || isChoosing(sender.status))
+                    .contentTransition(.symbolEffect(.replace))
+                Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
+                Text(subtitle(sender.status))
+                    .font(.system(size: 10)).foregroundStyle(NotchColors.dim)
+                    .multilineTextAlignment(.center).lineLimit(2)
+                    .padding(.horizontal, 8)
+            }
+            .frame(width: 145)
+            .frame(maxHeight: .infinity)
+        }
+        .buttonStyle(NotchControlButtonStyle(cornerRadius: 17))
+        .overlay {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .strokeBorder(NotchColors.bar, lineWidth: 1.5)
+                .opacity(targeted ? 1 : 0)
+        }
+        .scaleEffect(targeted ? 1.03 : 1)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: targeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = NotchPanel.airDropItems(dropped: urls, shelf: [], selected: [])
+            guard !files.isEmpty else { return false }
+            sender.send(files)
+            return true
+        } isTargeted: { targeted = $0 }
+        .help("Drop files to AirDrop them, or click to AirDrop the shelf's files")
+        .accessibilityLabel("AirDrop")
+        .accessibilityValue(subtitle(sender.status))
+        .accessibilityHint("Opens the AirDrop window to choose a person or device nearby")
+    }
+
+    private func isChoosing(_ status: AirDropSender.Status) -> Bool {
+        if case .choosing = status { true } else { false }
+    }
+
+    private func symbol(_ status: AirDropSender.Status) -> String {
+        switch status {
+        case .sent: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .idle, .choosing: "dot.radiowaves.up.forward"
+        }
+    }
+
+    private func subtitle(_ status: AirDropSender.Status) -> String {
+        switch status {
+        case .choosing(let count): return "Choose who gets \(count == 1 ? "it" : "all \(count)")…"
+        case .sent(let count): return count == 1 ? "Sent" : "Sent \(count) files"
+        case .failed(let message): return message
+        case .idle:
+            if targeted { return "Release to AirDrop" }
+            if !shelf.selectedFiles.isEmpty { return "Send \(shelf.selectedFiles.count) selected" }
+            if !shelf.files.isEmpty { return shelf.files.count == 1 ? "Send the file" : "Send all \(shelf.files.count)" }
+            return "Drop files to send"
+        }
+    }
+}
+
 /// Files dropped here (drag out to use, click to show in Finder) and the quick note.
 private struct ShelfView: View {
     let shelf: ShelfStore
     @Bindable var note: NotchController.Note
     @State private var targeted = false
-    @State private var sharePickerAnchor: NSView?
-    @State private var showingAirDropPanel = false
-    @State private var shareError: String?
     @FocusState private var noteFocused: Bool
 
     var body: some View {
@@ -1023,9 +1079,6 @@ private struct ShelfView: View {
                     }
                 }
                 .frame(minHeight: 100, maxHeight: .infinity)
-                .overlay {
-                    if showingAirDropPanel { airDropPanel }
-                }
                 .dropDestination(for: URL.self) { urls, _ in
                     let files = urls.filter(\.isFileURL)
                     shelf.add(files)
@@ -1040,22 +1093,7 @@ private struct ShelfView: View {
             .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.09), lineWidth: 1))
 
-            Button { showingAirDropPanel = true; shareError = nil } label: {
-                VStack(spacing: 7) {
-                    Image(systemName: "dot.radiowaves.up.forward")
-                        .font(.system(size: 23, weight: .medium))
-                        .foregroundStyle(NotchColors.bar)
-                    Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.92))
-                    Text(shelf.selectedFiles.isEmpty ? "Select files to send" : "\(shelf.selectedFiles.count) selected")
-                        .font(.system(size: 10)).foregroundStyle(NotchColors.dim)
-                }
-                .frame(width: 145)
-                .frame(maxHeight: .infinity)
-            }
-            .buttonStyle(NotchControlButtonStyle(cornerRadius: 17))
-            .help("Review selected files and open the macOS AirDrop picker")
-            .accessibilityLabel("AirDrop")
-            .accessibilityHint("Opens the in-notch AirDrop panel")
+            AirDropPad(shelf: shelf)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -1110,62 +1148,6 @@ private struct ShelfView: View {
         } else {
             note.text += "\n• "
         }
-    }
-
-    private var airDropPanel: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Button { showingAirDropPanel = false } label: {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(NotchColors.dim)
-            .accessibilityLabel("Back to file shelf")
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                if shelf.selectedFiles.isEmpty {
-                    Text("Select files on the shelf to prepare them for sharing.")
-                        .font(.system(size: 10)).foregroundStyle(NotchColors.dim).lineLimit(2)
-                } else {
-                    Text("\(shelf.selectedFiles.count) selected · choose a recipient in macOS")
-                        .font(.system(size: 10)).foregroundStyle(NotchColors.dim).lineLimit(1)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 4) {
-                            ForEach(shelf.files.filter { shelf.selectedFiles.contains($0) }, id: \.self) { url in
-                                Text(url.lastPathComponent)
-                                    .font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.82))
-                                    .lineLimit(1).padding(.horizontal, 5).padding(.vertical, 2)
-                                    .background(Color.white.opacity(0.09), in: Capsule())
-                            }
-                        }
-                    }
-                    .frame(height: 17)
-                }
-                if let shareError {
-                    Text(shareError).font(.system(size: 9)).foregroundStyle(.orange).lineLimit(2)
-                }
-            }
-            Spacer(minLength: 2)
-            Button {
-                let urls = shelf.files.filter { shelf.selectedFiles.contains($0) }
-                guard !urls.isEmpty else { return }
-                guard let sharePickerAnchor else {
-                    shareError = "The macOS sharing picker is unavailable here."
-                    return
-                }
-                NSSharingServicePicker(items: urls).show(relativeTo: .zero, of: sharePickerAnchor, preferredEdge: .minY)
-            } label: {
-                Label("Open picker", systemImage: "arrow.up.right")
-            }
-            .buttonStyle(AquaButtonStyle())
-            .disabled(shelf.selectedFiles.isEmpty)
-            .background { SharePickerAnchor(view: $sharePickerAnchor) }
-            .accessibilityHint("Opens Apple's sharing picker; choose AirDrop there and select a recipient")
-        }
-        .padding(.horizontal, 9)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.97), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NotchColors.dim.opacity(0.35)))
     }
 
     private func file(_ url: URL) -> some View {

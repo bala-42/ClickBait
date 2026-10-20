@@ -372,6 +372,8 @@ final class CalendarSource {
 final class ShelfStore {
     private(set) var files: [URL] = []
     private(set) var selectedFiles: Set<URL> = []
+    /// Lives as long as the shelf, so a send outlasts the notch closing behind the AirDrop window.
+    let airDrop = AirDropSender()
 
     func add(_ urls: [URL]) {
         for url in urls where !files.contains(url) { files.append(url) }
@@ -391,6 +393,75 @@ final class ShelfStore {
 
     func selectAll() { selectedFiles = Set(files) }
     func clearSelection() { selectedFiles.removeAll() }
+}
+
+// MARK: - AirDrop
+
+/// The shelf's AirDrop pad: hands files straight to macOS's AirDrop window, which lists the
+/// people and devices nearby and does the sending. ClickBait never turns AirDrop or Bluetooth
+/// on; when AirDrop can't send, it says so.
+@MainActor @Observable
+final class AirDropSender: NSObject, NSSharingServiceDelegate {
+    enum Status: Equatable {
+        case idle
+        /// The AirDrop window is up, waiting for a recipient.
+        case choosing(Int)
+        case sent(Int)
+        case failed(String)
+    }
+
+    private(set) var status: Status = .idle
+    @ObservationIgnored private var service: NSSharingService?
+    @ObservationIgnored private var resetTask: Task<Void, Never>?
+
+    func send(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            show(.failed("Drop files here, or add some to the shelf first"))
+            return
+        }
+        guard let service = NSSharingService(named: .sendViaAirDrop), service.canPerform(withItems: urls) else {
+            show(.failed("AirDrop is off: turn it on in Control Center"))
+            Log.app.notice("AirDrop: not available")
+            return
+        }
+        service.delegate = self
+        self.service = service
+        NSApp.activate()  // ClickBait has no Dock icon: bring the AirDrop window to the front
+        resetTask?.cancel()
+        status = .choosing(urls.count)
+        service.perform(withItems: urls)
+        Log.app.notice("AirDrop: \(urls.count, privacy: .public) file(s) offered")
+    }
+
+    nonisolated func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
+        let count = items.count
+        MainActor.assumeIsolated {
+            show(.sent(count))
+            service = nil
+            Log.app.notice("AirDrop: sent")
+        }
+    }
+
+    nonisolated func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
+        let cancelled = (error as NSError).code == NSUserCancelledError
+        MainActor.assumeIsolated {
+            show(cancelled ? .idle : .failed("AirDrop didn't send: \(error.localizedDescription)"))
+            service = nil
+            Log.app.notice("AirDrop: \(cancelled ? "cancelled" : "failed", privacy: .public)")
+        }
+    }
+
+    /// A result shows for 4 s, then the pad is back to its prompt.
+    private func show(_ new: Status) {
+        status = new
+        resetTask?.cancel()
+        guard new != .idle else { return }
+        resetTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.status = .idle
+        }
+    }
 }
 
 // MARK: - Battery

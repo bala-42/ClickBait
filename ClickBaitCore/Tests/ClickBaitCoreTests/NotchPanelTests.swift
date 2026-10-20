@@ -230,3 +230,26 @@ struct VolumeHUDTests {
         #expect(frame.height == notch.height)
     }
 }
+
+struct AirDropItemsTests {
+    let a = URL(fileURLWithPath: "/tmp/a.pdf")
+    let b = URL(fileURLWithPath: "/tmp/b.png")
+    let c = URL(fileURLWithPath: "/tmp/c.txt")
+
+    @Test func droppedFilesWin() {
+        #expect(NotchPanel.airDropItems(dropped: [c, c], shelf: [a, b], selected: [a]) == [c])
+    }
+
+    @Test func selectionInShelfOrder() {
+        #expect(NotchPanel.airDropItems(shelf: [a, b, c], selected: [c, a]) == [a, c])
+    }
+
+    @Test func nothingSelectedSendsAll() {
+        #expect(NotchPanel.airDropItems(shelf: [a, b], selected: []) == [a, b])
+        #expect(NotchPanel.airDropItems(shelf: [], selected: []) == [])
+    }
+
+    @Test func onlyFiles() {
+        #expect(NotchPanel.airDropItems(dropped: [URL(string: "https://example.com")!], shelf: [], selected: []) == [])
+    }
+}
