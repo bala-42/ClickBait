@@ -2,7 +2,7 @@ import AppKit
 import ClickBaitCore
 
 /// Feeds keyboard events into `ChordDetector`: hold ⌃⌥ to ask, tap ⌥⌘ to explain the
-/// highlighted text. Real shortcuts that use these modifiers keep working.
+/// highlighted text, hold fn+⌃ to dictate. Real shortcuts that use these modifiers keep working.
 ///
 /// Global monitors only receive events once Accessibility is granted; the local
 /// monitors keep the hotkeys working while ClickBait itself is frontmost.
@@ -52,13 +52,14 @@ final class HotkeyMonitor {
         events.forEach(handler)
     }
 
-    /// Caps Lock and Fn are ignored.
+    /// Caps Lock is ignored.
     private static func modifiers(from flags: NSEvent.ModifierFlags) -> Modifiers {
         var result: Modifiers = []
         if flags.contains(.control) { result.insert(.control) }
         if flags.contains(.option) { result.insert(.option) }
         if flags.contains(.command) { result.insert(.command) }
         if flags.contains(.shift) { result.insert(.shift) }
+        if flags.contains(.function) { result.insert(.function) }
         return result
     }
 }

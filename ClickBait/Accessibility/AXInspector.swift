@@ -710,3 +710,55 @@ private struct AXElement {
         return nil
     }
 }
+
+// MARK: - Dictation
+
+/// Where fn+⌃ dictation's words will go, and the words on screen that help spell them.
+struct DictationTarget: Sendable {
+    var windowTitle: String?
+    /// Names of controls in the app's window (buttons, labels, links…).
+    var labels: [String] = []
+    var role: String?
+    var subrole: String?
+    /// The focused element takes typed text.
+    var editable = false
+    /// Its text up to the caret (the last few hundred characters).
+    var textBeforeCaret: String?
+}
+
+extension AXInspector {
+    static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+
+    /// Read at the press of fn+⌃, off the main thread. Password fields give their role only,
+    /// never their text.
+    static func dictationTarget(pid: pid_t?) -> DictationTarget {
+        guard isTrusted, let pid else { return DictationTarget() }
+        var target = DictationTarget()
+        let app = element(AXUIElementCreateApplication(pid))
+        let window = app.element(kAXFocusedWindowAttribute)
+        target.windowTitle = window?.string(kAXTitleAttribute)
+        if let focused = element(AXUIElementCreateSystemWide()).element(kAXFocusedUIElementAttribute)
+            ?? app.element(kAXFocusedUIElementAttribute) {
+            target.role = focused.string(kAXRoleAttribute)
+            target.subrole = focused.string(kAXSubroleAttribute)
+            var settable = DarwinBoolean(false)
+            let valueSettable = AXUIElementIsAttributeSettable(focused.ref, kAXValueAttribute as CFString, &settable) == .success
+                && settable.boolValue
+            target.editable = valueSettable || target.role.map(textRoles.contains) == true
+            if target.editable, target.subrole != "AXSecureTextField", let value = focused.attribute(kAXValueAttribute) as? String {
+                var caret = value.utf16.count
+                if let selection = focused.attribute(kAXSelectedTextRangeAttribute), CFGetTypeID(selection) == AXValueGetTypeID() {
+                    var range = CFRange()
+                    // Type ID checked above.
+                    if AXValueGetValue(unsafeDowncast(selection, to: AXValue.self), .cfRange, &range) { caret = range.location }
+                }
+                let before = String(value.utf16.prefix(max(0, min(caret, value.utf16.count)))) ?? ""
+                target.textBeforeCaret = String(before.suffix(300))
+            }
+        }
+        if let frame = window?.frame {
+            target.labels = visibleElements(frontmostPID: pid, display: frame, budget: 0.25, limit: 80).map(\.label)
+        }
+        return target
+    }
+}

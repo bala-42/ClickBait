@@ -170,6 +170,7 @@ public struct OllamaProvider: LLMProvider {
         if ask.lookupQuery { options["num_predict"] = 60 }
         if ask.suggestNextAfter != nil { options["num_predict"] = 60 }
         if ask.routeIntent { options["num_predict"] = 40 }
+        if let heard = ask.dictation { options["num_predict"] = 40 + heard.count / 2 }
         // ~9 tokens a mark ("12": "Neptune",); 15 marks took 138.
         if !ask.markNames.isEmpty { options["num_predict"] = max(partsReplyTokens, ask.markCount * 14) }
         return options
@@ -186,6 +187,7 @@ public struct OllamaProvider: LLMProvider {
         if ask.routeIntent { return routeSchema }
         if ask.planTutorial { return tutorialSchema }
         if ask.tutorialCheck != nil { return progressSchema }
+        if ask.dictation != nil { return ["type": "object", "properties": ["text": ["type": "string"]], "required": ["text"]] }
         if ask.lookupQuery { return ["type": "object", "properties": ["query": ["type": "string"]], "required": ["query"]] }
         if ask.suggestNextAfter != nil {
             return ["type": "object",

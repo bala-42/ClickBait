@@ -85,7 +85,13 @@ final class OverlayModel {
     /// The flight's swell (1 at rest, up to 1.3 mid-flight; `FlightArc.scale`).
     var flightScale: CGFloat = 1
 
+    /// fn+⌃ dictation, from the press until the words are in: Shamrock, the action colour
+    /// (it ends with ClickBait typing), with the listening bars following the voice instead
+    /// of the action pulse, then the spin while the words are written. Never peeled.
+    var isDictating = false
+
     var tone: CompanionTone {
+        if isDictating { return .action }
         // Red from the circling until the parts are pointed at (or there's nothing to point).
         if isSnipping || isTouring || isSnipThinking { return .capture }
         // Opening or switching apps is green, also inside a walkthrough (lavender hid it).

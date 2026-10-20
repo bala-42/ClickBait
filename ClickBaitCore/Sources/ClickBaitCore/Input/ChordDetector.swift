@@ -7,6 +7,7 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
     public static let option = Modifiers(rawValue: 1 << 1)
     public static let command = Modifiers(rawValue: 1 << 2)
     public static let shift = Modifiers(rawValue: 1 << 3)
+    public static let function = Modifiers(rawValue: 1 << 4)
 }
 
 /// Turns modifier changes and key presses into ClickBait's two hotkeys:
@@ -15,6 +16,8 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
 /// - **Explain / snip** — ⌥⌘ (Option+Command) alone. A tap explains the highlighted
 ///   text; holding it while tracing or dragging snips part of the screen. Which one it
 ///   was is decided by the app from what happened between press and release.
+/// - **Dictate** — hold fn+⌃ (Function+Control) alone, talk, let go: the words are typed
+///   into the focused field (`Dictation`).
 ///
 /// Pressing any other key, or adding another modifier, means the user is reaching for a
 /// real shortcut (⌃⌥←, ⌥⌘Esc, ⌥⌘D…): either chord is cancelled.
@@ -26,12 +29,17 @@ public struct ChordDetector: Sendable {
         case explainPressed
         case explainReleased
         case explainCancelled
+        case dictatePressed
+        case dictateReleased
+        case dictateCancelled
     }
 
     public static let ask: Modifiers = [.control, .option]
     public static let explain: Modifiers = [.option, .command]
+    public static let dictate: Modifiers = [.control, .function]
 
     private var askHeld = false
+    private var dictateHeld = false
     private var explainArmed = false
 
     public init() {}
@@ -47,6 +55,16 @@ public struct ChordDetector: Sendable {
         } else if askHeld {
             askHeld = false
             events.append(modifiers.isStrictSuperset(of: Self.ask) ? .askCancelled : .askReleased)
+        }
+
+        if modifiers == Self.dictate {
+            if !dictateHeld {
+                dictateHeld = true
+                events.append(.dictatePressed)
+            }
+        } else if dictateHeld {
+            dictateHeld = false
+            events.append(modifiers.isStrictSuperset(of: Self.dictate) ? .dictateCancelled : .dictateReleased)
         }
 
         if modifiers == Self.explain {
@@ -71,6 +89,10 @@ public struct ChordDetector: Sendable {
         if askHeld {
             askHeld = false
             events.append(.askCancelled)
+        }
+        if dictateHeld {
+            dictateHeld = false
+            events.append(.dictateCancelled)
         }
         return events
     }

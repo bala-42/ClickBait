@@ -220,6 +220,23 @@ final class OverlayController {
         scheduleDismiss(after: .seconds(5))
     }
 
+    /// fn+⌃ dictation: Shamrock bars that follow the voice while held (`listening`), the
+    /// Shamrock spin while the words are written (`!listening`), then back to idle.
+    func setDictating(_ on: Bool, listening: Bool = true) {
+        model.isDictating = on
+        guard on else {
+            switch model.bubble {
+            case .listening, .thinking: model.bubble = .idle
+            default: break
+            }
+            return
+        }
+        endGuide()
+        dismissTask?.cancel()
+        setCompanionHidden(false)
+        model.bubble = listening ? .listening : .thinking(heard: nil)
+    }
+
     /// A hello on coming back: typed out, held briefly, gone (`Greeting.timing`). Only when
     /// the companion has nothing else to say; false when it was busy.
     @discardableResult

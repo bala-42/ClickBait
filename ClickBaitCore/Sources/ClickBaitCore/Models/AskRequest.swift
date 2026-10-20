@@ -73,6 +73,9 @@ public struct AskRequest: Sendable {
     /// A finished background answer's card (`Prompt.nextSystem`, text only): up to two short
     /// follow-up questions to offer under "suggested next:". Holds the answer.
     public var suggestNextAfter: String?
+    /// fn+⌃ dictation's tidy-up (`Prompt.dictationSystem`, text only): what Whisper heard.
+    /// `screenWords` holds the spelling hints, `context.appName` the app it's for.
+    public var dictation: String?
     /// For that step: words read on this Mac near the pointer (never sent anywhere but Ollama),
     /// and the chat's earlier question for a follow-up like "look it up".
     public var screenWords: String?

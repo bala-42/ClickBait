@@ -187,6 +187,8 @@ final class AskCoordinator {
             snipper.cancel()
             explainTaps.reset()
             ignoreExplainRelease = false
+        case .dictatePressed, .dictateReleased, .dictateCancelled:
+            break  // `DictationController`
         }
     }
 
@@ -537,6 +539,10 @@ final class AskCoordinator {
             Log.ask.notice("⌃⌥ ignored: a card's voice panel is recording")
             return
         }
+        guard !isDictating else {
+            Log.ask.notice("⌃⌥ ignored: dictating")
+            return
+        }
         guard acceptsNewQuestion() else { return }
         stopRefining()
         tutorial?.stop(message: nil)  // a new question ends a tutorial
@@ -642,28 +648,39 @@ final class AskCoordinator {
     /// Starts the microphone for a card's voice panel. Nil, or why it can't.
     func startCardRecording() -> String? {
         guard !isCardRecording else { return nil }
-        guard state == .idle, currentFlow == nil, !isAnswering else {
+        if let reason = voiceUnavailable() { return reason }
+        if let error = startRecorder(for: "Card voice") { return "Couldn't start the microphone: \(error.localizedDescription)" }
+        isCardRecording = true
+        Log.ask.notice("Card voice: recording")
+        return nil
+    }
+
+    /// Why the microphone can't be used for a card's voice panel or dictation now, or nil.
+    private func voiceUnavailable() -> String? {
+        guard state == .idle, currentFlow == nil, !isAnswering, !isCardRecording, !isDictating else {
             return "ClickBait is busy with a question. Try again in a moment."
         }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             return "Microphone access is off. Open Permissions… from the menu bar icon."
         }
         switch speech.state {
-        case .ready: break
+        case .ready: return nil
         case .notDownloaded, .downloading, .importing: return "The speech model isn't downloaded yet. Open Settings… → Speech."
         case .loading: return "The speech model is still loading. Try again in a moment."
         case .failed(let message): return message
         }
+    }
+
+    /// Starts recording; nil, or the error (logged).
+    private func startRecorder(for use: String) -> Error? {
         speaker.stop()  // never record ClickBait talking
         do {
             try recorder.start()
+            return nil
         } catch {
-            Log.input.error("Card voice: recorder failed to start: \(error.localizedDescription, privacy: .public)")
-            return "Couldn't start the microphone: \(error.localizedDescription)"
+            Log.input.error("\(use, privacy: .public): recorder failed to start: \(error.localizedDescription, privacy: .public)")
+            return error
         }
-        isCardRecording = true
-        Log.ask.notice("Card voice: recording")
-        return nil
     }
 
     /// The card's voice panel folded or switched mid-recording: the recording is dropped.
@@ -696,6 +713,50 @@ final class AskCoordinator {
 
     struct CardVoiceError: Error {
         let message: String
+    }
+
+    // MARK: - Dictation (fn+⌃, `DictationController`)
+
+    /// The microphone is on for dictation, or its words are still being turned into text.
+    @ObservationIgnored private(set) var isDictating = false
+
+    /// Starts the microphone for dictation. Nil, or why it can't.
+    func startDictation() -> String? {
+        if let reason = voiceUnavailable() { return reason }
+        if let error = startRecorder(for: "Dictation") { return "Couldn't start the microphone: \(error.localizedDescription)" }
+        isDictating = true
+        return nil
+    }
+
+    /// Stops the microphone and returns what was said ("" when nothing was), with `prompt`'s
+    /// words as Whisper's spelling hints. Dictation stays on until `endDictation()`.
+    func finishDictation(prompt: String) async -> Result<String, CardVoiceError> {
+        guard isDictating else { return .failure(CardVoiceError(message: "The recording had already stopped.")) }
+        let audio = AudioConditioner.condition(recorder.stop(), sampleRate: AudioRecorder.sampleRate)
+        guard !audio.isSilent else { return .success("") }
+        do {
+            return .success(try await speech.transcribe(audio.samples, prompt: prompt))
+        } catch {
+            Log.ask.error("Dictation: transcription failed: \(error.localizedDescription, privacy: .public)")
+            return .failure(CardVoiceError(message: "Couldn't understand the recording: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Dictation is over (finished or dropped): the microphone is off.
+    func endDictation() {
+        guard isDictating else { return }
+        _ = recorder.stop()
+        isDictating = false
+    }
+
+    /// Dictation's tidy-up: one short text-only request (`Prompt.dictationSystem`). Nil if it's
+    /// slower than `Dictation.tidyLimit` or fails; the caller then uses the raw words.
+    func tidyDictation(_ heard: String, app: String?, screenWords: String) async -> String? {
+        var ask = AskRequest(question: "", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                             context: ScreenContext(appName: app), selectedText: nil)
+        ask.dictation = heard
+        ask.screenWords = screenWords.isEmpty ? nil : screenWords
+        return await Self.reply(from: settings.makeProvider(), to: ask, within: Dictation.tidyLimit(for: heard))
     }
 
     /// A follow-up typed or spoken into a done card's mini-chat: asked in the dock, the tile
@@ -1383,7 +1444,7 @@ final class AskCoordinator {
     }
 
     /// The microphone's level while listening, for the waveform.
-    var microphoneLevel: Float { state == .listening ? recorder.level : 0 }
+    var microphoneLevel: Float { state == .listening || isDictating ? recorder.level : 0 }
 
     // MARK: - Proposed actions (phase E, step 4)
 

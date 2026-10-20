@@ -39,21 +39,31 @@ actor Transcriber {
         loadedFolder = modelFolder
     }
 
+    /// Whisper conditions on up to ~224 tokens; fewer keeps it fast and stops a prompt leaking in.
+    private static let maxPromptTokens = 120
+
     func unload() {
         whisper = nil
         loadedFolder = nil
     }
 
     /// Transcribes 16 kHz mono samples. Returns an empty string when nothing was said
-    /// (Whisper's non-speech labels like `[BLANK_AUDIO]` are stripped).
-    func transcribe(_ samples: [Float]) async throws -> String {
+    /// (Whisper's non-speech labels like `[BLANK_AUDIO]` are stripped). `prompt`: words Whisper
+    /// reads as what came before (dictation's screen words), so it spells them the same way.
+    func transcribe(_ samples: [Float], prompt: String? = nil) async throws -> String {
         guard let whisper else { throw TranscriberError.notLoaded }
+        var promptTokens: [Int]?
+        if let prompt, !prompt.isEmpty, let tokenizer = whisper.tokenizer {
+            let special = tokenizer.specialTokens.specialTokenBegin
+            promptTokens = Array(tokenizer.encode(text: " " + prompt).filter { $0 < special }.suffix(Self.maxPromptTokens))
+        }
         let options = DecodingOptions(
             task: .transcribe,
             language: "en",
             temperature: 0,
             skipSpecialTokens: true,
             withoutTimestamps: true,
+            promptTokens: promptTokens,
             suppressBlank: true,
             // Whisper's own no-speech filter dropped short, quiet questions; silence is
             // caught before transcribing instead (AudioConditioner).

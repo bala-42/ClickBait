@@ -13,7 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissions = PermissionsManager()
     private lazy var speech = SpeechModelManager(settings: settings)
     private lazy var coordinator = AskCoordinator(settings: settings, speech: speech)
-    private lazy var hotkey = HotkeyMonitor { [weak self] event in self?.coordinator.handle(event) }
+    private lazy var hotkey = HotkeyMonitor { [weak self] event in
+        switch event {
+        case .dictatePressed, .dictateReleased, .dictateCancelled: self?.dictation.handle(event)
+        default: self?.coordinator.handle(event)
+        }
+    }
+    private lazy var dictation = DictationController(coordinator: coordinator, overlay: overlay)
     private var statusBar: StatusBarController?
     private let overlay = OverlayController()
     private lazy var greeter = Greeter(settings: settings, overlay: overlay)

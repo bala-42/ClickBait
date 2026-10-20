@@ -178,8 +178,8 @@ final class SpeechModelManager {
         state = .downloading(fraction: fraction * 0.95)
     }
 
-    func transcribe(_ samples: [Float]) async throws -> String {
-        try await transcriber.transcribe(samples)
+    func transcribe(_ samples: [Float], prompt: String? = nil) async throws -> String {
+        try await transcriber.transcribe(samples, prompt: prompt)
     }
 
     private func installedFolder(for model: SpeechModel) -> URL? {
