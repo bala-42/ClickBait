@@ -49,6 +49,7 @@ final class BackgroundJobs {
 
     private(set) var entries: [Entry] = [] {
         didSet {
+            keepAwake(entries.contains { $0.job.isWorking })
             guard !streaming else { return }
             pendingChange?.cancel()
             pendingChange = nil
@@ -61,6 +62,21 @@ final class BackgroundJobs {
     private var pendingChange: Task<Void, Never>?
     private static let streamInterval: Duration = .milliseconds(100)
     var onChange: (([Entry]) -> Void)?
+
+    /// While any job is working the Mac doesn't idle-sleep and ClickBait isn't napped, so a
+    /// long answer finishes with nobody touching the Mac; the screen can still dim and lock.
+    /// Idea from Sentient OS.
+    @ObservationIgnored private var awake: NSObjectProtocol?
+
+    private func keepAwake(_ on: Bool) {
+        if on, awake == nil {
+            awake = ProcessInfo.processInfo.beginActivity(options: .userInitiated,
+                                                          reason: "ClickBait is answering in the background")
+        } else if !on, let activity = awake {
+            ProcessInfo.processInfo.endActivity(activity)
+            awake = nil
+        }
+    }
 
     var count: Int { entries.count }
     var hasRoom: Bool { count < AgentDock.maxTiles }
