@@ -208,83 +208,6 @@ public enum VolumeStep {
 }
 
 
-/// The open notch's calendar strip, as in the GIF: six days, today third (two before, three
-/// after), each with its short weekday and day number. Pure.
-public enum CalendarStrip {
-    public struct Day: Equatable, Sendable {
-        public let weekday: String
-        public let number: Int
-        public let isToday: Bool
-    }
-
-    public static func days(around today: Date, calendar: Calendar = .current, locale: Locale = .current) -> [Day] {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.dateFormat = "EEE"
-        return (-2...3).compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
-            return Day(weekday: formatter.string(from: day), number: calendar.component(.day, from: day), isToday: offset == 0)
-        }
-    }
-}
-
-/// Date-only navigation for the notch calendar. Every operation preserves the selected day
-/// when possible and clamps it to the end of shorter months.
-public enum CalendarNavigation {
-    public static func today(now: Date = .now, calendar: Calendar = .current) -> Date {
-        calendar.startOfDay(for: now)
-    }
-
-    public static func date(year: Int, month: Int, preservingDay day: Int, calendar: Calendar = .current) -> Date? {
-        guard (1...12).contains(month) else { return nil }
-        var components = DateComponents()
-        components.calendar = calendar
-        components.timeZone = calendar.timeZone
-        components.year = year
-        components.month = month
-        components.day = 1
-        guard let first = calendar.date(from: components),
-              let range = calendar.range(of: .day, in: .month, for: first), !range.isEmpty else { return nil }
-        components.day = min(max(day, range.lowerBound), range.upperBound - 1)
-        return calendar.date(from: components)
-    }
-
-    public static func addingMonths(_ amount: Int, to date: Date, calendar: Calendar = .current) -> Date? {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let year = parts.year, let month = parts.month, let day = parts.day,
-              let first = self.date(year: year, month: month, preservingDay: 1, calendar: calendar),
-              let moved = calendar.date(byAdding: .month, value: amount, to: first) else { return nil }
-        let movedParts = calendar.dateComponents([.year, .month], from: moved)
-        guard let movedYear = movedParts.year, let movedMonth = movedParts.month else { return nil }
-        return self.date(year: movedYear, month: movedMonth, preservingDay: day, calendar: calendar)
-    }
-
-    public static func monthDays(containing date: Date, calendar: Calendar = .current) -> [Date] {
-        guard let interval = calendar.dateInterval(of: .month, for: date),
-              let count = calendar.range(of: .day, in: .month, for: date)?.count else { return [] }
-        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: interval.start) }
-    }
-
-    public static func isSameDay(_ lhs: Date, _ rhs: Date, calendar: Calendar = .current) -> Bool {
-        calendar.isDate(lhs, inSameDayAs: rhs)
-    }
-}
-
-/// Identifies the newest agenda fetch so a slower response for an earlier date can be ignored.
-public struct CalendarRequestSequence: Sendable {
-    private var generation: UInt64 = 0
-
-    public init() {}
-
-    @discardableResult public mutating func next() -> UInt64 {
-        generation &+= 1
-        return generation
-    }
-
-    public func isCurrent(_ request: UInt64) -> Bool { request == generation }
-}
-
 /// A track's times as the GIF shows them ("2:57", "3:54", "1:02:05" past an hour), and the
 /// position a drag along the progress bar asks for. Pure.
 public enum TrackTime {
@@ -301,14 +224,6 @@ public enum TrackTime {
     }
 
     /// Where playback is now: the last reading, plus the time since while playing.
-    /// What the AirDrop pad sends: the files dropped on it; else the shelf's selection, in
-    /// shelf order; else every file on the shelf. Files only, each once.
-    public static func airDropItems(dropped: [URL] = [], shelf: [URL], selected: Set<URL>) -> [URL] {
-        var seen = Set<URL>()
-        let chosen = !dropped.isEmpty ? dropped : selected.isEmpty ? shelf : shelf.filter(selected.contains)
-        return chosen.filter { $0.isFileURL && seen.insert($0).inserted }
-    }
-
     public static func now(reported: Double, at reading: Date, playing: Bool, duration: Double, now: Date = .now) -> Double {
         let elapsed = playing ? now.timeIntervalSince(reading) : 0
         return min(max(reported + elapsed, 0), max(duration, 0))

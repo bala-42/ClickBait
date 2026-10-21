@@ -114,61 +114,6 @@ struct NotchPanelTests {
     }
 }
 
-struct CalendarStripTests {
-    @Test func sixDaysTodayThirdLikeTheGIF() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let wednesday = try #require(calendar.date(from: DateComponents(year: 2025, month: 8, day: 13)))
-        let days = CalendarStrip.days(around: wednesday, calendar: calendar, locale: Locale(identifier: "en_US"))
-        #expect(days.map(\.number) == [11, 12, 13, 14, 15, 16])
-        #expect(days.map(\.weekday) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
-        #expect(days.map(\.isToday) == [false, false, true, false, false, false])
-    }
-
-    @Test func monthAndYearChangesClampInvalidDays() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let leapDay = try #require(CalendarNavigation.date(year: 2024, month: 2, preservingDay: 29, calendar: calendar))
-        let nextYear = try #require(CalendarNavigation.date(year: 2025, month: 2, preservingDay: 29, calendar: calendar))
-        #expect(calendar.component(.day, from: leapDay) == 29)
-        #expect(calendar.component(.day, from: nextYear) == 28)
-        #expect(CalendarNavigation.monthDays(containing: leapDay, calendar: calendar).count == 29)
-        #expect(CalendarNavigation.monthDays(containing: nextYear, calendar: calendar).count == 28)
-    }
-
-    @Test func monthStepsCrossYearBoundariesAndClamp() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let january31 = try #require(CalendarNavigation.date(year: 2025, month: 1, preservingDay: 31, calendar: calendar))
-        let february = try #require(CalendarNavigation.addingMonths(1, to: january31, calendar: calendar))
-        #expect(calendar.dateComponents([.year, .month, .day], from: february) == DateComponents(year: 2025, month: 2, day: 28))
-        let december = try #require(CalendarNavigation.addingMonths(-1, to: january31, calendar: calendar))
-        #expect(calendar.dateComponents([.year, .month, .day], from: december) == DateComponents(year: 2024, month: 12, day: 31))
-        let january = try #require(CalendarNavigation.addingMonths(1, to: december, calendar: calendar))
-        #expect(calendar.dateComponents([.year, .month, .day], from: january) == DateComponents(year: 2025, month: 1, day: 31))
-    }
-
-    @Test func rapidDateRequestsMakeOlderAgendaResultsStale() {
-        var sequence = CalendarRequestSequence()
-        let first = sequence.next()
-        let second = sequence.next()
-        let third = sequence.next()
-        #expect(!sequence.isCurrent(first))
-        #expect(!sequence.isCurrent(second))
-        #expect(sequence.isCurrent(third))
-    }
-
-    @Test func todayReturnsTheCurrentLocalDayStart() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        let now = try #require(calendar.date(from: DateComponents(year: 2025, month: 1, day: 1, hour: 23, minute: 45)))
-        let today = CalendarNavigation.today(now: now, calendar: calendar)
-        #expect(calendar.isDate(today, inSameDayAs: now))
-        #expect(calendar.component(.hour, from: today) == 0)
-        #expect(calendar.component(.day, from: today) == 1)
-    }
-}
-
 struct TrackTimeTests {
     @Test func timesReadLikeTheGIF() {
         #expect(TrackTime.text(177.9) == "2:57")
