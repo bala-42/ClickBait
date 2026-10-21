@@ -179,11 +179,7 @@ struct NotchView: View {
 
     /// The motion: a lively spring opening (and for tab changes), a quick ease-out closing.
     private func spring(open: Bool) -> Animation {
-        guard open else {
-            let c = NotchPanel.closeCurve
-            return .timingCurve(c.x1, c.y1, c.x2, c.y2, duration: c.duration)
-        }
-        return .spring(response: NotchPanel.openSpring.response, dampingFraction: NotchPanel.openSpring.damping)
+        open ? Look.Motion.open : Look.Motion.close
     }
 }
 
@@ -396,9 +392,9 @@ private struct FocusCard: View {
             : modelNote?.color ?? NotchBean.color(for: mood)
         ZStack(alignment: .topLeading) {
             if music.hasTrack, music.artwork != nil {
-                Artwork(music: music, corner: 12)
+                Artwork(music: music, corner: Look.Corner.tile)
                     .frame(width: Self.coverSize, height: Self.coverSize)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
                     .onTapGesture { music.openPlayer() }
                     .help("Open \(music.player?.name ?? "the player")")
@@ -594,7 +590,7 @@ private struct IslandPill: View {
         .buttonStyle(.plain)
         .scaleEffect(hovering ? 1.04 : 1)
         .brightness(hovering ? 0.06 : 0)
-        .onHover { hover in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hovering = hover } }
+        .onHover { hover in withAnimation(Look.Motion.press) { hovering = hover } }
         .accessibilityLabel(pill.name)
     }
 }
@@ -886,7 +882,7 @@ private struct AirDropPad: View {
         .buttonStyle(PlayerPressStyle())
         .notchCard(wash: targeted ? NotchPalette.highlight.opacity(0.45) : nil)
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous)
                 .strokeBorder(NotchPalette.highlight, lineWidth: 1.5)
                 .opacity(targeted ? 1 : 0)
         }
@@ -980,7 +976,7 @@ private struct ShelfView: View {
                 }
             }
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous)
                     .strokeBorder(targeted ? NotchPalette.highlight : Color.white.opacity(0.12),
                                   style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [4, 4] : []))
                 if shelf.files.isEmpty {
@@ -1037,7 +1033,7 @@ private struct ShelfView: View {
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .notchCard()
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous)
             .strokeBorder(NotchPalette.highlight.opacity(noteFocused ? 0.5 : 0), lineWidth: 1))
         .animation(.easeOut(duration: 0.14), value: noteFocused)
         .onChange(of: noteFocused) { _, now in onEditing(now) }
@@ -1060,8 +1056,8 @@ private struct ShelfView: View {
         }
         .frame(width: 58, height: 62)
         .background(selected ? NotchPalette.highlight.opacity(0.16) : Color.white.opacity(0.045),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous)
             .strokeBorder(selected ? NotchPalette.highlight.opacity(0.75) : Color.white.opacity(0.07), lineWidth: 1))
         .overlay(alignment: .topLeading) {
             if selected {

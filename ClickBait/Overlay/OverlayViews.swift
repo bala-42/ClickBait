@@ -192,7 +192,7 @@ struct TinyPill: View {
         .padding(.vertical, 4)
         .modifier(ToneFill(fill: isProblem ? CompanionTone.problem.opacity(0.94) : tone.color.opacity(0.9),
                            glow: isProblem ? CompanionTone.problem.opacity(Glow.opacity) : tone.color.opacity(Glow.opacity),
-                           shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+                           shape: RoundedRectangle(cornerRadius: Look.Corner.pill, style: .continuous)))
         .padding(.top, 3)
     }
 }
@@ -376,11 +376,11 @@ private struct GuidePill: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .modifier(ToneFill(fill: tone.color.opacity(0.9), glow: tone.color.opacity(Glow.opacity),
-                           shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
+                           shape: RoundedRectangle(cornerRadius: Look.Corner.pill, style: .continuous)))
         // The pop's bright glow (+1.0 opacity, +16 pt), drawn once and faded out as the pill
         // grows: animating the shadow's radius re-blurred it every frame (+0.12 s a tour).
         .background {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: Look.Corner.pill, style: .continuous)
                 .fill(tone.color)
                 .shadow(color: tone.color, radius: Glow.radius + 16)
                 .drawingGroup()

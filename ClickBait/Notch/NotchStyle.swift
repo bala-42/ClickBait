@@ -40,7 +40,7 @@ extension Color {
 /// below (a ClickBait tone when the card is about a state).
 struct NotchCard: ViewModifier {
     var wash: Color?
-    var corner: CGFloat = 20
+    var corner: CGFloat = Look.Corner.card
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -60,7 +60,7 @@ struct NotchCard: ViewModifier {
 }
 
 extension View {
-    func notchCard(wash: Color? = nil, corner: CGFloat = 20) -> some View {
+    func notchCard(wash: Color? = nil, corner: CGFloat = Look.Corner.card) -> some View {
         modifier(NotchCard(wash: wash, corner: corner))
     }
 }
@@ -247,6 +247,6 @@ struct PlayerPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(Look.Motion.press, value: configuration.isPressed)
     }
 }

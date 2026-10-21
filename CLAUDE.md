@@ -34,6 +34,8 @@ ClickBait/                 macOS app target (AppKit/SwiftUI shell)
   App/                     AppDelegate, menu bar (NSStatusItem), Settings window
                            AskCoordinator: state in AskCoordinator.swift, each flow in AskCoordinator+<Flow>.swift
                            (Chat, Dictation, Background, Explain, Actions, Tutorials, Snip, Answering)
+                           Look: the shared corners (pill 11, tile 12, card 20) and motions (press, reveal,
+                           the island's open and close), named once; use them instead of new literals
   Input/                   HotkeyMonitor (hold Control+Option via flagsChanged), AudioRecorder (AVAudioEngine)
   Capture/                 ScreenCapturer (ScreenCaptureKit, display under cursor)
   Accessibility/           AXInspector: frontmost app, focused element, hit-testing, element snapping

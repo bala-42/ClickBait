@@ -74,13 +74,13 @@ struct ChatView: View {
         .onAppear {
             // A beat later: the card has measured itself and knows where the companion is.
             DispatchQueue.main.async {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.86)) { shown = true }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : Look.Motion.reveal) { shown = true }
             }
         }
         .animation(.easeIn(duration: 0.18), value: model.isClosing)
         // Tucks away quickly; comes back with the same spring it opened with.
         .animation(model.isTucked ? .easeIn(duration: 0.18)
-                   : (reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.86)),
+                   : (reduceMotion ? .easeOut(duration: 0.15) : Look.Motion.reveal),
                    value: model.isTucked)
     }
 
