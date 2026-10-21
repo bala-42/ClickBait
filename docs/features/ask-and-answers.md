@@ -53,3 +53,15 @@ Spoken and typed asks send the model a numbered list of up to 50 clickable thing
 
 #### Listening
 Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips silent recordings (peak < 0.01), lifts quiet ones (up to 12×) and adds 0.2 s lead-in; Whisper's own no-speech filter is off. What was heard shows in a tiny pill while thinking.
+
+## Speed
+
+**Screenshot size bench (`AskBench`, Debug, 2026-10-21; qwen3.5:9b, 3024×1964 capture, Chrome and Terminal in front).** One capture kept in memory, sent at several long edges: a general question, the menu bar read from the picture, and "where is …?" with the element list as ClickBait sends it. Three runs:
+
+| long edge | general answer (median) | menu names read | where-is hits (with list) |
+|---|---|---|---|
+| 1280 | 8.3 / 8.4 / 8.0 s | 9/12, 15/30 | 10/12, 15/18 |
+| 1024 | 7.1 / 9.0 s | 9/12 | 10/12 |
+| 896 | 6.7 / 8.0 / 7.1 s | 10/12, 15/30 | 10/12, 15/18 |
+
+896 px saves ~0.4–1.6 s with the same pointing and menu reading. Not measured: reading small text (code, error messages, 11–13 pt), which a smaller picture risks most. Without the element list the model found no menu-bar item from the picture alone, even at 1280. `ScreenshotEncoder.maxLongEdge` stays 1280 until small-text reading is measured. Run with `open -W -n --env CLICKBAIT_ASK_BENCH=1280,896 --env CLICKBAIT_ASK_BENCH_OUT=<folder> <ClickBait.app>` (through `open`, so the app's own Screen Recording permission applies), with ClickBait not in use.

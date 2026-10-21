@@ -26,9 +26,10 @@ enum ScreenshotEncoder {
     /// CGImage is immutable and thread-safe; it just isn't annotated Sendable.
     private struct ImageBox: @unchecked Sendable { let image: CGImage }
 
-    static func encode(_ image: CGImage) throws -> EncodedScreenshot {
+    /// `limit`: the sent long edge (`maxLongEdge`; `AskBench` tries others).
+    static func encode(_ image: CGImage, longEdge limit: Int = maxLongEdge) throws -> EncodedScreenshot {
         let longEdge = max(image.width, image.height)
-        let downscale = max(1, Double(longEdge) / Double(maxLongEdge))
+        let downscale = max(1, Double(longEdge) / Double(limit))
         let width = Int((Double(image.width) / downscale).rounded())
         let height = Int((Double(image.height) / downscale).rounded())
 
