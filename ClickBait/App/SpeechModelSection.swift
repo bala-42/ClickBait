@@ -13,7 +13,7 @@ struct SpeechModelSection: View {
             if showsPicker {
                 Picker("Model", selection: $settings.speechModel) {
                     // Row builder is nonisolated: see the note in SettingsWindowController.swift.
-                    ForEach(SpeechModel.allCases, content: Self.modelRow)
+                    ForEach(SpeechModel.offered, content: Self.modelRow)
                 }
                 .onChange(of: settings.speechModel) { speech.loadIfInstalled() }
                 .disabled(isBusy)
@@ -23,12 +23,14 @@ struct SpeechModelSection: View {
                 status
                 Spacer()
                 if needsDownload {
-                    Button("Import from a file…") { chooseFile() }
+                    if settings.speechModel != .apple { Button("Import from a file…") { chooseFile() } }
                     Button("Download") { speech.download() }
                 }
             }
 
-            Text("Speech is recognized on your Mac. The model is downloaded once from Hugging Face when you click Download — nothing else ever leaves your Mac for this. No internet? Import the SpeechModels folder (or a .zip of it) from a Mac that has it: ~/Library/Application Support/ClickBait/SpeechModels.")
+            Text(settings.speechModel == .apple
+                 ? "Speech is recognized on your Mac by Apple's on-device model. macOS downloads it once from Apple when you click Download; your speech never leaves your Mac."
+                 : "Speech is recognized on your Mac. The model is downloaded once from Hugging Face when you click Download — nothing else ever leaves your Mac for this. No internet? Import the SpeechModels folder (or a .zip of it) from a Mac that has it: ~/Library/Application Support/ClickBait/SpeechModels.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -3,12 +3,22 @@ import Foundation
 import Observation
 @preconcurrency import WhisperKit
 
-/// The Whisper models offered in Settings. English-only variants are faster and more
-/// accurate for English than the multilingual ones of the same size.
+/// The speech models offered in Settings: Whisper's (English-only variants are faster and more
+/// accurate for English than the multilingual ones of the same size) and, on macOS 26+, Apple's.
 enum SpeechModel: String, CaseIterable, Identifiable {
     case tinyEnglish = "tiny.en"
     case baseEnglish = "base.en"
     case smallEnglish = "small.en"
+    /// Apple's on-device recognizer (`AppleSpeech`), macOS 26+.
+    case apple = "apple"
+
+    static let whisper: [SpeechModel] = [.tinyEnglish, .baseEnglish, .smallEnglish]
+
+    /// What the picker shows: Apple's only where this Mac can run it.
+    static var offered: [SpeechModel] {
+        if #available(macOS 26, *), AppleSpeech.isAvailable { return whisper + [.apple] }
+        return whisper
+    }
 
     static let `default`: SpeechModel = .baseEnglish
 
@@ -22,6 +32,7 @@ enum SpeechModel: String, CaseIterable, Identifiable {
         case .tinyEnglish: "Tiny (English, ~75 MB) — fastest"
         case .baseEnglish: "Base (English, ~145 MB) — recommended"
         case .smallEnglish: "Small (English, ~480 MB) — most accurate"
+        case .apple: "Apple on-device (English, macOS 26+)"
         }
     }
 }
@@ -53,7 +64,8 @@ final class SpeechModelManager {
 
     init(settings: AppSettings) {
         self.settings = settings
-        state = installedFolder(for: settings.speechModel) == nil ? .notDownloaded : .loading
+        // Apple's model is checked asynchronously by `loadIfInstalled`.
+        state = settings.speechModel == .apple || installedFolder(for: settings.speechModel) != nil ? .loading : .notDownloaded
     }
 
     var isReady: Bool { state == .ready }
@@ -67,6 +79,7 @@ final class SpeechModelManager {
     /// Loads the selected model if it's already downloaded. Never downloads.
     func loadIfInstalled() {
         let model = settings.speechModel
+        if model == .apple { return loadApple() }
         guard let folder = installedFolder(for: model) else {
             state = .notDownloaded
             Task { await transcriber.unload() }
@@ -96,6 +109,7 @@ final class SpeechModelManager {
         work?.cancel()
         state = .downloading(fraction: 0)
         Log.app.notice("User started speech model download: \(model.rawValue, privacy: .public)")
+        if model == .apple { return downloadApple() }
 
         let reportProgress: ProgressCallback = { [weak self] progress in
             let fraction = progress.fractionCompleted
@@ -146,7 +160,7 @@ final class SpeechModelManager {
         work?.cancel()
         state = .importing
         let preferred = settings.speechModel.rawValue
-        let variants = SpeechModel.allCases.map(\.rawValue)
+        let variants = SpeechModel.whisper.map(\.rawValue)
         let base = Self.baseDirectory
         Log.app.notice("User started speech model import (\(source.pathExtension.lowercased() == "zip" ? "zip" : "folder", privacy: .public))")
         work = Task {
@@ -178,8 +192,47 @@ final class SpeechModelManager {
         state = .downloading(fraction: fraction * 0.95)
     }
 
+    /// `prompt` (dictation's screen words) only steers Whisper; Apple's recognizer ignores it.
     func transcribe(_ samples: [Float], prompt: String? = nil) async throws -> String {
-        try await transcriber.transcribe(samples, prompt: prompt)
+        if settings.speechModel == .apple, #available(macOS 26, *) { return try await AppleSpeech.transcribe(samples) }
+        return try await transcriber.transcribe(samples, prompt: prompt)
+    }
+
+    /// Apple's model is a system asset: ready once installed; Whisper is unloaded to free memory.
+    private func loadApple() {
+        work?.cancel()
+        guard #available(macOS 26, *), AppleSpeech.isAvailable else {
+            state = .failed("Apple speech needs macOS 26 on Apple silicon.")
+            return
+        }
+        state = .loading
+        work = Task {
+            await transcriber.unload()
+            let installed = await AppleSpeech.isInstalled()
+            guard settings.speechModel == .apple else { return }
+            state = installed ? .ready : .notDownloaded
+        }
+    }
+
+    private func downloadApple() {
+        guard #available(macOS 26, *), AppleSpeech.isAvailable else {
+            state = .failed("Apple speech needs macOS 26 on Apple silicon.")
+            return
+        }
+        work = Task {
+            do {
+                try await AppleSpeech.install { fraction in
+                    Task { @MainActor in self.updateDownloadProgress(fraction) }
+                }
+                Log.app.notice("Apple speech model installed")
+                loadApple()
+            } catch is CancellationError {
+                state = .notDownloaded
+            } catch {
+                state = .failed("Download failed: \(error.localizedDescription)")
+                Log.app.error("Apple speech install failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     private func installedFolder(for model: SpeechModel) -> URL? {
