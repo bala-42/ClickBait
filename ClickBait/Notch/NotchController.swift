@@ -272,6 +272,9 @@ final class NotchController {
         let panel = panels[displayID] ?? makePanel(target, notch: notch, displayID: displayID)
         panels[displayID] = panel
         panel.takesKeyboard = model.state == .expanded
+        // macOS can drop `.canJoinAllSpaces` when a window is reordered, stranding it on one
+        // Space; set it again on every placement (adapted from Sentient OS, AGPL-3.0).
+        panel.collectionBehavior = Self.collectionBehavior
         if !panel.isVisible { panel.setFrame(target, display: true); panel.orderFrontRegardless() }
         if model.state != .expanded, panel.isKeyWindow { panel.resignKey() }
         frameTasks[displayID]?.cancel()
@@ -299,6 +302,9 @@ final class NotchController {
         }
     }
 
+    private static let collectionBehavior: NSWindow.CollectionBehavior =
+        [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+
     private func makePanel(_ frame: CGRect, notch: Rect?, displayID: UInt32) -> Panel {
         let panel = Panel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -306,7 +312,7 @@ final class NotchController {
         panel.hasShadow = false
         // Above the menu bar, where the notch is; below the dock and the companion (`WindowLayers`).
         panel.level = WindowLayers.notch
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.collectionBehavior = Self.collectionBehavior
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         let host = PullHostingView(rootView: NotchView(
@@ -332,6 +338,7 @@ final class NotchController {
     /// The pointer, read from every mouse move (a non-activating panel gets no hover events
     /// while another app is in front): coming onto the notch slides it out (peek, then open
     /// after `openDwell`; a click opens at once). Leaving folds it back after `leaveHold`.
+    /// On and off use `NotchPanel.pointerOn`'s hysteresis.
     private func watchPointer() {
         let moved: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: moved) {
@@ -354,8 +361,10 @@ final class NotchController {
 
     private func pointerMoved() {
         guard model.state != .hidden else { return }
-        let mouse = NSEvent.mouseLocation
-        let inside = panels.values.contains { $0.isVisible && $0.frame.insetBy(dx: -6, dy: -6).contains(mouse) }
+        let mouse = NSEvent.mouseLocation, point = Point(x: mouse.x, y: mouse.y)
+        let inside = panels.values.contains {
+            $0.isVisible && NotchPanel.pointerOn(point, frame: Self.rect($0.frame), wasOn: pointerInside)
+        }
         guard inside != pointerInside else { return }
         pointerInside = inside
         pointerChanged()
@@ -364,7 +373,11 @@ final class NotchController {
     private func pointerChanged() {
         holdTask?.cancel()
         if pointerInside {
-            if model.state == .collapsed { apply(.pointerEntered) }
+            if model.state == .collapsed {
+                apply(.pointerEntered)
+                // A light tick on the trackpad as it slides out (adapted from Sentient OS, AGPL-3.0).
+                if model.state == .peek { NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now) }
+            }
             guard model.state == .peek else { return }
             holdTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(NotchPanel.openDwell))

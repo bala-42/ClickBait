@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Sentient OS
+
+Parts of ClickBait's notch window are adapted from Sentient OS (https://github.com/Sentient-OS-Labs/sentient-os, commit 16e871a), licensed under the GNU Affero General Public License v3.0 (the same licence as ClickBait; full text in [LICENSE](LICENSE)). Copyright (c) Sentient OS Labs and the Sentient OS contributors. Adapted files say so at the top and were modified by the ClickBait contributors from 2026-10-21.
+
 ## Notch panel look
 
 ClickBait's notch panel adapts a palette, cards, header tabs, player controls, sizes and motion from MIT-licensed code by Louis Raillé.

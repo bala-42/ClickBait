@@ -53,6 +53,17 @@ struct NotchPanelTests {
         #expect(hud.width == notch.width + 2 * NotchPanel.hudWing)  // the HUD wins over the music wings
     }
 
+    /// Brushing past doesn't count; once on, it takes `exitMargin` to leave; the screen's top edge counts.
+    @Test func pointerHysteresis() throws {
+        let frame = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch))
+        let beside = Point(x: frame.minX - 2, y: frame.midY)
+        #expect(!NotchPanel.pointerOn(beside, frame: frame, wasOn: false))  // brushing past
+        #expect(NotchPanel.pointerOn(beside, frame: frame, wasOn: true))    // resting on the edge
+        #expect(!NotchPanel.pointerOn(Point(x: frame.minX - 5, y: frame.midY), frame: frame, wasOn: true))
+        #expect(NotchPanel.pointerOn(Point(x: frame.midX, y: screen.maxY), frame: frame, wasOn: false))  // pushed to the top
+        #expect(!NotchPanel.pointerOn(Point(x: frame.midX, y: frame.minY - 1), frame: frame, wasOn: false))
+    }
+
     @Test func collapsedCoversOnlyTheBlack() throws {
         let frame = try #require(NotchPanel.frame(.collapsed, screen: screen, visible: visible, notch: notch))
         #expect(frame.width == notch.width + 2 * NotchPanel.ear)

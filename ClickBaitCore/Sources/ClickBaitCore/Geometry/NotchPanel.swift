@@ -42,6 +42,20 @@ public enum NotchPanel {
     /// The peek: this much wider than the notch.
     public static let peekWidth = 160.0
 
+    /// Whether the pointer counts as on the panel, with hysteresis (adapted from Sentient OS,
+    /// AGPL-3.0): coming on needs the pointer on the black itself, so brushing past doesn't slide
+    /// it out; leaving needs it `exitMargin` outside, so a pointer resting on the edge doesn't
+    /// flicker it. Both reach `topOverhang` above the frame: a pointer pushed against the top of
+    /// the screen reports y = the screen's top, which a half-open rect test would miss.
+    public static let exitMargin = 4.0
+    public static let topOverhang = 2.0
+
+    public static func pointerOn(_ point: Point, frame: Rect, wasOn: Bool) -> Bool {
+        let margin = wasOn ? exitMargin : 0
+        return point.x >= frame.minX - margin && point.x <= frame.maxX + margin
+            && point.y >= frame.minY - margin && point.y <= frame.maxY + topOverhang
+    }
+
     public static func next(_ state: State, on event: Event) -> State {
         switch (state, event) {
         case (_, .enabled(false)), (_, .displayAvailable(false)): .hidden
