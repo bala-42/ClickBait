@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
-        greeter.start()
+        greeter.start(helloAtLaunch: !settings.notchPanelEnabled)  // one hello: the notch's when it's on
         #if DEBUG
         if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GREETING"] != nil {
             Task { @MainActor [weak self] in
@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         notch.model.mood = { [overlay] in overlay.model.beanMood }
+        overlay.onGuide = { [weak self] in self?.notch.makeRoom() }
         notch.model.ask = { [weak self] text in
             guard let self else { return }
             coordinator.startTypedChat(trigger: "notch")

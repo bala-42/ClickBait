@@ -12,6 +12,8 @@ final class OverlayController {
     var onDismiss: (() -> Void)?
     /// Escape: returns true if it stopped or closed something (see AppDelegate).
     var onEscape: (() -> Bool)?
+    /// The triangle sets off for a target (a guide, tour or walkthrough step).
+    var onGuide: (() -> Void)?
 
     private var guideLabelStage: StagePanel?
     private var bubbleStage: StagePanel?
@@ -855,6 +857,7 @@ final class OverlayController {
             : guide.label ?? GuidePhrase.next(step: guide.index, of: guide.targets.count, avoiding: model.guideLabel)
         model.guideTarget = label.isEmpty ? nil : label
         model.isGuiding = true
+        onGuide?()
         showGuideLabel()
     }
 

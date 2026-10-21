@@ -23,7 +23,8 @@ final class Greeter {
         self.overlay = overlay
     }
 
-    func start() {
+    /// `helloAtLaunch` is false when the notch says hello at launch instead.
+    func start(helloAtLaunch: Bool) {
         let workspace = NSWorkspace.shared.notificationCenter
         let distributed = DistributedNotificationCenter.default()
         observe(workspace, NSWorkspace.willSleepNotification) { $0.left() }
@@ -38,7 +39,7 @@ final class Greeter {
             greeter.locked = false
             greeter.cameBack()
         }
-        greetSoon()  // launched at login, or for the first time today
+        if helloAtLaunch { greetSoon() }  // launched at login, or for the first time today
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handle: @escaping @MainActor (Greeter) -> Void) {

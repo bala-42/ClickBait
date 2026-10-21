@@ -126,7 +126,7 @@ struct SettingsView: View {
                 Section("Notch") {
                     Toggle("Show volume controls when using volume keys", isOn: $settings.notchVolumeHUD)
                         .toggleStyle(AquaToggleStyle())
-                    Toggle("Show Spotify artwork in Nook", isOn: $settings.spotifyArtworkAlways)
+                    Toggle("Show Spotify artwork in the notch", isOn: $settings.spotifyArtworkAlways)
                         .toggleStyle(AquaToggleStyle())
                 }
             }.settingsPanelStyle()

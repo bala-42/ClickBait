@@ -26,18 +26,16 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel.</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>ClickBait's notch calendar shows events for the date you select. They stay on this Mac.</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>ClickBait's notch calendar shows events for the date you select.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ClickBait shows your camera in its notch Mirror while you have it open. Nothing is recorded or saved.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ClickBait contributors. Apache License 2.0.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>ClickBait listens while you hold Control+Option so it can hear your question.</string>
+	<string>ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>ClickBait shows reminders for the date selected in its notch calendar. It may also add reminders when you ask it to.</string>
+	<string>ClickBait adds reminders when you ask it to. It never reads your existing reminders.</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>ClickBait shows reminders for the date selected in its notch calendar and may add reminders when you ask it to.</string>
+	<string>ClickBait adds reminders when you ask it to.</string>
 	<key>NSServices</key>
 	<array>
 		<dict>

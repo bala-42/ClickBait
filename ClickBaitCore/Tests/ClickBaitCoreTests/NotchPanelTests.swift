@@ -209,7 +209,7 @@ struct PullGestureTests {
 
     @Test func foldsLikeTheIsland() {
         #expect(NotchPanel.openHold == 15)
-        #expect(NotchPanel.peekHold == 60)
+        #expect(NotchPanel.peekHold == 8)
     }
 }
 

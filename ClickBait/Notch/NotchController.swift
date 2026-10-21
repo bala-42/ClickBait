@@ -67,7 +67,6 @@ final class NotchController {
     private let speaker: Speaker
     private let searxng: SearXNGStatus
     private let music = MusicBridge()
-    private let calendar = CalendarSource()
     private let shelf = ShelfStore()
     private var panels: [UInt32: Panel] = [:]
     private var pointerInside = false
@@ -135,6 +134,13 @@ final class NotchController {
 
     static let greetTime = 2.6
 
+    /// Folds right down while the companion points, so the panel never hides what it points at
+    /// in the menu bar or the top of a window.
+    func makeRoom() {
+        if model.state == .expanded { apply(.escape) }
+        if model.state == .peek { apply(.escape) }
+    }
+
     func setEnabled(_ enabled: Bool) {
         settings.notchPanelEnabled = enabled
         apply(.enabled(enabled))
@@ -154,7 +160,6 @@ final class NotchController {
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         if after == .expanded {
             music.refresh()
-            calendar.refresh()
             watchEscape(true)
         } else if before == .expanded {
             watchEscape(false)
@@ -294,7 +299,7 @@ final class NotchController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         let host = PullHostingView(rootView: NotchView(
-            model: model, notch: notch, music: music, calendar: calendar, shelf: shelf,
+            model: model, notch: notch, music: music, shelf: shelf,
             settings: settings, speech: speech, speaker: speaker, searxng: searxng,
             onDragIn: { [weak self] in self?.dragArrived() },
             onTabChange: { [weak self] tab in
@@ -457,7 +462,7 @@ final class NotchController {
             model.activity = activity
             if !activity { music.debugClear() }
             let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hud: false)
-            let view = NotchView(model: model, notch: model.notch, music: music, calendar: calendar, shelf: shelf,
+            let view = NotchView(model: model, notch: model.notch, music: music, shelf: shelf,
                 settings: settings, speech: speech, speaker: speaker,
                 searxng: searxng,
                 onDragIn: {}, onTabChange: { _ in }, onCollapse: {})

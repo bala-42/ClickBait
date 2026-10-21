@@ -1,11 +1,9 @@
 import AppKit
 import ClickBaitCore
-import EventKit
-import IOKit.ps
 import SwiftUI
 
 // What the notch panel shows, read on this Mac. Nothing here polls: the players post when
-// they change, the calendar is read when the panel opens, the battery when it's drawn.
+// they change.
 
 // MARK: - Music
 
@@ -296,122 +294,6 @@ final class MusicBridge {
     }
 }
 
-// MARK: - Calendar
-
-/// Events and reminders for the date selected in the notch calendar. Reads EventKit data only
-/// after the user grants access, and drops results from earlier date requests.
-@MainActor @Observable
-final class CalendarSource {
-    struct Event: Identifiable {
-        let id: String
-        let title: String
-        let start: Date
-        let end: Date
-        let isAllDay: Bool
-        let color: Color
-    }
-
-    struct Reminder: Identifiable {
-        let id: String
-        let title: String
-        let dueDate: Date?
-        let hasDueTime: Bool
-    }
-
-    private(set) var events: [Event] = []
-    private(set) var reminders: [Reminder] = []
-    private(set) var eventsAllowed = false
-    private(set) var remindersAllowed = false
-    private(set) var permissionDenied = false
-    private(set) var isLoading = false
-    private(set) var error: String?
-    private(set) var selectedDate = Date()
-    @ObservationIgnored private let store = EKEventStore()
-    @ObservationIgnored private var requests = CalendarRequestSequence()
-
-    func refresh() {
-        refresh(for: selectedDate)
-    }
-
-    func refresh(for date: Date) {
-        selectedDate = date
-        let request = requests.next()
-        events = []
-        reminders = []
-        error = nil
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: date)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
-            isLoading = false
-            error = "Couldn't read this date."
-            return
-        }
-
-        let eventStatus = EKEventStore.authorizationStatus(for: .event)
-        let reminderStatus = EKEventStore.authorizationStatus(for: .reminder)
-        eventsAllowed = eventStatus == .fullAccess
-        remindersAllowed = reminderStatus == .fullAccess
-        permissionDenied = [eventStatus, reminderStatus].contains { $0 == .denied || $0 == .restricted }
-        guard eventsAllowed || remindersAllowed else {
-            isLoading = false
-            return
-        }
-        isLoading = true
-
-        if eventsAllowed {
-            events = store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: nil))
-                .filter { $0.startDate < end && $0.endDate > start }
-                .sorted { $0.startDate < $1.startDate }
-                .map { Event(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "Event",
-                             start: $0.startDate, end: $0.endDate, isAllDay: $0.isAllDay,
-                             color: Color(nsColor: $0.calendar.color ?? .systemBlue)) }
-        }
-
-        guard remindersAllowed else { isLoading = false; return }
-        let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
-        let target = calendar.startOfDay(for: date)
-        store.fetchReminders(matching: predicate) { [weak self] results in
-            Task { @MainActor in
-                guard let self, self.requests.isCurrent(request) else { return }
-                let reminders = (results ?? []).compactMap { reminder -> Reminder? in
-                    let components = reminder.dueDateComponents
-                    let dueDate = components.flatMap { calendar.date(from: $0) }
-                    if let dueDate, !calendar.isDate(dueDate, inSameDayAs: target) { return nil }
-                    let hasDueTime = components?.hour != nil || components?.minute != nil
-                    return Reminder(id: reminder.calendarItemIdentifier, title: reminder.title ?? "Reminder",
-                                    dueDate: dueDate, hasDueTime: hasDueTime)
-                }
-                self.reminders = reminders.sorted {
-                    switch ($0.dueDate, $1.dueDate) {
-                    case let (left?, right?): left < right
-                    case (_?, nil): true
-                    case (nil, _?): false
-                    case (nil, nil): $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                    }
-                }
-                self.isLoading = false
-            }
-        }
-    }
-
-    func requestAccess() {
-        if permissionDenied {
-            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
-            return
-        }
-        Task {
-            do {
-                _ = try await store.requestFullAccessToEvents()
-                _ = try await store.requestFullAccessToReminders()
-                refresh()
-            } catch {
-                self.error = "Couldn't request Calendar or Reminders access. Check System Settings → Privacy & Security."
-                self.isLoading = false
-            }
-        }
-    }
-}
-
 // MARK: - Shelf
 
 /// Files parked for a moment: dropped on the shelf, dragged out to anywhere, clicked to show in
@@ -509,23 +391,5 @@ final class AirDropSender: NSObject, NSSharingServiceDelegate {
             guard !Task.isCancelled else { return }
             self?.status = .idle
         }
-    }
-}
-
-// MARK: - Battery
-
-enum Battery {
-    /// Charge and charging, from the power sources on this Mac; nil without a battery.
-    static func read() -> (level: Double, charging: Bool)? {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
-                  let current = description[kIOPSCurrentCapacityKey] as? Int,
-                  let max = description[kIOPSMaxCapacityKey] as? Int, max > 0 else { continue }
-            return (Double(current) / Double(max), description[kIOPSIsChargingKey] as? Bool ?? false)
-        }
-        return nil
     }
 }

@@ -38,7 +38,7 @@ public enum NotchPanel {
     /// folds to the peek `openHold` after the pointer leaves it (or at once with Esc or ✕); the
     /// peek folds away `peekHold` after the pointer leaves it.
     public static let openHold = 15.0
-    public static let peekHold = 60.0
+    public static let peekHold = 8.0
     /// The peek: this much wider than the notch.
     public static let peekWidth = 160.0
 

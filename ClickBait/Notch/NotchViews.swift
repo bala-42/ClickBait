@@ -51,9 +51,8 @@ private final class MultiFileDragView: NSView, NSDraggingSource {
     }
 }
 
-// The compact Nook panel follows the supplied NotchNook GIF: black notch, music artwork and
-// visualizer while collapsed, then a short rounded panel with Nook/Tray navigation, music,
-// shortcut tiles and Mirror when opened.
+// The notch panel: a black island that peeks with the bean, and opens on Home (the track or
+// the keys, and the pills), Ask, Shelf and Settings.
 
 /// The notch's outline: flush with the top, its upper corners flaring out into the menu bar
 /// (`ear`), its lower corners rounded.
@@ -96,9 +95,6 @@ enum NotchColors {
     static let bar = Color(red: 0.65, green: 0.78, blue: 0.95)
     static let track = Color.white.opacity(0.14)
     static let dim = Color.white.opacity(0.42)
-    static let todayCircle = Color(red: 0.18, green: 0.42, blue: 0.92)
-    static let todayColumn = Color(red: 0.09, green: 0.14, blue: 0.24)
-    static let batteryGreen = Color(red: 0.36, green: 0.82, blue: 0.36)
 
     /// The artwork's colour, lifted towards white so it reads on black.
     static func lifted(_ color: NSColor?, _ amount: CGFloat, fallback: Color) -> Color {
@@ -107,37 +103,10 @@ enum NotchColors {
     }
 }
 
-/// Quiet secondary controls for the notch: charcoal surfaces with a soft Aqua edge on hover.
-private struct NotchControlButtonStyle: ButtonStyle {
-    var cornerRadius: CGFloat = 8
-    @State private var hovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        configuration.label
-            .font(.system(size: 11, weight: .semibold))
-            .background {
-                shape
-                    .fill(configuration.isPressed ? NotchColors.bar.opacity(0.16) :
-                          hovering ? Color.white.opacity(0.09) : Color.white.opacity(0.045))
-            }
-            .overlay {
-                shape.strokeBorder((hovering || configuration.isPressed)
-                                   ? NotchColors.bar.opacity(0.52)
-                                   : Color.white.opacity(0.1), lineWidth: 0.8)
-            }
-            .contentShape(shape)
-            .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.14), value: hovering)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
 struct NotchView: View {
     let model: NotchController.Model
     let notch: Rect?
     let music: MusicBridge
-    let calendar: CalendarSource
     let shelf: ShelfStore
     let settings: AppSettings
     let speech: SpeechModelManager
@@ -148,6 +117,15 @@ struct NotchView: View {
     let onCollapse: () -> Void
 
     @Namespace private var art
+
+    /// Settings' way back, named after the tab it came from.
+    private static func backLabel(_ tab: NotchController.Model.Tab) -> String {
+        switch tab {
+        case .shelf: "Back to Shelf"
+        case .ask: "Back to Ask"
+        case .home, .settings: "Back to Home"
+        }
+    }
     @State private var showingMirror = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -170,7 +148,7 @@ struct NotchView: View {
                     } else if model.tab == .settings {
                         SettingsView(settings: settings, speech: speech, speaker: speaker,
                                      searxng: searxng,
-                                     returnLabel: model.settingsReturnTab == .shelf ? "Back to Tray" : "Back to Nook",
+                                     returnLabel: Self.backLabel(model.settingsReturnTab),
                                      onBack: { onTabChange(model.settingsReturnTab) }, onCollapse: onCollapse)
                             .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .top)))
                     } else {
@@ -514,16 +492,27 @@ private struct FocusCard: View {
 
     private var keys: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Hold ⌃⌥ to ask · fn ⌃ to dictate")
-                .font(.system(size: 11))
-                .foregroundStyle(NotchPalette.secondary)
-                .lineLimit(1)
+            HStack(spacing: 3) {
+                Text("Hold")
+                Keycap("⌃")
+                Keycap("⌥")
+                Text("to ask ·")
+                Keycap("fn")
+                Keycap("⌃")
+                Text("to dictate")
+            }
+            .font(.system(size: 10.5))
+            .foregroundStyle(NotchPalette.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Hold Control Option to ask, or fn Control to dictate")
             HStack(spacing: 12) {
                 ForEach(MusicBridge.Player.allCases, id: \.self) { player in
                     Button("Open \(player.name)") { music.open(player) }
                         .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(NotchColors.artist.opacity(0.85))
+                        .foregroundStyle(NotchPalette.control)
                 }
             }
         }
@@ -550,6 +539,22 @@ private struct FocusCard: View {
 }
 
 /// The home's right card: four pills, two by two, each with a small bean.
+/// A key as it looks on the keyboard: a small rounded cap with a hairline.
+private struct Keycap: View {
+    let key: String
+    init(_ key: String) { self.key = key }
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(NotchPalette.control)
+            .padding(.horizontal, 4)
+            .frame(minWidth: 15, minHeight: 15)
+            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(NotchPalette.tabOn))
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+    }
+}
+
 private struct IslandPills: View {
     struct Pill: Identifiable {
         let name: String
@@ -587,8 +592,8 @@ private struct IslandPill: View {
                     Spacer()
                 }
                 Text(pill.name)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(hovering ? color : NotchPalette.tertiary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(hovering ? color : NotchPalette.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
@@ -820,89 +825,6 @@ private struct CameraMirrorPanel: View {
     }
 }
 
-private struct NowPlaying: View {
-    let music: MusicBridge
-    @State private var dragging: Double?
-
-    var body: some View {
-        let tint = NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist)
-        VStack(alignment: .leading, spacing: 0) {
-            Text(music.title).font(.system(size: 13, weight: .bold)).foregroundStyle(.white).lineLimit(1)
-            Text(music.artist).font(.system(size: 13)).foregroundStyle(tint).lineLimit(1)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let at = dragging ?? music.currentPosition(at: context.date)
-                let fraction = music.duration > 0 ? at / music.duration : 0
-                VStack(spacing: 4) {
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(NotchColors.track)
-                            Capsule().fill(NotchColors.lifted(music.tint, 0.6, fallback: NotchColors.bar))
-                                .frame(width: max(4, geometry.size.width * fraction))
-                        }
-                        .frame(height: 4)
-                        .frame(maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .gesture(DragGesture(minimumDistance: 0)
-                            .onChanged { dragging = TrackTime.position(x: $0.location.x, width: geometry.size.width, duration: music.duration) }
-                            .onEnded { _ in if let to = dragging { music.seek(to: to) }; dragging = nil })
-                    }
-                    .frame(height: 12)
-                    HStack {
-                        Text(TrackTime.text(at))
-                        Spacer()
-                        Text(TrackTime.text(music.duration))
-                    }
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(tint.opacity(0.85))
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Playback position")
-                .accessibilityValue("\(TrackTime.text(at)) of \(TrackTime.text(music.duration))")
-                .accessibilityAdjustableAction { direction in
-                    let step = direction == .increment ? 10.0 : -10.0
-                    music.seek(to: min(max(at + step, 0), music.duration))
-                }
-            }
-            .padding(.top, 9)
-            HStack(spacing: 28) {
-                control("backward.fill", size: 15, label: "Previous track") { music.send("previous track") }
-                control(music.isPlaying ? "pause.fill" : "play.fill", size: 25, label: music.isPlaying ? "Pause" : "Play") {
-                    music.send("playpause")
-                }
-                control("forward.fill", size: 15, label: "Next track") { music.send("next track") }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 1)
-            if let error = music.error {
-                Text(error).font(.system(size: 10)).foregroundStyle(NotchColors.dim).lineLimit(2).padding(.top, 2)
-            }
-        }
-    }
-
-    private func control(_ symbol: String, size: CGFloat, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: size, weight: .bold)).foregroundStyle(.white).frame(height: 26)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-}
-
-private struct NothingPlaying: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.07))
-                .overlay(Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(NotchColors.dim))
-                .frame(width: 101, height: 101)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Nothing playing").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                Text("Play something in Music or Spotify").font(.system(size: 12)).foregroundStyle(NotchColors.dim)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
 /// The artwork, or a dim tile with a note when there's none.
 private struct Artwork: View {
     let music: MusicBridge
@@ -919,252 +841,6 @@ private struct Artwork: View {
         }
         .clipShape(shape)
         .accessibilityHidden(true)
-    }
-}
-
-/// The player's own icon in a small circle on the artwork's corner.
-private struct PlayerBadge: View {
-    let player: MusicBridge.Player
-
-    var body: some View {
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: app.path)).resizable()
-                .frame(width: 24, height: 24)
-                .accessibilityLabel(player.name)
-        }
-    }
-}
-
-/// The battery's gauge: green fill, a white bolt while charging.
-private struct BatteryGauge: View {
-    let level: Double
-    let charging: Bool
-
-    var body: some View {
-        HStack(spacing: 1) {
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3.5).strokeBorder(Color.white.opacity(0.5), lineWidth: 1)
-                RoundedRectangle(cornerRadius: 2).fill(level < 0.2 && !charging ? Color.red : NotchColors.batteryGreen)
-                    .frame(width: max(3, 21 * level)).padding(2)
-                if charging {
-                    Image(systemName: "bolt.fill").font(.system(size: 8, weight: .black)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(width: 25, height: 12)
-            RoundedRectangle(cornerRadius: 1).fill(Color.white.opacity(0.5)).frame(width: 1.5, height: 4)
-        }
-    }
-}
-
-// MARK: - The week
-
-/// "Aug 2025", six days with today third in a blue circle on a dark column, and today's events
-/// (or "No events today · Enjoy your free time!") under them.
-private struct WeekView: View {
-    let calendar: CalendarSource
-    @State private var selectedDate = Date()
-
-    private var systemCalendar: Calendar { .current }
-    private var monthDays: [Date] { CalendarNavigation.monthDays(containing: selectedDate, calendar: systemCalendar) }
-    private var leadingDays: Int {
-        guard let first = monthDays.first else { return 0 }
-        return (systemCalendar.component(.weekday, from: first) - systemCalendar.firstWeekday + 7) % 7
-    }
-    private var monthTitle: String { selectedDate.formatted(.dateTime.month(.wide)) }
-    private var selectedYear: Int { systemCalendar.component(.year, from: selectedDate) }
-    private var selectedMonth: Int { systemCalendar.component(.month, from: selectedDate) }
-    private var monthNames: [String] { (1...12).compactMap { DateComponents(calendar: systemCalendar, year: selectedYear, month: $0, day: 1).date?.formatted(.dateTime.month(.wide)) } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 5) {
-                Button { moveMonth(-1) } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Previous month")
-                Menu {
-                    ForEach(1...12, id: \.self) { month in
-                        Button(monthNames[month - 1]) { choose(year: selectedYear, month: month) }
-                    }
-                } label: {
-                    Text(monthTitle).font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel("Choose month, currently \(monthTitle)")
-                Menu {
-                    ForEach((selectedYear - 8)...(selectedYear + 8), id: \.self) { year in
-                        Button(String(year)) { choose(year: year, month: selectedMonth) }
-                    }
-                } label: {
-                    Text(String(selectedYear)).font(.system(size: 17)).foregroundStyle(NotchColors.dim)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel("Choose year, currently \(selectedYear)")
-                Button { moveMonth(1) } label: { Image(systemName: "chevron.right") }
-                    .accessibilityLabel("Next month")
-                Spacer(minLength: 4)
-                Button("Today") { selectedDate = CalendarNavigation.today() }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(NotchColors.bar)
-                    .buttonStyle(.plain)
-            }
-            .buttonStyle(.plain)
-
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
-            LazyVGrid(columns: columns, spacing: 3) {
-                ForEach(weekdaySymbols, id: \.self) { weekday in
-                    Text(weekday).font(.system(size: 10, weight: .medium)).foregroundStyle(NotchColors.dim)
-                        .frame(maxWidth: .infinity, minHeight: 15)
-                }
-                ForEach(0..<(leadingDays + monthDays.count), id: \.self) { index in
-                    if index < leadingDays {
-                        Color.clear.frame(height: 31)
-                    } else {
-                        let date = monthDays[index - leadingDays]
-                        dayButton(date)
-                    }
-                }
-            }
-            .accessibilityLabel("\(monthTitle) \(selectedYear)")
-
-            HStack(spacing: 6) {
-                Text(selectedDate.formatted(date: .complete, time: .omitted))
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-                Spacer()
-                if !calendar.eventsAllowed && !calendar.remindersAllowed {
-                    Text("Events and reminders unavailable").font(.system(size: 10)).foregroundStyle(NotchColors.dim)
-                } else if !calendar.eventsAllowed || !calendar.remindersAllowed {
-                    HStack(spacing: 5) {
-                        Text(!calendar.eventsAllowed ? "Events unavailable" : "Reminders unavailable")
-                            .font(.system(size: 10)).foregroundStyle(NotchColors.dim)
-                        Button(calendar.permissionDenied ? "Settings" : "Enable") { calendar.requestAccess() }
-                            .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(NotchColors.bar)
-                    }
-                }
-            }
-            agenda
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .padding(.top, 13)
-        .padding(.trailing, 16)
-        .frame(width: 380)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { calendar.refresh(for: selectedDate) }
-        .onChange(of: selectedDate) { _, value in calendar.refresh(for: value) }
-    }
-
-    private var weekdaySymbols: [String] {
-        let symbols = systemCalendar.veryShortStandaloneWeekdaySymbols
-        return (0..<7).map { symbols[(systemCalendar.firstWeekday - 1 + $0) % symbols.count] }
-    }
-
-    private func dayButton(_ date: Date) -> some View {
-        let today = CalendarNavigation.isSameDay(date, Date(), calendar: systemCalendar)
-        let selected = CalendarNavigation.isSameDay(date, selectedDate, calendar: systemCalendar)
-        return Button { selectedDate = date } label: {
-            Text(String(systemCalendar.component(.day, from: date)))
-                .font(.system(size: 12, weight: selected || today ? .semibold : .regular))
-                .foregroundStyle(selected || today ? .white : Color.white.opacity(0.78))
-                .frame(maxWidth: .infinity, minHeight: 31)
-                .background {
-                    if today { Circle().fill(NotchColors.todayCircle).frame(width: 27, height: 27) }
-                }
-                .overlay {
-                    if selected { RoundedRectangle(cornerRadius: 9).strokeBorder(NotchColors.bar, lineWidth: 1.5).padding(1) }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    @ViewBuilder private var agenda: some View {
-        if !calendar.eventsAllowed && !calendar.remindersAllowed {
-            VStack(spacing: 5) {
-                Text(calendar.permissionDenied
-                     ? "Enable Calendar and Reminders in System Settings to show this date's agenda."
-                     : "Allow access to show events and reminders for this date.")
-                    .font(.system(size: 11)).foregroundStyle(NotchColors.dim)
-                Button(calendar.permissionDenied ? "Open System Settings" : "Allow Calendar and Reminders access",
-                       action: calendar.requestAccess)
-                    .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(NotchColors.bar)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if calendar.isLoading {
-            HStack(spacing: 7) {
-                ProgressView().controlSize(.small)
-                Text("Loading agenda…").font(.system(size: 11)).foregroundStyle(NotchColors.dim)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else if let error = calendar.error {
-            Text(error).font(.system(size: 11)).foregroundStyle(NotchColors.dim)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        } else {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 5) {
-                    if calendar.events.isEmpty && calendar.reminders.isEmpty {
-                        Text("Nothing scheduled for this date.")
-                            .font(.system(size: 11)).foregroundStyle(NotchColors.dim).padding(.top, 3)
-                    }
-                    ForEach(calendar.events) { event in
-                        agendaRow(title: event.title, detail: eventDetail(event), color: event.color, symbol: "calendar")
-                    }
-                    ForEach(calendar.reminders.filter { $0.dueDate != nil }) { reminder in
-                        agendaRow(title: reminder.title,
-                                  detail: reminder.hasDueTime ? reminder.dueDate!.formatted(date: .omitted, time: .shortened) : "Due today",
-                                  color: NotchColors.bar, symbol: "checkmark.circle")
-                    }
-                    let undated = calendar.reminders.filter { $0.dueDate == nil }
-                    if !undated.isEmpty {
-                        Text("NO DUE DATE").font(.system(size: 9, weight: .semibold)).foregroundStyle(NotchColors.dim)
-                            .padding(.top, 4)
-                        ForEach(undated) { reminder in
-                            agendaRow(title: reminder.title, detail: "Anytime", color: NotchColors.bar, symbol: "checkmark.circle")
-                        }
-                    }
-                }
-                .padding(.trailing, 3)
-            }
-            .scrollIndicators(.visible)
-        }
-    }
-
-    private func agendaRow(title: String, detail: String, color: Color, symbol: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1)
-            Spacer(minLength: 5)
-            Text(detail).font(.system(size: 10)).foregroundStyle(NotchColors.dim).lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func eventDetail(_ event: CalendarSource.Event) -> String {
-        if event.isAllDay { return "All day" }
-        let dayStart = systemCalendar.startOfDay(for: selectedDate)
-        let dayEnd = systemCalendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
-        let formatter = DateFormatter()
-        formatter.locale = .current
-        formatter.timeZone = .current
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        let beginsEarlier = event.start < dayStart
-        let endsLater = event.end > dayEnd
-        if beginsEarlier && endsLater { return "Continues · until \(formatter.string(from: event.end))" }
-        if beginsEarlier { return "Continues" }
-        if endsLater { return "\(formatter.string(from: event.start)) · until \(formatter.string(from: event.end))" }
-        return formatter.string(from: event.start)
-    }
-
-    private func choose(year: Int, month: Int) {
-        if let date = CalendarNavigation.date(year: year, month: month,
-                                              preservingDay: systemCalendar.component(.day, from: selectedDate),
-                                              calendar: systemCalendar) { selectedDate = date }
-    }
-
-    private func moveMonth(_ amount: Int) {
-        if let date = CalendarNavigation.addingMonths(amount, to: selectedDate, calendar: systemCalendar) { selectedDate = date }
     }
 }
 
