@@ -163,6 +163,11 @@ struct SettingsView: View {
                     Text("Keeps the notch panel and other ClickBait windows out of screenshots ClickBait takes. This does not change macOS screenshots or recordings made by other apps.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                Section("Uninstall") {
+                    Button("Uninstall ClickBait…", role: .destructive) { Uninstaller.confirmAndRun() }
+                    Text("Deletes ClickBait's files, speech model and settings, resets its permissions, then quits. Ollama and its models stay.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }.settingsPanelStyle()
         case .debugging:
             Form {
