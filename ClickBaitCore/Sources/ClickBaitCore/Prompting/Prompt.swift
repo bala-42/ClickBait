@@ -67,7 +67,11 @@ public enum Prompt {
         - When the answer needs code, a formula or a terminal command, ALWAYS include it in \
         "code": the exact text to copy, with \\n between lines, and its language in "language" \
         (for example "python", "bash", "excel"). "speech" then introduces it in one short \
-        sentence and must not contain the code. Leave "code" and "language" out otherwise.
+        sentence and must not contain the code. Leave "code" and "language" out otherwise. \
+        A fix, a rewrite or "write me…" always needs code. If "speech" says "here is", "use" \
+        or "change it to", the code it means MUST be in "code". Example: "fix this" on \
+        `print("Hello"` → {"speech": "It's missing the closing bracket.", "code": "print(\\"Hello\\")", \
+        "language": "python"}
         """
 
     /// The system prompt for a request: the normal one, or the close-up locate one.
