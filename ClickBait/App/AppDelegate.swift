@@ -69,10 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.servicesProvider = servicesProvider
         NSUpdateDynamicServices()
         #if DEBUG
-        AgentDockRender.runIfRequested()  // renders and quits
-        ChatRender.runIfRequested()  // renders and quits; leaves a running ClickBait alone
-        if TourBench.runIfRequested(settings: settings) { return }  // benchmarks tours, then quits
-        if AskBench.runIfRequested(settings: settings) { return }  // benchmarks screen answers, then quits
+        if SelfTest.runBeforeLaunch(settings: settings) { return }  // every switch: SelfTest
         #endif
         terminateOtherInstances()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
