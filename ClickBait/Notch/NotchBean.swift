@@ -74,7 +74,7 @@ struct NotchBean: View {
         case .idle, .sleepy, .panicked, .warm, .tired, .hello: CompanionTone.idle.color
         case .listening, .thinking: CompanionTone.processing.color
         case .working, .happy: CompanionTone.action.color
-        case .error: wine
+        case .error: CompanionTone.problem
         }
     }
 
@@ -85,9 +85,6 @@ struct NotchBean: View {
         case .listening, .thinking, .working, .happy, .error: false
         }
     }
-
-    /// Errors are Wine (user's pick over Burgundy and Tyrian, 2026-10-21).
-    static let wine = Color(hex: 0x9B1B48)
 }
 
 /// One frame of the bean, drawn from its mood, eyes, the clock (breathing and blinks) and

@@ -17,6 +17,10 @@ enum CompanionTone: Equatable {
     /// Lavender (#B57EDC): a guided tutorial is running.
     case tutorial
 
+    /// Wine (#9B1B48): something went wrong — the bean and the companion's problem pills
+    /// (user's pick, 2026-10-21). Not one of the states, so a problem never reads as one.
+    static let problem = Color(red: 155.0 / 255, green: 27.0 / 255, blue: 72.0 / 255)
+
     var color: Color {
         switch self {
         case .idle: Color(red: 0, green: 127.0 / 255, blue: 1.0)

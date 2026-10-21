@@ -54,6 +54,14 @@ struct RequestBuilderTests {
         #expect(!OllamaProvider.isInstalled("qwen2.5vl:7b", among: ["qwen2.5vl:3b"]))
     }
 
+    @Test func healthFromWhatOllamaHas() {
+        let installed = ["qwen3.5:9b", "llava:latest"]
+        #expect(OllamaProvider.health(model: "qwen3.5:9b", installed: installed, loaded: ["qwen3.5:9b"]) == .ready)
+        #expect(OllamaProvider.health(model: "qwen3.5:9b", installed: installed, loaded: []) == .asleep)
+        #expect(OllamaProvider.health(model: "llava", installed: installed, loaded: ["llava:latest"]) == .ready)
+        #expect(OllamaProvider.health(model: "gemma3:4b", installed: installed, loaded: []) == .missing("gemma3:4b"))
+    }
+
     @Test func userTextCarriesSizeContextAndQuestion() {
         let text = Prompt.userText(for: ask)
         #expect(text.contains("1280×831 pixels"))

@@ -12,7 +12,7 @@ public enum NotchPanel {
         /// Notch-sized and black, invisible over the notch; the music wings show while playing.
         case collapsed
         /// The pointer came by: a small island `peekWidth` wider than the notch, the bean on
-        /// its left. Folds back after `peekHold` away from it.
+        /// its left, sliding out on the way to open (`openDwell`).
         case peek
         case expanded
     }
@@ -20,10 +20,10 @@ public enum NotchPanel {
     public enum Event: Equatable, Sendable {
         /// The pointer came onto the notch.
         case pointerEntered
-        /// The pointer stayed away from the peek for `peekHold`.
-        case peekTimedOut
-        /// The pointer stayed away from the open panel for `openHold`.
-        case openTimedOut
+        /// The pointer stayed on the peek for `openDwell`.
+        case pointerStayed
+        /// The pointer stayed away from the panel for `leaveHold`.
+        case pointerLeft
         case clicked
         case escape
         /// A two-finger swipe down on the notch (`PullGesture`), or up on the open panel.
@@ -34,11 +34,11 @@ public enum NotchPanel {
         case displayAvailable(Bool)
     }
 
-    /// The island's rhythm: the pointer coming by peeks at once; a click opens; the open panel
-    /// folds to the peek `openHold` after the pointer leaves it (or at once with Esc or ✕); the
-    /// peek folds away `peekHold` after the pointer leaves it.
-    public static let openHold = 15.0
-    public static let peekHold = 8.0
+    /// The island's rhythm (user's rule, 2026-10-21): the pointer on the notch slides it out —
+    /// the peek at once, open after `openDwell` (a click opens at once); the pointer away for
+    /// `leaveHold` folds it right back into the notch, as do Esc and ✕.
+    public static let openDwell = 0.2
+    public static let leaveHold = 0.4
     /// The peek: this much wider than the notch.
     public static let peekWidth = 160.0
 
@@ -47,9 +47,9 @@ public enum NotchPanel {
         case (_, .enabled(false)), (_, .displayAvailable(false)): .hidden
         case (.hidden, .enabled(true)), (.hidden, .displayAvailable(true)): .collapsed
         case (.collapsed, .pointerEntered): .peek
-        case (.collapsed, .clicked), (.collapsed, .pulledDown), (.peek, .clicked), (.peek, .pulledDown): .expanded
-        case (.expanded, .escape), (.expanded, .pushedUp), (.expanded, .openTimedOut): .peek
-        case (.peek, .escape), (.peek, .pushedUp), (.peek, .peekTimedOut): .collapsed
+        case (.collapsed, .clicked), (.collapsed, .pulledDown), (.peek, .clicked), (.peek, .pulledDown), (.peek, .pointerStayed): .expanded
+        case (.expanded, .escape), (.expanded, .pushedUp), (.expanded, .pointerLeft),
+             (.peek, .escape), (.peek, .pushedUp), (.peek, .pointerLeft): .collapsed
         default: state
         }
     }

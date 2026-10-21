@@ -57,6 +57,14 @@ final class NotchController {
         var greeting = false
         /// A question typed in the ask tab: goes to ClickBait's chat (set by the app delegate).
         var ask: @MainActor (String) -> Void = { _ in }
+        /// Typing in the panel (the ask field, the shelf's note): the pointer leaving doesn't fold it.
+        var editing = false
+        /// How the answering model is doing, read each time the panel opens (set by the app delegate).
+        var checkHealth: @MainActor () async -> OllamaProvider.Health? = { nil }
+        var health: OllamaProvider.Health?
+
+        /// Typing or in Settings: only Esc, ✕ or a click elsewhere folds it.
+        var holdsOpen: Bool { editing || tab == .settings }
         let note: Note
         init(note: Note) { self.note = note }
     }
@@ -137,8 +145,7 @@ final class NotchController {
     /// Folds right down while the companion points, so the panel never hides what it points at
     /// in the menu bar or the top of a window.
     func makeRoom() {
-        if model.state == .expanded { apply(.escape) }
-        if model.state == .peek { apply(.escape) }
+        if model.state == .expanded || model.state == .peek { apply(.escape) }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -156,10 +163,14 @@ final class NotchController {
         guard after != before else { return }
         model.state = after
         if after != .expanded, model.tab == .settings { model.tab = .home }
-        if after != .expanded { model.greeting = false }
+        if after != .expanded { model.greeting = false; model.editing = false }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         if after == .expanded {
             music.refresh()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                model.health = await model.checkHealth()
+            }
             watchEscape(true)
         } else if before == .expanded {
             watchEscape(false)
@@ -305,6 +316,7 @@ final class NotchController {
             onTabChange: { [weak self] tab in
                 guard let self else { return }
                 if tab == .settings, model.tab != .settings { model.settingsReturnTab = model.tab }
+                model.editing = false  // the field it was typing in is gone
                 model.tab = tab
                 self.place()
             },
@@ -318,9 +330,8 @@ final class NotchController {
     // MARK: Pointer and keys
 
     /// The pointer, read from every mouse move (a non-activating panel gets no hover events
-    /// while another app is in front): coming onto the notch peeks at once; a click on the notch
-    /// or the peek opens it. Leaving starts the fold: the open panel back to the peek after
-    /// `openHold`, the peek away after `peekHold`.
+    /// while another app is in front): coming onto the notch slides it out (peek, then open
+    /// after `openDwell`; a click opens at once). Leaving folds it back after `leaveHold`.
     private func watchPointer() {
         let moved: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: moved) {
@@ -354,18 +365,19 @@ final class NotchController {
         holdTask?.cancel()
         if pointerInside {
             if model.state == .collapsed { apply(.pointerEntered) }
+            guard model.state == .peek else { return }
+            holdTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(NotchPanel.openDwell))
+                guard !Task.isCancelled, let self, pointerInside else { return }
+                apply(.pointerStayed)
+            }
             return
         }
-        let fold: (NotchPanel.Event, Double)
-        switch model.state {
-        case .expanded: fold = (.openTimedOut, NotchPanel.openHold)
-        case .peek: fold = (.peekTimedOut, NotchPanel.peekHold)
-        default: return
-        }
+        guard model.state == .expanded || model.state == .peek, !model.holdsOpen, !model.greeting else { return }
         holdTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(fold.1))
+            try? await Task.sleep(for: .seconds(NotchPanel.leaveHold))
             guard !Task.isCancelled else { return }
-            self?.apply(fold.0)
+            self?.apply(.pointerLeft)
         }
     }
 
@@ -438,11 +450,14 @@ final class NotchController {
         let before = primaryPanel?.frame.width ?? 0
         pointerInside = true
         pointerChanged()
-        try? await Task.sleep(for: .seconds(0.6))
+        try? await Task.sleep(for: .seconds(0.1))
         let peek = model.state == .peek, width = primaryPanel?.frame.width ?? 0
+        try? await Task.sleep(for: .seconds(0.5))
+        let opened = model.state == .expanded
         pointerInside = false
         pointerChanged()
-        return "width \(before) → peek \(peek) at \(width), displays \(panels.count)"
+        try? await Task.sleep(for: .seconds(0.6))
+        return "width \(before) → peek \(peek) at \(width), then open \(opened), then folded \(model.state == .collapsed), displays \(panels.count)"
     }
 
     /// Renders the open panel and the closed music wings to `folder` (the screen can't be

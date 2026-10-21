@@ -21,12 +21,13 @@ struct NotchPanelTests {
         state = NotchPanel.next(state, on: .enabled(true));   #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .pointerEntered);  #expect(state == .peek)
         state = NotchPanel.next(state, on: .pointerEntered);  #expect(state == .peek)  // stays
-        state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)
+        state = NotchPanel.next(state, on: .pointerStayed);   #expect(state == .expanded)  // slides open
         state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)  // a click inside keeps it open
-        state = NotchPanel.next(state, on: .openTimedOut);    #expect(state == .peek)
-        state = NotchPanel.next(state, on: .peekTimedOut);    #expect(state == .collapsed)
+        state = NotchPanel.next(state, on: .pointerLeft);     #expect(state == .collapsed)  // right back in
+        state = NotchPanel.next(state, on: .pointerStayed);   #expect(state == .collapsed)  // only from the peek
+        state = NotchPanel.next(state, on: .pointerEntered);  #expect(state == .peek)
+        state = NotchPanel.next(state, on: .pointerLeft);     #expect(state == .collapsed)  // passed by
         state = NotchPanel.next(state, on: .clicked);         #expect(state == .expanded)  // straight from the notch
-        state = NotchPanel.next(state, on: .escape);          #expect(state == .peek)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)
         state = NotchPanel.next(state, on: .escape);          #expect(state == .collapsed)  // nothing to close
         state = NotchPanel.next(state, on: .displayAvailable(false)); #expect(state == .hidden)
@@ -182,7 +183,7 @@ struct TrackTimeTests {
 struct PullGestureTests {
     @Test func pullingDownOpensPushingUpCloses() {
         #expect(NotchPanel.next(.collapsed, on: .pulledDown) == .expanded)
-        #expect(NotchPanel.next(.expanded, on: .pushedUp) == .peek)
+        #expect(NotchPanel.next(.expanded, on: .pushedUp) == .collapsed)
         #expect(NotchPanel.next(.peek, on: .pulledDown) == .expanded)
         #expect(NotchPanel.next(.expanded, on: .pulledDown) == .expanded)
         #expect(NotchPanel.next(.hidden, on: .pulledDown) == .hidden)
@@ -208,8 +209,8 @@ struct PullGestureTests {
     }
 
     @Test func foldsLikeTheIsland() {
-        #expect(NotchPanel.openHold == 15)
-        #expect(NotchPanel.peekHold == 8)
+        #expect(NotchPanel.openDwell == 0.2)
+        #expect(NotchPanel.leaveHold == 0.4)
     }
 }
 

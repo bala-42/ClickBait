@@ -5,7 +5,8 @@ import SwiftUI
 // adapted from MIT-licensed code (© 2026 Louis Raillé — see THIRD_PARTY_NOTICES.md). State
 // colours stay ClickBait's (`CompanionTone`).
 
-/// The greys, from lightest text to the card fill.
+/// The notch's one palette: greys from lightest text to the card fill, then the few colours
+/// that aren't states (states are `CompanionTone`; problems `CompanionTone.problem`).
 enum NotchPalette {
     static let text = Color(hex: 0xF5F6F8)
     static let secondary = Color(hex: 0x8E939C)
@@ -15,6 +16,18 @@ enum NotchPalette {
     static let card = Color(hex: 0x141518)
     static let tabOn = Color(hex: 0x1D1F23)
     static let ink = Color(hex: 0x0E0F11)
+    /// The shelf's drop targets, selection and note focus.
+    static let highlight = Color(red: 0.65, green: 0.78, blue: 0.95)
+    /// A gauge's empty track (the volume HUD).
+    static let track = Color.white.opacity(0.14)
+    /// Music bars and accents when the artwork gives no colour.
+    static let music = Color(red: 0.55, green: 0.62, blue: 0.92)
+
+    /// The artwork's colour, lifted towards white so it reads on black.
+    static func lifted(_ color: NSColor?, _ amount: CGFloat, fallback: Color) -> Color {
+        guard let base = color?.usingColorSpace(.deviceRGB) else { return fallback }
+        return Color(nsColor: base.blended(withFraction: amount, of: .white) ?? base)
+    }
 }
 
 extension Color {

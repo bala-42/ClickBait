@@ -174,7 +174,7 @@ struct TinyPill: View {
     /// Words only when nil (what was heard, the tutorial's "checking…").
     var symbol: String?
     let tone: CompanionTone
-    /// Problems are black and white, so they never read as one of the four states.
+    /// Problems are Wine (`CompanionTone.problem`), so they never read as one of the states.
     var isProblem = false
 
     var body: some View {
@@ -190,8 +190,8 @@ struct TinyPill: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .modifier(ToneFill(fill: isProblem ? Color(white: 0.13).opacity(0.94) : tone.color.opacity(0.9),
-                           glow: isProblem ? .black.opacity(0.6) : tone.color.opacity(Glow.opacity),
+        .modifier(ToneFill(fill: isProblem ? CompanionTone.problem.opacity(0.94) : tone.color.opacity(0.9),
+                           glow: isProblem ? CompanionTone.problem.opacity(Glow.opacity) : tone.color.opacity(Glow.opacity),
                            shape: RoundedRectangle(cornerRadius: 11, style: .continuous)))
         .padding(.top, 3)
     }
@@ -291,7 +291,7 @@ enum Glow {
     static let radius: CGFloat = 4
 }
 
-/// Pills wear the triangle's colour (or black, for problems), so label and pointer
+/// Pills wear the triangle's colour (or Wine, for problems), so label and pointer
 /// read as one. No outline: just the fill and a soft glow.
 struct ToneFill<S: Shape>: ViewModifier {
     let fill: Color

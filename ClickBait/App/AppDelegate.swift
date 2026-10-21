@@ -96,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         notch.model.mood = { [overlay] in overlay.model.beanMood }
         overlay.onGuide = { [weak self] in self?.notch.makeRoom() }
+        let checkHealth: @MainActor () async -> OllamaProvider.Health? = { [settings] in await settings.makeProvider().health() }
+        notch.model.checkHealth = checkHealth
+        statusBar.checkHealth = checkHealth
         notch.model.ask = { [weak self] text in
             guard let self else { return }
             coordinator.startTypedChat(trigger: "notch")

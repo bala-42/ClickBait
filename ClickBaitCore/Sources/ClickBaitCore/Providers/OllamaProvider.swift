@@ -117,6 +117,33 @@ public struct OllamaProvider: LLMProvider {
         }
     }
 
+    /// How the answering model is doing, shown as a dot in the menu and the notch.
+    public enum Health: Equatable, Sendable {
+        /// Loaded: answers start right away.
+        case ready
+        /// Installed but not in memory: the first answer waits for it to load.
+        case asleep
+        /// Ollama runs, but this model isn't pulled.
+        case missing(String)
+        /// Ollama isn't running.
+        case unreachable
+    }
+
+    /// Asks Ollama what it has (two quick local requests; nothing is loaded).
+    public func health() async -> Health {
+        let request = URLRequest(url: Self.baseURL.appending(path: "api/tags"), timeoutInterval: 2)
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return .unreachable }
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let installed = (json?["models"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        return Self.health(model: model, installed: installed, loaded: await loadedModels())
+    }
+
+    static func health(model: String, installed: [String], loaded: [String]) -> Health {
+        guard isInstalled(model, among: installed) else { return .missing(model) }
+        return isInstalled(model, among: loaded) ? .ready : .asleep
+    }
+
     /// Loads the model into memory (an empty generate request), which can take ~10 s
     /// cold. Errors are ignored: the real request reports them properly.
     public func warmUp() async {

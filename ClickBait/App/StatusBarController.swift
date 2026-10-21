@@ -1,4 +1,6 @@
 import AppKit
+import ClickBaitCore
+import SwiftUI
 
 /// Owns the menu bar icon and its menu. Until the overlay bubble exists (step 7),
 /// the icon and the menu's first line are where ClickBait shows its state.
@@ -10,6 +12,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusLine = NSMenuItem(title: hint, action: nil, keyEquivalent: "")
     private let revealCaptureItem = NSMenuItem(title: "Reveal Last Capture", action: nil, keyEquivalent: "")
     private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    /// How the answering model is doing; read each time the menu opens (set by the app delegate).
+    var checkHealth: @MainActor () async -> OllamaProvider.Health? = { nil }
     private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let backgroundCapsulesItem = NSMenuItem(title: "Background ClickBaits", action: nil, keyEquivalent: "")
     private let backgroundCapsulesMenu = NSMenu()
@@ -76,6 +81,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
+        if menu === statusItem.menu {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                showHealth(await checkHealth())
+            }
+        }
         if menu === backgroundCapsulesMenu { rebuildBackgroundCapsulesMenu() }
     }
 
@@ -101,6 +112,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         statusLine.isEnabled = false
         menu.addItem(statusLine)
+        modelItem.isEnabled = false
+        showHealth(nil)
+        menu.addItem(modelItem)
         heardItem.isEnabled = false
         heardItem.isHidden = true
         menu.addItem(heardItem)
@@ -282,4 +296,48 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+
+    private func showHealth(_ health: OllamaProvider.Health?) {
+        let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor(health?.color ?? .gray)])
+        title.append(NSAttributedString(string: "Model: " + (health?.words ?? "checking…")))
+        modelItem.attributedTitle = title
+    }
+}
+
+/// The model's health as the menu and the notch show it: a dot and a few words.
+extension OllamaProvider.Health {
+    var words: String {
+        switch self {
+        case .ready: "ready"
+        case .asleep: "asleep, the first answer is slower"
+        case .missing(let model): "\(model) isn't installed"
+        case .unreachable: "Ollama isn't running"
+        }
+    }
+
+    /// For the notch's one short line.
+    var shortWords: String {
+        switch self {
+        case .ready: "ready"
+        case .asleep: "model asleep"
+        case .missing: "model not installed"
+        case .unreachable: "Ollama isn't running"
+        }
+    }
+
+    /// Ready is Azure (idle), asleep grey, a problem Wine.
+    var color: Color {
+        switch self {
+        case .ready: CompanionTone.idle.color
+        case .asleep: Color(white: 0.55)
+        case .missing, .unreachable: CompanionTone.problem
+        }
+    }
+
+    var isProblem: Bool {
+        switch self {
+        case .missing, .unreachable: true
+        case .ready, .asleep: false
+        }
+    }
 }

@@ -89,20 +89,6 @@ struct NotchShape: InsettableShape {
     }
 }
 
-/// The GIF's colours, where the artwork doesn't set them.
-enum NotchColors {
-    static let artist = Color(red: 0.55, green: 0.62, blue: 0.92)
-    static let bar = Color(red: 0.65, green: 0.78, blue: 0.95)
-    static let track = Color.white.opacity(0.14)
-    static let dim = Color.white.opacity(0.42)
-
-    /// The artwork's colour, lifted towards white so it reads on black.
-    static func lifted(_ color: NSColor?, _ amount: CGFloat, fallback: Color) -> Color {
-        guard let base = color?.usingColorSpace(.deviceRGB) else { return fallback }
-        return Color(nsColor: base.blended(withFraction: amount, of: .white) ?? base)
-    }
-}
-
 struct NotchView: View {
     let model: NotchController.Model
     let notch: Rect?
@@ -237,7 +223,7 @@ private struct PeekContent: View {
         HStack {
             Spacer(minLength: 0)
             if music.hasTrack {
-                Visualizer(playing: music.isPlaying, color: NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist))
+                Visualizer(playing: music.isPlaying, color: NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.music))
                     .frame(width: 18, height: 14)
                     .padding(.trailing, 22)
             }
@@ -260,7 +246,7 @@ private struct ActivityWings: View {
                 .frame(width: 22, height: 22)
                 .padding(.leading, 9)
             Spacer(minLength: 0)
-            Visualizer(playing: music.isPlaying, color: NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist))
+            Visualizer(playing: music.isPlaying, color: NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.music))
                 .frame(width: 18, height: 14)
                 .padding(.trailing, 11)
         }
@@ -302,8 +288,8 @@ private struct HUDWings: View {
                 .frame(width: NotchPanel.hudWing)
             Spacer(minLength: 0)
             ZStack(alignment: .leading) {
-                Capsule().fill(NotchColors.track)
-                Capsule().fill(NotchColors.bar).frame(width: max(4, 60 * level))
+                Capsule().fill(NotchPalette.track)
+                Capsule().fill(NotchPalette.highlight).frame(width: max(4, 60 * level))
             }
             .frame(width: 60, height: 4)
             .frame(width: NotchPanel.hudWing)
@@ -336,9 +322,9 @@ private struct OpenNotch: View {
                 case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .ask:
-                    AskCard(onAsk: { text in onCollapse(); model.ask(text) })
+                    AskCard(onAsk: model.ask, onSent: onCollapse, onEditing: { model.editing = $0 })
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .shelf: ShelfView(shelf: shelf, note: model.note).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .shelf: ShelfView(shelf: shelf, note: model.note, onEditing: { model.editing = $0 }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings: EmptyView()
                 }
             }
@@ -374,7 +360,7 @@ private struct OpenNotch: View {
 
     private var home: some View {
         HStack(spacing: 10) {
-            FocusCard(music: music, mood: model.mood())
+            FocusCard(music: music, mood: model.mood(), health: model.health)
                 .frame(width: 322)
                 .notchCard(wash: FocusCard.wash(for: model.mood()))
             IslandPills(pills: [
@@ -397,13 +383,17 @@ private struct OpenNotch: View {
 private struct FocusCard: View {
     let music: MusicBridge
     let mood: Bean.Mood
+    /// Shown instead of "ready" while nothing is going on and the model isn't ready.
+    let health: OllamaProvider.Health?
 
     /// The cover, in the card's points.
     nonisolated static let coverSize: CGFloat = 66
     nonisolated static let coverCentre = CGPoint(x: 52, y: 49)
 
     var body: some View {
-        let accent = music.hasTrack ? NotchColors.lifted(music.tint, 0.45, fallback: NotchColors.artist) : NotchBean.color(for: mood)
+        let modelNote = NotchBean.isResting(mood) ? health.flatMap { $0 == .ready ? nil : $0 } : nil
+        let accent = music.hasTrack ? NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.music)
+            : modelNote?.color ?? NotchBean.color(for: mood)
         ZStack(alignment: .topLeading) {
             if music.hasTrack, music.artwork != nil {
                 Artwork(music: music, corner: 12)
@@ -422,7 +412,7 @@ private struct FocusCard: View {
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                         .layoutPriority(1)
-                    Text(music.hasTrack ? music.artist : Self.status(mood))
+                    Text(music.hasTrack ? music.artist : modelNote?.shortWords ?? Self.status(mood))
                         .font(.system(size: 11))
                         .foregroundStyle(NotchPalette.secondary)
                         .lineLimit(1)
@@ -538,7 +528,6 @@ private struct FocusCard: View {
     }
 }
 
-/// The home's right card: four pills, two by two, each with a small bean.
 /// A key as it looks on the keyboard: a small rounded cap with a hairline.
 private struct Keycap: View {
     let key: String
@@ -555,6 +544,7 @@ private struct Keycap: View {
     }
 }
 
+/// The home's right card: four pills, two by two, each with a small bean.
 private struct IslandPills: View {
     struct Pill: Identifiable {
         let name: String
@@ -641,14 +631,21 @@ private struct GreetingCard: View {
 
 /// The ask tab: a field for ClickBait's chat, with the bean beside it. Return sends it to the
 /// chat (and the notch folds).
+/// Typing a question: Return sends it to ClickBait's chat (the same one as double-tap ⌥⌘),
+/// says so for a moment (`sentHold`), then folds.
 private struct AskCard: View {
     let onAsk: (String) -> Void
+    let onSent: () -> Void
+    let onEditing: (Bool) -> Void
     @State private var text = ""
+    @State private var sent = false
     @FocusState private var focused: Bool
 
+    static let sentHold = 0.7
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Ask ClickBait").font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 6) {
+            Text(sent ? "Sent to the chat…" : "Ask ClickBait").font(.system(size: 12, weight: .semibold))
             HStack(spacing: 8) {
                 TextField("Type a question, then Return", text: $text)
                     .textFieldStyle(.plain)
@@ -661,26 +658,38 @@ private struct AskCard: View {
                         .foregroundStyle(text.isEmpty ? NotchPalette.tertiary : CompanionTone.processing.color)
                 }
                 .buttonStyle(.plain)
-                .disabled(text.isEmpty)
+                .disabled(text.isEmpty || sent)
                 .accessibilityLabel("Ask")
             }
             .padding(.horizontal, 10)
             .frame(height: 30)
             .background(NotchPalette.ink, in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
+            Text("Answers come in the chat · double-tap ⌥⌘ anywhere for the same")
+                .font(.system(size: 10.5))
+                .foregroundStyle(NotchPalette.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .padding(.leading, 86)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .notchCard(wash: CompanionTone.processing.color.opacity(0.22))
+        .notchCard(wash: CompanionTone.processing.color.opacity(sent ? 0.4 : 0.22))
+        .animation(.easeOut(duration: 0.2), value: sent)
         .onAppear { focused = true }
+        .onChange(of: focused) { _, now in onEditing(now) }
     }
 
     private func send() {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty else { return }
+        guard !question.isEmpty, !sent else { return }
         text = ""
+        sent = true
         onAsk(question)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.sentHold))
+            onSent()
+        }
     }
 }
 
@@ -836,7 +845,7 @@ private struct Artwork: View {
             if let image = music.artwork {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
             } else {
-                shape.fill(Color.white.opacity(0.1)).overlay(Image(systemName: "music.note").foregroundStyle(NotchColors.dim))
+                shape.fill(Color.white.opacity(0.1)).overlay(Image(systemName: "music.note").foregroundStyle(NotchPalette.secondary))
             }
         }
         .clipShape(shape)
@@ -861,7 +870,7 @@ private struct AirDropPad: View {
             VStack(spacing: 5) {
                 Image(systemName: symbol(sender.status))
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(NotchColors.bar)
+                    .foregroundStyle(NotchPalette.highlight)
                     .symbolEffect(.pulse, isActive: targeted || isChoosing(sender.status))
                     .contentTransition(.symbolEffect(.replace))
                 Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
@@ -875,10 +884,10 @@ private struct AirDropPad: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PlayerPressStyle())
-        .notchCard(wash: targeted ? NotchColors.bar.opacity(0.45) : nil)
+        .notchCard(wash: targeted ? NotchPalette.highlight.opacity(0.45) : nil)
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(NotchColors.bar, lineWidth: 1.5)
+                .strokeBorder(NotchPalette.highlight, lineWidth: 1.5)
                 .opacity(targeted ? 1 : 0)
         }
         .scaleEffect(targeted ? 1.03 : 1)
@@ -926,6 +935,7 @@ private struct AirDropPad: View {
 private struct ShelfView: View {
     let shelf: ShelfStore
     @Bindable var note: NotchController.Note
+    let onEditing: (Bool) -> Void
     @State private var targeted = false
     @FocusState private var noteFocused: Bool
 
@@ -951,15 +961,15 @@ private struct ShelfView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(NotchColors.bar)
+                    .foregroundStyle(NotchPalette.highlight)
                 }
                 if !shelf.selectedFiles.isEmpty {
                     ZStack {
-                        Capsule().fill(NotchColors.bar.opacity(0.16))
+                        Capsule().fill(NotchPalette.highlight.opacity(0.16))
                         MultiFileDragHandle(urls: shelf.files.filter { shelf.selectedFiles.contains($0) })
                         Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(NotchColors.bar)
+                            .foregroundStyle(NotchPalette.highlight)
                             .padding(.horizontal, 7).padding(.vertical, 3)
                             .allowsHitTesting(false)
                     }
@@ -971,11 +981,11 @@ private struct ShelfView: View {
             }
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(targeted ? NotchColors.bar : Color.white.opacity(0.12),
+                    .strokeBorder(targeted ? NotchPalette.highlight : Color.white.opacity(0.12),
                                   style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [4, 4] : []))
                 if shelf.files.isEmpty {
                     VStack(spacing: 4) {
-                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchColors.bar)
+                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchPalette.highlight)
                         Text(targeted ? "Release to add" : "Drop files here")
                             .font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
                     }
@@ -996,7 +1006,7 @@ private struct ShelfView: View {
         }
         .padding(10)
         .frame(width: 250)
-        .notchCard(wash: targeted ? NotchColors.bar.opacity(0.35) : nil)
+        .notchCard(wash: targeted ? NotchPalette.highlight.opacity(0.35) : nil)
     }
 
     private var noteCard: some View {
@@ -1012,7 +1022,7 @@ private struct ShelfView: View {
                     .foregroundColor(NotchPalette.text)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
-                    .tint(NotchColors.bar)
+                    .tint(NotchPalette.highlight)
                     .focused($noteFocused)
                     .accessibilityLabel("Quick note")
                 if note.text.isEmpty {
@@ -1028,8 +1038,9 @@ private struct ShelfView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .notchCard()
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .strokeBorder(NotchColors.bar.opacity(noteFocused ? 0.5 : 0), lineWidth: 1))
+            .strokeBorder(NotchPalette.highlight.opacity(noteFocused ? 0.5 : 0), lineWidth: 1))
         .animation(.easeOut(duration: 0.14), value: noteFocused)
+        .onChange(of: noteFocused) { _, now in onEditing(now) }
     }
 
     private func appendBullet() {
@@ -1048,19 +1059,19 @@ private struct ShelfView: View {
                 .foregroundStyle(NotchPalette.secondary).lineLimit(1).frame(width: 54)
         }
         .frame(width: 58, height: 62)
-        .background(selected ? NotchColors.bar.opacity(0.16) : Color.white.opacity(0.045),
+        .background(selected ? NotchPalette.highlight.opacity(0.16) : Color.white.opacity(0.045),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(selected ? NotchColors.bar.opacity(0.75) : Color.white.opacity(0.07), lineWidth: 1))
+            .strokeBorder(selected ? NotchPalette.highlight.opacity(0.75) : Color.white.opacity(0.07), lineWidth: 1))
         .overlay(alignment: .topLeading) {
             if selected {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NotchColors.bar)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 13)).foregroundStyle(NotchPalette.highlight)
                     .background(Color.black, in: Circle()).offset(x: -2, y: -2)
             }
         }
         .overlay(alignment: .topTrailing) {
             Button { shelf.remove(url) } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(NotchColors.dim)
+                Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(NotchPalette.secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(url.lastPathComponent) from the shelf")
