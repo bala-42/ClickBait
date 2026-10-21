@@ -122,6 +122,11 @@ struct SettingsView: View {
                 Section("Behavior") {
                     Toggle("Carry out spoken commands", isOn: $settings.commandsEnabled)
                         .toggleStyle(AquaToggleStyle())
+                    Toggle("Morning suggestions", isOn: $settings.morningCards)
+                        .toggleStyle(AquaToggleStyle())
+                        .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
+                    Text("Once a day, after 5 am, the local model reads today's reminders and events and what you asked it to remember, and offers up to three things to ask, as a card in the dock. Nothing runs until you tap one; nothing leaves your Mac.")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
                 Section("Notch") {
                     Toggle("Show volume controls when using volume keys", isOn: $settings.notchVolumeHUD)

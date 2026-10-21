@@ -12,6 +12,8 @@ final class AppSettings {
         static let notchVolumeHUD = "settings.notchVolumeHUD"
         static let soundCues = "settings.soundCues"
         static let greetings = "settings.greetings"
+        static let morningCards = "settings.morningCards"
+        static let morningCardsShown = "settings.morningCardsShown"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
@@ -101,6 +103,17 @@ final class AppSettings {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
     /// A hello by the cursor on the first wake of the day or after a long time away.
+    /// Morning cards (`MorningBrief`): off until the user turns them on (they read Reminders and Calendar).
+    var morningCards: Bool {
+        didSet { defaults.set(morningCards, forKey: Key.morningCards) }
+    }
+
+    /// When the morning cards last appeared, so they come once a day.
+    var morningCardsShown: Date? {
+        get { defaults.object(forKey: Key.morningCardsShown) as? Date }
+        set { defaults.set(newValue, forKey: Key.morningCardsShown) }
+    }
+
     var greetings: Bool {
         didSet { defaults.set(greetings, forKey: Key.greetings) }
     }
@@ -137,6 +150,7 @@ final class AppSettings {
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
+        morningCards = defaults.bool(forKey: Key.morningCards)
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? true
         LegacyCloudSettings.remove(from: defaults)
     }

@@ -51,7 +51,8 @@ targets:
         NSMicrophoneUsageDescription: "ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say."
         NSCameraUsageDescription: "ClickBait shows your camera in its notch Mirror while you have it open. Nothing is recorded or saved."
         NSAppleEventsUsageDescription: "ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel."
-        NSRemindersFullAccessUsageDescription: "ClickBait adds reminders when you ask it to. It never reads your existing reminders."
+        NSRemindersFullAccessUsageDescription: "ClickBait adds reminders when you ask it to. With Morning suggestions on, it reads today's reminders on this Mac to suggest what to ask."
+        NSCalendarsFullAccessUsageDescription: "With Morning suggestions on, ClickBait reads today's events on this Mac to suggest what to ask."
         NSRemindersUsageDescription: "ClickBait adds reminders when you ask it to."
     entitlements:
       path: ClickBait/ClickBait.entitlements

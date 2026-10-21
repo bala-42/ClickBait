@@ -264,7 +264,7 @@ struct AgentDoneCard: View {
             if !suggestions.isEmpty {
                 label("suggested next:").padding(.top, 12)
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(suggestions.prefix(2), id: \.self) { suggestion in
+                    ForEach(suggestions.prefix(MorningCards.maxCount), id: \.self) { suggestion in  // follow-ups send 2 at most
                         pill(suggestion) { onSuggestion(suggestion) }
                     }
                 }

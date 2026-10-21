@@ -33,7 +33,9 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>ClickBait adds reminders when you ask it to. It never reads your existing reminders.</string>
+	<string>ClickBait adds reminders when you ask it to. With Morning suggestions on, it reads today's reminders on this Mac to suggest what to ask.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>With Morning suggestions on, ClickBait reads today's events on this Mac to suggest what to ask.</string>
 	<key>NSRemindersUsageDescription</key>
 	<string>ClickBait adds reminders when you ask it to.</string>
 	<key>NSServices</key>

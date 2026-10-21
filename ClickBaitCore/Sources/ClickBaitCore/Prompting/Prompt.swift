@@ -77,6 +77,7 @@ public enum Prompt {
         else if request.routeIntent { text = routeSystem }
         else if request.lookupQuery { text = lookupSystem }
         else if request.suggestNextAfter != nil { text = nextSystem }
+        else if request.morningBrief != nil { text = morningSystem }
         else if request.pickElement { text = pickSystem }
         else if request.sortRequest { text = sortSystem }
         else if request.interpretOrder { text = orderSystem }
@@ -286,6 +287,7 @@ public enum Prompt {
         if let answer = request.suggestNextAfter {
             return "Question: \(request.question)\nAnswer: \(String(answer.prefix(1_500)))"
         }
+        if let brief = request.morningBrief { return brief }
         var text = baseUserText(for: request)
         if !request.web.isEmpty { text += "\n\n" + webBlock(request.web) }
         // A plain ask gets today's date, and any "days until …" worked out: the model has no
@@ -466,6 +468,17 @@ public enum Prompt {
         - One or two follow-up requests in the user's own voice, each 2–6 words, starting \
         with a verb or a question word ("Show me the fixed code", "Why is it nil?").
         - About the same topic, useful next steps. Never repeat the question.
+        """
+
+    /// Morning cards (text only): what the user might ask ClickBait today.
+    public static let morningSystem = """
+        You suggest what someone might ask their computer assistant this morning, from their \
+        day: events, reminders and facts they keep.
+
+        Reply with ONLY one JSON object: {"cards": ["...", "...", "..."]}
+        - One to three requests in the user's own voice, each 2–6 words, starting with a verb \
+        ("Draft the Atlas agenda", "Plan my 3 pm call").
+        - Each about something listed. Never invent meetings, people or deadlines.
         """
 
     /// Internet Mode, step one (text only, ~1 s): the words to search for. Only this phrase

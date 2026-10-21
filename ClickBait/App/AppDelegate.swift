@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where the companion was at the last hotkey press: the chat's place.
     private var invokedPoint: CGPoint?
     private lazy var tutorial = TutorialController(overlay: overlay)
+    private lazy var morning = MorningBrief(settings: settings)
     private lazy var onboardingWindow = OnboardingWindowController(permissions: permissions, settings: settings, speech: speech)
 
     static func main() {
@@ -90,6 +91,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
         greeter.start(helloAtLaunch: !settings.notchPanelEnabled)  // one hello: the notch's when it's on
+        // Morning cards: a done "Good morning" card in the dock, its cards as the suggestions.
+        morning.present = { [weak self] summary, cards in
+            guard let self, backgroundJobs.hasRoom else { return false }
+            var conversation = Conversation()
+            conversation.append(user: "Good morning", assistantSpeech: summary)
+            let job = BackgroundJob(question: "Good morning", kind: .answer, homeBundleID: nil, homePID: nil, conversation: conversation)
+            guard backgroundJobs.add(job, task: nil) else { return false }
+            backgroundJobs.complete(job.id, answer: summary, conversation: conversation)
+            backgroundJobs.setSuggestions(cards, for: job.id)
+            return true
+        }
+        morning.start()
         #if DEBUG
         if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GREETING"] != nil {
             Task { @MainActor [weak self] in
