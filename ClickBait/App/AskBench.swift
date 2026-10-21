@@ -7,7 +7,8 @@ import ClickBaitCore
 /// in `CLICKBAIT_ASK_BENCH`. For each size, `CLICKBAIT_ASK_RUNS` times: a general question
 /// (time to the whole answer), and "where is …?" for up to six named elements of the app in
 /// front, with the element list as ClickBait sends it (a hit lands within 12 pt of the
-/// element), and the menu bar's names read from the picture alone (legibility). Debug only; uses the local model:
+/// element), and the menu bar's names read from the picture alone (legibility). Debug only; uses the local model
+/// (`CLICKBAIT_ASK_MODEL` overrides Settings' main model, to compare models):
 ///
 ///     CLICKBAIT_ASK_BENCH=1280,1024,896 CLICKBAIT_ASK_BENCH_OUT=<folder> …/ClickBait.app/Contents/MacOS/ClickBait
 ///
@@ -23,7 +24,7 @@ enum AskBench {
         let runs = Int(environment["CLICKBAIT_ASK_RUNS"] ?? "") ?? 2
         Task {
             let lines: [String]
-            do { lines = try await bench(sizes: sizes, runs: runs, settings: settings) } catch { lines = ["Failed: \(error)"] }
+            do { lines = try await bench(sizes: sizes, runs: runs, settings: settings, model: environment["CLICKBAIT_ASK_MODEL"]) } catch { lines = ["Failed: \(error)"] }
             try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
             try? lines.joined(separator: "\n").write(to: out.appending(path: "report-ask.md"), atomically: true, encoding: .utf8)
             print(lines.joined(separator: "\n"))
@@ -32,7 +33,7 @@ enum AskBench {
         return true
     }
 
-    private static func bench(sizes: [Int], runs: Int, settings: AppSettings) async throws -> [String] {
+    private static func bench(sizes: [Int], runs: Int, settings: AppSettings, model: String?) async throws -> [String] {
         let capture = try await ScreenCapturer().captureDisplayUnderCursor(excluding: settings.blocklist)
         let front = NSWorkspace.shared.frontmostApplication
         let elements = await AskCoordinator.elements(in: capture, frontmostPID: front?.processIdentifier)
@@ -42,7 +43,7 @@ enum AskBench {
         let titleWords = Set(title.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).filter { $0.count >= 3 }.map(String.init))
         let menus = elements.filter { $0.role == "AXMenuBarItem" && $0.label != "Apple" }.map(\.label)
         let context = ScreenContext(appName: front?.localizedName)
-        let provider = settings.makeProvider()
+        let provider = model.map { OllamaProvider(model: $0, fastModel: "") } ?? settings.makeProvider()
         await provider.warmUp()  // load time isn't answer time
         var lines = ["# Screen-answer benchmark, \(Date.now.formatted(date: .abbreviated, time: .shortened))", "",
                      "\(provider.model); capture \(capture.image.width)×\(capture.image.height); \(targets.count) targets in \(front?.localizedName ?? "?"), \(runs) runs each", "",
@@ -66,6 +67,7 @@ enum AskBench {
                 // Legibility: the menu names, read from the picture alone.
                 let reading = try await ask("Read out every menu name in the menu bar at the top of the screen, left to right, separated by commas.").reply.lowercased()
                 read += menus.filter { reading.contains($0.lowercased()) }.count
+                misses.append("\(size) menu reading: \(reading.prefix(200).replacingOccurrences(of: "\n", with: " "))")
                 readable += menus.count
                 let titleReply = try await ask("What is the exact title of the front window? Reply with just the title.").reply.lowercased()
                 if !titleWords.isEmpty, Double(titleWords.filter { titleReply.contains($0) }.count) >= 0.8 * Double(titleWords.count) { titles += 1 }

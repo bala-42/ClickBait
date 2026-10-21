@@ -67,3 +67,16 @@ Recording continues 0.35 s after ⌃⌥ is released. `AudioConditioner` skips si
 | 896 | 6.7 / 8.0 / 7.1 s | 10/12, 15/30 | 10/12, 15/18 |
 
 896 px saves ~0.4–1.6 s with the same pointing and menu reading. Not measured: reading small text (code, error messages, 11–13 pt), which a smaller picture risks most. Without the element list the model found no menu-bar item from the picture alone, even at 1280. `ScreenshotEncoder.maxLongEdge` stays 1280 until small-text reading is measured. Run with `open -W -n --env CLICKBAIT_ASK_BENCH=1280,896 --env CLICKBAIT_ASK_BENCH_OUT=<folder> <ClickBait.app>` (through `open`, so the app's own Screen Recording permission applies), with ClickBait not in use.
+
+**Model comparison (2026-10-21; M4 Pro, 24 GB; `ModelCompareTests` + `AskBench` with `CLICKBAIT_ASK_MODEL`).** qwen3.5:9b (6.6 GB, llama.cpp runner) against gemma4:e4b (9.5 GB on disk, 10 GB loaded, nvfp4, Ollama's MLX runner, vision, Apache-2.0), both with thinking off as ClickBait sends them.
+
+| task (text, ClickBait's prompts and parsers) | qwen3.5:9b | gemma4:e4b |
+|---|---|---|
+| code questions (16; explain, fix, write) | 15/16, median 3.3 s | 8/16, 0.6 s — never fills `code` (0/7 that need it); one backwards fix |
+| route (10), orders (8), pick (4) | all right, 0.9–1.8 s | all right, 0.1–0.2 s |
+| dictation (4), search words (3), suggestions (2), morning (2) | all right, 0.8–1.5 s | all right, 0.2–0.5 s |
+| screen: where-is with the element list (30, two captures) | 25/30, ~10 s | 23/30, ~0.5 s |
+| screen: general answer | ~9.5 s | 0.4–2.3 s |
+| screen: menu names from the picture alone | weak (guesses Finder's menus) | weak (same guess) |
+
+qwen's two text "misses" were right answers in other words. The bench found two real bugs, fixed in 01da35e: the pick schema forced one id (the model could never say none), and the morning prompt's examples were copied onto unrelated days. Run: `CLICKBAIT_LIVE_COMPARE=qwen3.5:9b,gemma4:e4b CLICKBAIT_COMPARE_OUT=<folder> swift test --package-path ClickBaitCore --filter ModelCompare`; screens: `open -W -n --env CLICKBAIT_ASK_BENCH=1280 --env CLICKBAIT_ASK_MODEL=<model> --env CLICKBAIT_ASK_BENCH_OUT=<folder> <ClickBait.app>`.
