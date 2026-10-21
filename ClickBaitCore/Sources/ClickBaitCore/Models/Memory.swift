@@ -172,8 +172,10 @@ public struct Memory: Equatable, Sendable {
     static func looksSecret(_ text: String) -> Bool {
         let lower = text.lowercased()
         let words = ["password", "passcode", "passwd", "pin code", "my pin", "api key", "secret key", "private key",
-                     "token", "cvv", "security code", "seed phrase", "recovery phrase", "social security"]
+                     "token", "cvv", "security code", "seed phrase", "recovery phrase", "social security",
+                     "passport number", "nric", "iban", "bank account", "account number", "routing number"]
         if words.contains(where: lower.contains) { return true }
+        if PersonalData.contains(text) { return true }  // ID numbers: SSN, NRIC, passport, IBAN
         let digits = text.filter(\.isNumber)
         if digits.count >= 13, digits.count <= 19, text.range(of: #"(\d[ -]?){13,19}"#, options: .regularExpression) != nil { return true }
         // Long random-looking strings (keys): 24+ letters and digits mixed, no spaces.

@@ -103,8 +103,8 @@ public enum WebLookup {
 }
 
 /// Takes personal details out of a search phrase before it leaves the Mac (spec decisions
-/// 4–5): addresses, paths, long numbers, key-like strings, and names found on screen that
-/// the user didn't say themselves. Then caps it at 12 words / 100 characters.
+/// 4–5): addresses, paths, long numbers, key-like strings, identity numbers (`PersonalData`),
+/// and names found on screen that the user didn't say themselves. Then caps it at 12 words / 100 characters.
 public enum QueryScrubber {
     public static let maxWords = 12
     public static let maxCharacters = 100
@@ -120,7 +120,7 @@ public enum QueryScrubber {
 
     /// `screenNames`: people's names found on screen; removed unless `userWords` says them.
     public static func clean(_ phrase: String, screenNames: [String] = [], userWords: String = "") -> String {
-        var text = phrase
+        var text = PersonalData.removed(from: phrase)
         for pattern in patterns {
             text = text.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
         }
