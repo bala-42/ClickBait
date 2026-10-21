@@ -250,10 +250,11 @@ public struct OllamaProvider: LLMProvider {
         "required": ["speech", "steps"],
     ] }
 
+    /// Matches `Prompt.pickSystem`: several ids in order, or none ({"ids": []}) when nothing fits.
     static var pickSchema: [String: Any] { [
         "type": "object",
-        "properties": ["id": ["type": "integer"]],
-        "required": ["id"],
+        "properties": ["ids": ["type": "array", "maxItems": 3, "items": ["type": "integer"]]],
+        "required": ["ids"],
     ] }
 
     static var sortSchema: [String: Any] { [

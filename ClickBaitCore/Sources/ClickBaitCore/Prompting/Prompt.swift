@@ -476,9 +476,9 @@ public enum Prompt {
         day: events, reminders and facts they keep.
 
         Reply with ONLY one JSON object: {"cards": ["...", "...", "..."]}
-        - One to three requests in the user's own voice, each 2–6 words, starting with a verb \
-        ("Draft the Atlas agenda", "Plan my 3 pm call").
-        - Each about something listed. Never invent meetings, people or deadlines.
+        - One to three requests in the user's own voice, each 2–6 words, starting with a verb.
+        - Each names something from the list below (an event, a reminder or a fact) in its own \
+        words. Never invent meetings, people, times or deadlines; fewer cards are fine.
         """
 
     /// Internet Mode, step one (text only, ~1 s): the words to search for. Only this phrase
