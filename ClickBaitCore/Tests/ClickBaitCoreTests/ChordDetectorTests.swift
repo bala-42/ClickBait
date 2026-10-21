@@ -25,6 +25,18 @@ struct ChordDetectorTests {
         #expect(run([.mods([.control, .option]), .key, .mods([])]) == [.askPressed, .askCancelled])
     }
 
+    /// A release that never arrived cancels the hold; it never completes it.
+    @Test func missedReleaseCancels() {
+        var detector = ChordDetector()
+        #expect(detector.modifiersChanged(to: [.control, .option]) == [.askPressed])
+        #expect(detector.reconcile(live: [.control, .option]).isEmpty)  // still held
+        #expect(detector.isHolding)
+        #expect(detector.reconcile(live: []) == [.askCancelled])
+        #expect(!detector.isHolding)
+        #expect(detector.modifiersChanged(to: []).isEmpty)  // the late release does nothing
+        #expect(detector.reconcile(live: []).isEmpty)
+    }
+
     @Test func askCancelledByAddingCommandOrShift() {
         #expect(run([.mods([.control, .option]), .mods([.control, .option, .shift])]) == [.askPressed, .askCancelled])
     }

@@ -16,6 +16,9 @@ final class InputInterceptor {
     var isBusy: () -> Bool = { false }
     /// Called (on the main thread) for an Esc that was taken.
     var onEscape: () -> Void = {}
+    /// Called (on the main thread) for every Esc press, taken or not: lets the notch close
+    /// without a global key monitor of its own.
+    var onEscapeSeen: () -> Void = {}
     /// ⌥⌘ + right-click: ask by typing.
     var onTypeToAsk: () -> Void = {}
     /// A volume key went down: true if the notch HUD handled it (the key is then taken).
@@ -131,6 +134,7 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
     }
     let taken = MainActor.assumeIsolated { () -> Bool in
         interceptor.swallowEscape = false
+        DispatchQueue.main.async { interceptor.onEscapeSeen() }
         guard interceptor.isBusy() else {
             Log.input.notice("Esc passed to the front app (ClickBait idle)")
             return false

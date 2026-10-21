@@ -2,7 +2,7 @@
 
 ## Sentient OS
 
-Parts of ClickBait's notch window are adapted from Sentient OS (https://github.com/Sentient-OS-Labs/sentient-os, commit 16e871a), licensed under the GNU Affero General Public License v3.0 (the same licence as ClickBait; full text in [LICENSE](LICENSE)). Copyright (c) Sentient OS Labs and the Sentient OS contributors. Adapted files say so at the top and were modified by the ClickBait contributors from 2026-10-21.
+Parts of ClickBait's notch window and hotkey handling are adapted from Sentient OS (https://github.com/Sentient-OS-Labs/sentient-os, commit 16e871a), licensed under the GNU Affero General Public License v3.0 (the same licence as ClickBait; full text in [LICENSE](LICENSE)). Copyright (c) Sentient OS Labs and the Sentient OS contributors. Adapted code is marked "adapted from Sentient OS" where it appears and was modified by the ClickBait contributors from 2026-10-21.
 
 ## Notch panel look
 

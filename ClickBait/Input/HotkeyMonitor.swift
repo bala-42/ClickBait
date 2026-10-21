@@ -5,18 +5,32 @@ import ClickBaitCore
 /// highlighted text, hold fn+⌃ to dictate. Real shortcuts that use these modifiers keep working.
 ///
 /// Global monitors only receive events once Accessibility is granted; the local
-/// monitors keep the hotkeys working while ClickBait itself is frontmost.
+/// monitors keep the hotkeys working while ClickBait itself is frontmost. A check every
+/// `healthInterval` puts back a missing monitor and cancels a hold whose release never came.
 @MainActor
 final class HotkeyMonitor {
     private let handler: (ChordDetector.Event) -> Void
     private var monitors: [Any] = []
     private var detector = ChordDetector()
+    private var health: Timer?
+    /// The last check found a hold the keyboard no longer has.
+    private var stale = false
+
+    static let healthInterval = 1.5
 
     init(handler: @escaping (ChordDetector.Event) -> Void) {
         self.handler = handler
     }
 
     func start() {
+        install()
+        guard health == nil else { return }
+        health = Timer.scheduledTimer(withTimeInterval: Self.healthInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkHealth() }
+        }
+    }
+
+    private func install() {
         guard monitors.isEmpty else { return }
         let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
 
@@ -36,7 +50,26 @@ final class HotkeyMonitor {
     func stop() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
+        health?.invalidate()
+        health = nil
+        stale = false
         detector = ChordDetector()
+    }
+
+    /// Adapted from Sentient OS (AGPL-3.0). A secure text field (a password box) hides key
+    /// events from monitors, so a release can go missing and leave a hold stuck on. The hold is
+    /// cancelled only once the keyboard has disagreed for two checks in a row, so a release
+    /// still waiting in the event queue is never cut short.
+    private func checkHealth() {
+        if monitors.isEmpty { install() }
+        guard detector.isHolding else { stale = false; return }
+        let live = Self.modifiers(from: NSEvent.modifierFlags)
+        var probe = detector
+        guard !probe.reconcile(live: live).isEmpty else { stale = false; return }
+        guard stale else { stale = true; return }
+        stale = false
+        Log.input.notice("Hotkey release missed; hold cancelled")
+        detector.reconcile(live: live).forEach(handler)
     }
 
     private func handle(_ event: NSEvent) {

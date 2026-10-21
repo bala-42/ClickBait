@@ -80,6 +80,20 @@ public struct ChordDetector: Sendable {
         return events
     }
 
+    /// Holding a chord (ask, dictate) or armed for a tap (explain).
+    public var isHolding: Bool { askHeld || dictateHeld || explainArmed }
+
+    /// A chord whose keys are no longer down (`live`, read from the keyboard itself) lost its
+    /// release: a secure text field or a lost event swallowed it. It is cancelled, never
+    /// completed, so a missed release can't send a question (adapted from Sentient OS, AGPL-3.0).
+    public mutating func reconcile(live modifiers: Modifiers) -> [Event] {
+        var events: [Event] = []
+        if askHeld, modifiers != Self.ask { askHeld = false; events.append(.askCancelled) }
+        if dictateHeld, modifiers != Self.dictate { dictateHeld = false; events.append(.dictateCancelled) }
+        if explainArmed, modifiers != Self.explain { explainArmed = false; events.append(.explainCancelled) }
+        return events
+    }
+
     public mutating func keyPressed() -> [Event] {
         var events: [Event] = []
         if explainArmed {

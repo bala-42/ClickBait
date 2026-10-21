@@ -219,6 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return coordinator.ownsEscape || overlay.looksBusy || confirm.isShowing || readyPillShown
         }
         escape.onEscape = { [weak self] in _ = self?.overlay.onEscape?() }
+        escape.onEscapeSeen = { [weak self] in self?.notch.escapePressed() }
         escape.onTypeToAsk = { [weak self] in self?.coordinator.startTypedChat() }
         coordinator.onChatOpenForTyping = { [weak self] in
             guard let self else { return }

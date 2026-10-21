@@ -409,14 +409,18 @@ final class NotchController {
         if model.state != .expanded { apply(.clicked) }
     }
 
+    /// Esc pressed in any app (from `InputInterceptor`, which already sees every key): closes
+    /// the open panel, with no global key monitor of its own (adapted from Sentient OS, AGPL-3.0).
+    func escapePressed() {
+        if model.state == .expanded { apply(.escape) }
+    }
+
+    /// Esc while the panel itself has the keyboard: taken here so the field doesn't beep.
     private func watchEscape(_ on: Bool) {
         escapeMonitors.forEach(NSEvent.removeMonitor)
         escapeMonitors.removeAll()
         guard on else { return }
         let escape: (NSEvent) -> Bool = { $0.keyCode == 53 }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            if escape(event) { MainActor.assumeIsolated { self?.apply(.escape) } }
-        }) { escapeMonitors.append(global) }
         if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             guard escape(event) else { return event }
             MainActor.assumeIsolated { self?.apply(.escape) }
