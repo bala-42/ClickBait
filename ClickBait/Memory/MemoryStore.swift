@@ -35,6 +35,39 @@ final class MemoryStore {
         return removed
     }
 
+    /// The notes folder (`NoteFolder`): the user's own `.md` files, read fresh for each question.
+    let notesFolder: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("ClickBait/Notes", isDirectory: true)
+    }()
+
+    /// Newest first; at most 100 files of 256 KB each, so a stray big file can't slow an answer.
+    var notes: [(name: String, text: String)] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: notesFolder, includingPropertiesForKeys: keys)) ?? []
+        return files
+            .filter { $0.pathExtension.lowercased() == "md" && ((try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) <= 256_000 }
+            .sorted { modified($0) > modified($1) }
+            .prefix(100)
+            .compactMap { url in (try? String(contentsOf: url, encoding: .utf8)).map { (url.deletingPathExtension().lastPathComponent, $0) } }
+    }
+
+    private func modified(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+    }
+
+    /// What goes in a prompt for `question`: remembered facts, then matching note lines.
+    func block(for question: String) -> String? {
+        let blocks = [memory.block(for: question), NoteFolder.block(for: question, notes: notes)].compactMap { $0 }
+        return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
+    }
+
+    /// Opens the notes folder in Finder (made first if it isn't there yet).
+    func revealNotes() {
+        try? FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(notesFolder)
+    }
+
     /// Opens the file in the user's text editor (made first if there's nothing yet).
     func reveal() {
         if !FileManager.default.fileExists(atPath: url.path) { write(Memory(file: "")) }

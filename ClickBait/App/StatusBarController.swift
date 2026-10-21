@@ -128,6 +128,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let remembered = item("Remembered…", action: #selector(openRemembered), key: "")
         remembered.toolTip = "What you asked ClickBait to remember, one line each. Edit or delete freely."
         menu.addItem(remembered)
+        let notes = item("Notes Folder…", action: #selector(openNotes), key: "")
+        notes.toolTip = "Your own .md notes. Lines that fit a question go to the local model."
+        menu.addItem(notes)
         let saved = item("Saved Answers…", action: #selector(openSavedAnswers), key: "")
         saved.toolTip = "Answers you saved from the chat, as text files."
         menu.addItem(saved)
@@ -186,6 +189,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openPermissions() { onOpenPermissions() }
     @objc private func openRemembered() { MemoryStore.shared.reveal() }
+    @objc private func openNotes() { MemoryStore.shared.revealNotes() }
     @objc private func openSavedAnswers() { AnswerArchive.reveal() }
     @objc private func toggleInternet() { settings.internet.toggle() }
     @objc private func chooseSpotifyArt(_ sender: NSMenuItem) {

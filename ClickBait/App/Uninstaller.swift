@@ -6,7 +6,7 @@ import AppKit
 /// itself goes to the Trash by hand, so a copy being built or tested is never deleted.
 @MainActor
 enum Uninstaller {
-    /// ClickBait's own folder: NOTES.md, saved answers, the speech model, SearXNG settings.
+    /// ClickBait's own folder: NOTES.md, the notes folder, saved answers, the speech model, SearXNG settings.
     static var supportFolder: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appending(path: "ClickBait", directoryHint: .isDirectory)
@@ -17,7 +17,7 @@ enum Uninstaller {
         alert.alertStyle = .critical
         alert.messageText = "Uninstall ClickBait?"
         alert.informativeText = """
-            This deletes everything ClickBait keeps on this Mac: remembered facts, saved answers, \
+            This deletes everything ClickBait keeps on this Mac: remembered facts, your notes folder, saved answers, \
             the speech model, SearXNG settings, debug captures and all of its settings. It also \
             resets ClickBait's Microphone, Camera, Screen Recording and Accessibility permissions. \
             Ollama and its models stay.

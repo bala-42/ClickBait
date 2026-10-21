@@ -300,7 +300,7 @@ extension AskCoordinator {
                 elements: listed
             )
             request.contextJPEG = snipFollowUp?.context ?? snipContext
-            request.remembered = MemoryStore.shared.memory.block(for: question)
+            request.remembered = MemoryStore.shared.block(for: question)
             request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn
             if let lookup {
                 // What the lookup found within its ~4 s; a question not about the screen is
