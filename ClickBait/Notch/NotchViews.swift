@@ -379,8 +379,8 @@ private struct OpenNotch: View {
 private struct FocusCard: View {
     let music: MusicBridge
     let mood: Bean.Mood
-    /// Shown instead of "ready" while nothing is going on and the model isn't ready.
-    let health: OllamaProvider.Health?
+    /// Shown instead of "ready" while nothing is going on and something isn't ready (`HealthLadder`).
+    let health: HealthLadder.Item?
 
     /// The cover, in the card's points.
     nonisolated static let coverSize: CGFloat = 66

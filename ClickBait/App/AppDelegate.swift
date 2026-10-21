@@ -103,7 +103,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         notch.model.mood = { [overlay] in overlay.model.beanMood }
         overlay.onGuide = { [weak self] in self?.notch.makeRoom() }
-        let checkHealth: @MainActor () async -> OllamaProvider.Health? = { [settings] in await settings.makeProvider().health() }
+        // The worst thing wrong right now (`HealthLadder`), read each time the menu or the notch opens.
+        // A permission counts as off only once refused: Microphone not asked yet is asked on first use.
+        let checkHealth: @MainActor () async -> HealthLadder.Item? = { [settings, permissions] in
+            permissions.refresh()
+            let off = [PermissionKind.screenRecording, .accessibility, .microphone]
+                .filter { permissions.status(of: $0) == .denied }.map(\.title)
+            return HealthLadder.worst(model: await settings.makeProvider().health(), permissionsOff: off)
+        }
         notch.model.checkHealth = checkHealth
         statusBar.checkHealth = checkHealth
         notch.model.ask = { [weak self] text in

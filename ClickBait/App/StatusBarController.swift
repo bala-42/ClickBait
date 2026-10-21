@@ -14,7 +14,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let heardItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     /// How the answering model is doing; read each time the menu opens (set by the app delegate).
-    var checkHealth: @MainActor () async -> OllamaProvider.Health? = { nil }
+    var checkHealth: @MainActor () async -> HealthLadder.Item? = { nil }
     private let answerItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let backgroundCapsulesItem = NSMenuItem(title: "Background ClickBaits", action: nil, keyEquivalent: "")
     private let backgroundCapsulesMenu = NSMenu()
@@ -297,21 +297,29 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func quit() { NSApp.terminate(nil) }
 
-    private func showHealth(_ health: OllamaProvider.Health?) {
+    private func showHealth(_ health: HealthLadder.Item?) {
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor(health?.color ?? .gray)])
-        title.append(NSAttributedString(string: "Model: " + (health?.words ?? "checking…")))
+        title.append(NSAttributedString(string: health?.words ?? "Checking…"))
         modelItem.attributedTitle = title
+        // A permission that's off: the line opens the Permissions window.
+        if case .permissionOff = health {
+            modelItem.action = #selector(openPermissions)
+            modelItem.target = self
+        } else {
+            modelItem.action = nil
+        }
     }
 }
 
-/// The model's health as the menu and the notch show it: a dot and a few words.
-extension OllamaProvider.Health {
+/// ClickBait's health as the menu and the notch show it: a dot and a few words.
+extension HealthLadder.Item {
     var words: String {
         switch self {
-        case .ready: "ready"
-        case .asleep: "asleep, the first answer is slower"
-        case .missing(let model): "\(model) isn't installed"
-        case .unreachable: "Ollama isn't running"
+        case .ready: "Model ready"
+        case .modelAsleep: "Model asleep, the first answer is slower"
+        case .modelMissing(let model): "\(model) isn't installed"
+        case .ollamaOff: "Ollama isn't running"
+        case .permissionOff(let permission): "\(permission) is off: click to fix"
         }
     }
 
@@ -319,9 +327,10 @@ extension OllamaProvider.Health {
     var shortWords: String {
         switch self {
         case .ready: "ready"
-        case .asleep: "model asleep"
-        case .missing: "model not installed"
-        case .unreachable: "Ollama isn't running"
+        case .modelAsleep: "model asleep"
+        case .modelMissing: "model not installed"
+        case .ollamaOff: "Ollama isn't running"
+        case .permissionOff(let permission): "\(permission) off"
         }
     }
 
@@ -329,15 +338,8 @@ extension OllamaProvider.Health {
     var color: Color {
         switch self {
         case .ready: CompanionTone.idle.color
-        case .asleep: Color(white: 0.55)
-        case .missing, .unreachable: CompanionTone.problem
-        }
-    }
-
-    var isProblem: Bool {
-        switch self {
-        case .missing, .unreachable: true
-        case .ready, .asleep: false
+        case .modelAsleep: Color(white: 0.55)
+        case .ollamaOff, .modelMissing, .permissionOff: CompanionTone.problem
         }
     }
 }

@@ -59,9 +59,9 @@ final class NotchController {
         var ask: @MainActor (String) -> Void = { _ in }
         /// Typing in the panel (the ask field, the shelf's note): the pointer leaving doesn't fold it.
         var editing = false
-        /// How the answering model is doing, read each time the panel opens (set by the app delegate).
-        var checkHealth: @MainActor () async -> OllamaProvider.Health? = { nil }
-        var health: OllamaProvider.Health?
+        /// The worst thing wrong right now (`HealthLadder`), read each time the panel opens (set by the app delegate).
+        var checkHealth: @MainActor () async -> HealthLadder.Item? = { nil }
+        var health: HealthLadder.Item?
 
         /// Typing or in Settings: only Esc, ✕ or a click elsewhere folds it.
         var holdsOpen: Bool { editing || tab == .settings }
