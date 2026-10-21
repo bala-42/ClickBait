@@ -48,16 +48,16 @@ targets:
             NSSendTypes:
               - NSStringPboardType
               - public.utf8-plain-text
-        NSMicrophoneUsageDescription: "ClickBait listens while you hold Control+Option so it can hear your question."
+        NSMicrophoneUsageDescription: "ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say."
+        NSCameraUsageDescription: "ClickBait shows your camera in its notch Mirror while you have it open. Nothing is recorded or saved."
         NSAppleEventsUsageDescription: "ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel."
-        NSCalendarsFullAccessUsageDescription: "ClickBait's notch calendar shows events for the date you select. They stay on this Mac."
-        NSCalendarsUsageDescription: "ClickBait's notch calendar shows events for the date you select."
-        NSRemindersFullAccessUsageDescription: "ClickBait shows reminders for the date selected in its notch calendar. It may also add reminders when you ask it to."
-        NSRemindersUsageDescription: "ClickBait shows reminders for the date selected in its notch calendar and may add reminders when you ask it to."
+        NSRemindersFullAccessUsageDescription: "ClickBait adds reminders when you ask it to. It never reads your existing reminders."
+        NSRemindersUsageDescription: "ClickBait adds reminders when you ask it to."
     entitlements:
       path: ClickBait/ClickBait.entitlements
       properties:
         com.apple.security.device.audio-input: true
+        com.apple.security.device.camera: true
         com.apple.security.automation.apple-events: true
         com.apple.security.personal-information.calendars: true
     configFiles:
