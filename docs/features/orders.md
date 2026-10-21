@@ -1,0 +1,15 @@
+# Orders
+
+Places and file orders, built-in app orders, orders in other words, and who asks first (`ActionPolicy`). Part of the project rules (see `CLAUDE.md`).
+
+#### Places and file orders (phase E, steps 1–2)
+- A box/circle snip in Finder selects the items under it (`AXInspector.finderItemNames` → `FinderSelection.select`; names reach AppleScript only via `AppleScriptText` escaping), so "combine these" acts on them.
+- Rule-based orders (typed in a chat too): "make a new folder [in <place>] [called X]", "open Downloads", "move/copy these to <place>", "rename this to X", "put these in a new folder called X". Places: Desktop, Downloads, Documents, Applications, iCloud Drive; Home/Music/Pictures/Movies only with "folder". Names keep the user's casing and are validated (no `/`, `:`, leading `.`). Nothing is overwritten (numbered names); rename refuses clashes and keeps the extension.
+
+#### Built-in app orders (phase E, step 3)
+"make a note: …" (Notes) — text keeps the user's casing, passed only as escaped AppleScript strings; "remind me to …" (Reminders, via EventKit) — title in small letters (web addresses excepted), always an all-day due date so it shows in the Today list: a day said in the order ("…tomorrow", "by Friday", "on the 12th", `ReminderText`) is used, else a green choice card asks "“…” — when?" (Today / Tomorrow, a 📅 button that opens a calendar in the card for any day up to a year ahead — the timeout becomes 60 s while it's open — or say/type any day, `ReminderDay.parse`; Esc or 20 s → not added); the pill names the list and day; "play/pause/next song/previous track" post the keyboard media keys (any player); "take a screenshot" (full: ScreenCaptureKit, without ClickBait or blocked apps; "area"/"window": macOS's own picker) saved to the Screenshot app's folder or the Desktop; "new Finder window"; "show desktop" (Mission Control). Timers/Focus need an allowed Shortcut.
+
+#### Orders in other words (phase E, step 4)
+When the rules don't recognise something that looks like an order (not a question), a text-only request (`Prompt.orderSystem`, no screenshot, ~1.3 s on qwen2.5vl:7b, 8 s timeout) asks which catalog action it is, or none. The proposal must pass `ActionCatalog.resolve` and the Finder check. Safe actions run at once; `ActionCatalog.needsConfirmation` ones (trash, move, rename, move into folder, quit, shortcuts, Wi-Fi off, lock, sleep display) show a green confirm card (Do it / Cancel, "yes"/"cancel" by voice, Esc; 20 s timeout). Rule-recognised orders still run directly.
+
+**Who asks first — `ActionPolicy` (user's rules, 2026-10-20).** Said clearly (`CommandParser`): the words are the approval; only binning files and quitting an app ask once. Guessed by the model: anything that changes something asks (open an app, note, reminder, volume, mute, Dark Mode, Wi-Fi, folder, every file action, shortcut, lock, sleep); only looking runs at once (screenshot, media keys, a place, a Finder window, the Desktop). Each asked action has its own question (`ActionCatalog.confirmationQuestion`). Replaces `ActionCatalog.needsConfirmation`.
