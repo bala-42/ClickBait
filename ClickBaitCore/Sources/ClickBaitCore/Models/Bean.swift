@@ -1,8 +1,7 @@
 import Foundation
 
 /// The notch's character (user's choice, 2026-10-21): a soft pearl bean with kaomoji eyes and
-/// a small drawn mouth, wearing ClickBait's state colours as a glow. A wide squircle, a
-/// little flatter at the bottom.
+/// a small drawn mouth, wearing ClickBait's state colours as a glow. A soft, wide squircle.
 /// Each mood has a few eye pairs; a new one is picked whenever the mood changes, avoiding the
 /// last one shown.
 ///

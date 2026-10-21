@@ -3,7 +3,7 @@ import ClickBaitCore
 import IOKit.ps
 import SwiftUI
 
-/// The notch's bean (`Bean`): a pearl squircle, flatter at the bottom, with kaomoji eyes, a
+/// The notch's bean (`Bean`): a soft pearl squircle, wider than tall, with kaomoji eyes, a
 /// drawn mouth, a little blush, and a glow and badge in ClickBait's state colours. It breathes,
 /// blinks, looks toward the pointer, hops when the mood changes, wobbles on an error and dozes
 /// off after `Bean.sleepAfter` idle. Reduce Motion keeps it still (the eyes still change).
@@ -109,7 +109,7 @@ struct BeanFace: View {
         let squish = 0.025 * breath
         let blink = time > 0 && time.truncatingRemainder(dividingBy: 4.3) < 0.12
         let tremble = mood == .panicked && time > 0 ? CGFloat(sin(time * 60)) * size * 0.025 : 0
-        let width = size, height = size * 0.86
+        let width = size, height = size * BeanShape.aspect
         ZStack {
             if solid {
                 BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
@@ -186,8 +186,12 @@ struct BeanFace: View {
     }
 }
 
-/// A wide squircle (superellipse): rounder on top, flatter at the bottom.
+/// A soft, wide squircle: a superellipse with exponent `exponent` (2 is an ellipse, 4–5 an
+/// app icon), `aspect` times as tall as it is wide.
 struct BeanShape: Shape {
+    static let exponent = 2.7
+    static let aspect = 0.77
+
     func path(in rect: CGRect) -> Path {
         let a = rect.width / 2, b = rect.height / 2
         let center = CGPoint(x: rect.midX, y: rect.midY)
@@ -195,9 +199,8 @@ struct BeanShape: Shape {
         for step in 0...96 {
             let t = Double(step) / 96 * 2 * .pi
             let c = cos(t), s = sin(t)
-            let n = s > 0 ? 3.4 : 2.3  // y grows downward: the bottom is the flatter half
-            let x = a * copysign(pow(abs(c), 2 / n), c)
-            let y = b * copysign(pow(abs(s), 2 / n), s)
+            let x = a * copysign(pow(abs(c), 2 / Self.exponent), c)
+            let y = b * copysign(pow(abs(s), 2 / Self.exponent), s)
             let point = CGPoint(x: center.x + x, y: center.y + y)
             if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
