@@ -70,6 +70,24 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
 
+  ClickBaitTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ClickBaitTests
+    dependencies:
+      - target: ClickBait
+      - package: ClickBaitCore
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.clickbait.ClickBaitTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/ClickBait.app/Contents/MacOS/ClickBait
+        BUNDLE_LOADER: $(TEST_HOST)
+
 schemes:
   ClickBait:
     build:
@@ -81,3 +99,4 @@ schemes:
       config: Debug
       targets:
         - package: ClickBaitCore/ClickBaitCoreTests
+        - ClickBaitTests

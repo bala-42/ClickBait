@@ -462,6 +462,33 @@ final class NotchController {
 
     /// Renders the open panel and the closed music wings to `folder` (the screen can't be
     /// captured here).
+    /// The panel as it draws in `state` on `tab`, hosted in an offscreen window (never shown) so
+    /// AppKit-backed views — the shelf's note, the file drag handle — draw too, unlike
+    /// `ImageRenderer`. For the UI smoke tests (ClickBaitTests) and `debugRender`.
+    func snapshot(_ state: NotchPanel.State, tab: Model.Tab = .home, greeting: Bool = false,
+                  activity: Bool = false) -> NSBitmapImageRep? {
+        let saved = (model.state, model.tab, model.greeting, model.activity)
+        defer { (model.state, model.tab, model.greeting, model.activity) = saved }
+        (model.state, model.tab, model.greeting, model.activity) = (state, tab, greeting, activity)
+        let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hud: false,
+                                    shelf: tab == .shelf, settings: tab == .settings)
+        let size = NSSize(width: look.width + 2 * NotchPanel.ear + 60, height: look.height + 30)
+        let host = NSHostingView(rootView: NotchView(
+            model: model, notch: model.notch, music: music, shelf: shelf,
+            settings: settings, speech: speech, speaker: speaker, searxng: searxng,
+            onDragIn: {}, onTabChange: { _ in }, onCollapse: {})
+            .frame(width: size.width, height: size.height)
+            .background(Color(red: 0.12, green: 0.16, blue: 0.22)))
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+
     func debugRender(to folder: String) {
         let cover = NSImage(size: NSSize(width: 200, height: 200), flipped: false) { rect in
             NSGradient(colors: [NSColor(red: 0.15, green: 0.3, blue: 0.85, alpha: 1), NSColor(red: 0.85, green: 0.7, blue: 0.4, alpha: 1)])?

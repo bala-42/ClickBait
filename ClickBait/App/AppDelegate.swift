@@ -52,14 +52,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.run()
     }
 
+    /// Hosting the UI smoke tests (ClickBaitTests): nothing starts, and a running ClickBait is
+    /// left alone (no other instance is quit, no model unloaded).
+    static let isHostingTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     /// Lets Ollama free the models it kept loaded for ClickBait.
     func applicationWillTerminate(_ notification: Notification) {
+        guard !Self.isHostingTests else { return }
         backgroundJobs.removeAll()
         capsules.removeAll()
         settings.makeProvider().unload()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !Self.isHostingTests else { return }
         NSApp.servicesProvider = servicesProvider
         NSUpdateDynamicServices()
         #if DEBUG
