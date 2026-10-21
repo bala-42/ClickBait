@@ -146,9 +146,16 @@ final class PermissionsManager {
         refresh()
     }
 
+    /// Screen Recording and Accessibility are lists to switch ClickBait on in: the pane opens
+    /// with `PermissionGuide`'s card beside it. The others just open their pane.
     func openSettings(for kind: PermissionKind) {
-        guard let url = kind.settingsURL else { return }
-        NSWorkspace.shared.open(url)
+        switch kind {
+        case .screenRecording, .accessibility:
+            PermissionGuide.shared.guide(kind) { Self.currentStatus(of: kind) == .granted }
+        case .microphone, .camera:
+            guard let url = kind.settingsURL else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private static func currentStatus(of kind: PermissionKind) -> PermissionStatus {
