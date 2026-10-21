@@ -32,6 +32,8 @@ ClickBait is a free, open-source (Apache 2.0), local-first AI companion that liv
 ```
 ClickBait/                 macOS app target (AppKit/SwiftUI shell)
   App/                     AppDelegate, menu bar (NSStatusItem), Settings window
+                           AskCoordinator: state in AskCoordinator.swift, each flow in AskCoordinator+<Flow>.swift
+                           (Chat, Dictation, Background, Explain, Actions, Tutorials, Snip, Answering)
   Input/                   HotkeyMonitor (hold Control+Option via flagsChanged), AudioRecorder (AVAudioEngine)
   Capture/                 ScreenCapturer (ScreenCaptureKit, display under cursor)
   Accessibility/           AXInspector: frontmost app, focused element, hit-testing, element snapping
