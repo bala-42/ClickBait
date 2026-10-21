@@ -16,7 +16,7 @@ const TILES = [
   {
     icon: Heart,
     title: "Free. Properly free.",
-    body: "Open source under the Apache 2.0 licence. No plans, no trial, no “pro”. Read every line of it.",
+    body: "Open source under the GNU AGPL-3.0 licence. No plans, no trial, no “pro”. Read every line of it.",
   },
 ];
 

@@ -2,7 +2,7 @@
 
 > The only clickbait worth following.
 
-ClickBait is a free, open-source (Apache 2.0), local-first AI companion that lives next to your cursor on macOS. Hold a hotkey, ask a question out loud, and it looks at your screen, answers by voice, and **points at exactly what to click**.
+ClickBait is a free, open-source (AGPL-3.0), local-first AI companion that lives next to your cursor on macOS. Hold a hotkey, ask a question out loud, and it looks at your screen, answers by voice, and **points at exactly what to click**.
 
 ## Product principles
 1. **Free and private by default.** Default path uses local models only. No account, no server, no telemetry. Screenshots never leave the machine.

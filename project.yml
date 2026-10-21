@@ -39,7 +39,7 @@ targets:
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
         LSUIElement: true
-        NSHumanReadableCopyright: "Copyright © 2026 ClickBait contributors. Apache License 2.0."
+        NSHumanReadableCopyright: "Copyright © 2026 ClickBait contributors. GNU AGPL-3.0."
         NSServices:
           - NSMenuItem:
               default: Remember with ClickBait

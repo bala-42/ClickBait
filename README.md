@@ -120,4 +120,4 @@ project.yml         XcodeGen spec
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE). Releases before the switch (2026-10-21) were Apache License 2.0. Third-party code and its licences are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

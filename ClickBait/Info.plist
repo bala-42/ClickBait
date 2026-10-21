@@ -29,7 +29,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>ClickBait shows your camera in its notch Mirror while you have it open. Nothing is recorded or saved.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 ClickBait contributors. Apache License 2.0.</string>
+	<string>Copyright © 2026 ClickBait contributors. GNU AGPL-3.0.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>

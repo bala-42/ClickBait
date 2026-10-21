@@ -32,7 +32,7 @@ export function Footer() {
 
         <div className="mt-24 flex flex-col items-center justify-between gap-6 border-t border-white/[0.07] pt-8 text-sm text-muted-foreground sm:flex-row">
           <p className="flex items-center gap-2">
-            <Triangle tone="azure" size={14} /> ClickBait · Apache 2.0 licence
+            <Triangle tone="azure" size={14} /> ClickBait · AGPL-3.0 licence
           </p>
           <p>No cookies, no trackers. Not even on this page.</p>
           <a href={GITHUB_URL} className="flex items-center gap-2 font-medium text-white/85 transition hover:text-white">
