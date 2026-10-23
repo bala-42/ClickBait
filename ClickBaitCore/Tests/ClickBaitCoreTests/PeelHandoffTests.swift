@@ -10,15 +10,11 @@ struct PeelHandoffTests {
 
     // MARK: Timing
 
-    @Test func handoffStartsAfterPointEightSeconds() {
-        let peelAt = Double(PeelRule.autoPeelDelay.components.attoseconds) / 1e18
-            + Double(PeelRule.autoPeelDelay.components.seconds)
-        #expect(abs(peelAt - 0.8) < 1e-9)
-        // The fresh companion is fully back at the cursor this soon after the peel starts…
-        let freshBack = AgentDock.freshCompanionDelay(.flight) + AgentDock.popTime
-        #expect(peelAt + freshBack <= 1.15)
-        // …and the copy is in its tile within 1.5 s of the question starting to think.
-        #expect(peelAt + AgentDock.growTime + AgentDock.flightTime <= 1.5)
+    /// From the moment the user moves on, the hand-off is quick: the fresh companion is back
+    /// at the cursor within 0.35 s and the copy is in its tile within 0.7 s.
+    @Test func handoffIsQuickOnceTheUserMovesOn() {
+        #expect(AgentDock.freshCompanionDelay(.flight) + AgentDock.popTime <= 0.35)
+        #expect(AgentDock.growTime + AgentDock.flightTime <= 0.7)
     }
 
     @Test func freshCompanionNeverOverlapsTheGrowingCopy() {

@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var guidance = GuidanceController()
     /// Done jobs whose result pill has been shown (or is waiting to be).
     private var announcedJobs: Set<UUID> = []
+    /// The last done pill, so the next one says something else.
+    private var lastDoneLine: String?
     private var askingSuggestions: Set<UUID> = []
     private let backgroundJobs = BackgroundJobs()
     private let chat = ChatController()
@@ -618,8 +620,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             announcedJobs.insert(entry.id)
             let id = entry.id
             let tone = entry.job.kind.tone
-            // A headline only (≤45 characters): the card has the whole answer.
-            let headline = entry.job.answer.isEmpty ? summary : JobSummary.headline(from: entry.job.answer)
+            // Not the answer: a short note that it's done, fitting the task (`DonePill`); the
+            // card has the answer. The morning card keeps its greeting.
+            let headline: String
+            if entry.job.question == "Good morning" {
+                headline = entry.job.answer.isEmpty ? summary : JobSummary.headline(from: entry.job.answer)
+            } else {
+                headline = DonePill.line(for: DonePill.task(kind: entry.job.kind, question: entry.job.question, answer: entry.job.answer),
+                                         after: lastDoneLine)
+                lastDoneLine = headline
+            }
             showWhenQuiet(headline, tone: tone, for: .seconds(120), while: { [weak self] in
                 self?.backgroundJobs.entries.contains(where: { $0.id == id }) ?? false  // gone, or opened there
             })

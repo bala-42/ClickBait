@@ -158,10 +158,6 @@ struct AutoPeelTests {
         PeelRule.autoPeels(.init(phase: phase, work: work, hasRoom: room))
     }
 
-    @Test func delayIsPointEightSeconds() {
-        #expect(PeelRule.autoPeelDelay == .milliseconds(800))
-    }
-
     @Test func explanationPeelsOnlyWhileStreaming() {
         #expect(auto(.streaming, .answer))
         for phase: PeelRule.Phase in [.idle, .listening, .buildingRequest, .explained, .tour] {
@@ -178,7 +174,7 @@ struct AutoPeelTests {
         #expect(!auto(.buildingRequest, .snip))
     }
 
-    /// ≤ 0.8 s: the answer is in before the peel would start, so the companion stays and no
+    /// Already answered when the user moves on: the answer is in before the peel would start, so the companion stays and no
     /// new one appears at the cursor — for snips too, which otherwise peel until their tour.
     @Test func aFastAnswerNeverPeels() {
         for phase: PeelRule.Phase in [.streaming, .explained, .partsLook, .tourPrep] {

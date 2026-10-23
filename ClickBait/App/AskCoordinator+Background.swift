@@ -157,15 +157,49 @@ extension AskCoordinator {
         return true
     }
 
-    /// `PeelRule.autoPeelDelay` after the explanation's model request starts: if it is still
-    /// working in front, peel it as ⌃⌥ would. Not before a second ⌥⌘ tap is ruled out (a
-    /// double tap drops the explanation instead).
+    /// The explanation stays in front while it works; if the user moves on first, it is
+    /// peeled as ⌃⌥ would (user's rule, 2026-10-23, replacing a 0.8 s timer that docked
+    /// nearly every answer). Not before a second ⌥⌘ tap is ruled out (a double tap drops it).
     func scheduleAutoPeel(_ flow: QuestionFlow, _ run: AnswerRun) {
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: PeelRule.autoPeelDelay)
-            await self?.explainCommit?.value
-            self?.autoPeel(flow, run)
+        armMoveOn { [weak self] in
+            Task { @MainActor [weak self] in
+                await self?.explainCommit?.value
+                self?.autoPeel(flow, run)
+            }
         }
+    }
+
+    // MARK: Moving on
+
+    /// Until the user moves on — clicks outside ClickBait or switches apps (a new question
+    /// peels through its own keys) — `peel` waits; then it runs once. Replaces any earlier one.
+    func armMoveOn(_ peel: @escaping () -> Void) {
+        disarmMoveOn()
+        moveOnPeel = peel
+        // Clicks in other apps only: a global monitor never sees ClickBait's own windows.
+        moveOnClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.userMovedOn("clicked elsewhere") }
+        }
+        moveOnSwitches = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            MainActor.assumeIsolated { self?.userMovedOn("switched apps") }
+        }
+    }
+
+    func disarmMoveOn() {
+        moveOnPeel = nil
+        if let moveOnClicks { NSEvent.removeMonitor(moveOnClicks) }
+        if let moveOnSwitches { NSWorkspace.shared.notificationCenter.removeObserver(moveOnSwitches) }
+        (moveOnClicks, moveOnSwitches) = (nil, nil)
+    }
+
+    func userMovedOn(_ why: String) {
+        guard let peel = moveOnPeel else { return }
+        disarmMoveOn()
+        Log.ask.notice("Moved on (\(why, privacy: .public)): to the dock if still working")
+        peel()
     }
 
     func autoPeel(_ flow: QuestionFlow, _ run: AnswerRun) {
@@ -173,14 +207,14 @@ extension AskCoordinator {
               run.task?.isCancelled != true else { return }
         let situation = PeelRule.Situation(phase: flow.phase, work: flow.work, kind: flow.kind,
                                            hasRoom: backgroundJobs?.hasRoom ?? false)
-        // Complete when the delay came: a fast answer keeps the companion it has.
+        // Already answered when the user moved on: it stays where it is.
         guard PeelRule.autoPeels(situation, answeredAlready: run.explanation != nil) else {
-            if run.explanation != nil { Log.ask.notice("Auto-peel skipped: answered within \(String(describing: PeelRule.autoPeelDelay), privacy: .public)") }
+            if run.explanation != nil { Log.ask.notice("Auto-peel skipped: already answered") }
             if !situation.hasRoom, flow.phase.hasRun { Log.ask.notice("Auto-peel skipped: three's a crowd, finishing in front") }
             return
         }
         if peel(flow, run, situation) {
-            Log.ask.notice("Auto-peeled after \(String(describing: PeelRule.autoPeelDelay), privacy: .public) (\(flow.work == .snip ? "snip" : "explanation", privacy: .public))")
+            Log.ask.notice("Auto-peeled: the user moved on (\(flow.work == .snip ? "snip" : "explanation", privacy: .public))")
         }
     }
 

@@ -58,10 +58,14 @@ final class AskCoordinator {
     /// A single tap explains at once but stays undoable until a second tap can no longer
     /// come; this ends that window (`commitExplain`).
     @ObservationIgnored var explainCommit: Task<Void, Never>?
-    /// The next typed message is a done card's clicked suggestion: it peels by itself after
-    /// `PeelRule.autoPeelDelay`, like a first explanation (user's rule, 2026-10-14). Read once
+    /// The next typed message is a done card's clicked suggestion: it goes to the dock once
+    /// the user moves on, like a first explanation (user's rule, 2026-10-23). Read once
     /// by `sendTyped`.
     @ObservationIgnored var nextTypedIsSuggestion = false
+    /// What goes to the dock if the user moves on while it's still working (`armMoveOn`).
+    @ObservationIgnored var moveOnPeel: (() -> Void)?
+    @ObservationIgnored var moveOnClicks: Any?
+    @ObservationIgnored var moveOnSwitches: NSObjectProtocol?
     /// The chat a provisional explanation detached: still on screen, put back by
     /// `undoExplain`, closed by `commitExplain`.
     @ObservationIgnored var detachedChat: (conversation: Conversation, snipMemory: SnipMemory?)?

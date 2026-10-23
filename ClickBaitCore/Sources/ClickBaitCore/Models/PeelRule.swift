@@ -128,14 +128,14 @@ public enum PeelRule {
 
     // MARK: Peeling on its own
 
-    /// How long a highlight's or snip's explanation may take before it goes to the dock by
-    /// itself (user's rule, 2026-10-14; 0.8 s since 2026-10-23), counted from its model request starting.
-    public static let autoPeelDelay: Duration = .milliseconds(800)
+    /// A highlight's or snip's explanation, or a walkthrough being planned, stays in front
+    /// while it works and goes to the dock only when the user moves on (user's rule,
+    /// 2026-10-23; it used to go after 0.5, then 0.8 s, which docked nearly every answer).
 
     /// The two holds — Strawberry Red while a snip is worked out until its tour, Lavender while
     /// a walkthrough is planned until it starts — follow one set of rules (user's rule,
     /// 2026-10-14: "Lavender mode hold behavior must match Strawberry Red mode exactly"): still
-    /// working `autoPeelDelay` after it began, it goes to the dock (if there's room); while held
+    /// still working when the user moves on, it goes to the dock (if there's room); while held
     /// nothing is pointed at and no app is opened; when the hold ends the companion is back at
     /// the cursor; the result waits on the card for the user's go (`resumeAction`).
     public enum Hold: CaseIterable, Sendable {
@@ -160,12 +160,12 @@ public enum PeelRule {
         hold == .snip ? suggestedPartsPrompt : walkthroughResumePrompt
     }
 
-    /// A first ⌥⌘ explanation or snip still working when `autoPeelDelay` has passed peels by
+    /// A first ⌥⌘ explanation or snip still working when the user moves on peels by
     /// itself, as ⌃⌥ would: an explanation while it streams, a snip until its tour starts
     /// (it then skips the tour). Spoken questions and follow-ups never do, nor anything when
     /// the dock is full (it just finishes in front).
-    /// `answeredAlready`: the explanation was complete when `autoPeelDelay` came — a fast
-    /// answer (≤ 0.8 s) stays in front with the companion it has; no peel, no new companion
+    /// `answeredAlready`: the explanation was complete when the user moved on — an
+    /// answer already in stays in front with the companion it has; no peel, no new companion
     /// at the cursor (user's rule, 2026-10-14).
     public static func autoPeels(_ situation: Situation, answeredAlready: Bool = false) -> Bool {
         guard situation.hasRoom, !answeredAlready else { return false }

@@ -50,11 +50,11 @@ extension AskCoordinator {
 
     // MARK: Lavender's hold (as Strawberry Red's: `PeelRule.Hold`)
 
-    /// Planning has begun: still at it after `autoPeelDelay`, it goes to the dock.
+    /// Planning has begun: it stays in front, lavender, and goes to the dock only if the
+    /// user moves on while it's still planning (user's rule, 2026-10-23).
     func startWalkthroughHold(question: String) {
         walkthroughPlanning = true
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: PeelRule.autoPeelDelay)
+        armMoveOn { [weak self] in
             guard let self, walkthroughPlanning, walkthroughJobID == nil else { return }
             let room = backgroundJobs?.hasRoom ?? false
             guard PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: room) else {
@@ -83,7 +83,7 @@ extension AskCoordinator {
         speaker.stop()
         currentFlow = nil
         if state == .thinking { state = .idle }
-        Log.ask.notice("Walkthrough hold: planning sent to the dock after \(String(describing: PeelRule.autoPeelDelay), privacy: .public)")
+        Log.ask.notice("Walkthrough hold: planning sent to the dock (the user moved on)")
     }
 
     /// The plan is ready (or it needs its app first) in the dock: the card says what it'll do
@@ -269,21 +269,9 @@ extension AskCoordinator {
         // Said yes already ("show me in Safari!"): never asked a second time.
         var offered = false
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
-            // It happens in another app, and no app opens during Lavender's hold: to the dock
-            // (as a snip's Strawberry Red hold), where "show me!" opens it and plans there.
-            if ownsPlanningUI, PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: backgroundJobs?.hasRoom ?? false) {
-                showTutorialPlanning()
-                try? await Task.sleep(for: PeelRule.autoPeelDelay)
-                guard !Task.isCancelled else { return true }
-                peelWalkthrough(question: question)
-                if let jobID = walkthroughJobID {
-                    walkthroughJobID = nil
-                    finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: nil, app: named, question: question, display: display))
-                }
-                return true
-            }
-            // A full dock: ask in front before switching apps (no plan yet: it's made in that app),
-            // so a no gets a written answer instead.
+            // It happens in another app: asked in front, by the cursor, before switching apps
+            // (no plan yet: it's made in that app), so a no gets a written answer instead. (It
+            // used to go to the dock after 0.8 s; the user's rule, 2026-10-23: stay in front.)
             guard await offerWalkthrough(opening: named) else {
                 answerInWordsOnly = true
                 return false
