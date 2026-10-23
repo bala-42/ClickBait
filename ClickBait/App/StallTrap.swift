@@ -10,7 +10,7 @@ import Foundation
 final class StallTrap: @unchecked Sendable {
     static let shared = StallTrap()
 
-    private let threshold: TimeInterval = 0.25
+    private let threshold: TimeInterval = 0.1
     private let interval: TimeInterval = 0.05
     private var mainPort: mach_port_t = 0
     private var stackBounds: ClosedRange<UInt> = 0...0

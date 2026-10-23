@@ -65,7 +65,8 @@ final class InputInterceptor {
         let port = TapPort(tap: tap)
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         timer.schedule(deadline: .now() + 3, repeating: 3)
-        timer.setEventHandler {
+        // @Sendable: not main-actor (a main-actor closure here crashed: Swift checks where it runs).
+        timer.setEventHandler { @Sendable in
             guard !CGEvent.tapIsEnabled(tap: port.tap) else { return }
             CGEvent.tapEnable(tap: port.tap, enable: true)
             Log.input.notice("Esc interceptor was off; switched back on")
