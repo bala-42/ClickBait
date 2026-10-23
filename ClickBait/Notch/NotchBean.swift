@@ -87,6 +87,15 @@ struct NotchBean: View {
         }
         .onAppear { vitals.start() }
         .onDisappear { vitals.stop() }
+        // At rest it pulls a new face every 4–8 s, so it feels alive (user's ask, 2026-10-24).
+        .task(id: base) {
+            guard base == .idle else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Double.random(in: 4...8)))
+                guard !Task.isCancelled, !petted else { continue }
+                eyes = Bean.dockFace(avoiding: [eyes])
+            }
+        }
         .help(felt?.reason ?? "")
         .accessibilityElement()
         .accessibilityLabel("ClickBait, \(base.rawValue)\(felt.map { ", \($0.reason)" } ?? "")")

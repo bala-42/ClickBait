@@ -287,7 +287,14 @@ private struct ActivityWings: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Artwork(music: music, corner: 5)
+            Group {
+                if music.artwork == nil {
+                    // No cover (a video without Internet Mode's thumbnail): the bean, not a ♪ tile.
+                    BeanFace(mood: .idle, eyes: .both(.pill()), size: 20, badge: false)
+                } else {
+                    Artwork(music: music, corner: 5)
+                }
+            }
                 .matchedGeometryEffect(id: "art", in: art)
                 .frame(width: 22, height: 22)
                 .padding(.leading, 9)

@@ -9,24 +9,26 @@ public enum YouTubeControl {
 
     /// "playing|paused", position, duration, channel — joined by U+001F; "" without a video.
     public static let readState = """
-        (()=>{const v=document.querySelector('video');if(!v)return '';\
+        (()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';\
         const c=document.querySelector('#owner #channel-name a, ytd-video-owner-renderer #channel-name a');\
         return [v.paused?'paused':'playing',v.currentTime.toFixed(1),(isFinite(v.duration)?v.duration:0).toFixed(1),\
         (c&&c.textContent||'').trim()].join('\\u001f')})()
         """
     /// Pauses (never starts) the video.
-    public static let pause = "(()=>{const v=document.querySelector('video');if(!v)return '';v.pause();return 'ok'})()"
-    public static let playPause = "(()=>{const v=document.querySelector('video');if(!v)return '';if(v.paused){v.play()}else{v.pause()}return 'ok'})()"
+    public static let pause = "(()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';v.pause();return 'ok'})()"
+    /// YouTube's own play button (it keeps the player's state right, where a bare video.play()
+    /// can be refused or hit a preview video); the main video only without one.
+    public static let playPause = "(()=>{const b=document.querySelector('#movie_player .ytp-play-button');if(b){b.click();return 'ok'}const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';if(v.paused){v.play()}else{v.pause()}return 'ok'})()"
     /// The player's next button (a playlist or autoplay's next video).
     public static let next = "(()=>{const b=document.querySelector('.ytp-next-button');if(!b)return '';b.click();return 'ok'})()"
     /// Back to the start; already near it, the previous video.
     public static let previous = """
-        (()=>{const v=document.querySelector('video');if(!v)return '';if(v.currentTime>3){v.currentTime=0;return 'ok'}\
+        (()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';if(v.currentTime>3){v.currentTime=0;return 'ok'}\
         const b=document.querySelector('.ytp-prev-button');if(b&&b.offsetParent){b.click()}else{history.back()}return 'ok'})()
         """
 
     public static func seek(to seconds: Double) -> String {
-        "(()=>{const v=document.querySelector('video');if(!v)return '';v.currentTime=\(String(format: "%.1f", max(0, seconds)));return 'ok'})()"
+        "(()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';v.currentTime=\(String(format: "%.1f", max(0, seconds)));return 'ok'})()"
     }
 
     /// The AppleScript running `javascript` in exactly that tab; "gone" if it closed.

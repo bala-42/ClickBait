@@ -770,6 +770,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.closeChat()
         overlay.endGuide()
         chat.close()
+        // Closed in the notch: back to its main panel, the notch staying open.
+        if chat.hostedInNotch || notch.model.chatting {
+            chat.hostedInNotch = false
+            notch.model.chatting = false
+            notch.model.tab = .home
+        }
     }
 
     #if DEBUG
