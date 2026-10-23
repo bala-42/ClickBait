@@ -314,10 +314,15 @@ final class PointerWatch {
         }) { monitors.append(local) }
     }
 
-    /// Only moves of a few points redraw the beans.
+    @ObservationIgnored private var lastUpdate = Date.distantPast
+
+    /// Only moves of 8 pt or more, at most 20 times a second, redraw the beans: each dock tile
+    /// is a window of its own, and every redraw was more for the render server to take.
     private func moved() {
         let now = NSEvent.mouseLocation
-        if abs(now.x - location.x) + abs(now.y - location.y) >= 3 { location = now }
+        guard abs(now.x - location.x) + abs(now.y - location.y) >= 8, Date().timeIntervalSince(lastUpdate) >= 0.05 else { return }
+        lastUpdate = Date()
+        location = now
     }
 }
 

@@ -381,8 +381,10 @@ final class OverlayController {
     private var displayLink: CADisplayLink?
     private lazy var frameTarget = FrameTarget(controller: self)
     private var hiddenByTyping = false
-    /// Steady frames while moving, so the glide looks the same over any content.
-    private static let movingRate = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+    /// Steady frames while moving, so the glide looks the same over any content. 60 Hz, as
+    /// Clicky's 16 ms timer: at 120 every frame was another commit for a busy render server,
+    /// and its waits were most of the companion's stalls (stall trap, 2026-10-23).
+    private static let movingRate = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
     /// Low rate while still: the cursor is still sampled (to notice movement and hidden
     /// pointers) without keeping a ProMotion display at 120 Hz.
     /// At least 30 Hz: at 10 Hz the first ~100 ms of a movement after a pause looked steppy.
