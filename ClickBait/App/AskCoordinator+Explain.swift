@@ -10,7 +10,12 @@ extension AskCoordinator {
     func explain() {
         stopRefining()
         tutorial?.stop(message: nil)
-        guard state != .listening, state != .thinking, !isAnswering else { return }
+        // Busy: what's working goes to the dock and this starts (user's rule, 2026-10-24).
+        if state == .thinking || isAnswering, !acceptsNewQuestion(.explain) { return }
+        guard state != .listening, state != .thinking, !isAnswering else {
+            Log.ask.notice("⌥⌘ ignored: still busy after sending work to the dock")
+            return
+        }
         speaker.stop()
         if let open = conversation {
             // The explanation isn't a follow-up, so the chat is let go of now — but its

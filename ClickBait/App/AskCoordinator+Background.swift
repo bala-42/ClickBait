@@ -33,7 +33,7 @@ extension AskCoordinator {
 
     /// ⌃⌥ pressed: peel the question in progress (now, or as soon as its run exists), or say
     /// why not. True when the press goes on to become the next question.
-    func acceptsNewQuestion() -> Bool {
+    func acceptsNewQuestion(_ trigger: PeelRule.Trigger = .chord) -> Bool {
         let flow = currentFlow
         // Let go a moment ago and still in the tail: the companion is orange, so this press
         // ends the tail now and counts as a press during transcribing.
@@ -43,7 +43,7 @@ extension AskCoordinator {
         }
         let situation = PeelRule.Situation(phase: currentPhase, work: flow?.work ?? .answer,
                                            kind: flow?.kind ?? .unknown, hasRoom: backgroundJobs?.hasRoom ?? false)
-        switch PeelRule.outcome(of: .chord, in: situation) {
+        switch PeelRule.outcome(of: trigger, in: situation) {
         case .startNew:
             return true
         case .peelNow:

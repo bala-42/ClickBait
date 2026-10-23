@@ -54,7 +54,8 @@ public enum PeelRule {
     public enum Trigger: Equatable, Sendable {
         /// ⌃⌥: ask a question, or peel the one in progress.
         case chord
-        /// ⌥⌘: explain; never peels.
+        /// ⌥⌘: explain, or a double tap's chat. Peels what's working, as ⌃⌥ does: using ClickBait
+        /// again never waits for the last thing to finish (user's rule, 2026-10-24).
         case explain
     }
 
@@ -112,7 +113,6 @@ public enum PeelRule {
         if phase == .idle { return .startNew }
         if phase == .listening { return .ignore(.alreadyListening) }
         if phase == .tour || (phase.isPastStreaming && situation.work == .answer) { return .startNew }
-        guard trigger == .chord else { return .ignore(.busy) }
         if phase.isPreRun, [.command, .instantPick].contains(situation.kind) { return .tooQuick }
         guard situation.hasRoom else { return .ignore(.threesACrowd) }
         return phase.hasRun ? .peelNow : .peelWhenReady

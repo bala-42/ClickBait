@@ -184,7 +184,10 @@ extension AskCoordinator {
         if snipper.isActive { snipper.cancel() }
         let flags = NSEvent.modifierFlags
         if flags.contains(.option), flags.contains(.command) { ignoreExplainRelease = true }
-        if conversation != nil, chatShown {
+        // Busy answering: that goes to the dock, and a fresh chat opens (user's rule, 2026-10-24).
+        if state == .thinking || isAnswering {
+            guard acceptsNewQuestion(.explain), state != .thinking, !isAnswering else { return }
+        } else if conversation != nil, chatShown {
             onChatFocus?()  // already open: just type into it
             return
         }

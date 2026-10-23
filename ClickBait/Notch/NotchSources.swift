@@ -49,6 +49,8 @@ final class MusicBridge {
     /// The browser lets ClickBait run JavaScript in the video's tab (its "Allow JavaScript from
     /// Apple Events" switch): true, false (switched off), nil (not tried yet).
     private(set) var youtubeScripting: Bool?
+    /// What ✕ exited: kept off the card while it stays paused, until anything plays again.
+    @ObservationIgnored private var exited: String?
 
     /// Whether Spotify's artwork may be downloaded now.
     @ObservationIgnored var spotifyArtworkAllowed: () -> Bool = { false }
@@ -158,6 +160,7 @@ final class MusicBridge {
     }
 
     private func update(_ player: Player, name: String?, artist: String?, state: String?, duration: Double?, position: Double?) {
+        if state == "Playing" { exited = nil } else if exited == player.rawValue { return }  // exited with ✕
         // A video is shown and this isn't "now playing": let `refresh` weigh them.
         if youtubeTab != nil, state != "Playing" { refresh(); return }
         self.player = player
@@ -206,15 +209,23 @@ final class MusicBridge {
             let audible = AudioActivity.playingBundleIDs()
             // The tab's own word when the browser allows scripting; else its browser's sound.
             let videoPlaying = video.map { found in found.playing ?? audible.contains { $0.hasPrefix(found.tab.browser.rawValue) } }
-            let hasTrack = (lines?.count ?? 0) >= 8
-            let source = NowPlaying.pick(player: hasTrack ? lines?.first == "playing" : nil, youtube: videoPlaying,
+            var hasTrack = (lines?.count ?? 0) >= 8
+            let playerPlaying = hasTrack && lines?.first == "playing"
+            var videoState = videoPlaying
+            // Something plays: anything exited may come back. Otherwise exited ones stay off.
+            if playerPlaying || videoPlaying == true { exited = nil }
+            if let exited {
+                if hasTrack, !playerPlaying, exited == candidate?.rawValue { hasTrack = false }
+                if let video, videoState == false, exited == "youtube|\(video.tab.tab)" { videoState = nil }
+            }
+            let source = NowPlaying.pick(player: hasTrack ? playerPlaying : nil, youtube: videoState,
                                          showingYouTube: youtubeTab != nil)
             Log.app.notice("Notch music: \(String(describing: source), privacy: .public) (YouTube \(videoPlaying.map { $0 ? "playing" : "paused" } ?? "none", privacy: .public))")
             switch source {
             case .player:
                 if let candidate, let lines { show(candidate, lines) }
             case .youtube:
-                if let video, let videoPlaying { show(video.tab, video.video, playing: videoPlaying) }
+                if let video, let videoState { show(video.tab, video.video, playing: videoState) }
             case .none:
                 if hasTrack || youtubeTab != nil || player != nil { clear() }
             }
@@ -370,16 +381,16 @@ final class MusicBridge {
     /// The player card's ✕ (user's rule, 2026-10-23: "X should STOP the music"): Music stops
     /// (no paused track is left), Spotify and YouTube pause; the home card goes back to space.
     func stop() {
-        if youtubeTab != nil, player == nil {
-            isPlaying = false
-            Task { _ = await runYouTube(YouTubeControl.pause) }
-            onChange?()
-            return
+        if let tab = youtubeTab, player == nil {
+            exited = "youtube|\(tab.tab)"
+            Task { _ = await runYouTube(YouTubeControl.pause, in: tab) }
+        } else if let player {
+            exited = player.rawValue
+            send(player == .music ? "stop" : "pause")
         }
-        guard let player else { return }
-        isPlaying = false
-        send(player == .music ? "stop" : "pause")
-        onChange?()
+        // Exit, not pause (user's rule, 2026-10-24): the music leaves the notch, with no
+        // resume chip, until something plays.
+        clear()
     }
 
     func setShuffling(_ on: Bool) {

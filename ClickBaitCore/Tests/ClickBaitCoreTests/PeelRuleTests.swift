@@ -71,15 +71,18 @@ struct PeelRuleTests {
         #expect(PeelRule.suggestedPartsPrompt == "show me the parts")
     }
 
-    @Test func explainNeverPeelsAndSaysBusyOtherwise() {
+    /// Using ClickBait again while it works sends the work to the dock, whichever key.
+    @Test func explainPeelsLikeTheChord() {
         let busy: [PeelRule.Phase] = [.transcribing, .orderCheck, .elementPick, .buildingRequest, .streaming]
         for phase in busy {
-            #expect(PeelRule.outcome(of: .explain, in: .init(phase: phase)) == .ignore(.busy))
+            #expect(PeelRule.outcome(of: .explain, in: .init(phase: phase)) == PeelRule.outcome(of: .chord, in: .init(phase: phase)))
         }
         let snipBusy: [PeelRule.Phase] = [.buildingRequest, .streaming, .explained, .partsLook, .tourPrep]
         for phase in snipBusy {
-            #expect(PeelRule.outcome(of: .explain, in: .init(phase: phase, work: .snip)) == .ignore(.busy))
+            let situation = PeelRule.Situation(phase: phase, work: .snip)
+            #expect(PeelRule.outcome(of: .explain, in: situation) == PeelRule.outcome(of: .chord, in: situation))
         }
+        #expect(PeelRule.outcome(of: .explain, in: .init(phase: .streaming)) == .peelNow)
     }
 
     @Test func explainStillWorksDuringPointingAndTours() {
