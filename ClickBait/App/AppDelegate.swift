@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch.model.permissions = permissions
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
-        greeter.start(helloAtLaunch: !settings.notchPanelEnabled)  // one hello: the notch's when it's on
+        greeter.start(helloAtLaunch: true)  // by the cursor too, not only the notch's (user's ask, 2026-10-23)
         // Morning cards: a done "Good morning" card in the dock, its cards as the suggestions.
         morning.present = { [weak self] summary, cards in
             guard let self, backgroundJobs.hasRoom else { return false }

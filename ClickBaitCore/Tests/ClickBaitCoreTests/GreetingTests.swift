@@ -58,6 +58,12 @@ struct GreetingTests {
         for line in Greeting.lines.values.joined() {
             #expect(line.count <= 45)
             #expect(line.contains("("))
+            // All small letters, kaomoji only (user's rule, 2026-10-23): no capitals, no emoji,
+            // and no combining accents (•̀ •́ render broken in the pill's type).
+            #expect(line == line.lowercased(), "\(line)")
+            // Kaomoji only, never pictorial emoji: no symbol that can draw as one (♥ ♨ ✌ can).
+            #expect(!line.unicodeScalars.contains { $0.value > 0x7F && $0.properties.isEmoji }, "\(line)")
+            #expect(!line.unicodeScalars.contains { $0.properties.canonicalCombiningClass != .notReordered }, "\(line)")
         }
     }
 

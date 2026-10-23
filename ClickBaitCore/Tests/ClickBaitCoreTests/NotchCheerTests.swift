@@ -8,6 +8,8 @@ struct NotchCheerTests {
             #expect(line.count <= 30, "\(line)")  // user's limit, kaomoji included
             // Combining accents (•̀ •́) render broken in the header's semibold type.
             #expect(!line.unicodeScalars.contains { $0.properties.canonicalCombiningClass != .notReordered }, "\(line)")
+            // Kaomoji only, never pictorial emoji: no symbol that can draw as one (♥ ♨ ✌ can).
+            #expect(!line.unicodeScalars.contains { $0.value > 0x7F && $0.properties.isEmoji }, "\(line)")
         }
         #expect(Set(NotchCheer.lines).count == NotchCheer.lines.count)
     }

@@ -208,13 +208,10 @@ struct GreetingPill: View {
 
     var body: some View {
         let characters = Array(text)
-        TinyPill(text: text, tone: tone)
-            .hidden()
-            .overlay(alignment: .topLeading) {
-                TinyPill(text: String(characters.prefix(reduceMotion ? characters.count : shown)), tone: tone)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .opacity(shown > 0 || reduceMotion ? 1 : 0)
-            }
+        // Grows letter by letter beside the companion (user's ask, 2026-10-23), not a
+        // full-size pill filling in.
+        TinyPill(text: String(characters.prefix(reduceMotion ? characters.count : shown)), tone: tone)
+            .opacity(shown > 0 || reduceMotion ? 1 : 0)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(text)
             .task(id: text) {
