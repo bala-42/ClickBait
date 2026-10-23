@@ -673,7 +673,7 @@ private struct FocusCard: View {
             .padding(.top, 4)
             if music.sourceName != nil {
                 // ✕: stop the music and go back to the bean in space (the cover opens the player).
-                Button { music.pause() } label: {
+                Button { music.stop() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Color(hex: 0x8A8F98))

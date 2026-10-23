@@ -14,6 +14,8 @@ public enum YouTubeControl {
         return [v.paused?'paused':'playing',v.currentTime.toFixed(1),(isFinite(v.duration)?v.duration:0).toFixed(1),\
         (c&&c.textContent||'').trim()].join('\\u001f')})()
         """
+    /// Pauses (never starts) the video.
+    public static let pause = "(()=>{const v=document.querySelector('video');if(!v)return '';v.pause();return 'ok'})()"
     public static let playPause = "(()=>{const v=document.querySelector('video');if(!v)return '';if(v.paused){v.play()}else{v.pause()}return 'ok'})()"
     /// The player's next button (a playlist or autoplay's next video).
     public static let next = "(()=>{const b=document.querySelector('.ytp-next-button');if(!b)return '';b.click();return 'ok'})()"

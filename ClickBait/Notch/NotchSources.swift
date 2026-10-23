@@ -118,9 +118,9 @@ final class MusicBridge {
         guard let tab = youtubeTab, player == nil else { open(player ?? .music); return }
         switch tab.browser {
         case .chrome:
-            guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue).first?.processIdentifier
-            else { return }
-            _ = ChromeTabs.select(tab, pid: pid)
+            // Whichever Chrome process has the tab (a hidden one can share the bundle id).
+            for app in NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue)
+            where ChromeTabs.select(tab, pid: app.processIdentifier) { break }
         case .safari:
             Task { _ = try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name) }
         }
@@ -202,9 +202,10 @@ final class MusicBridge {
                     self.error = "Allow ClickBait to control \(candidate.name) in System Settings → Privacy & Security → Automation."
                 }
             }
-            let video = await Self.youtubeVideo()
+            let video = await youtubeVideo()
             let audible = AudioActivity.playingBundleIDs()
-            let videoPlaying = video.map { found in audible.contains { $0.hasPrefix(found.tab.browser.rawValue) } }
+            // The tab's own word when the browser allows scripting; else its browser's sound.
+            let videoPlaying = video.map { found in found.playing ?? audible.contains { $0.hasPrefix(found.tab.browser.rawValue) } }
             let hasTrack = (lines?.count ?? 0) >= 8
             let source = NowPlaying.pick(player: hasTrack ? lines?.first == "playing" : nil, youtube: videoPlaying,
                                          showingYouTube: youtubeTab != nil)
@@ -262,15 +263,25 @@ final class MusicBridge {
         }
     }
 
-    /// Runs JavaScript in the shown video's tab; nil when the browser refuses or the tab's gone.
-    private func runYouTube(_ javascript: String) async -> String? {
-        guard let tab = youtubeTab else { return nil }
+    /// Runs JavaScript in the shown video's tab (or `tab`); nil when the browser refuses or the tab's gone.
+    private func runYouTube(_ javascript: String, in other: BrowserTab? = nil) async -> String? {
+        guard let tab = other ?? youtubeTab else { return nil }
+        if tab.browser == .chrome {
+            // In the Chrome process that owns the tab (see `ChromeTabs.execute`).
+            let pids = NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue).map(\.processIdentifier)
+            let output = await Task.detached(priority: .userInitiated) {
+                pids.lazy.compactMap { ChromeTabs.execute(javascript, tabID: tab.tab, pid: $0) }.first
+            }.value
+            if output != nil { youtubeScripting = true }
+            return output
+        }
         do {
             let output = try await AppleScriptRunner.run(YouTubeControl.appleScript(javascript, in: tab), app: tab.browser.name)
             youtubeScripting = true
             return output == "gone" ? nil : output
         } catch {
             if YouTubeControl.isTurnedOff(error.localizedDescription) { youtubeScripting = false }
+            Log.app.notice("Notch music: YouTube tab script failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -356,17 +367,19 @@ final class MusicBridge {
         }
     }
 
-    /// The player card's ✕: pauses whatever plays (the home card then goes back to space).
-    func pause() {
-        guard isPlaying else { return }
+    /// The player card's ✕ (user's rule, 2026-10-23: "X should STOP the music"): Music stops
+    /// (no paused track is left), Spotify and YouTube pause; the home card goes back to space.
+    func stop() {
         if youtubeTab != nil, player == nil {
-            send("playpause")
-        } else {
-            send("pause")
-            position = currentPosition()
-            positionAt = .now
             isPlaying = false
+            Task { _ = await runYouTube(YouTubeControl.pause) }
+            onChange?()
+            return
         }
+        guard let player else { return }
+        isPlaying = false
+        send(player == .music ? "stop" : "pause")
+        onChange?()
     }
 
     func setShuffling(_ on: Bool) {
@@ -437,10 +450,12 @@ final class MusicBridge {
         }
     }
 
-    /// The front-most YouTube video among the running browsers' tabs (showing tabs first: a
-    /// video often plays in a tab behind). Reads only browsers already running (macOS asks
-    /// once per browser).
-    private static func youtubeVideo() async -> (tab: BrowserTab, video: YouTubeVideo)? {
+    /// The YouTube video to show among the running browsers' tabs: with the browser's
+    /// JavaScript switch on, the one actually playing (each tab asked, up to 8; with dozens
+    /// of tabs the first one found was often not it); else the front-most one, showing tabs
+    /// first. `playing` is the tab's own answer, nil when it couldn't be asked. Reads only
+    /// browsers already running (macOS asks once per browser).
+    private func youtubeVideo() async -> (tab: BrowserTab, video: YouTubeVideo, playing: Bool?)? {
         var tabs: [BrowserTab] = []
         for browser in BrowserTab.Browser.allCases {
             let apps = NSRunningApplication.runningApplications(withBundleIdentifier: browser.rawValue)
@@ -456,9 +471,28 @@ final class MusicBridge {
                 tabs += BrowserTab.parse(output ?? "", browser: browser)
             }
         }
-        let found = tabs.lazy.compactMap { tab in YouTubeVideo(url: tab.url, tabTitle: tab.title).map { (tab, $0) } }.first
-        Log.app.notice("Notch music: \(tabs.count, privacy: .public) browser tab(s) read, YouTube \(found == nil ? "not open" : "open", privacy: .public)")
-        return found
+        let videos = tabs.compactMap { tab in YouTubeVideo(url: tab.url, tabTitle: tab.title).map { (tab: tab, video: $0) } }
+        guard let first = videos.first else {
+            Log.app.notice("Notch music: \(tabs.count, privacy: .public) browser tab(s) read, YouTube not open")
+            return nil
+        }
+        var asked = false
+        if youtubeScripting != false {
+            for candidate in videos.prefix(8) {
+                let output = await runYouTube(YouTubeControl.readState, in: candidate.tab)
+                guard let output, let state = YouTubeControl.parse(output) else {
+                    Log.app.notice("Notch music: YouTube tab gave \(output.map { "\"\($0.prefix(60))\"" } ?? "nothing", privacy: .public)")
+                    continue
+                }
+                asked = true
+                if state.playing {
+                    Log.app.notice("Notch music: \(videos.count, privacy: .public) YouTube tab(s), one playing")
+                    return (candidate.tab, candidate.video, true)
+                }
+            }
+        }
+        Log.app.notice("Notch music: \(videos.count, privacy: .public) YouTube tab(s), none \(asked ? "playing" : "asked", privacy: .public)")
+        return (first.tab, first.video, asked ? false : nil)
     }
 
     private func setArtwork(_ image: NSImage?, for key: String) {

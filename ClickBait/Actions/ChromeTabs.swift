@@ -46,6 +46,22 @@ enum ChromeTabs {
         return showing + others
     }
 
+    /// Runs JavaScript in the tab with this id, in this Chrome process (by process: a second,
+    /// hidden Chrome can share the bundle id, and AppleScript's `tell` reached it instead).
+    /// Nil when that process has no such tab or Chrome refuses (its JavaScript switch is off).
+    static func execute(_ javascript: String, tabID: Int, pid: pid_t) -> String? {
+        guard let app = SBApplication(processIdentifier: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
+        for case let window as SBObject in windows {
+            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            for case let tab as SBObject in tabs where number(tab.value(forKey: "id")) == tabID {
+                let result = tab.perform(NSSelectorFromString("executeJavascript:"), with: javascript)?.takeUnretainedValue()
+                return string(result) ?? (result as? NSNumber)?.stringValue
+            }
+        }
+        return nil
+    }
+
     /// Selects the tab (wherever it is now), brings its window to the front and Chrome
     /// forward, which switches to that window's desktop. False when the tab is gone.
     static func select(_ target: BrowserTab, pid: pid_t) -> Bool {
