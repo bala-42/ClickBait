@@ -172,7 +172,7 @@ extension AskCoordinator {
             // Highlighted code is what "fix this" means; other selections would turn pointing off.
             let highlighted = snapshot.selectedText.flatMap { CodeAnswer.looksLikeCode($0) && !ImpliedPointer.isLocating(text) ? $0 : nil }
             await respond(question: text, selectedText: highlighted, capture: capture, encoding: encoding, startedAt: startedAt,
-                          speak: false, display: text, elements: elements, autoPeels: autoPeels)
+                          speak: false, display: text, elements: elements, autoPeels: autoPeels, highlightIsContext: true)
         }
     }
 

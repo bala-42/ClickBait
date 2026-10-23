@@ -555,15 +555,15 @@ private struct OpenNotch: View {
             FocusCard(music: music, mood: model.mood(), health: model.health)
                 .frame(width: 322)
                 .notchCard(wash: FocusCard.wash(for: model.mood()))
-            // Laid out as the Windows logo's four squares, in its colours (user's choice,
-            // 2026-10-23): Shelf keeps green, Ask takes the yellow.
+            // Laid out as the Windows logo's four squares, each square keeping its colour (user's
+            // choice, 2026-10-23): Ask first, top-left in red; Music bottom-right in yellow.
             IslandPills(pills: [
-                .init(name: music.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsRed) {
-                    onTabChange(.music)
-                },
+                .init(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed) { onTabChange(.ask) },
                 .init(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen) { onTabChange(.shelf) },
                 .init(name: "Mirror", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, action: onMirror),
-                .init(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsYellow) { onTabChange(.ask) },
+                .init(name: music.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow) {
+                    onTabChange(.music)
+                },
             ])
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .notchCard()

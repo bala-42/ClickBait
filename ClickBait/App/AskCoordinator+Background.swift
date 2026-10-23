@@ -570,6 +570,6 @@ extension AskCoordinator {
 
         // With a chat open, a spoken question is a follow-up in it.
         await respond(question: transcript, selectedText: ImpliedPointer.isLocating(transcript) ? nil : highlighted, capture: capture, encoding: encoding, startedAt: releasedAt,
-                      speak: true, display: transcript, elements: elements, flow: flow)
+                      speak: true, display: transcript, elements: elements, flow: flow, highlightIsContext: true)
     }
 }

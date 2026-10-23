@@ -43,8 +43,12 @@ extension AskCoordinator {
         snipContext: Data? = nil,
         elements: [ScreenElement] = [],
         flow givenFlow: QuestionFlow? = nil,
-        autoPeels: Bool = false
+        autoPeels: Bool = false,
+        highlightIsContext: Bool = false
     ) async {
+        // An ⌥⌘ explanation of highlighted text or a snip (shortened, peeled when slow). Code
+        // highlighted under a spoken or typed question is only its context: a normal answer.
+        let explaining = (selectedText != nil && !highlightIsContext) || snip != nil
         // A walkthrough was just declined: words only — no app opened, nothing pointed at.
         let wordsOnly = answerInWordsOnly
         answerInWordsOnly = false
@@ -338,7 +342,6 @@ extension AskCoordinator {
             var spokenSoFar = ""
             var isFirstSentence = true
             // Explanations shouldn't open with "The highlighted text refers to…".
-            let explaining = selectedText != nil || snip != nil
             let tidy: (String) -> String = { explaining ? ExplanationCleaner.clean($0) : $0 }
             // The chat shows the words as they come, but at most ~12 times a second: redrawing
             // and resizing it for every fragment made the companion stutter while answering.
@@ -350,7 +353,7 @@ extension AskCoordinator {
                 Log.ask.notice("Peel joined: \(jobID.uuidString, privacy: .public)")
             }
             // A first highlight or snip explanation, or a clicked suggestion, goes to the dock by itself when slow.
-            if !queued, autoPeels || (history.isEmpty && (selectedText != nil || snip != nil)) { scheduleAutoPeel(flow, run) }
+            if !queued, autoPeels || (history.isEmpty && explaining) { scheduleAutoPeel(flow, run) }
             if backgroundJobs?.entries.contains(where: { $0.job.isWorking && $0.id != flow.jobID }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }
@@ -432,7 +435,7 @@ extension AskCoordinator {
         if case .background(let jobID) = run.destination {
             var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
                                              scale: provider.coordinateScale)
-            if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
+            if explaining { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
             run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                     code: parsed.response.code, language: parsed.response.language)
             var finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
@@ -464,7 +467,7 @@ extension AskCoordinator {
 
         var parsed = ResponseParser.parse(reply, imageWidth: screenshot.width, imageHeight: screenshot.height, elements: listed,
                                          scale: provider.coordinateScale)
-        if selectedText != nil || snip != nil { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
+        if explaining { parsed.response.speech = ExplanationCleaner.limited(ExplanationCleaner.clean(parsed.response.speech)) }
         // From here a peeled snip keeps its explanation and skips the tour.
         run.explanation = parsed.response.displayText
         let userText = Prompt.userText(for: request), speech = parsed.response.speech
@@ -476,7 +479,7 @@ extension AskCoordinator {
         // A snip's "where is X?" may come back as pointers: treat them as parts (they're in
         // the close-up's pixels, not the screen's).
         let snipPointers = snip != nil ? parsed.response.pointers : []
-        if selectedText != nil || snip != nil, !parsed.response.pointers.isEmpty {
+        if explaining, !parsed.response.pointers.isEmpty {
             Log.ask.notice("Explain: ignoring \(parsed.response.pointers.count, privacy: .public) pointer(s) the model added")
             parsed.response.pointers = []
         }
