@@ -8,8 +8,9 @@ struct DonePillTests {
             for line in lines {
                 #expect(line.count <= 32, "\(line)")
                 #expect(line == line.lowercased(), "\(line)")
-                // Kaomoji only, never pictorial emoji: no symbol that can draw as one (♥ ♨ ✌ can).
-                #expect(!line.unicodeScalars.contains { $0.value > 0x7F && $0.properties.isEmoji }, "\(line)")
+                // Kaomoji only, never pictorial emoji: no symbol that can draw as one, but ♥ and ♨,
+                // which the user is happy with (2026-10-23).
+                #expect(!line.unicodeScalars.contains { $0.value > 0x7F && $0.properties.isEmoji && !"♥♨".unicodeScalars.contains($0) }, "\(line)")
             }
         }
     }
