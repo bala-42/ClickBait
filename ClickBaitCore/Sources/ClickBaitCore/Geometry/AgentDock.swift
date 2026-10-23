@@ -5,17 +5,20 @@ import Foundation
 /// points; frames are AppKit's (y up). Pure: the app draws it.
 public enum AgentDock {
     // MARK: Tiles (video 104 s and 140 s)
-    public static let tileSize = 33.0
-    public static let tileCorner = 10.0
-    /// Top to top: 33 pt tiles with a 9 pt gap.
-    public static let pitch = 42.0
+    /// 44 pt (was HeyClicky's 33): room for the bean's face (user's ask, 2026-10-23).
+    public static let tileSize = 44.0
+    public static let tileCorner = 13.0
+    /// Top to top: 44 pt tiles with a 10 pt gap.
+    public static let pitch = 54.0
     /// The tiles' right edge from the screen's right edge, and the first tile below the menu bar.
     public static let rightInset = 27.0
     public static let topInset = 32.0
     public static let triangleSize = 14.0
-    public static let dotDiameter = 6.0
+    /// The tile's bean (the triangle lands, then the bean shows in its place).
+    public static let beanSize = 27.0
+    public static let dotDiameter = 7.0
     /// The status dot's centre, in from the tile's top and right edges.
-    public static let dotInset = 4.5
+    public static let dotInset = 5.5
 
     // MARK: Cards (video 31 s, 152 s, 204–208 s)
     /// Measured 608 video px ≈ 290 pt; 288 keeps whole points.

@@ -173,7 +173,7 @@ extension AskCoordinator {
               run.task?.isCancelled != true else { return }
         let situation = PeelRule.Situation(phase: flow.phase, work: flow.work, kind: flow.kind,
                                            hasRoom: backgroundJobs?.hasRoom ?? false)
-        // Complete when the 0.5 s came: a fast answer keeps the companion it has.
+        // Complete when the delay came: a fast answer keeps the companion it has.
         guard PeelRule.autoPeels(situation, answeredAlready: run.explanation != nil) else {
             if run.explanation != nil { Log.ask.notice("Auto-peel skipped: answered within \(String(describing: PeelRule.autoPeelDelay), privacy: .public)") }
             if !situation.hasRoom, flow.phase.hasRun { Log.ask.notice("Auto-peel skipped: three's a crowd, finishing in front") }
@@ -419,7 +419,11 @@ extension AskCoordinator {
             of display \(capture.displayID, privacy: .public) at \(capture.backingScale, privacy: .public)x
             """)
 
+        // Highlighted code counts for a spoken question too ("why does this crash?"); other
+        // selections don't, since a selection turns pointing off.
+        var highlighted: String?
         if let snapshot = await snapshotTask?.value {
+            highlighted = snapshot.selectedText.flatMap { CodeAnswer.looksLikeCode($0) ? $0 : nil }
             flow.context.windowTitle = snapshot.windowTitle
             flow.context.windowFrame = snapshot.windowFrame
             flow.context.focusedElement = snapshot.focusedElement
@@ -565,7 +569,7 @@ extension AskCoordinator {
         flow.kind = .unknown  // not a walkthrough after all
 
         // With a chat open, a spoken question is a follow-up in it.
-        await respond(question: transcript, selectedText: nil, capture: capture, encoding: encoding, startedAt: releasedAt,
+        await respond(question: transcript, selectedText: ImpliedPointer.isLocating(transcript) ? nil : highlighted, capture: capture, encoding: encoding, startedAt: releasedAt,
                       speak: true, display: transcript, elements: elements, flow: flow)
     }
 }

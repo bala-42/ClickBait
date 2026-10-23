@@ -49,6 +49,10 @@ struct NotchPanelTests {
         #expect(open.width == NotchPanel.expandedSize.width && open.height == NotchPanel.expandedSize.height)  // the Nook
         let tray = NotchPanel.shape(.expanded, notch: notch, activity: false, hud: false, shelf: true)
         #expect(tray.width == NotchPanel.shelfSize.width && tray.height == NotchPanel.shelfSize.height)
+        let booth = NotchPanel.shape(.expanded, notch: notch, activity: false, hud: false, mirror: true)
+        #expect(booth.width == NotchPanel.mirrorSize.width && booth.height == NotchPanel.mirrorSize.height)
+        let chat = NotchPanel.shape(.expanded, notch: notch, activity: false, hud: false, chat: true)
+        #expect(chat.height == NotchPanel.chatSize.height)
         let hud = NotchPanel.shape(.collapsed, notch: notch, activity: true, hud: true)
         #expect(hud.width == notch.width + 2 * NotchPanel.hudWing)  // the HUD wins over the music wings
     }
@@ -200,7 +204,14 @@ struct VolumeHUDTests {
                                                   activity: true, hud: true))
         #expect(frame.midX == notch.midX)
         #expect(frame.width == notch.width + 2 * NotchPanel.hudWing + 2 * NotchPanel.ear)
-        #expect(frame.height == notch.height)
+        #expect(frame.height == notch.height + NotchPanel.hudCorridor)  // the dots run under the notch
+    }
+
+    @Test func theHUDKeepsItsSizeWithoutANotch() {
+        let hud = NotchPanel.shape(.collapsed, notch: nil, activity: false, hud: true)
+        #expect(hud.width == 2 * NotchPanel.hudWing + NotchPanel.hudGap)
+        #expect(hud.height == NotchPanel.pillSize.height + NotchPanel.hudCorridor)
+        #expect(NotchPanel.shape(.collapsed, notch: nil, activity: false, hud: false).height == NotchPanel.pillSize.height)
     }
 }
 

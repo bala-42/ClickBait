@@ -24,6 +24,9 @@ extension EnvironmentValues {
 
 struct ChatView: View {
     @Bindable var model: ChatModel
+    /// The same chat inside the notch's Ask tab: filling it, on solid dark instead of glass,
+    /// with no window to drag, grow or line up with the companion.
+    var inNotch = false
     @Environment(\.chatBackdrop) private var backdrop
     @Environment(\.chatRenderHover) private var renderHover
 
@@ -47,6 +50,23 @@ struct ChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        if inNotch {
+            VStack(spacing: 0) {
+                header
+                transcript.frame(maxHeight: .infinity, alignment: .top)
+                inputRow
+            }
+            // The notch's own card, as Home and Settings wear it: no gel, glass or pinstripes.
+            .notchCard()
+            .tint(AquaDark.link)
+            .clipShape(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous))
+            .environment(\.colorScheme, .dark)
+        } else {
+            bubble
+        }
+    }
+
+    private var bubble: some View {
         VStack(spacing: 0) {
             header
             // Nothing asked yet (a chat opened to type into): no empty space above the field.
@@ -105,26 +125,29 @@ struct ChatView: View {
         .padding(.top, Self.headerTop)
         .padding(.bottom, 4)
         // The gel bar sits behind the header only; the logo's place is unchanged.
-        .background(AquaHeaderBar())
+        .background { if !inNotch { AquaHeaderBar() } }
     }
 
     private var logo: some View {
-        // Same colour state as the companion: orange while answering, blue
-        // otherwise. Full size and resting angle, so it sits exactly on the companion.
-        CompanionTriangle(tone: model.isBusy ? .processing : .idle, pulsing: false, spinning: model.isBusy)
+        // The pearl bean (user's choice, 2026-10-23), glowing orange while answering as the
+        // companion does; its centre is where the chat lines up with the companion.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !model.isBusy)) { timeline in
+            BeanFace(mood: model.isBusy ? .thinking : .idle, eyes: model.isBusy ? Bean.eyePairs(for: .thinking)[0] : .both(.pill()),
+                     size: 19, time: model.isBusy ? timeline.date.timeIntervalSinceReferenceDate : 0, badge: false)
+        }
             .frame(width: Self.headerRowHeight, height: Self.headerRowHeight)
             // Measured, not assumed: the chat places itself so this point is on the companion.
             .onGeometryChange(for: CGPoint.self) { proxy in
                 let frame = proxy.frame(in: .named(Self.cardSpace))
                 return CGPoint(x: frame.midX, y: frame.midY)
-            } action: { model.logoOffset = $0 }
+            } action: { if !inNotch { model.logoOffset = $0 } }  // the bubble's window lines up on it
     }
 
     private var title: some View {
         Text("ClickBait")
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(AquaDark.textSecondary)
-            .shadow(color: .black.opacity(0.5), radius: 0, y: -0.5)  // Aqua's engraved title
+            .foregroundStyle(inNotch ? NotchPalette.secondary : AquaDark.textSecondary)
+            .shadow(color: .black.opacity(inNotch ? 0 : 0.5), radius: 0, y: -0.5)  // Aqua's engraved title
     }
 
     /// Remember a line from this answer, or save the whole chat as a file (C5).
@@ -150,7 +173,15 @@ struct ChatView: View {
         }
     }
 
-    private var closeButton: some View {
+    @ViewBuilder private var closeButton: some View {
+        if inNotch {
+            NotchHeaderIcon(symbol: "xmark", label: "Close chat") { model.onClose?() }
+        } else {
+            gelCloseButton
+        }
+    }
+
+    private var gelCloseButton: some View {
         Button {
             model.onClose?()
         } label: {
@@ -211,7 +242,7 @@ struct ChatView: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { transcriptHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(transcriptHeight, Self.maxTranscriptHeight))
+            .frame(height: inNotch ? nil : min(transcriptHeight, Self.maxTranscriptHeight))
             .onChange(of: model.messages) {
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(model.messages.last?.id, anchor: .bottom) }
             }
@@ -245,7 +276,15 @@ struct ChatView: View {
             } label: {
                 // Aqua blue whenever it can send; graphite, without a glow, while there's
                 // nothing to send or an answer is still coming. Never the companion's colours.
-                SendGel(palette: canSend ? .blue : .graphite)
+                if inNotch {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(canSend ? Color.black : NotchPalette.tertiary)
+                        .frame(width: 26, height: 26)
+                        .background(canSend ? AquaDark.link : NotchPalette.tabOn, in: Circle())
+                } else {
+                    SendGel(palette: canSend ? .blue : .graphite)
+                }
             }
             .buttonStyle(AquaPressStyle())
             .disabled(!canSend)
@@ -255,7 +294,14 @@ struct ChatView: View {
         .padding(.leading, 14)
         .padding(.trailing, 6)
         .padding(.vertical, 7)
-        .background(AquaWell(shape: RoundedRectangle(cornerRadius: 18, style: .continuous)))
+        .background {
+            let field = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            if inNotch {
+                field.fill(NotchPalette.ink).overlay(field.stroke(Color.white.opacity(0.08), lineWidth: 1))
+            } else {
+                AquaWell(shape: field)
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.bottom, 12)
     }

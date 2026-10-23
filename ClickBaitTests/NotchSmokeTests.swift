@@ -31,6 +31,22 @@ struct NotchSmokeTests {
             #expect(Self.colours(in: rep) >= 12, "\(item.name) looks blank")
             try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "\(item.name).png"))
         }
+        // A conversation asked in the notch: the dark chat bubble fills the taller Ask tab.
+        let chat = ChatModel()
+        chat.addUser("write a palindrome check in python")
+        chat.setAssistant("Here's a short one.\n\n```python\ndef is_palindrome(word):\n    word = word.lower()\n    return word == word[::-1]\n```")
+        let rep = try #require(notch.snapshot(.expanded, tab: .ask, chat: chat), "chat")
+        #expect(rep.size.height == CGFloat(NotchPanel.chatSize.height + 30), "chat height")
+        #expect(Self.colours(in: rep) >= 12, "chat looks blank")
+        try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "chat.png"))
+        // The ⓘ card hangs under its button over the cards, the panel keeping its size.
+        let keys = try #require(notch.snapshot(.expanded, keys: true), "keys")
+        #expect(keys.size.height == CGFloat(NotchPanel.expandedSize.height + 30), "keys height")
+        try keys.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "keys.png"))
+        // The volume HUD's Pac-Man level, at 60 %.
+        let hud = try #require(notch.snapshot(.collapsed, hud: (0.6, false)), "hud")
+        #expect(Self.colours(in: hud) >= 6, "hud looks blank")
+        try hud.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "hud.png"))
     }
 
     /// How many different colours a coarse sample finds: a blank render has one or two.

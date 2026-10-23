@@ -26,8 +26,9 @@ enum AgentDockStyle {
     }
 }
 
-/// One job's tile: a dark rounded square glowing in the job's colour, its triangle inside,
-/// a status dot top-right.
+/// One job's tile: a dark rounded square glowing in the job's colour, a bean in that colour
+/// inside wearing the job's own face (`Bean.dockFaces`, user's choice, 2026-10-23) and
+/// looking at the pointer, a status dot top-right.
 struct AgentTile: View {
     let tone: CompanionTone
     let look: AgentDock.Look
@@ -38,15 +39,22 @@ struct AgentTile: View {
     var spinning = false
     /// The pulse's swell, 0…1 (done, or working with Reduce Motion).
     var beat: Double = 0
+    var eyes: Bean.EyePair = Bean.dockFaces[0]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: AgentDock.tileCorner, style: .continuous)
         ZStack {
             shape.fill(AgentDockStyle.tileFill)
             shape.strokeBorder(AgentDockStyle.hairline, lineWidth: 0.5)
-            CompanionTriangle(tone: tone, pulsing: false, spinning: spinning, angle: angle,
-                              glowOpacity: Glow.opacity, glowRadius: Glow.radius)
-                .scaleEffect(AgentDock.triangleSize / CompanionTriangle.size)
+            // Working: it breathes and blinks; done, it rests.
+            Gazing { look in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !spinning || reduceMotion)) { timeline in
+                    BeanFace(mood: .idle, eyes: eyes, size: AgentDock.beanSize,
+                             time: spinning && !reduceMotion ? timeline.date.timeIntervalSinceReferenceDate : 0,
+                             look: look, badge: false, solid: true, tint: tone.color)
+                }
+            }
             Circle().fill(AgentDockStyle.dot(look.dot))
                 .frame(width: AgentDock.dotDiameter, height: AgentDock.dotDiameter)
                 .position(x: AgentDock.tileSize - AgentDock.dotInset, y: AgentDock.dotInset)
@@ -244,6 +252,8 @@ struct AgentDoneCard: View {
     let suggestions: [String]
     let tone: CompanionTone
     var canGoThere = true
+    /// "show me!" on a walkthrough's card: it goes there and starts.
+    var goLabel = "go there!"
     var blur = true
     let onClose: () -> Void
     let onSuggestion: (String) -> Void
@@ -282,7 +292,7 @@ struct AgentDoneCard: View {
                 Spacer()
                 pill("later, pls", action: onLater)
                 Button(action: onGoThere) {
-                    Text("go there!")
+                    Text(goLabel)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)

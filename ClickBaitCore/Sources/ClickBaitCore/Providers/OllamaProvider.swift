@@ -91,11 +91,13 @@ public struct OllamaProvider: LLMProvider {
                         unreachableMessage: Self.unreachable,
                         errorMessage: { [model] status, body in Self.error(status: status, body: body, model: model) }
                     )
+                    var markdown = ""  // a code answer: kept whole, handed on as JSON at the end
                     for try await line in lines {
                         guard let chunk = try OllamaStreamDecoder.decode(line: line) else { continue }
-                        if !chunk.text.isEmpty { continuation.yield(chunk.text) }
+                        if request.codeAnswer { markdown += chunk.text } else if !chunk.text.isEmpty { continuation.yield(chunk.text) }
                         if chunk.done { break }
                     }
+                    if request.codeAnswer { continuation.yield(CodeAnswer.json(fromMarkdown: markdown)) }
                     continuation.finish()
                     if request.interpretOrder { await checkBothFit() }
                 } catch {
@@ -186,8 +188,9 @@ public struct OllamaProvider: LLMProvider {
     /// default of 4,096 overflowed (an error, or worse, the instructions silently cut).
     static let contextTokens = 8192
     /// Replies are a few sentences plus maybe some code. A cap stops a runaway reply
-    /// (one ran to 10,000 characters and 2 minutes) from blocking the next question.
-    static let maxReplyTokens = 800
+    /// (one ran to 10,000 characters and 2 minutes) from blocking the next question; 800
+    /// cut whole programs ("write a snake game") off mid-JSON, so the code was lost.
+    static let maxReplyTokens = 2048
     /// Six parts fit easily; the 7B model otherwise repeats "Optic chiasm" until the cap.
     static let partsReplyTokens = 320
 
@@ -305,10 +308,9 @@ public struct OllamaProvider: LLMProvider {
         var message: [String: Any] = ["role": "user", "content": Prompt.userText(for: ask)]
         let images = ([ask.screenshotJPEG] + (ask.contextJPEG.map { [$0] } ?? [])).filter { !$0.isEmpty }
         if !images.isEmpty { message["images"] = images.map { $0.base64EncodedString() } }
-        return [
+        var body: [String: Any] = [
             "model": model,
             "stream": true,
-            "format": schema(for: ask) ?? "json",
             // Newer models (Qwen 3.5, Gemma 4) think before answering unless told not to:
             // ~10 s on a one-line answer, and the thinking can use up the whole reply budget.
             // Models that can't think ignore it.
@@ -320,6 +322,8 @@ public struct OllamaProvider: LLMProvider {
                 + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
                 + [message],
         ]
+        if !ask.codeAnswer { body["format"] = schema(for: ask) ?? "json" }  // Markdown, see `CodeAnswer`
+        return body
     }
 
     static func error(status: Int, body: Data, model: String) -> LLMError {

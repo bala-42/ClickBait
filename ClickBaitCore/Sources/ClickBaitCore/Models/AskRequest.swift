@@ -101,6 +101,8 @@ public struct AskRequest: Sendable {
     public var interpretOrder = false
     /// Sort it into one intent (`IntentRouter`, shadow mode): text only, a tiny JSON reply.
     public var routeIntent = false
+    /// A code question: answered in Markdown (`CodeAnswer`), handed on as the usual answer JSON.
+    public var codeAnswer = false
     /// What the user asked ClickBait to remember, as the prompt block (`Memory.block`), or nil.
     public var remembered: String?
     /// When it was asked: today's date for the prompt (`DateFacts`).

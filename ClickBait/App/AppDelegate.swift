@@ -75,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminateOtherInstances()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         Log.app.notice("ClickBait \(version, privacy: .public) launched")
+        #if DEBUG
+        StallTrap.shared.start()
+        #endif
 
         let statusBar = StatusBarController(
             settings: settings,
@@ -88,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.statusBar = statusBar
         statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
+        notch.model.menuBar = statusBar
+        notch.model.permissions = permissions
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()
         greeter.start(helloAtLaunch: !settings.notchPanelEnabled)  // one hello: the notch's when it's on
@@ -123,11 +128,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         notch.model.checkHealth = checkHealth
         statusBar.checkHealth = checkHealth
+        // Asked in the notch: the conversation stays there (the bubble stays hidden) until it folds.
+        notch.model.chat = chat.model
         notch.model.ask = { [weak self] text in
             guard let self else { return }
+            chat.hostedInNotch = true
+            notch.model.chatting = true
             coordinator.startTypedChat(trigger: "notch")
             chat.model.draft = text
             chat.model.send()
+        }
+        notch.model.onChatEnd = { [weak self] in
+            guard let self else { return }
+            coordinator.closeChat()
+            chat.hostedInNotch = false
         }
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
@@ -144,7 +158,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         capsules.onStop = { [weak self] in self?.backgroundJobs.stop($0) }
         capsules.onDismiss = { [weak self] in self?.backgroundJobs.remove($0) }
         capsules.onLater = { [weak self] in self?.capsules.fold($0) }
-        capsules.onGoThere = { [weak self] in self?.goThere($0) }
+        capsules.onGoThere = { [weak self] id in
+            guard let self else { return }
+            // A walkthrough planned in the dock: "show me!" goes there and starts it.
+            if let pending = backgroundJobs.entries.first(where: { $0.id == id })?.walkthrough {
+                goThere(id) { [weak self] in self?.coordinator.resumeWalkthrough(pending) }
+            } else {
+                goThere(id)
+            }
+        }
         capsules.onSeen = { [weak self] id in
             self?.backgroundJobs.markSeen(id)
             self?.suggestNext(for: id)
@@ -153,11 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let pending = backgroundJobs.entries.first(where: { $0.id == id })?.walkthrough
             goThere(id) { [weak self] in
-                guard let self, chat.isOpen else { return }
-                // Its tour was placed in the dock: play it, no model asked.
-                if text == PeelRule.suggestedPartsPrompt, coordinator.playReadyTour() { return }
+                guard let self else { return }
                 // Its walkthrough was planned in the dock: start it now, back where it was asked.
                 if text == PeelRule.walkthroughResumePrompt, let pending { coordinator.resumeWalkthrough(pending); return }
+                guard chat.isOpen else { return }
+                // Its tour was placed in the dock: play it, no model asked.
+                if text == PeelRule.suggestedPartsPrompt, coordinator.playReadyTour() { return }
                 chat.model.draft = text
                 coordinator.nextTypedIsSuggestion = true  // slow → back to the dock
                 chat.model.send()  // as if typed: it's a follow-up in that chat
@@ -415,8 +438,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.model.setAssistant(text)
             chat.model.isBusy = false
             chat.park()
-            // Not over a green result already saying it, nor next to a card asking it.
-            if !overlay.isShowingWords, !confirm.isShowing { overlay.showShortAnswer(text) }
+            // Not over a green result already saying it, nor next to a card asking it, nor
+            // when the notch shows the conversation.
+            if !overlay.isShowingWords, !confirm.isShowing, !chat.hostedInNotch { overlay.showShortAnswer(text) }
         }
         coordinator.onChatSource = { [weak self] credit in
             guard let self, chat.isOpen,
@@ -434,6 +458,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onChatClose = { [weak self] in
             self?.overlay.endGuide()
             self?.chat.close()
+            self?.chat.hostedInNotch = false
+            self?.notch.model.chatting = false
         }
         coordinator.onStateChange = { [weak self, weak statusBar] state in
             statusBar?.update(for: state)
@@ -563,6 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The first time a done card opens: ask for its "suggested next:" pills.
     private func suggestNext(for id: UUID) {
         guard let entry = backgroundJobs.entries.first(where: { $0.id == id }), entry.suggestions == nil,
+              entry.walkthrough == nil,  // its one next step is "show me!"
               case .done = entry.job.status, !askingSuggestions.contains(id) else { return }
         askingSuggestions.insert(id)
         let question = entry.job.question, answer = entry.job.answer

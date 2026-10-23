@@ -33,7 +33,7 @@ final class InputInterceptor {
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    private var watchdog: Timer?
+    private var watchdog: DispatchSourceTimer?
 
     /// False if the tap couldn't be made (no Accessibility permission yet).
     @discardableResult
@@ -59,14 +59,19 @@ final class InputInterceptor {
         self.source = source
         Log.input.notice("Esc interceptor on (listen \(CGPreflightListenEventAccess(), privacy: .public), post \(CGPreflightPostEventAccess(), privacy: .public), accessibility \(AXIsProcessTrusted(), privacy: .public))")
         // macOS can switch a tap off without telling it (a slow answer, or after sleep);
-        // without it Esc would reach the app in front while ClickBait is busy.
-        watchdog = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let tap = self?.tap, !CGEvent.tapIsEnabled(tap: tap) else { return }
-                CGEvent.tapEnable(tap: tap, enable: true)
-                Log.input.notice("Esc interceptor was off; switched back on")
-            }
+        // without it Esc would reach the app in front while ClickBait is busy. Checked off the
+        // main thread: asking the window server waited 258 ms on it once (stall trap,
+        // 2026-10-23), freezing the companion.
+        let port = TapPort(tap: tap)
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 3, repeating: 3)
+        timer.setEventHandler {
+            guard !CGEvent.tapIsEnabled(tap: port.tap) else { return }
+            CGEvent.tapEnable(tap: port.tap, enable: true)
+            Log.input.notice("Esc interceptor was off; switched back on")
         }
+        timer.resume()
+        watchdog = timer
         return true
     }
 
@@ -75,6 +80,11 @@ final class InputInterceptor {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
         Log.input.notice("Esc interceptor switched off by macOS; back on")
     }
+}
+
+/// The tap's port for the background check: CFMachPort calls are thread-safe.
+private struct TapPort: @unchecked Sendable {
+    let tap: CFMachPort
 }
 
 /// Runs on the main run loop (where the tap's source was added), so main-actor state

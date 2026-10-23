@@ -50,7 +50,7 @@ final class NotchController {
         var hud: (level: Double, muted: Bool)?
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
-        enum Tab { case home, ask, shelf, settings }
+        enum Tab { case home, ask, shelf, settings, mirror, music }
         /// The bean's mood, read from the companion (set by the app delegate).
         var mood: @MainActor () -> Bean.Mood = { .idle }
         /// The launch hello: the open island shows only the bean, big, among sparkles.
@@ -62,9 +62,28 @@ final class NotchController {
         /// The worst thing wrong right now (`HealthLadder`), read each time the panel opens (set by the app delegate).
         var checkHealth: @MainActor () async -> HealthLadder.Item? = { nil }
         var health: HealthLadder.Item?
+        /// The menu bar's menu, whose every item Settings also offers (set by the app delegate).
+        @ObservationIgnored weak var menuBar: StatusBarController?
+        /// Settings' Permissions page (set by the app delegate).
+        @ObservationIgnored weak var permissions: PermissionsManager?
+        /// The page Settings opens on.
+        var settingsPage: SettingsPage = .general
 
-        /// Typing or in Settings: only Esc, ✕ or a click elsewhere folds it.
-        var holdsOpen: Bool { editing || tab == .settings }
+        /// The chat, shown in the Ask tab once a question is asked there (set by the app delegate).
+        var chat: ChatModel?
+        /// A conversation started from the Ask tab: it stays in the notch, which grows to fit it.
+        var chatting = false { didSet { if chatting != oldValue { onResize() } } }
+        /// Re-fits the window to the shape (set by the controller).
+        var onResize: @MainActor () -> Void = {}
+        /// The notch folded on its conversation: the app delegate ends it.
+        var onChatEnd: @MainActor () -> Void = {}
+        /// Showing the Ask tab's conversation.
+        var showsChat: Bool { tab == .ask && chatting }
+        /// The ⓘ shortcuts card hangs over the panel.
+        var showsKeys = false
+
+        /// Typing, in Settings, the mirror or a conversation: only Esc, ✕ or a click elsewhere folds it.
+        var holdsOpen: Bool { editing || tab == .settings || tab == .mirror || showsChat }
         let note: Note
         init(note: Note) { self.note = note }
     }
@@ -82,6 +101,8 @@ final class NotchController {
     private var pointerMonitors: [Any] = []
     private var hudTask: Task<Void, Never>?
     private var frameTasks: [UInt32: Task<Void, Never>] = [:]
+    /// Each panel's settled frame: its window is briefly bigger while the shape springs.
+    private var targets: [UInt32: CGRect] = [:]
     private var pausedTask: Task<Void, Never>?
     private var pull = PullGesture()
     private var escapeMonitors: [Any] = []
@@ -102,9 +123,15 @@ final class NotchController {
             guard let settings else { return false }
             return settings.spotifyArtworkAlways || settings.internet.isOn
         }
+        music.youtubeArtworkAllowed = { [weak settings] in settings?.internet.isOn ?? false }
         music.onChange = { [weak self] in self?.musicChanged() }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                  object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.place() }
+        })
+        // Another app in front may reach up beside the notch (`appOwnsTop`).
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                                            object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.place() }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
@@ -115,6 +142,7 @@ final class NotchController {
 
     func start() {
         WindowLayers.check()
+        model.onResize = { [weak self] in self?.place() }
         watchPointer()
         apply(.enabled(settings.notchPanelEnabled))
         // The screen's real shape can arrive after launch; then the hello.
@@ -162,8 +190,9 @@ final class NotchController {
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }
         model.state = after
-        if after != .expanded, model.tab == .settings { model.tab = .home }
-        if after != .expanded { model.greeting = false; model.editing = false }
+        if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
+        if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
+        if after != .expanded, model.chatting { model.chatting = false; model.onChatEnd() }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         if after == .expanded {
             music.refresh()
@@ -197,9 +226,35 @@ final class NotchController {
     }
 
     private func setActivity(_ on: Bool) {
-        guard model.activity != on else { return }
-        model.activity = on
+        guard wantsActivity != on else { return }
+        wantsActivity = on
         place()
+    }
+
+    /// Music is playing; the wings show it unless an app's window is in their place.
+    private var wantsActivity = false
+    /// An app's window is in the strip beside the notch (`appOwnsTop`).
+    private var topTaken = false
+
+    /// Another app's window reaches the strip beside the notch (the menu bar hides itself, or
+    /// an app is full screen): wings there would cover its content (seen 2026-10-23 over a
+    /// chat window's header). Window bounds need no permission.
+    private static func appOwnsTop(of screen: NSScreen) -> Bool {
+        guard let primary = NSScreen.screens.first,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return false }
+        // The strip in Quartz points (top-left origin of the first screen).
+        let inset = screen.safeAreaInsets.top
+        let strip = CGRect(x: screen.frame.minX, y: primary.frame.maxY - screen.frame.maxY, width: screen.frame.width, height: max(inset, 24))
+        let me = ProcessInfo.processInfo.processIdentifier
+        return windows.contains { window in
+            guard window[kCGWindowLayer as String] as? Int == 0,
+                  window[kCGWindowOwnerPID as String] as? Int32 != me,
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = (window[kCGWindowBounds as String] as? NSDictionary).flatMap({ CGRect(dictionaryRepresentation: $0) })
+            else { return false }
+            return bounds.width > 100 && bounds.intersects(strip.insetBy(dx: 0, dy: 2))
+        }
     }
 
     // MARK: Window
@@ -240,22 +295,28 @@ final class NotchController {
         }
         let primary = Self.screen ?? screens[0]
         model.notch = Self.notch(on: primary)
+        topTaken = Self.appOwnsTop(of: primary)
+        let activity = wantsActivity && !topTaken
+        if model.activity != activity { model.activity = activity }
         let connectedIDs = Set(screens.compactMap(Self.displayID))
         for displayID in panels.keys.filter({ !connectedIDs.contains($0) }) {
             frameTasks.removeValue(forKey: displayID)?.cancel()
             panels.removeValue(forKey: displayID)?.orderOut(nil)
+            targets.removeValue(forKey: displayID)
         }
         for screen in screens {
             guard let displayID = Self.displayID(screen),
                   let notch = Self.notch(on: screen),
                   let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                notch: notch, activity: model.activity, hud: model.hud != nil,
-                                               shelf: model.tab == .shelf, settings: model.tab == .settings) else {
+                                               shelf: model.tab == .shelf, settings: model.tab == .settings,
+                                               mirror: model.tab == .mirror, chat: model.showsChat) else {
                 // Displays without a physical notch still receive the same centered panel.
                 guard let displayID = Self.displayID(screen),
                       let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                    notch: nil, activity: model.activity, hud: model.hud != nil,
-                                                   shelf: model.tab == .shelf, settings: model.tab == .settings) else { continue }
+                                                   shelf: model.tab == .shelf, settings: model.tab == .settings,
+                                                   mirror: model.tab == .mirror, chat: model.showsChat) else { continue }
                 positionPanel(frame, notch: nil, displayID: displayID)
                 continue
             }
@@ -277,30 +338,36 @@ final class NotchController {
         panel.collectionBehavior = Self.collectionBehavior
         if !panel.isVisible { panel.setFrame(target, display: true); panel.orderFrontRegardless() }
         if model.state != .expanded, panel.isKeyWindow { panel.resignKey() }
+        // Folded, the island is only a small see-through handle (`NotchView`), so it stays
+        // visible everywhere (it used to fade out where its black block covered a page).
+        let alpha: CGFloat = 1
+        if panel.alphaValue != alpha {
+            NSAnimationContext.runAnimationGroup { $0.duration = alpha == 0 ? 0.3 : 0.15; panel.animator().alphaValue = alpha }
+        }
         frameTasks[displayID]?.cancel()
+        targets[displayID] = target
         let current = panel.frame
         guard current != target else { return }
 
-        // Keep the top edge fixed so it remains attached to the physical notch. The damped
-        // oscillation adds one small overshoot on opening/closing without a long, floaty bounce.
+        // SwiftUI springs the black shape (`Look.Motion`); the clear window only has to hold
+        // it. Stepping the window's frame every 16 ms on its own curve re-laid out the whole
+        // view each step and fought SwiftUI's spring: choppy. So the window jumps once to
+        // fit both sizes plus the spring's overshoot, top edge fixed, and settles on the new
+        // size after the motion ends. Clear pixels let clicks through meanwhile.
+        let overshoot = 0.12
+        let width = max(current.width, target.width) + abs(target.width - current.width) * overshoot
+        let height = max(current.height, target.height) + abs(target.height - current.height) * overshoot
+        let room = CGRect(x: target.midX - width / 2, y: target.maxY - height, width: width, height: height)
+        if room != current { panel.setFrame(room, display: true) }
         frameTasks[displayID] = Task { @MainActor [weak panel] in
-            let duration = 0.42
-            let start = ProcessInfo.processInfo.systemUptime
-            let top = current.maxY
-            while !Task.isCancelled {
-                let progress = min(1, (ProcessInfo.processInfo.systemUptime - start) / duration)
-                let spring = 1 - exp(-14 * progress * duration) * cos(18 * progress * duration)
-                let width = current.width + (target.width - current.width) * spring
-                let height = current.height + (target.height - current.height) * spring
-                let frame = CGRect(x: target.midX - width / 2, y: top - height, width: width, height: height)
-                panel?.setFrame(frame, display: true)
-                if progress >= 1 { break }
-                try? await Task.sleep(for: .milliseconds(16))
-            }
+            try? await Task.sleep(for: .seconds(Self.motionSettles))
             guard !Task.isCancelled else { return }
             panel?.setFrame(target, display: true)
         }
     }
+
+    /// Long enough for the open spring and the close curve to come to rest.
+    private static let motionSettles = 0.8
 
     private static let collectionBehavior: NSWindow.CollectionBehavior =
         [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
@@ -362,8 +429,8 @@ final class NotchController {
     private func pointerMoved() {
         guard model.state != .hidden else { return }
         let mouse = NSEvent.mouseLocation, point = Point(x: mouse.x, y: mouse.y)
-        let inside = panels.values.contains {
-            $0.isVisible && NotchPanel.pointerOn(point, frame: Self.rect($0.frame), wasOn: pointerInside)
+        let inside = panels.contains { displayID, panel in
+            panel.isVisible && NotchPanel.pointerOn(point, frame: Self.rect(targets[displayID] ?? panel.frame), wasOn: pointerInside)
         }
         guard inside != pointerInside else { return }
         pointerInside = inside
@@ -483,12 +550,15 @@ final class NotchController {
     /// AppKit-backed views — the shelf's note, the file drag handle — draw too, unlike
     /// `ImageRenderer`. For the UI smoke tests (ClickBaitTests) and `debugRender`.
     func snapshot(_ state: NotchPanel.State, tab: Model.Tab = .home, greeting: Bool = false,
-                  activity: Bool = false) -> NSBitmapImageRep? {
-        let saved = (model.state, model.tab, model.greeting, model.activity)
-        defer { (model.state, model.tab, model.greeting, model.activity) = saved }
-        (model.state, model.tab, model.greeting, model.activity) = (state, tab, greeting, activity)
-        let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hud: false,
-                                    shelf: tab == .shelf, settings: tab == .settings)
+                  activity: Bool = false, chat: ChatModel? = nil, keys: Bool = false,
+                  hud: (level: Double, muted: Bool)? = nil) -> NSBitmapImageRep? {
+        let saved = (model.state, model.tab, model.greeting, model.activity, model.chat, model.chatting, model.onResize, model.showsKeys, model.hud)
+        defer { (model.state, model.tab, model.greeting, model.activity, model.chat, model.chatting, model.onResize, model.showsKeys, model.hud) = saved }
+        model.onResize = {}  // a render: the real window stays as it is
+        (model.state, model.tab, model.greeting, model.activity, model.showsKeys, model.hud) = (state, tab, greeting, activity, keys, hud)
+        if let chat { (model.chat, model.chatting) = (chat, true) }
+        let look = NotchPanel.shape(state, notch: model.notch, activity: activity, hud: hud != nil,
+                                    shelf: tab == .shelf, settings: tab == .settings, chat: model.showsChat)
         let size = NSSize(width: look.width + 2 * NotchPanel.ear + 60, height: look.height + 30)
         let host = NSHostingView(rootView: NotchView(
             model: model, notch: model.notch, music: music, shelf: shelf,
@@ -535,17 +605,28 @@ final class NotchController {
             }
             (model.state, model.activity) = saved
         }
-        // Every mood, large then at header size, still (no breathing or blink).
+        // Every mood with each of its eye pairs, large, then at header size; still (no breathing or blink).
         let moods = Bean.Mood.allCases.map { mood in
             VStack(spacing: 6) {
-                BeanFace(mood: mood, eyes: Bean.eyePairs(for: mood)[0], size: 64)
+                HStack(spacing: 4) {
+                    ForEach(Bean.eyePairs(for: mood), id: \.self) { BeanFace(mood: mood, eyes: $0, size: 64) }
+                }
                 Text(mood.rawValue).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
             }
         }
         let sheet = VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 22) { ForEach(0..<moods.count, id: \.self) { moods[$0] } }
+            ForEach(0..<3, id: \.self) { row in
+                HStack(alignment: .top, spacing: 22) { ForEach(Array(moods.indices).filter { $0 % 3 == row }, id: \.self) { moods[$0] } }
+            }
             HStack(spacing: 22) {
                 ForEach(Bean.Mood.allCases, id: \.self) { BeanFace(mood: $0, eyes: Bean.eyePairs(for: $0)[0], size: 26) }
+            }
+            // The Mirror pill's chrome bean through its shimmer, large then at pill size.
+            HStack(spacing: 22) {
+                ForEach([0.0, 0.8, 1.6, 2.4], id: \.self) {
+                    BeanFace(mood: .idle, eyes: .both(.dot), size: 64, badge: false, solid: true, holo: true, sheen: $0)
+                }
+                BeanFace(mood: .idle, eyes: .both(.dot), size: 22, badge: false, solid: true, holo: true, sheen: 1.2)
             }
         }
         .padding(24)

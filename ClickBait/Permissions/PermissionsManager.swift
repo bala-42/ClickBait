@@ -26,7 +26,7 @@ enum PermissionKind: CaseIterable, Identifiable {
         case .microphone:
             "Lets ClickBait hear your question while you hold Control+Option."
         case .camera:
-            "Optional: shows a live front-camera mirror inside the notch. Nothing is recorded or kept."
+            "Optional: a front-camera mirror and photo booth inside the notch. Photos are kept only if you save them."
         case .screenRecording:
             "Lets ClickBait see the screen you're asking about. Screenshots never leave your Mac."
         case .accessibility:

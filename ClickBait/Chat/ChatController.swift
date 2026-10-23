@@ -7,6 +7,16 @@ private final class ChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// The notch shows this conversation: the window keeps its state but never comes on
+    /// screen (one switch here instead of one in every show, tuck and untuck path).
+    var suppressed = false { didSet { if suppressed { super.order(.out, relativeTo: 0) } } }
+    override func orderFront(_ sender: Any?) { if !suppressed { super.orderFront(sender) } }
+    override func orderFrontRegardless() { if !suppressed { super.orderFrontRegardless() } }
+    override func makeKeyAndOrderFront(_ sender: Any?) { if !suppressed { super.makeKeyAndOrderFront(sender) } }
+    override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        if !suppressed || place == .out { super.order(place, relativeTo: otherWin) }
+    }
+
     /// ClickBait is a menu bar app with no Edit menu, which is what normally turns
     /// ⌘C/⌘V/… into actions — so the panel does it, sending them to the focused text
     /// field or selected answer text through the responder chain.
@@ -38,6 +48,8 @@ final class ChatController {
     #endif
 
     var isOpen: Bool { panel != nil }
+    /// The conversation is shown in the notch's Ask tab instead of this window.
+    var hostedInNotch = false { didSet { (panel as? ChatPanel)?.suppressed = hostedInNotch } }
     /// The centre of the companion's triangle now (AppKit): the card shrinks back into it
     /// on closing.
     var companionPoint: (() -> CGPoint)?
@@ -75,6 +87,7 @@ final class ChatController {
         panel.isReleasedWhenClosed = false
         // Only take the keyboard when the text field is clicked, never on its own.
         panel.becomesKeyOnlyIfNeeded = true
+        panel.suppressed = hostedInNotch
         panel.contentView = NSHostingView(rootView: ChatView(model: model))
 
         model.onCardSizeChange = { [weak self] in self?.fitToCard() }

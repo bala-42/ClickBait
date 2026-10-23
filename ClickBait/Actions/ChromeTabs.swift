@@ -28,6 +28,24 @@ enum ChromeTabs {
         return found
     }
 
+    /// Every tab of every window, front window first, each window's showing tab before its others.
+    static func readAll(pid: pid_t) -> [BrowserTab] {
+        guard let app = SBApplication(processIdentifier: pid),
+              let windows = app.value(forKey: "windows") as? SBElementArray else { return [] }
+        var showing: [BrowserTab] = [], others: [BrowserTab] = []
+        for case let window as SBObject in windows {
+            guard let id = number(window.value(forKey: "id")), let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
+            let active = (window.value(forKey: "activeTab") as? SBObject).flatMap { number($0.value(forKey: "id")) }
+            for case let tab as SBObject in tabs {
+                guard let tabID = number(tab.value(forKey: "id")) else { continue }
+                let found = BrowserTab(browser: .chrome, windowID: id, tab: tabID,
+                                       title: string(tab.value(forKey: "title")) ?? "", url: string(tab.value(forKey: "URL")) ?? "")
+                if tabID == active { showing.append(found) } else { others.append(found) }
+            }
+        }
+        return showing + others
+    }
+
     /// Selects the tab (wherever it is now), brings its window to the front and Chrome
     /// forward, which switches to that window's desktop. False when the tab is gone.
     static func select(_ target: BrowserTab, pid: pid_t) -> Bool {

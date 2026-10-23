@@ -68,9 +68,14 @@ final class AudioRecorder {
     func start() throws {
         guard engine == nil else { return }
 
+        // A chosen microphone (Settings) needs a fresh engine pointed at it before its
+        // format is read; the prepared one was built on the system default.
+        let chosen = Microphones.chosenUID != nil
+        if chosen, let stale = preparedEngine { stopObserving(stale); preparedEngine = nil }
         let engine = preparedEngine ?? AVAudioEngine()
         if preparedEngine == nil { observeConfigurationChanges(of: engine) }
         preparedEngine = nil
+        if chosen { Microphones.apply(to: engine) }
 
         guard let outputFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: Self.sampleRate, channels: 1, interleaved: false)

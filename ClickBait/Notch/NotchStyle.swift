@@ -22,6 +22,24 @@ enum NotchPalette {
     static let track = Color.white.opacity(0.14)
     /// Music bars and accents when the artwork gives no colour.
     static let music = Color(red: 0.55, green: 0.62, blue: 0.92)
+    /// The Music panel's accent: pastel bubblegum violet (user's pick, 2026-10-23).
+    static let bubblegum = Color(hex: 0xF2A9DC)
+    /// The home pills, as the glossy Windows 7 logo's squares (user's reference, 2026-10-23):
+    /// each pill's colour, and its square's shading, top-leading to bottom-trailing.
+    static let windowsRed = Color(hex: 0xEE4422)
+    static let windowsGreen = Color(hex: 0x7CB82F)
+    static let windowsBlue = Color(hex: 0x3A86C8)
+    static let windowsYellow = Color(hex: 0xFFC21A)
+
+    static func windowsShade(_ tint: Color) -> [Color]? {
+        switch tint {
+        case windowsRed: [Color(hex: 0xD9261C), Color(hex: 0xF07A1E), Color(hex: 0xF7C531)]
+        case windowsGreen: [Color(hex: 0xB9DE7A), Color(hex: 0x6DAE2A), Color(hex: 0x2F7A1C)]
+        case windowsBlue: [Color(hex: 0x1F4FA0), Color(hex: 0x3F86C6), Color(hex: 0xB5DDF0)]
+        case windowsYellow: [Color(hex: 0xFFE05A), Color(hex: 0xFFC21A), Color(hex: 0xF39019)]
+        default: nil
+        }
+    }
 
     /// The artwork's colour, lifted towards white so it reads on black.
     static func lifted(_ color: NSColor?, _ amount: CGFloat, fallback: Color) -> Color {
@@ -66,29 +84,6 @@ extension View {
 }
 
 // MARK: - Header
-
-/// An icon tab: a dark capsule when selected, a faint one on hover.
-struct NotchHeaderTab: View {
-    let symbol: String
-    let label: String
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(selected ? NotchPalette.text : hovering ? NotchPalette.hover : NotchPalette.secondary)
-                .frame(width: 30, height: 22)
-                .background(selected ? NotchPalette.tabOn : hovering ? Color.white.opacity(0.07) : .clear, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
 
 /// A plain header icon: grey, white on hover or when on.
 struct NotchHeaderIcon: View {

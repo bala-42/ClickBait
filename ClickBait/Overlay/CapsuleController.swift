@@ -200,7 +200,7 @@ final class CapsuleController {
     private var mainScreen: NSScreen? { NSScreen.screens.first ?? NSScreen.main }
 
     private func makeManaged(_ entry: BackgroundJobs.Entry) -> Managed {
-        let presentation = CapsulePresentation(entry: entry)
+        let presentation = CapsulePresentation(entry: entry, eyes: Bean.dockFace(avoiding: managed.values.map(\.presentation.eyes)))
         let id = entry.id
         let tileHost = FirstClickHostingView(rootView: DockTileView(presentation: presentation,
                                                                     onToggle: { [weak self] in self?.toggle(id) }))

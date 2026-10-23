@@ -17,3 +17,7 @@ Config/Local.xcconfig
 
 # Other tools
 .freebuff/
+
+# Agent tooling: never committed
+.claude-flow/
+graphify-out/

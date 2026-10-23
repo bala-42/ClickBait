@@ -10,15 +10,15 @@ struct PeelHandoffTests {
 
     // MARK: Timing
 
-    @Test func handoffStartsAfterHalfASecondAndFinishesWithinASecond() {
+    @Test func handoffStartsAfterPointEightSeconds() {
         let peelAt = Double(PeelRule.autoPeelDelay.components.attoseconds) / 1e18
             + Double(PeelRule.autoPeelDelay.components.seconds)
-        #expect(abs(peelAt - 0.5) < 1e-9)
+        #expect(abs(peelAt - 0.8) < 1e-9)
         // The fresh companion is fully back at the cursor this soon after the peel starts…
         let freshBack = AgentDock.freshCompanionDelay(.flight) + AgentDock.popTime
-        #expect(peelAt + freshBack <= 0.85)
-        // …and the copy is in its tile within a second of the question starting to think.
-        #expect(peelAt + AgentDock.growTime + AgentDock.flightTime <= 1.2)
+        #expect(peelAt + freshBack <= 1.15)
+        // …and the copy is in its tile within 1.5 s of the question starting to think.
+        #expect(peelAt + AgentDock.growTime + AgentDock.flightTime <= 1.5)
     }
 
     @Test func freshCompanionNeverOverlapsTheGrowingCopy() {
@@ -36,7 +36,7 @@ struct PeelHandoffTests {
         let total = AgentDock.growTime + AgentDock.flightTime
         let fading = AgentDock.spawn(at: AgentDock.copyFadeStart * total, from: cursor, to: slot)
         // When the fade starts the copy is already over its tile (within centre-to-corner of
-        // the 33 pt square; measured 16.6 pt on this 1200 pt trip), small and nearly upright.
+        // the tile; measured 16.6 pt on this 1200 pt trip), small and nearly upright.
         let dx = fading.center.x - slot.x, dy = fading.center.y - slot.y
         #expect((dx * dx + dy * dy).squareRoot() <= AgentDock.tileSize / 2 * 2.0.squareRoot())
         #expect(fading.scale <= 1)

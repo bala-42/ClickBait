@@ -103,7 +103,7 @@ extension AskCoordinator {
                                         ChatModel.Message(role: .assistant, text: text)], for: jobID)
         backgroundJobs.setWalkthrough(pending, for: jobID)
         backgroundJobs.complete(jobID, answer: text, conversation: conversation ?? Conversation())
-        backgroundJobs.setLeadingSuggestion(PeelRule.resumeAction(.walkthrough), for: jobID)
+        // Its "show me!" is the card's main button (`AgentDoneCard.goLabel`), not a suggestion.
         Log.ask.notice("Walkthrough hold: ready in the dock (\(pending.app == nil ? "steps planned" : "needs its app", privacy: .public))")
     }
 

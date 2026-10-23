@@ -81,6 +81,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         revealCaptureItem.isHidden = !settings.keepDebugCaptures
+        // The notch's Settings can change these too.
+        notchItem.state = settings.notchPanelEnabled ? .on : .off
+        volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off
+        soundsItem.state = settings.soundCues ? .on : .off
+        greetingsItem.state = settings.greetings ? .on : .off
+        spotifyArtItem.submenu?.items.forEach { $0.state = ($0.representedObject as? Bool) == settings.spotifyArtworkAlways ? .on : .off }
         if menu === statusItem.menu {
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -187,7 +193,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return item
     }
 
-    @objc private func openPermissions() { onOpenPermissions() }
+    /// The background ClickBaits the menu lists (the notch's Settings lists them too).
+    var backgroundJobs: [BackgroundJobs.Entry] { backgroundEntries }
+
+    @objc func openPermissions() { onOpenPermissions() }
     @objc private func openRemembered() { MemoryStore.shared.reveal() }
     @objc private func openNotes() { MemoryStore.shared.revealNotes() }
     @objc private func openSavedAnswers() { AnswerArchive.reveal() }
@@ -213,8 +222,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         volumeHUDItem.state = settings.notchVolumeHUD ? .on : .off
     }
 
-    @objc private func toggleNotch() {
-        let on = !settings.notchPanelEnabled
+    @objc private func toggleNotch() { setNotch(!settings.notchPanelEnabled) }
+
+    func setNotch(_ on: Bool) {
         notchItem.state = on ? .on : .off
         onToggleNotch?(on)
     }
@@ -244,8 +254,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             recentMenu.addItem(item)
         }
     }
-    @objc private func showCapsule(_ sender: NSMenuItem) {
+    @objc private func showCapsuleItem(_ sender: NSMenuItem) {
         guard let idText = sender.representedObject as? String, let id = UUID(uuidString: idText) else { return }
+        showCapsule(id)
+    }
+
+    func showCapsule(_ id: UUID) {
         Log.app.notice("Background capsule selected for recall")
         // Let AppKit finish dismissing the nested status menu before ordering the
         // status-level panel forward; otherwise the menu can cover the recalled card.
@@ -264,17 +278,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         for entry in backgroundEntries {
-            let state: String
-            switch entry.job.status {
-            case .working: state = "Working"
-            case .done: state = "Ready"
-            case .failed: state = "Failed"
-            case .stopped: state = "Stopped"
-            }
+            let state = SettingsView.status(entry.job.status)
             let question = entry.job.question.count > 44
                 ? String(entry.job.question.prefix(43)) + "…"
                 : entry.job.question
-            let item = NSMenuItem(title: "\(state): \(question)", action: #selector(showCapsule(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: "\(state): \(question)", action: #selector(showCapsuleItem(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = entry.id.uuidString
             backgroundCapsulesMenu.addItem(item)
@@ -282,10 +290,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     #if DEBUG
-    @objc private func runDebugCapsuleTest() { onDebugCapsuleTest() }
+    @objc func runDebugCapsuleTest() { onDebugCapsuleTest() }
     #endif
 
-    @objc private func revealLastCapture() {
+    @objc func revealLastCapture() {
         let directory = DebugCaptureStore.directory
         if FileManager.default.fileExists(atPath: directory.path) {
             NSWorkspace.shared.activateFileViewerSelecting([directory])
@@ -294,12 +302,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func openAbout() {
+    @objc func openAbout() {
         NSApp.activate()
         NSApp.orderFrontStandardAboutPanel(nil)
     }
 
-    @objc private func quit() { NSApp.terminate(nil) }
+    @objc func quit() { NSApp.terminate(nil) }
 
     private func showHealth(_ health: HealthLadder.Item?) {
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor(health?.color ?? .gray)])

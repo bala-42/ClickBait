@@ -8,9 +8,9 @@ struct AgentDockTests {
 
     @Test func tilesStackDownFromTheTopRight() throws {
         let first = try #require(AgentDock.tile(0, in: visible))
-        #expect(first == Rect(x: 1512 - 27 - 33, y: 949 - 32 - 33, width: 33, height: 33))
+        #expect(first == Rect(x: 1512 - 27 - 44, y: 949 - 32 - 44, width: 44, height: 44))
         let second = try #require(AgentDock.tile(1, in: visible))
-        #expect(first.maxY - second.maxY == 42)  // 42 pt top to top
+        #expect(first.maxY - second.maxY == AgentDock.pitch)  // 42 pt top to top
         #expect(second.maxX == first.maxX)
         #expect(AgentDock.tile(3, in: visible) == nil)
         #expect(AgentDock.tile(-1, in: visible) == nil)
@@ -18,7 +18,7 @@ struct AgentDockTests {
 
     @Test func dotSitsInTheTopRightCorner() throws {
         let tile = try #require(AgentDock.tile(0, in: visible))
-        #expect(AgentDock.dotCenter(of: tile) == Point(x: tile.maxX - 4.5, y: tile.maxY - 4.5))
+        #expect(AgentDock.dotCenter(of: tile) == Point(x: tile.maxX - AgentDock.dotInset, y: tile.maxY - AgentDock.dotInset))
     }
 
     @Test func newestTakesTheTopAndTheOthersMoveDown() {

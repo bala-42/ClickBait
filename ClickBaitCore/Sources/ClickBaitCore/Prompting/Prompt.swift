@@ -68,7 +68,9 @@ public enum Prompt {
         "code": the exact text to copy, with \\n between lines, and its language in "language" \
         (for example "python", "bash", "excel"). "speech" then introduces it in one short \
         sentence and must not contain the code. Leave "code" and "language" out otherwise. \
-        A fix, a rewrite or "write me…" always needs code. If "speech" says "here is", "use" \
+        A fix, a rewrite or "write me…" always needs code. "code" has no length limit: when \
+        asked for a whole program (a game, a script, an app), write all of it, complete and \
+        runnable; never say it can't be written here. If "speech" says "here is", "use" \
         or "change it to", the code it means MUST be in "code". Example: "fix this" on \
         `print("Hello"` → {"speech": "It's missing the closing bracket.", "code": "print(\\"Hello\\")", \
         "language": "python"}
@@ -89,6 +91,7 @@ public enum Prompt {
         else if request.listParts { text = partsSystem }
         else if request.planTutorial { text = tutorialSystem }
         else if request.tutorialCheck != nil { text = progressSystem }
+        else if request.codeAnswer { text = CodeAnswer.system }
         else { text = request.locate == nil ? system : locateSystem }
         return text
     }

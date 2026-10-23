@@ -81,13 +81,23 @@ public enum NotchPanel {
     /// The music "live activity": the black grows this much each side of the notch, with the
     /// artwork on the left wing and a visualizer on the right (GIF: 248 → 356 px).
     public static let activityWing = 40.0
-    /// The volume HUD's wings, each side of the notch while it shows (collapsed only).
-    public static let hudWing = 96.0
+    /// The volume HUD's wings, each side of the notch while it shows: the speaker left, the
+    /// percentage right, room for "100%" in the arcade font.
+    public static let hudWing = 112.0
+    /// Under the notch, the HUD's Pac-Man corridor: the level as a row of dots, as long as the
+    /// HUD is wide (user's choice, 2026-10-23).
+    public static let hudCorridor = 24.0
+    /// Without a notch, the HUD's middle between its wings (where the notch would be).
+    public static let hudGap = 120.0
     /// The open island (user's choice, 2026-10-20; ClickBait's colours): 640 wide, 160 tall — 8 top, a 34 pt header, 98 pt of
     /// cards, 10 bottom.
     public static let expandedSize = (width: 640.0, height: 160.0)
     /// The shelf (files, AirDrop, note) gets taller cards for its file drop.
     public static let shelfSize = (width: 640.0, height: 176.0)
+    /// The Mirror photo booth: a 420 × 236 camera beside its shutter and the last four shots.
+    public static let mirrorSize = (width: 640.0, height: 290.0)
+    /// The Ask tab once a conversation starts in it: room for the answer and its code.
+    public static let chatSize = (width: 640.0, height: 400.0)
     /// Corners: 22 open, 14 for the small island (wings, peek, HUD).
     public static let openCorner = 22.0
     public static let compactCorner = 14.0
@@ -105,10 +115,15 @@ public enum NotchPanel {
 
     /// The black shape for a state: its size and bottom corner radius (not counting the ears).
     public static func shape(_ state: State, notch: Rect?, activity: Bool, hud: Bool,
-                             shelf: Bool = false, settings: Bool = false)
+                             shelf: Bool = false, settings: Bool = false, mirror: Bool = false, chat: Bool = false)
         -> (width: Double, height: Double, radius: Double) {
-        let expanded = settings ? settingsSize : shelf ? shelfSize : expandedSize
+        let expanded = settings ? settingsSize : mirror ? mirrorSize : chat ? chatSize : shelf ? shelfSize : expandedSize
         guard let notch else {
+            // The volume HUD keeps its full size without a notch (a second display): its wings
+            // either side of an empty middle, and the corridor under them.
+            if hud, state == .collapsed || state == .peek {
+                return (2 * hudWing + hudGap, pillSize.height + hudCorridor, compactCorner)
+            }
             return state == .expanded
                 ? (expanded.width, expanded.height, openCorner)
                 : (pillSize.width, pillSize.height, pillSize.height / 2)
@@ -119,9 +134,10 @@ public enum NotchPanel {
         case .expanded:
             return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, openCorner)
         case .peek:
-            return (notch.width + max(peekWidth, hud ? 2 * hudWing : 0), notch.height, compactCorner)
+            if hud { return (notch.width + 2 * hudWing, notch.height + hudCorridor, compactCorner) }
+            return (notch.width + peekWidth, notch.height, compactCorner)
         case .collapsed:
-            if hud { return (notch.width + 2 * hudWing, notch.height, compactCorner) }
+            if hud { return (notch.width + 2 * hudWing, notch.height + hudCorridor, compactCorner) }
             if activity { return (notch.width + 2 * activityWing, notch.height, compactCorner) }
             return (notch.width, notch.height, 8)
         }
@@ -132,10 +148,10 @@ public enum NotchPanel {
     /// covers, so menu-bar items either side stay clickable.
     public static func frame(_ state: State, screen: Rect, visible: Rect, notch: Rect?, activity: Bool = false,
                              hud: Bool = false, shelf: Bool = false,
-                             settings: Bool = false) -> Rect? {
+                             settings: Bool = false, mirror: Bool = false, chat: Bool = false) -> Rect? {
         guard state != .hidden else { return nil }
         let look = shape(state, notch: notch, activity: activity, hud: hud,
-                         shelf: shelf, settings: settings)
+                         shelf: shelf, settings: settings, mirror: mirror, chat: chat)
         let width = min(look.width + 2 * ear, screen.width - 16)
         let centre = notch?.midX ?? screen.midX
         let x = min(max(centre - width / 2, screen.minX + 8), screen.maxX - 8 - width)

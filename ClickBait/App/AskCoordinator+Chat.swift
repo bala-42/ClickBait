@@ -169,7 +169,9 @@ extension AskCoordinator {
             let elements = await Self.elements(in: capture, frontmostPID: pid)
             if await startTutorial(question: text, capture: capture, encoding: encoding, elements: elements,
                                    speak: false, display: text) { return }
-            await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
+            // Highlighted code is what "fix this" means; other selections would turn pointing off.
+            let highlighted = snapshot.selectedText.flatMap { CodeAnswer.looksLikeCode($0) && !ImpliedPointer.isLocating(text) ? $0 : nil }
+            await respond(question: text, selectedText: highlighted, capture: capture, encoding: encoding, startedAt: startedAt,
                           speak: false, display: text, elements: elements, autoPeels: autoPeels)
         }
     }

@@ -12,7 +12,10 @@ import SwiftUI
 /// and the player's volume (macOS asks
 /// once per player), and the artwork — Music's from the Mac, Spotify's downloaded from its
 /// own artwork link (always, or only with Internet Mode: `AppSettings.spotifyArtworkAlways`).
-/// Never launches a player that isn't running.
+/// Or a YouTube video open in Chrome or Safari (`YouTubeVideo`), whichever plays (`NowPlaying`): its
+/// tab's title, its thumbnail only with Internet Mode on, play/pause and next/previous as the
+/// media keys; playing when its browser sends sound out (`AudioActivity`).
+/// Never launches a player or browser that isn't running.
 @MainActor @Observable
 final class MusicBridge {
     enum Player: String, CaseIterable {
@@ -38,16 +41,31 @@ final class MusicBridge {
     /// The artwork's colour, for the artist's name, the progress bar and the visualizer.
     private(set) var tint: NSColor?
     private(set) var error: String?
+    /// The YouTube tab shown when neither player has a track.
+    private(set) var youtubeTab: BrowserTab?
+    /// The source is sending sound out right now (`AudioActivity`): the bars move only then
+    /// (user's rule, 2026-10-23: "only move when there is actually music playing").
+    private(set) var soundOut = false
+    /// The browser lets ClickBait run JavaScript in the video's tab (its "Allow JavaScript from
+    /// Apple Events" switch): true, false (switched off), nil (not tried yet).
+    private(set) var youtubeScripting: Bool?
 
     /// Whether Spotify's artwork may be downloaded now.
-    @ObservationIgnored var spotifyArtworkAllowed: () -> Bool = { true }
+    @ObservationIgnored var spotifyArtworkAllowed: () -> Bool = { false }
+    /// Whether a YouTube thumbnail may be downloaded now (Internet Mode on).
+    @ObservationIgnored var youtubeArtworkAllowed: () -> Bool = { false }
     /// Playing started or stopped, or the track changed (the notch's music wings follow it).
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var artworkKey: String?
-    @ObservationIgnored private var spotifyCovers: [String: NSImage] = [:]
+    @ObservationIgnored private var downloadedCovers: [String: NSImage] = [:]
+    /// An app started or stopped sending sound: what's playing may have moved.
+    @ObservationIgnored private var audio: AudioActivity?
+    @ObservationIgnored private var audibleBrowsers: Set<String> = []
 
-    var hasTrack: Bool { player != nil && !title.isEmpty }
+    var hasTrack: Bool { (player != nil || youtubeTab != nil) && !title.isEmpty }
+    /// What the card opens: the player, or YouTube's tab.
+    var sourceName: String? { player?.name ?? (youtubeTab == nil ? nil : "YouTube") }
 
     init() {
         let center = DistributedNotificationCenter.default()
@@ -68,7 +86,16 @@ final class MusicBridge {
             let bundle = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
             MainActor.assumeIsolated { if bundle == self?.player?.rawValue { self?.clear() } }
         })
-        if Self.running.first != nil { refresh() }
+        audio = AudioActivity { [weak self] in
+            let playing = AudioActivity.playingBundleIDs()
+            self?.checkSound(playing)
+            // Only a browser starting or stopping sound (Music and Spotify post their own news).
+            let browsers = playing.filter { id in BrowserTab.Browser.allCases.contains { id.hasPrefix($0.rawValue) } }
+            guard let self, browsers != audibleBrowsers else { return }
+            audibleBrowsers = browsers
+            refresh()
+        }
+        refresh()
     }
 
     #if DEBUG
@@ -87,8 +114,23 @@ final class MusicBridge {
 
     #endif
 
-    /// Brings the player forward (Music when none has played yet).
-    func openPlayer() { open(player ?? .music) }
+    /// Brings the player forward (Music when none has played yet), or YouTube's tab.
+    func openPlayer() {
+        guard let tab = youtubeTab, player == nil else { open(player ?? .music); return }
+        switch tab.browser {
+        case .chrome:
+            guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue).first?.processIdentifier
+            else { return }
+            _ = ChromeTabs.select(tab, pid: pid)
+        case .safari:
+            Task { _ = try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name) }
+        }
+    }
+
+    /// YouTube has no app: its site in the default browser.
+    static func openYouTube() {
+        if let url = URL(string: "https://www.youtube.com") { NSWorkspace.shared.open(url) }
+    }
 
     func open(_ player: Player) {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) {
@@ -117,7 +159,10 @@ final class MusicBridge {
     }
 
     private func update(_ player: Player, name: String?, artist: String?, state: String?, duration: Double?, position: Double?) {
+        // A video is shown and this isn't "now playing": let `refresh` weigh them.
+        if youtubeTab != nil, state != "Playing" { refresh(); return }
         self.player = player
+        youtubeTab = nil
         let changed = name != nil && name != title
         if let name { title = name }
         if let artist { self.artist = artist }
@@ -133,6 +178,7 @@ final class MusicBridge {
 
     private func clear() {
         player = nil
+        youtubeTab = nil
         title = ""
         artist = ""
         isPlaying = false
@@ -142,12 +188,106 @@ final class MusicBridge {
         onChange?()
     }
 
-    /// One read of the player's state, track, position and duration (when the panel opens or the
-    /// track changes); the artwork with it.
+    /// One read of what's playing (when the panel opens, a track changes, or an app starts or
+    /// stops sending sound): Music or Spotify, and a YouTube video in a browser, whichever
+    /// plays (`NowPlaying.pick`); the artwork with it.
     func refresh() {
-        guard let player = player ?? Self.running.first else { return }
+        let candidate = player ?? Self.running.first
+        Task {
+            var lines: [String]?
+            if let candidate {
+                do {
+                    lines = (try await AppleScriptRunner.run(Self.stateScript(candidate), app: candidate.name) ?? "").components(separatedBy: "\n")
+                    error = nil
+                } catch {
+                    self.error = "Allow ClickBait to control \(candidate.name) in System Settings → Privacy & Security → Automation."
+                }
+            }
+            let video = await Self.youtubeVideo()
+            let audible = AudioActivity.playingBundleIDs()
+            let videoPlaying = video.map { found in audible.contains { $0.hasPrefix(found.tab.browser.rawValue) } }
+            let hasTrack = (lines?.count ?? 0) >= 8
+            let source = NowPlaying.pick(player: hasTrack ? lines?.first == "playing" : nil, youtube: videoPlaying,
+                                         showingYouTube: youtubeTab != nil)
+            Log.app.notice("Notch music: \(String(describing: source), privacy: .public) (YouTube \(videoPlaying.map { $0 ? "playing" : "paused" } ?? "none", privacy: .public))")
+            switch source {
+            case .player:
+                if let candidate, let lines { show(candidate, lines) }
+            case .youtube:
+                if let video, let videoPlaying { show(video.tab, video.video, playing: videoPlaying) }
+            case .none:
+                if hasTrack || youtubeTab != nil || player != nil { clear() }
+            }
+            checkSound(audible)
+            onChange?()
+        }
+    }
+
+    private func checkSound(_ playing: Set<String>) {
+        let source = player?.rawValue ?? youtubeTab?.browser.rawValue
+        let now = source.map { source in playing.contains { $0.hasPrefix(source) } } ?? false
+        if soundOut != now { soundOut = now }
+    }
+
+    /// state, shuffle, repeat, volume; then the track: name, artist, position, duration (, artwork link).
+    private func show(_ player: Player, _ lines: [String]) {
+        let number = { (i: Int) in lines.count > i ? Double(lines[i].replacingOccurrences(of: ",", with: ".")) : nil }
         self.player = player
-        let script = player == .music ? """
+        youtubeTab = nil
+        isPlaying = lines.first == "playing"
+        shuffling = lines[1] == "true"
+        repeating = !["off", "false"].contains(lines[2])
+        volume = number(3).map { Int($0) } ?? volume
+        title = lines[4]
+        artist = lines[5]
+        position = number(6) ?? position
+        positionAt = .now
+        duration = number(7) ?? duration
+        loadArtwork(player, url: lines.count >= 9 ? lines[8] : nil)
+    }
+
+    private func show(_ tab: BrowserTab, _ video: YouTubeVideo, playing: Bool) {
+        let sameVideo = youtubeTab == tab && title == video.title
+        player = nil
+        youtubeTab = tab
+        title = video.title
+        artist = "YouTube"
+        isPlaying = playing
+        if !sameVideo || youtubeScripting != true { (duration, position, positionAt) = (0, 0, .now) }
+        Task { await readYouTube() }
+        let key = "youtube|\(video.id)"
+        // Also once Internet Mode is switched on while the video was showing without its picture.
+        if key != artworkKey || (artwork == nil && youtubeArtworkAllowed()) {
+            artworkKey = key
+            if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(nil, for: key) }
+        }
+    }
+
+    /// Runs JavaScript in the shown video's tab; nil when the browser refuses or the tab's gone.
+    private func runYouTube(_ javascript: String) async -> String? {
+        guard let tab = youtubeTab else { return nil }
+        do {
+            let output = try await AppleScriptRunner.run(YouTubeControl.appleScript(javascript, in: tab), app: tab.browser.name)
+            youtubeScripting = true
+            return output == "gone" ? nil : output
+        } catch {
+            if YouTubeControl.isTurnedOff(error.localizedDescription) { youtubeScripting = false }
+            return nil
+        }
+    }
+
+    /// The video's real state, time and channel, when the browser allows it.
+    private func readYouTube() async {
+        guard let output = await runYouTube(YouTubeControl.readState), let state = YouTubeControl.parse(output),
+              youtubeTab != nil, player == nil else { return }
+        isPlaying = state.playing
+        (position, duration, positionAt) = (state.position, state.duration, .now)
+        if !state.channel.isEmpty { artist = state.channel }
+        onChange?()
+    }
+
+    private static func stateScript(_ player: Player) -> String {
+        player == .music ? """
             tell application id "com.apple.Music"
                 if it is running then
                     set out to (player state as text) & linefeed & (shuffle enabled as text) & linefeed & (song repeat as text) & linefeed & (sound volume as text)
@@ -170,36 +310,38 @@ final class MusicBridge {
                 end if
             end tell
             """
-        Task {
-            do {
-                let lines = (try await AppleScriptRunner.run(script, app: player.name) ?? "").components(separatedBy: "\n")
-                let number = { (i: Int) in lines.count > i ? Double(lines[i].replacingOccurrences(of: ",", with: ".")) : nil }
-                isPlaying = lines.first == "playing"
-                // state, shuffle, repeat, volume; then the track: name, artist, position, duration (, artwork link).
-                if lines.count >= 4 {
-                    shuffling = lines[1] == "true"
-                    repeating = !["off", "false"].contains(lines[2])
-                    volume = number(3).map { Int($0) } ?? volume
-                }
-                if lines.count >= 8 {
-                    title = lines[4]
-                    artist = lines[5]
-                    position = number(6) ?? position
-                    positionAt = .now
-                    duration = number(7) ?? duration
-                }
-                error = nil
-                loadArtwork(player, url: lines.count >= 9 ? lines[8] : nil)
-                onChange?()
-            } catch {
-                self.error = "Allow ClickBait to control \(player.name) in System Settings → Privacy & Security → Automation."
-                onChange?()
-            }
-        }
     }
 
     func send(_ command: String) {
-        guard let player = player ?? Self.running.first else { return }
+        if youtubeTab != nil, player == nil {
+            let script: String? = switch command {
+            case "playpause": YouTubeControl.playPause
+            case "next track": YouTubeControl.next
+            case "previous track": YouTubeControl.previous
+            default: nil
+            }
+            guard let script else { return }
+            Task {
+                // In the video's own tab when the browser allows it; else the media keys, which
+                // reach only whatever macOS calls "Now Playing".
+                if await runYouTube(script) == "ok" {
+                    Log.app.notice("Notch music: \(command, privacy: .public) → YouTube tab")
+                    if command == "playpause" { isPlaying.toggle(); position = currentPosition(); positionAt = .now }
+                    try? await Task.sleep(for: .milliseconds(command == "playpause" ? 150 : 900))
+                    await readYouTube()
+                } else {
+                    Log.app.notice("Notch music: \(command, privacy: .public) → media key (tab scripting: \(String(describing: self.youtubeScripting), privacy: .public))")
+                    switch command {
+                    case "playpause": MediaKeys.press(.playPause)
+                    case "next track": MediaKeys.press(.next)
+                    default: MediaKeys.press(.previous)
+                    }
+                }
+            }
+            return
+        }
+        guard let player = player ?? Self.running.first else { Log.app.notice("Notch music: \(command, privacy: .public) → no player"); return }
+        Log.app.notice("Notch music: \(command, privacy: .public) → \(player.name, privacy: .public)")
         Task {
             do {
                 try await AppleScriptRunner.run("tell application id \"\(player.rawValue)\" to if it is running then \(command)", app: player.name)
@@ -234,6 +376,12 @@ final class MusicBridge {
 
     /// The progress bar dragged to `seconds`.
     func seek(to seconds: Double) {
+        if youtubeTab != nil, player == nil {
+            position = seconds
+            positionAt = .now
+            Task { _ = await runYouTube(YouTubeControl.seek(to: seconds)) }
+            return
+        }
         guard let player else { return }
         position = seconds
         positionAt = .now
@@ -260,19 +408,48 @@ final class MusicBridge {
                 setArtwork(nil, for: key)
                 return
             }
-            if let cached = spotifyCovers[url] { setArtwork(cached, for: key); return }
-            Task {
-                var request = URLRequest(url: link, timeoutInterval: 4)
-                request.setValue("ClickBait (notch artwork)", forHTTPHeaderField: "User-Agent")
-                let data = try? await URLSession(configuration: .ephemeral).data(for: request).0
-                let image = data.flatMap(NSImage.init(data:))
-                if let image {
-                    if spotifyCovers.count > 12 { spotifyCovers.removeAll() }
-                    spotifyCovers[url] = image
+            download(link, for: key)
+        }
+    }
+
+    /// A cover from the web (Spotify's link, YouTube's thumbnail), cached for the session.
+    private func download(_ link: URL, for key: String) {
+        if let cached = downloadedCovers[link.absoluteString] { setArtwork(cached, for: key); return }
+        Task {
+            var request = URLRequest(url: link, timeoutInterval: 4)
+            request.setValue("ClickBait (notch artwork)", forHTTPHeaderField: "User-Agent")
+            let data = try? await URLSession(configuration: .ephemeral).data(for: request).0
+            let image = data.flatMap(NSImage.init(data:))
+            if let image {
+                if downloadedCovers.count > 12 { downloadedCovers.removeAll() }
+                downloadedCovers[link.absoluteString] = image
+            }
+            setArtwork(image, for: key)
+        }
+    }
+
+    /// The front-most YouTube video among the running browsers' tabs (showing tabs first: a
+    /// video often plays in a tab behind). Reads only browsers already running (macOS asks
+    /// once per browser).
+    private static func youtubeVideo() async -> (tab: BrowserTab, video: YouTubeVideo)? {
+        var tabs: [BrowserTab] = []
+        for browser in BrowserTab.Browser.allCases {
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: browser.rawValue)
+            guard !apps.isEmpty else { continue }
+            switch browser {
+            case .chrome:
+                // Every Chrome: a hidden automated one (a test runner's) can share the bundle id.
+                for pid in apps.map(\.processIdentifier) {
+                    tabs += await Task.detached(priority: .utility) { ChromeTabs.readAll(pid: pid) }.value
                 }
-                setArtwork(image, for: key)
+            case .safari:
+                let output = try? await AppleScriptRunner.run(BrowserTab.safariAllTabsScript, app: browser.name)
+                tabs += BrowserTab.parse(output ?? "", browser: browser)
             }
         }
+        let found = tabs.lazy.compactMap { tab in YouTubeVideo(url: tab.url, tabTitle: tab.title).map { (tab, $0) } }.first
+        Log.app.notice("Notch music: \(tabs.count, privacy: .public) browser tab(s) read, YouTube \(found == nil ? "not open" : "open", privacy: .public)")
+        return found
     }
 
     private func setArtwork(_ image: NSImage?, for key: String) {

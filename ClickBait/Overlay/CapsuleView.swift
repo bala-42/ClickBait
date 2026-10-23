@@ -22,8 +22,11 @@ final class CapsulePresentation {
     private(set) var seen: Bool
     let tone: CompanionTone
     let question: String
+    /// The tile bean's face, unlike the others in the dock.
+    let eyes: Bean.EyePair
 
-    init(entry: BackgroundJobs.Entry) {
+    init(entry: BackgroundJobs.Entry, eyes: Bean.EyePair) {
+        self.eyes = eyes
         self.entry = entry
         status = Self.status(of: entry.job)
         seen = entry.seen
@@ -53,7 +56,7 @@ struct DockTileView: View {
     var body: some View {
         let look = AgentDock.look(presentation.status, opened: presentation.seen, reduceMotion: reduceMotion)
         Button(action: onToggle) {
-            AgentTile(tone: presentation.tone, look: look, spinning: presentation.status == .working)
+            AgentTile(tone: presentation.tone, look: look, spinning: presentation.status == .working, eyes: presentation.eyes)
                 .contentShape(RoundedRectangle(cornerRadius: AgentDock.tileCorner, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -125,6 +128,7 @@ struct CapsuleView: View {
         case .done(let summary):
             AgentDoneCard(title: job.question, summary: summary, answer: job.answer, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
+                          goLabel: job.kind == .walkthrough ? PeelRule.walkthroughResumePrompt : "go there!",
                           onClose: { onDismiss(id) },
                           onSuggestion: { onSuggestion(id, $0) },
                           followUp: presentation.followUp,

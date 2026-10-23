@@ -3,10 +3,10 @@ import ClickBaitCore
 import IOKit.ps
 import SwiftUI
 
-/// The notch's bean (`Bean`): a soft pearl squircle, wider than tall, with kaomoji eyes, a
-/// drawn mouth, a little blush, and a glow and badge in ClickBait's state colours. It breathes,
+/// The notch's bean (`Bean`): a soft pearl squircle, wider than tall, with pill eyes and no
+/// mouth (blushing only when the Mac runs hot), and a glow and badge in ClickBait's state colours. It breathes,
 /// blinks, looks toward the pointer, hops when the mood changes, wobbles on an error and dozes
-/// off after `Bean.sleepAfter` idle. Reduce Motion keeps it still (the eyes still change).
+/// off after `Bean.sleepAfter` idle (opening the notch wakes it). Reduce Motion keeps it still (the eyes still change).
 /// While nothing else is going on it feels the Mac (`Bean.mood(for:)`, `MacVitals`, read only
 /// while it's on screen): panicked at full load, flushed when hot, tired or asleep on a low
 /// battery; pointing at it says why.
@@ -14,22 +14,41 @@ struct NotchBean: View {
     let mood: Bean.Mood
     var size: CGFloat = 26
     var badge = true
+    /// The notch is open: being looked at wakes it (it only dozes off unwatched).
+    var awake = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vitals = MacVitals()
     @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
     @State private var idleSince = Date()
     @State private var hops = 0
     @State private var wobbles = 0
+    @State private var gaze = BeanGaze()
+    /// A pet (user's choice, 2026-10-23): pointed at, it beams and blushes; clicked, it hops
+    /// and squishes.
+    @State private var petted = false
+    @State private var squishes = 0
 
     var body: some View {
         let felt = mood == .idle ? vitals.felt : nil
         let base = felt?.mood ?? mood
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
             let now = timeline.date
-            let shown: Bean.Mood = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter ? .sleepy : base
-            BeanFace(mood: shown, eyes: shown == base ? eyes : Bean.eyePairs(for: .sleepy)[0], size: size,
+            let dozing = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter
+            // Petted while resting: chevron eyes and a blush (`warm`), never a state's colour.
+            let beaming = petted && NotchBean.isResting(base)
+            let shown: Bean.Mood = beaming ? .warm : dozing ? .sleepy : base
+            let face = beaming ? .both(.chevron) : dozing ? Bean.eyePairs(for: .sleepy)[0] : eyes
+            BeanFace(mood: shown, eyes: face, size: size,
                      time: reduceMotion ? 0 : now.timeIntervalSinceReferenceDate,
-                     look: reduceMotion ? .zero : Self.look(), badge: badge)
+                     look: reduceMotion ? .zero : gaze.look(at: NSEvent.mouseLocation), badge: badge)
+        }
+        .background(GazeAnchor(gaze: gaze))
+        .keyframeAnimator(initialValue: CGSize(width: 1, height: 1), trigger: squishes) { content, scale in
+            content.scaleEffect(x: scale.width, y: scale.height, anchor: .bottom)
+        } keyframes: { _ in
+            SpringKeyframe(CGSize(width: 1.18, height: 0.8), duration: 0.1)
+            SpringKeyframe(CGSize(width: 0.92, height: 1.1), duration: 0.14)
+            SpringKeyframe(CGSize(width: 1, height: 1), duration: 0.3, spring: .bouncy)
         }
         .keyframeAnimator(initialValue: 0.0, trigger: hops) { content, lift in
             content.offset(y: -lift)
@@ -52,20 +71,25 @@ struct NotchBean: View {
             if new == .error || new == .panicked { wobbles += 1 } else if new != .idle, new != .tired, new != .sleepy { hops += 1 }
         }
         .onChange(of: mood) { _, _ in idleSince = Date() }
+        .onChange(of: awake) { _, now in if now { idleSince = Date() } else { petted = false } }
+        .onHover { inside in
+            guard awake else { return }
+            petted = inside
+            idleSince = Date()  // a pet wakes it
+        }
+        .onTapGesture {
+            guard awake else { return }
+            idleSince = Date()
+            petted = true
+            guard !reduceMotion else { return }
+            squishes += 1
+            hops += 1
+        }
         .onAppear { vitals.start() }
         .onDisappear { vitals.stop() }
         .help(felt?.reason ?? "")
         .accessibilityElement()
         .accessibilityLabel("ClickBait, \(base.rawValue)\(felt.map { ", \($0.reason)" } ?? "")")
-    }
-
-    /// Where the pointer is from the notch (top middle of the main screen), -1…1 each way.
-    private static func look() -> CGPoint {
-        guard let screen = NSScreen.main else { return .zero }
-        let mouse = NSEvent.mouseLocation
-        let dx = (mouse.x - screen.frame.midX) / (screen.frame.width / 2)
-        let dy = (screen.frame.maxY - mouse.y) / screen.frame.height
-        return CGPoint(x: max(-1, min(1, dx)), y: max(0, min(1, dy * 2)))
     }
 
     /// The glow, tint and badge colour for each mood.
@@ -91,27 +115,61 @@ struct NotchBean: View {
 /// where it's looking.
 struct BeanFace: View {
     let mood: Bean.Mood
-    let eyes: String
+    let eyes: Bean.EyePair
     let size: CGFloat
     var time: TimeInterval = 0
     var look: CGPoint = .zero
     var badge = true
     /// A pill's small bean: filled with its colour (no pearl, no glow).
     var solid = false
+    /// The Mirror pill's bean: chrome with a rainbow sheen, turning with `sheen` (seconds).
+    var holo = false
+    var sheen: TimeInterval = 0
+    /// A colour of its own instead of the mood's (the Music pill, a dock job's tone).
+    var tint: Color?
+    /// Its eyes' colour instead of the default (ink on a pale tint).
+    var eyeColor: Color?
 
-    private static let pearlTop = Color(hex: 0xF3F3F6)
-    private static let pearlBottom = Color(hex: 0xC9CAD1)
+    static let pearlTop = Color(hex: 0xF3F3F6)
+    static let pearlBottom = Color(hex: 0xC9CAD1)
     private static let ink = Color(hex: 0x26272C)
+    private static let holoHues = [0xFFB8E8, 0xB8E4FF, 0xCDB8FF, 0xB8FFDD, 0xFFF1B8, 0xFFB8E8].map { Color(hex: $0) }
 
     var body: some View {
-        let tone = NotchBean.color(for: mood)
+        let tone = tint ?? NotchBean.color(for: mood)
         let breath = mood == .sleepy ? sin(time * 1.6) : sin(time * 2.4)
         let squish = 0.025 * breath
         let blink = time > 0 && time.truncatingRemainder(dividingBy: 4.3) < 0.12
         let tremble = mood == .panicked && time > 0 ? CGFloat(sin(time * 60)) * size * 0.025 : 0
         let width = size, height = size * BeanShape.aspect
         ZStack {
-            if solid {
+            if holo {
+                // Silver underneath, the rainbow turning over it, and a white glint sweeping across.
+                let sweep = sheen.truncatingRemainder(dividingBy: 3) / 3 * 1.6 - 0.3
+                // On a Windows square (Mirror's blue) the rainbow is a lighter sheen over its colour.
+                let shade = tint.flatMap(NotchPalette.windowsShade)
+                BeanShape()
+                    .fill(LinearGradient(colors: shade ?? [.white, Color(hex: 0xB9BDC7)],
+                                         startPoint: shade == nil ? .top : .topLeading, endPoint: shade == nil ? .bottom : .bottomTrailing))
+                    .overlay(BeanShape().fill(AngularGradient(colors: Self.holoHues, center: .center,
+                                                              angle: .degrees(sheen * 50))).opacity(shade == nil ? 0.8 : 0.22))
+                    .overlay(BeanShape().fill(LinearGradient(stops: [
+                        .init(color: .white.opacity(0), location: sweep - 0.15),
+                        .init(color: .white.opacity(0.85), location: sweep),
+                        .init(color: .white.opacity(0), location: sweep + 0.15),
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    .overlay(BeanShape().stroke(.white.opacity(0.9), lineWidth: 0.75))
+            } else if solid, let tint, let shade = NotchPalette.windowsShade(tint) {
+                // A glossy Windows 7 square: shaded corner to corner, a gel highlight on top.
+                BeanShape().fill(LinearGradient(colors: shade, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(alignment: .top) {
+                        Ellipse()
+                            .fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom))
+                            .frame(width: width * 0.86, height: height * 0.5)
+                            .offset(y: height * 0.04)
+                    }
+                    .overlay(BeanShape().stroke(.white.opacity(0.35), lineWidth: 0.5))
+            } else if solid {
                 BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
             } else {
                 // Plain pearl with a soft white glow at rest; a state tints it and glows its colour.
@@ -138,32 +196,26 @@ struct BeanFace: View {
     }
 
     private func face(width: CGFloat, height: CGFloat, blink: Bool) -> some View {
-        let pair = eyes.split(separator: " ").map(String.init)
-        return VStack(spacing: height * 0.02) {
-            HStack(spacing: width * 0.2) {
-                ForEach(Array(pair.enumerated()), id: \.offset) { _, eye in
-                    Text(eye)
-                        .font(.system(size: size * 0.3, weight: .heavy, design: .rounded))
-                        .fixedSize()
-                        .frame(width: width * 0.16)
-                }
-            }
-            .scaleEffect(y: blink ? 0.1 : mood == .tired ? 0.6 : 1)
-            ZStack {
-                let flush = mood == .warm
-                HStack(spacing: width * (flush ? 0.36 : 0.42)) {
+        ZStack {
+            if mood == .warm, !solid {
+                HStack(spacing: width * 0.36) {
                     ForEach(0..<2, id: \.self) { _ in
-                        Ellipse().fill(Color(hex: 0xFF8FA3).opacity(solid ? 0 : flush ? 0.8 : 0.35))
-                            .frame(width: width * (flush ? 0.2 : 0.14), height: height * (flush ? 0.11 : 0.08))
+                        Ellipse().fill(Color(hex: 0xFF8FA3).opacity(0.8))
+                            .frame(width: width * 0.2, height: height * 0.11)
                     }
                 }
-                BeanMouth(mouth: Bean.mouth(for: mood))
-                    .stroke(Self.ink, style: StrokeStyle(lineWidth: max(1, size * 0.05), lineCap: .round, lineJoin: .round))
-                    .frame(width: width * 0.16, height: height * 0.1)
+                .offset(y: height * 0.2)
             }
+            HStack(spacing: width * 0.04) {
+                BeanEye(eye: eyes.left, size: size)
+                BeanEye(eye: eyes.right, size: size)
+            }
+            .scaleEffect(y: blink ? 0.12 : 1)
+            // Height and tilt glide to the new pair; Reduce Motion (time 0) swaps at once.
+            .animation(time > 0 ? .spring(duration: 0.3, bounce: 0.35) : nil, value: eyes)
         }
-        .foregroundStyle(Self.ink)
-        .offset(y: height * 0.04)
+        // Pearl and chrome eyes are ink; a pill's solid bean wears white eyes on its colour.
+        .foregroundStyle(eyeColor ?? (solid && !holo ? .white : Self.ink))
     }
 
     @ViewBuilder private func badgeView(tone: Color) -> some View {
@@ -209,30 +261,102 @@ struct BeanShape: Shape {
     }
 }
 
-/// The bean's own mouth, drawn in its frame.
-struct BeanMouth: Shape {
-    let mouth: Bean.Mouth
+/// One drawn eye, centred in a fixed slot so a pair never shifts when its shapes change.
+struct BeanEye: View {
+    let eye: Bean.Eye
+    let size: CGFloat
 
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        switch mouth {
-        case .smile:
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.2))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.2), control: CGPoint(x: rect.midX, y: rect.maxY))
-        case .grin:
-            path.move(to: CGPoint(x: rect.minX - rect.width * 0.15, y: rect.minY))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX + rect.width * 0.15, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY + rect.height * 0.6))
-            path.closeSubpath()
-        case .open:
-            path.addEllipse(in: CGRect(x: rect.midX - rect.height * 0.4, y: rect.minY, width: rect.height * 0.8, height: rect.height))
-        case .flat:
-            path.move(to: CGPoint(x: rect.minX + rect.width * 0.15, y: rect.midY))
-            path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.15, y: rect.midY))
-        case .frown:
-            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY))
+    var body: some View {
+        Group {
+            switch eye {
+            case .pill(let height, let tilt):
+                Capsule().frame(width: size * 0.125, height: size * 0.3 * height).rotationEffect(.degrees(tilt))
+            case .dash(let tilt):
+                Capsule().frame(width: size * 0.17, height: size * 0.075).rotationEffect(.degrees(tilt))
+            case .dot:
+                Circle().frame(width: size * 0.15, height: size * 0.15)
+            case .chevron:
+                Chevron()
+                    .stroke(style: StrokeStyle(lineWidth: size * 0.08, lineCap: .round, lineJoin: .round))
+                    .frame(width: size * 0.15, height: size * 0.09)
+            }
         }
-        return path
+        .frame(width: size * 0.2, height: size * 0.38)
+    }
+
+    /// An upturned "^".
+    private struct Chevron: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            return path
+        }
+    }
+}
+
+/// Where the pointer is, from mouse moves (no polling), for the beans' eyes to follow.
+@MainActor @Observable
+final class PointerWatch {
+    static let shared = PointerWatch()
+    private(set) var location = NSEvent.mouseLocation
+    @ObservationIgnored private var monitors: [Any] = []
+
+    private init() {
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { _ in
+            MainActor.assumeIsolated { PointerWatch.shared.moved() }
+        }) { monitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
+            MainActor.assumeIsolated { PointerWatch.shared.moved() }
+            return event
+        }) { monitors.append(local) }
+    }
+
+    /// Only moves of a few points redraw the beans.
+    private func moved() {
+        let now = NSEvent.mouseLocation
+        if abs(now.x - location.x) + abs(now.y - location.y) >= 3 { location = now }
+    }
+}
+
+/// A bean's place on screen, so its eyes look at the pointer from where it is.
+@MainActor
+final class BeanGaze {
+    weak var view: NSView?
+
+    /// -1…1 each way (y down), full at 160 pt away.
+    func look(at mouse: NSPoint) -> CGPoint {
+        guard let view, let window = view.window else { return .zero }
+        let frame = window.convertToScreen(view.convert(view.bounds, to: nil))
+        let dx = (mouse.x - frame.midX) / 160, dy = (frame.midY - mouse.y) / 160
+        return CGPoint(x: max(-1, min(1, dx)), y: max(-1, min(1, dy)))
+    }
+}
+
+/// An empty view marking the bean's place for `BeanGaze`.
+struct GazeAnchor: NSViewRepresentable {
+    let gaze: BeanGaze
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        gaze.view = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) { gaze.view = view }
+}
+
+/// A bean whose eyes follow the pointer (`PointerWatch`); still with Reduce Motion.
+struct Gazing<Content: View>: View {
+    @ViewBuilder let content: (CGPoint) -> Content
+    @State private var gaze = BeanGaze()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        content(reduceMotion ? .zero : gaze.look(at: PointerWatch.shared.location))
+            .background(GazeAnchor(gaze: gaze))
     }
 }
 

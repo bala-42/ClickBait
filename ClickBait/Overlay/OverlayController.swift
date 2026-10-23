@@ -440,7 +440,7 @@ final class OverlayController {
 
         let previous = anchor ?? mouse
         // Still springing (an overshoot passes through the mouse's spot with speed left).
-        let springing = followVelocity != .zero || returnVelocity != nil || isFlipping
+        let springing = followVelocity != .zero || returnVelocity != nil
         guard previous != mouse || springing else {
             // Settled: let the display relax its refresh rate again (unless the
             // triangle is turning or the waveform is moving).
@@ -520,18 +520,9 @@ final class OverlayController {
         stage.setOrigin(NSPoint(x: topLeft.x - margin, y: topLeft.y + margin - OverlayModel.bubbleCanvas.height), anchor: mouse)
     }
 
-    /// Top-left corner of the companion beside `mouse`, in AppKit coordinates (y up).
-    /// Which side of the cursor the companion is on, and how far its glide there has got
-    /// (`CompanionPlacement`: hysteresis, the mirror spot, a 0.28 s ease).
-    private var restingSide = CompanionPlacement.Side()
-    private var flipBlend = (x: 0.0, y: 0.0)
-    private var flipStepAt: CFTimeInterval?
-
-    /// Still gliding to the other side of the cursor: frames must keep coming.
-    private var isFlipping: Bool {
-        flipBlend.x != (restingSide.left ? 1 : 0) || flipBlend.y != (restingSide.above ? 1 : 0)
-    }
-
+    /// Top-left corner of the companion beside `mouse`, in AppKit coordinates (y up): always
+    /// right of and below the cursor, and near a screen edge it stops there, kept on the
+    /// screen, as Clicky's does (user's rule, 2026-10-23; it used to flip to the other side).
     private func restingTopLeft(for mouse: NSPoint) -> NSPoint {
         let content = model.bubbleSize
         let size = (Double(content.width), Double(content.height))
@@ -539,16 +530,8 @@ final class OverlayController {
             .map { Rect(x: $0.minX, y: $0.minY, width: $0.width, height: $0.height) }
         let offset = (Double(Self.triangleOffset.width), Double(Self.triangleOffset.height))
         let point = Point(x: mouse.x, y: mouse.y)
-        restingSide = CompanionPlacement.side(mouse: point, content: size, bounds: bounds, offset: offset,
-                                              inContent: Double(Self.triangleInContent), current: restingSide)
-        let now = CACurrentMediaTime()
-        let dt = flipStepAt.map { min(now - $0, 0.1) } ?? 0
-        flipStepAt = now
-        let calm = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        flipBlend = (CompanionPlacement.step(flipBlend.x, toward: restingSide.left, dt: dt, reduceMotion: calm),
-                     CompanionPlacement.step(flipBlend.y, toward: restingSide.above, dt: dt, reduceMotion: calm))
         let corner = CompanionPlacement.topLeft(mouse: point, content: size, bounds: bounds, offset: offset,
-                                                inContent: Double(Self.triangleInContent), blend: flipBlend)
+                                                inContent: Double(Self.triangleInContent))
         return NSPoint(x: corner.x, y: corner.y)
     }
 

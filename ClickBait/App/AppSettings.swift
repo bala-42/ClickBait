@@ -117,12 +117,16 @@ final class AppSettings {
     var greetings: Bool {
         didSet { defaults.set(greetings, forKey: Key.greetings) }
     }
+    /// The microphone ClickBait listens through (a CoreAudio UID); nil: the system default.
+    var microphoneUID: String? {
+        didSet { defaults.set(microphoneUID, forKey: Microphones.defaultsKey) }
+    }
     var notchVolumeHUD: Bool {
         didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
     }
 
-    /// Spotify's album covers in the notch are downloaded from its artwork link: always (true,
-    /// as the GIF), or only with Internet Mode on (false). Apple Music's come from the Mac.
+    /// Spotify's album covers in the notch are downloaded from its artwork link: always (true),
+    /// or only with Internet Mode on (false, the default). Apple Music's come from the Mac.
     var spotifyArtworkAlways: Bool {
         didSet { defaults.set(spotifyArtworkAlways, forKey: Key.spotifyArtworkAlways) }
     }
@@ -150,8 +154,11 @@ final class AppSettings {
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
+        microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)
-        spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? true
+        // Off unless chosen: covers come from Spotify's servers, so only with Internet Mode
+        // (user's rule, 2026-10-23, keeping "nothing leaves your Mac").
+        spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? false
         LegacyCloudSettings.remove(from: defaults)
     }
 

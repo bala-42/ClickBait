@@ -129,8 +129,8 @@ public enum PeelRule {
     // MARK: Peeling on its own
 
     /// How long a highlight's or snip's explanation may take before it goes to the dock by
-    /// itself (user's rule, 2026-10-14), counted from its model request starting.
-    public static let autoPeelDelay: Duration = .milliseconds(500)
+    /// itself (user's rule, 2026-10-14; 0.8 s since 2026-10-23), counted from its model request starting.
+    public static let autoPeelDelay: Duration = .milliseconds(800)
 
     /// The two holds — Strawberry Red while a snip is worked out until its tour, Lavender while
     /// a walkthrough is planned until it starts — follow one set of rules (user's rule,
@@ -165,7 +165,7 @@ public enum PeelRule {
     /// (it then skips the tour). Spoken questions and follow-ups never do, nor anything when
     /// the dock is full (it just finishes in front).
     /// `answeredAlready`: the explanation was complete when `autoPeelDelay` came — a fast
-    /// answer (≤ 0.5 s) stays in front with the companion it has; no peel, no new companion
+    /// answer (≤ 0.8 s) stays in front with the companion it has; no peel, no new companion
     /// at the cursor (user's rule, 2026-10-14).
     public static func autoPeels(_ situation: Situation, answeredAlready: Bool = false) -> Bool {
         guard situation.hasRoom, !answeredAlready else { return false }

@@ -59,6 +59,29 @@ public struct BrowserTab: Equatable, Sendable {
             """
     }
 
+    /// Safari: every tab of every window, front to back, each window's showing tab first, in
+    /// the capture script's line format (`parse`).
+    public static let safariAllTabsScript = """
+        tell application id "\(Browser.safari.rawValue)"
+            set out to ""
+            set behind to ""
+            repeat with w in windows
+                try
+                    set c to index of current tab of w
+                    repeat with t in tabs of w
+                        set row to (id of w as text) & (character id 31) & (index of t as text) & (character id 31) & (name of t) & (character id 31) & (URL of t) & linefeed
+                        if (index of t) is c then
+                            set out to out & row
+                        else
+                            set behind to behind & row
+                        end if
+                    end repeat
+                end try
+            end repeat
+            return out & behind
+        end tell
+        """
+
     /// The capture script's lines, front to back.
     public static func parse(_ output: String, browser: Browser) -> [BrowserTab] {
         output.split(whereSeparator: \.isNewline).compactMap { line in

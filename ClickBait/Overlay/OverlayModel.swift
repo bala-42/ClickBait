@@ -96,19 +96,16 @@ final class OverlayModel {
 
     var tone: CompanionTone {
         if isDictating { return .action }
+        // Lavender from the planning until the walkthrough is done or exited, opening apps
+        // included (user's rule, 2026-10-23).
+        if isTutoring { return .tutorial }
         // Red from the circling until the parts are pointed at (or there's nothing to point).
         if isSnipping || isTouring || isSnipThinking { return .capture }
-        // Opening or switching apps is green, also inside a walkthrough (lavender hid it).
-        // (The walkthrough's own "done" tick stays lavender.)
-        switch bubble {
-        case .working: return .action
-        case .done(let text) where text != Self.walkthroughDone: return .action
-        default: break
-        }
-        if isTutoring { return .tutorial }
+        // A finished job's pill and the companion wear the job's colour together.
+        if case .jobResult(_, let job) = bubble { return job }
         if isGuiding { return .idle }  // pointing is blue, even while the words are still coming
         return switch bubble {
-        case .idle, .answer, .error, .hint, .jobResult, .greeting: .idle  // a job's result pill wears the job's colour; the companion stays Azure
+        case .idle, .answer, .error, .hint, .jobResult, .greeting: .idle
         case .listening, .thinking, .explaining: .processing
         case .working, .done: .action
         }
