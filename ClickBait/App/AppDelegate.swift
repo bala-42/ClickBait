@@ -92,6 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBar = statusBar
         statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
         notch.model.menuBar = statusBar
+        notch.model.voiceStart = { [weak self] in self?.coordinator.startCardRecording() ?? "ClickBait isn't ready." }
+        notch.model.voiceFinish = { [weak self] in
+            guard let self else { return .failure(AskCoordinator.CardVoiceError(message: "ClickBait isn't ready.")) }
+            return await coordinator.finishCardRecording()
+        }
+        notch.model.voiceCancel = { [weak self] in self?.coordinator.cancelCardRecording() }
+        notch.model.micLevel = { [weak self] in self?.coordinator.cardMicrophoneLevel ?? 0 }
         notch.model.permissions = permissions
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
         overlay.start()

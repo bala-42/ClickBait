@@ -57,6 +57,14 @@ final class NotchController {
         var greeting = false
         /// A question typed in the ask tab: goes to ClickBait's chat (set by the app delegate).
         var ask: @MainActor (String) -> Void = { _ in }
+        /// The Ask card's voice button, through the dock's recorder (set by the app delegate):
+        /// start (nil, or why not), stop and hear, drop, and the loudness for its waveform.
+        var voiceStart: @MainActor () -> String? = { "ClickBait isn't ready." }
+        var voiceFinish: @MainActor () async -> Result<String, AskCoordinator.CardVoiceError> = {
+            .failure(AskCoordinator.CardVoiceError(message: "ClickBait isn't ready."))
+        }
+        var voiceCancel: @MainActor () -> Void = {}
+        var micLevel: @MainActor () -> Float = { 0 }
         /// Typing in the panel (the ask field, the shelf's note): the pointer leaving doesn't fold it.
         var editing = false
         /// The worst thing wrong right now (`HealthLadder`), read each time the panel opens (set by the app delegate).

@@ -2,6 +2,10 @@ import AppKit
 import ClickBaitCore
 import SwiftUI
 
+/// Settings inside the notch, in HeyClicky's character (user's references, 2026-10-23): a
+/// sidebar of small rows in named groups, and pages of rounded cards whose rows each carry a
+/// name, one grey line of what it does, and a switch, a white pill button or a › on the right.
+/// Only what a user acts on: no status lines, duplicated hotkey text or debug tools.
 struct SettingsView: View {
     @Bindable var settings: AppSettings
     let speech: SpeechModelManager
@@ -22,50 +26,45 @@ struct SettingsView: View {
     @State private var micTest = MicrophoneTest()
     /// Chrome's "Allow JavaScript from Apple Events": on, off, or unknown (Chrome isn't open).
     @State private var chromeScripting: Bool?
-    @State private var checkingChrome = false
     @State private var savedCovers = 0
-
-    private let aqua = AquaDark.link
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-                .frame(width: 225)
-            Rectangle().fill(Color.white.opacity(0.09)).frame(width: 1)
+            sidebar.frame(width: 220)
+            Rectangle().fill(SettingsLook.hairline).frame(width: 1)
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(selectedPage.title)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.white)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(selectedPage.title).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+                        Text(selectedPage.subtitle).font(.system(size: 13)).foregroundStyle(SettingsLook.secondary)
+                    }
                     Spacer()
                     Button(action: onCollapse) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.72))
-                            .frame(width: 30, height: 30)
-                            .background(Color.white.opacity(0.08), in: Circle())
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(SettingsLook.secondary)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close settings and collapse notch")
                 }
-                Text(selectedPage.subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .padding(.top, 4)
-                    pageForm
-                        .padding(.top, 18)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 30)
+                .padding(.top, 26)
+                .padding(.bottom, 14)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) { page }
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 26)
                 }
-                .padding(.horizontal, 27)
-                .padding(.top, 28)
-                .padding(.bottom, 18)
+                .scrollIndicators(.never)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The notch's card, as Home and the chat wear it.
-        .notchCard()
+        .background(SettingsLook.page)
         .clipShape(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous).stroke(SettingsLook.hairline, lineWidth: 1))
         .preferredColorScheme(.dark)
-        .tint(aqua)
+        .tint(SettingsLook.accent)
+        .toggleStyle(AquaToggleStyle())
         .onAppear { selectedPage = startPage }
         .onChange(of: selectedPage) { _, page in
             if page != .microphone { micTest.stop() }
@@ -75,355 +74,248 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            Button(action: onBack) {
-                Label("Back", systemImage: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.08), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(returnLabel)
-            .overlay(alignment: .leading) {
-                // As HeyClicky's: the title beside the way back.
-                Text("Settings")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .fixedSize()
-                    .offset(x: 92)
-            }
-
-            ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(SettingsPage.allCases) { page in
-                    if let group = page.groupStart {
-                        Text(group)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundStyle(.white.opacity(0.38))
-                            .padding(.leading, 12)
-                            .padding(.top, page == SettingsPage.allCases.first ? 0 : 10)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+                        Text("Back").font(.system(size: 13, weight: .medium))
                     }
-                    Button { selectedPage = page } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: page.symbol)
-                                .font(.system(size: 14, weight: .semibold))
-                                .frame(width: 20)
-                            Text(page.title).font(.system(size: 13, weight: .semibold))
-                            Spacer(minLength: 0)
+                    .foregroundStyle(SettingsLook.secondary)
+                    .padding(.horizontal, 11).frame(height: 28)
+                    .background(SettingsLook.card, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(returnLabel)
+                Text("Settings").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+            }
+            .padding(.bottom, 18)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(SettingsPage.visible) { page in
+                        if let group = page.groupStart {
+                            Text(group)
+                                .font(.system(size: 10.5, weight: .semibold)).tracking(1)
+                                .foregroundStyle(SettingsLook.tertiary)
+                                .padding(.leading, 12).padding(.top, page == SettingsPage.visible.first ? 0 : 14).padding(.bottom, 4)
                         }
-                        .foregroundStyle(selectedPage == page ? .white : .white.opacity(0.58))
-                        .padding(.horizontal, 12)
-                        .frame(height: 34)
-                        .background(selectedPage == page ? Color.white.opacity(0.13) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            }
-
-            Spacer(minLength: 0)
-            Text("ClickBait \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.35))
-                .padding(.leading, 9)
-        }
-        .padding(.horizontal, 15)
-        .padding(.top, 24)
-        .padding(.bottom, 20)
-        .background(Color.white.opacity(0.035))
-    }
-
-    @ViewBuilder
-    private var pageForm: some View {
-        switch selectedPage {
-        case .general:
-            Form {
-                SettingsSection("Status") {
-                    HStack(spacing: 8) {
-                        Circle().fill(health?.color ?? .gray).frame(width: 8, height: 8)
-                        Text(health?.words ?? "Checking…")
-                        Spacer()
-                        if case .permissionOff = health { Button("Fix…") { menu?.openPermissions() } }
-                    }
-                }
-                SettingsSection("Hotkey") {
-                    Text("Hold Control+Option, ask your question out loud, then let go.")
-                    Text("Tap ⌥⌘ to explain highlighted text; double-tap ⌥⌘ to type a question.")
-                    Text("Pressing any other key while holding cancels, so shortcuts like ⌃⌥← still work.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                SettingsSection("Behavior") {
-                    Toggle(isOn: $settings.commandsEnabled) {
-                        RowLabel("Carry out spoken commands", "Say “open Safari”, “volume 30” or “dark mode” while holding ⌃⌥.")
-                    }
-                    Toggle(isOn: $settings.morningCards) {
-                        RowLabel("Morning suggestions", "Once a day after 5 am: up to three things to ask, from today's reminders and events. Nothing leaves your Mac.")
-                    }
-                    .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
-                }
-                SettingsSection("Notch") {
-                    Toggle(isOn: Binding(get: { settings.notchPanelEnabled }, set: { on in menu?.setNotch(on) })) {
-                        RowLabel("Notch panel", "Music, shelf, mirror and chat at the notch. Rest the pointer there to open it.")
-                    }
-                    Toggle(isOn: $settings.notchVolumeHUD) {
-                        RowLabel("Volume in the notch", "The volume keys show their level in the notch instead of macOS's.")
-                    }
-                    Toggle(isOn: $settings.spotifyArtworkAlways) {
-                        RowLabel("Spotify covers always", "Downloads album art even with Internet Mode off.")
-                    }
-                }
-                SettingsSection("Sounds and greetings") {
-                    Toggle(isOn: $settings.soundCues) {
-                        RowLabel("Sounds", "A soft sound when a background ClickBait is done, and when ClickBait needs your yes.")
-                    }
-                    Toggle(isOn: $settings.greetings) {
-                        RowLabel("Greetings", "A hello by the cursor on the first wake of the day, or after a long time away.")
-                    }
-                }
-                SettingsSection("Background ClickBaits") {
-                    let jobs = menu?.backgroundJobs ?? []
-                    if jobs.isEmpty {
-                        Text("No background tasks").foregroundStyle(.secondary)
-                    }
-                    ForEach(jobs) { entry in
-                        Button { menu?.showCapsule(entry.id) } label: {
-                            HStack {
-                                Text(entry.job.question).lineLimit(1)
-                                Spacer()
-                                Text(Self.status(entry.job.status)).foregroundStyle(.secondary)
+                        Button { selectedPage = page } label: {
+                            HStack(spacing: 11) {
+                                Image(systemName: page.symbol).font(.system(size: 13)).frame(width: 18)
+                                Text(page.title).font(.system(size: 13, weight: .medium))
+                                Spacer(minLength: 0)
                             }
+                            .foregroundStyle(selectedPage == page ? .white : SettingsLook.secondary)
+                            .padding(.horizontal, 12).frame(height: 34)
+                            .background(selectedPage == page ? SettingsLook.selected : .clear,
+                                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                SettingsSection("Your things") {
-                    Button("Remembered…") { MemoryStore.shared.reveal() }
-                    Button("Notes Folder…") { MemoryStore.shared.revealNotes() }
-                    Button("Saved Answers…") { AnswerArchive.reveal() }
-                }
-                SettingsSection("ClickBait") {
-                    Button("Permissions…") { menu?.openPermissions() }
-                    Button("About ClickBait") { menu?.openAbout() }
-                    Button("Quit ClickBait", role: .destructive) { menu?.quit() }
-                }
-            }.settingsPanelStyle()
-        case .commands:
-            Form {
-                Section {
-                    CommandsSettingsSection(settings: settings)
-                } footer: {
-                    Text("Say an order like “open Safari”, “volume 30”, “dark mode” or “run Focus Time” while holding ⌃⌥. Questions still just get an answer. Only the shortcuts you tick can be run, and those run without asking.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }.settingsPanelStyle()
-        case .voice:
-            Form { SettingsSection("Voice") { VoiceSettingsSection(settings: settings, speaker: speaker) } }.settingsPanelStyle()
-        case .speech:
-            Form { SettingsSection("Speech recognition") { SpeechModelSection(settings: settings, speech: speech) } }.settingsPanelStyle()
-        case .aiModel:
-            Form { SettingsSection("AI model") { ProviderSettingsSection(settings: settings) } }.settingsPanelStyle()
-        case .internet:
-            Form {
-                Section {
-                    Toggle(isOn: Binding(get: { settings.internet.isOn },
-                                         set: { if $0 != settings.internet.isOn { settings.internet.toggle() } })) {
-                        RowLabel(settings.internet.isOn ? "Internet Mode: on 🌐" : "Internet Mode: off 🔒",
-                                 "Free lookups when you ask; only search words leave your Mac. Off every time ClickBait starts.")
+            }
+            .scrollIndicators(.never)
+            Text("ClickBait \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                .font(.system(size: 11)).foregroundStyle(SettingsLook.tertiary)
+                .padding(.leading, 12).padding(.top, 8)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .background(SettingsLook.sidebar)
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        switch selectedPage {
+        case .general:
+            if let health, health != .ready {
+                SettingsGroup("Needs attention") {
+                    ButtonRow(health.words, "ClickBait can't do everything until this is fixed.", button: "Fix") {
+                        selectedPage = .permissions
                     }
                 }
-                SettingsSection("Recent searches") {
-                    if settings.internet.recent.isEmpty {
-                        Text("Nothing looked up yet").foregroundStyle(.secondary)
-                    }
-                    ForEach(settings.internet.recent, id: \.self) { Text($0).lineLimit(1) }
-                }
-                SettingsSection("Internet") { InternetSettingsSection(searxng: searxng) }
-            }.settingsPanelStyle()
-        case .privacy:
-            Form {
-                Section {
-                    BlocklistEditor(blocklist: $settings.blocklist)
-                } header: {
-                    SettingsHeader("Never look at these apps")
-                } footer: {
-                    Text("While one of these is the frontmost app, ClickBait won't take a screenshot.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                SettingsSection("Screen capture") {
-                    Toggle(isOn: $settings.ignoreNotchInCaptures) {
-                        RowLabel("Ignore ClickBait in captures", "Keeps ClickBait's own windows out of the screenshots it takes. Other apps' recordings are unchanged.")
-                    }
-                }
-                SettingsSection("Saved covers") {
-                    HStack {
-                        RowLabel("\(savedCovers) cover\(savedCovers == 1 ? "" : "s") saved on this Mac",
-                                 "Spotify covers and YouTube thumbnails downloaded with Internet Mode on, kept so the notch shows them with it off.")
-                        Spacer(minLength: 12)
-                        Button("Clear") { CoverCache.clear(); savedCovers = 0 }
-                            .disabled(savedCovers == 0)
-                    }
-                    .onAppear { savedCovers = CoverCache.count }
-                }
-                SettingsSection("Uninstall") {
-                    Button("Uninstall ClickBait…", role: .destructive) { Uninstaller.confirmAndRun() }
-                    Text("Deletes ClickBait's files, speech model and settings, resets its permissions, then quits. Ollama and its models stay.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }.settingsPanelStyle()
+            }
+            SettingsGroup("Behavior") {
+                ToggleRow("Carry out spoken commands", "Say “open Safari”, “volume 30” or “dark mode” while holding ⌃⌥.", isOn: $settings.commandsEnabled)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Morning suggestions", "Up to three things to ask each morning, from today's reminders and events.",
+                          isOn: $settings.morningCards)
+                    .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Greetings", "A hello by the cursor on the first wake of the day.", isOn: $settings.greetings)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Sounds", "A soft sound when a background ClickBait is done or needs your yes.", isOn: $settings.soundCues)
+            }
+            SettingsGroup("Notch") {
+                ToggleRow("Notch panel", "Music, shelf, mirror and chat at the notch.",
+                          isOn: Binding(get: { settings.notchPanelEnabled }, set: { menu?.setNotch($0) }))
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Volume in the notch", "The volume keys show Pac-Man's level instead of macOS's.", isOn: $settings.notchVolumeHUD)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Spotify covers always", "Download album art even with Internet Mode off.", isOn: $settings.spotifyArtworkAlways)
+            }
+            SettingsGroup("Your things") {
+                LinkRow("Remembered", "What you asked ClickBait to remember.") { MemoryStore.shared.reveal() }
+                Divider().overlay(SettingsLook.hairline)
+                LinkRow("Notes folder", "Your .md notes that answers can use.") { MemoryStore.shared.revealNotes() }
+                Divider().overlay(SettingsLook.hairline)
+                LinkRow("Saved answers", "Answers you saved from the chat.") { AnswerArchive.reveal() }
+            }
+            SettingsGroup("ClickBait") {
+                LinkRow("About ClickBait", "Version, licence and credits.", external: true) { menu?.openAbout() }
+                Divider().overlay(SettingsLook.hairline)
+                ButtonRow("Quit ClickBait", "The companion and notch go away until you open it again.", button: "Quit") { menu?.quit() }
+            }
         case .shortcuts:
-            Form {
-                SettingsSection("Talk to ClickBait") {
-                    ForEach(ShortcutList.items) { item in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                Text(item.detail).font(.callout).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            ShortcutKeys(item: item)
-                        }
-                    }
-                }
-                Section {
-                    Text("These keys are fixed for now; changing them is coming.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-            }.settingsPanelStyle()
-        case .microphone:
-            Form {
-                SettingsSection("Input device") {
-                    Picker("Microphone", selection: $settings.microphoneUID) {
-                        Text("System Default").tag(String?.none)
-                        ForEach(microphones, content: Self.microphoneRow)
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                    .onChange(of: settings.microphoneUID) { _, _ in if micTest.isRunning { micTest.start() } }
-                }
-                SettingsSection("Test") {
-                    HStack(spacing: 14) {
-                        Button(micTest.isRunning ? "Stop" : "Test microphone") {
-                            if micTest.isRunning { micTest.stop() } else { micTest.start() }
-                        }
-                        LevelBars(level: micTest.level)
-                        Spacer()
-                    }
-                    Text(micTest.failure ?? "Speak normally: the bars should move as ClickBait hears you. Nothing is kept.")
-                        .font(.callout).foregroundStyle(micTest.failure == nil ? .secondary : CompanionTone.problem)
-                }
-            }
-            .settingsPanelStyle()
-            .onAppear { microphones = Microphones.all() }
-        case .permissions:
-            Form {
-                Section {
-                    ForEach(PermissionKind.allCases) { kind in
-                        let status = permissions?.status(of: kind) ?? .notDetermined
-                        HStack(spacing: 12) {
-                            Image(systemName: kind.symbolName).frame(width: 22).foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(kind.title)
-                                Text(kind.reason).font(.callout).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 12)
-                            if status == .granted {
-                                Label("Allowed", systemImage: "checkmark.circle.fill")
-                                    .labelStyle(.titleAndIcon)
-                                    .foregroundStyle(AquaDark.aquaGreen)
-                                    .font(.system(size: 12, weight: .semibold))
-                            } else {
-                                Button(status == .denied ? "Open Settings" : "Allow") { permissions?.request(kind) }
-                            }
-                        }
-                    }
-                } footer: {
-                    Text("ClickBait asks only for what it uses. Everything it sees and hears stays on your Mac.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                SettingsSection("Browser") {
+            SettingsGroup("Talk to ClickBait") {
+                ForEach(Array(ShortcutList.items.enumerated()), id: \.offset) { index, item in
+                    if index > 0 { Divider().overlay(SettingsLook.hairline) }
                     HStack(spacing: 12) {
-                        Image(systemName: "play.rectangle.fill").frame(width: 22).foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("YouTube controls in Chrome")
-                            Text("Lets the notch play, pause, skip and show the time of a YouTube video in its own tab. Turn it on in Chrome's menu bar: View → Developer → Allow JavaScript from Apple Events.")
-                                .font(.callout).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        RowLabel(item.title, item.detail)
                         Spacer(minLength: 12)
-                        switch chromeScripting {
-                        case true?:
-                            Label("Allowed", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(AquaDark.aquaGreen)
-                                .font(.system(size: 12, weight: .semibold))
-                        default:
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(chromeScripting == false ? "Off" : "Open Chrome to check")
-                                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                                Button(checkingChrome ? "Checking…" : "Check again") { Task { await checkChrome() } }
-                                    .disabled(checkingChrome)
-                            }
-                        }
+                        ShortcutKeys(item: item)
+                    }
+                    .settingsRow()
+                }
+            }
+        case .commands:
+            SettingsGroup("Spoken commands") {
+                VStack(alignment: .leading, spacing: 10) { CommandsSettingsSection(settings: settings) }.settingsRow()
+            }
+        case .voice:
+            SettingsGroup("Voice") {
+                VStack(alignment: .leading, spacing: 10) { VoiceSettingsSection(settings: settings, speaker: speaker) }.settingsRow()
+            }
+        case .microphone:
+            SettingsGroup("Input device") {
+                RadioRow("System Default", selected: settings.microphoneUID == nil) { settings.microphoneUID = nil }
+                ForEach(microphones) { device in
+                    Divider().overlay(SettingsLook.hairline)
+                    RadioRow(device.name, selected: settings.microphoneUID == device.id) { settings.microphoneUID = device.id }
+                }
+            }
+            .onChange(of: settings.microphoneUID) { _, _ in if micTest.isRunning { micTest.start() } }
+            .onAppear { microphones = Microphones.all() }
+            SettingsGroup("Test") {
+                HStack(spacing: 14) {
+                    Button(micTest.isRunning ? "Stop" : "Test microphone") {
+                        if micTest.isRunning { micTest.stop() } else { micTest.start() }
+                    }
+                    .buttonStyle(PillButtonStyle())
+                    LevelBars(level: micTest.level)
+                    Spacer()
+                }
+                .settingsRow()
+            }
+            Text(micTest.failure ?? "Speak normally: the bars move as ClickBait hears you. Nothing is kept.")
+                .font(.system(size: 12)).foregroundStyle(micTest.failure == nil ? SettingsLook.tertiary : CompanionTone.problem)
+                .padding(.leading, 4).padding(.top, -12)
+        case .speech:
+            SettingsGroup("Speech recognition") {
+                VStack(alignment: .leading, spacing: 10) { SpeechModelSection(settings: settings, speech: speech) }.settingsRow()
+            }
+        case .aiModel:
+            SettingsGroup("AI model") {
+                VStack(alignment: .leading, spacing: 10) { ProviderSettingsSection(settings: settings) }.settingsRow()
+            }
+        case .internet:
+            SettingsGroup("Internet Mode") {
+                ToggleRow(settings.internet.isOn ? "On 🌐" : "Off 🔒",
+                          "Free lookups when you ask; only search words leave your Mac. Off every time ClickBait starts.",
+                          isOn: Binding(get: { settings.internet.isOn },
+                                        set: { if $0 != settings.internet.isOn { settings.internet.toggle() } }))
+            }
+            if !settings.internet.recent.isEmpty {
+                SettingsGroup("Recent searches") {
+                    ForEach(Array(settings.internet.recent.enumerated()), id: \.offset) { index, lookup in
+                        if index > 0 { Divider().overlay(SettingsLook.hairline) }
+                        Text(lookup).font(.system(size: 13)).lineLimit(1).settingsRow()
                     }
                 }
             }
-            .settingsPanelStyle()
-            .task { await checkChrome() }
+            SettingsGroup("Search source") {
+                VStack(alignment: .leading, spacing: 10) { InternetSettingsSection(searxng: searxng) }.settingsRow()
+            }
+        case .permissions:
+            SettingsGroup("macOS") {
+                ForEach(Array(PermissionKind.allCases.enumerated()), id: \.offset) { index, kind in
+                    if index > 0 { Divider().overlay(SettingsLook.hairline) }
+                    permissionRow(kind)
+                }
+            }
             .task {
-                // Picks up a switch flipped in System Settings while this page is open.
+                // Follows a switch flipped in System Settings or Chrome while this page is open.
                 while !Task.isCancelled {
                     permissions?.refresh()
+                    chromeScripting = await ChromeJavaScriptSwitch.isOn()
                     try? await Task.sleep(for: .seconds(1))
                 }
             }
-        case .debugging:
-            Form {
-                SettingsSection("Debugging") {
-                    Toggle(isOn: $settings.keepDebugCaptures) {
-                        RowLabel("Keep the last screenshot and recording", "Saved to a temporary folder and deleted when you turn this off.")
-                    }
-                    .onChange(of: settings.keepDebugCaptures) { _, keep in
-                        if !keep { DebugCaptureStore.deleteAll() }
-                    }
-                    if settings.keepDebugCaptures {
-                        Button("Reveal Last Capture") { menu?.revealLastCapture() }
-                    }
-                    #if DEBUG
-                    Button("Test Capsule (Local)") { menu?.runDebugCapsuleTest() }
-                    #endif
+            SettingsGroup("Browser") {
+                ToggleRow("YouTube controls in Chrome",
+                          chromeScripting == nil ? "Open Chrome, then switch this on: ClickBait ticks Chrome's own setting."
+                              : "Play, pause, skip and the progress bar for YouTube in the notch.",
+                          isOn: Binding(get: { chromeScripting == true }, set: { _ in toggleChrome() }))
+                    .disabled(chromeScripting == nil)
+            }
+            Text("macOS only lets you change a permission in System Settings: switching one opens the right place.")
+                .font(.system(size: 12)).foregroundStyle(SettingsLook.tertiary).padding(.leading, 4).padding(.top, -12)
+        case .privacy:
+            SettingsGroup("Never look at these apps") {
+                VStack(alignment: .leading, spacing: 10) { BlocklistEditor(blocklist: $settings.blocklist) }.settingsRow()
+            }
+            SettingsGroup("Screen capture") {
+                ToggleRow("Hide ClickBait in its screenshots", "Its own windows stay out of what it sees. Other apps' recordings are unchanged.",
+                          isOn: $settings.ignoreNotchInCaptures)
+            }
+            SettingsGroup("Saved covers") {
+                ButtonRow("\(savedCovers) cover\(savedCovers == 1 ? "" : "s") on this Mac",
+                          "Kept from Internet Mode so the notch shows them offline.", button: "Clear", enabled: savedCovers > 0) {
+                    CoverCache.clear()
+                    savedCovers = 0
                 }
-            }.settingsPanelStyle()
+                .onAppear { savedCovers = CoverCache.count }
+            }
+            SettingsGroup("Uninstall") {
+                ButtonRow("Uninstall ClickBait", "Deletes its files, speech model and settings. Ollama stays.", button: "Uninstall…",
+                          destructive: true) { Uninstaller.confirmAndRun() }
+            }
+        case .debugging:
+            SettingsGroup("Debugging") {
+                ToggleRow("Keep the last screenshot and recording", "Saved to a temporary folder; deleted when you turn this off.",
+                          isOn: $settings.keepDebugCaptures)
+                    .onChange(of: settings.keepDebugCaptures) { _, keep in if !keep { DebugCaptureStore.deleteAll() } }
+                if settings.keepDebugCaptures {
+                    Divider().overlay(SettingsLook.hairline)
+                    LinkRow("Reveal last capture", "Opens it in Finder.") { menu?.revealLastCapture() }
+                }
+                Divider().overlay(SettingsLook.hairline)
+                ButtonRow("Test capsule", "Runs a local background job.", button: "Run") { menu?.runDebugCapsuleTest() }
+            }
+        }
+    }
+
+    /// A permission as a switch showing what macOS has granted. On asks macOS (or opens the
+    /// pane with the guide card); off opens the pane, where only the user can turn it off.
+    private func permissionRow(_ kind: PermissionKind) -> some View {
+        let granted = permissions?.status(of: kind) == .granted
+        return ToggleRow(kind.title, kind.reason, symbol: kind.symbolName,
+                         isOn: Binding(get: { granted },
+                                       set: { on in if on { permissions?.request(kind) } else { permissions?.openSettings(for: kind) } }))
+    }
+
+    private func toggleChrome() {
+        Task {
+            _ = await ChromeJavaScriptSwitch.toggle()
+            try? await Task.sleep(for: .milliseconds(300))
+            chromeScripting = await ChromeJavaScriptSwitch.isOn()
         }
     }
 }
 
 extension SettingsView {
-    /// Runs a harmless `1` in Chrome's front tab (only if Chrome is open): refused means the
-    /// switch is off.
-    private func checkChrome() async {
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").isEmpty else {
-            chromeScripting = nil
-            return
-        }
-        checkingChrome = true
-        defer { checkingChrome = false }
-        do {
-            try await AppleScriptRunner.run(YouTubeControl.chromeProbe, app: "Google Chrome")
-            chromeScripting = true
-        } catch {
-            chromeScripting = YouTubeControl.isTurnedOff(error.localizedDescription) ? false : nil
-        }
-    }
-
-    private nonisolated static func microphoneRow(_ device: Microphones.Device) -> some View {
-        Text(device.name).tag(Optional(device.id))
-    }
-
     static func status(_ status: BackgroundJob.Status) -> String {
         switch status {
         case .working: "Working"
@@ -434,8 +326,20 @@ extension SettingsView {
     }
 }
 
-/// A HeyClicky-style group: its name small, uppercase and grey above a rounded card of rows.
-struct SettingsSection<Content: View>: View {
+/// HeyClicky's settings colours, as dark greys (ClickBait's accents stay its own).
+enum SettingsLook {
+    static let page = Color(hex: 0x19191B)
+    static let sidebar = Color(hex: 0x1E1E21)
+    static let card = Color.white.opacity(0.055)
+    static let selected = Color.white.opacity(0.1)
+    static let hairline = Color.white.opacity(0.08)
+    static let secondary = Color.white.opacity(0.55)
+    static let tertiary = Color.white.opacity(0.35)
+    static let accent = AquaDark.link
+}
+
+/// A group: its name small, uppercase and grey, above a rounded card of rows.
+struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
@@ -445,43 +349,154 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        Section { content } header: { SettingsHeader(title) }
-    }
-}
-
-struct SettingsHeader: View {
-    let title: String
-    init(_ title: String) { self.title = title }
-
-    var body: some View {
-        Text(title.uppercased())
-            .font(.system(size: 10.5, weight: .semibold))
-            .tracking(0.8)
-            .foregroundStyle(.white.opacity(0.4))
-    }
-}
-
-/// A setting's row: its name, and what it does in one grey line under it.
-struct RowLabel: View {
-    let title: String
-    let detail: String
-    init(_ title: String, _ detail: String) { (self.title, self.detail) = (title, detail) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 13, weight: .medium))
-            Text(detail).font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold)).tracking(1)
+                .foregroundStyle(SettingsLook.tertiary)
+                .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 0) { content }
+                .background(SettingsLook.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(SettingsLook.hairline, lineWidth: 1))
         }
     }
 }
 
-private extension Form {
-    func settingsPanelStyle() -> some View {
-        formStyle(.grouped)
-            .scrollContentBackground(.hidden)
-            .toggleStyle(AquaToggleStyle())
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+extension View {
+    /// A row's padding inside a card.
+    func settingsRow() -> some View {
+        padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A setting's name, and what it does in one grey line under it.
+struct RowLabel: View {
+    let title: String
+    let detail: String
+    var symbol: String?
+    init(_ title: String, _ detail: String, symbol: String? = nil) { (self.title, self.detail, self.symbol) = (title, detail, symbol) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if let symbol {
+                Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(SettingsLook.secondary).frame(width: 18).padding(.top, 1)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Text(detail).font(.system(size: 12)).foregroundStyle(SettingsLook.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct ToggleRow: View {
+    let title: String
+    let detail: String
+    var symbol: String?
+    @Binding var isOn: Bool
+    init(_ title: String, _ detail: String, symbol: String? = nil, isOn: Binding<Bool>) {
+        (self.title, self.detail, self.symbol) = (title, detail, symbol)
+        _isOn = isOn
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            RowLabel(title, detail, symbol: symbol)
+            Spacer(minLength: 12)
+            Toggle("", isOn: $isOn).labelsHidden().fixedSize().accessibilityLabel(title)
+        }
+        .settingsRow()
+    }
+}
+
+/// A row ending in a white pill button ("Check for updates").
+private struct ButtonRow: View {
+    let title: String
+    let detail: String
+    let button: String
+    var enabled = true
+    var destructive = false
+    let action: () -> Void
+    init(_ title: String, _ detail: String, button: String, enabled: Bool = true, destructive: Bool = false, action: @escaping () -> Void) {
+        (self.title, self.detail, self.button, self.enabled, self.destructive, self.action) = (title, detail, button, enabled, destructive, action)
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            RowLabel(title, detail)
+            Spacer(minLength: 12)
+            Button(button, action: action).buttonStyle(PillButtonStyle(destructive: destructive)).disabled(!enabled)
+        }
+        .settingsRow()
+    }
+}
+
+/// A row that opens something: › for a place in ClickBait or Finder, ↗ for outside.
+private struct LinkRow: View {
+    let title: String
+    let detail: String
+    var external = false
+    let action: () -> Void
+    init(_ title: String, _ detail: String, external: Bool = false, action: @escaping () -> Void) {
+        (self.title, self.detail, self.external, self.action) = (title, detail, external, action)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                RowLabel(title, detail)
+                Spacer(minLength: 12)
+                Image(systemName: external ? "arrow.up.right" : "chevron.right")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(SettingsLook.tertiary)
+            }
+            .settingsRow()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A choice in a list, ticked in a filled circle when chosen (the Microphone page).
+private struct RadioRow: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+    init(_ title: String, selected: Bool, action: @escaping () -> Void) { (self.title, self.selected, self.action) = (title, selected, action) }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().stroke(SettingsLook.tertiary, lineWidth: 1.2).opacity(selected ? 0 : 1)
+                    if selected {
+                        Circle().fill(SettingsLook.accent)
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 18, height: 18)
+                Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.white)
+                Spacer()
+            }
+            .settingsRow()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// HeyClicky's white pill ("Check for updates", "Test microphone"); red text when it destroys.
+struct PillButtonStyle: ButtonStyle {
+    var destructive = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(destructive ? CompanionTone.problem : Color.black)
+            .padding(.horizontal, 16).frame(height: 30)
+            .background(Color.white.opacity(configuration.isPressed ? 0.8 : 1), in: Capsule())
+            .opacity(isEnabled ? 1 : 0.4)
     }
 }
 
@@ -537,6 +552,15 @@ private struct AquaToggleStyle: ToggleStyle {
 }
 
 enum SettingsPage: String, CaseIterable, Identifiable {
+    /// The pages in the sidebar: debugging only in debug builds.
+    static var visible: [SettingsPage] {
+        #if DEBUG
+        allCases
+        #else
+        allCases.filter { $0 != .debugging }
+        #endif
+    }
+
     case general, shortcuts, commands, voice, microphone, speech, aiModel, internet, permissions, privacy, debugging
 
     /// The sidebar's group label shown above this page, if it starts one.

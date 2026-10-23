@@ -565,7 +565,7 @@ private struct OpenNotch: View {
                 case .ask where model.chatting:
                     if let chat = model.chat { ChatView(model: chat, inNotch: true).padding(.bottom, 2).transition(.opacity) }
                 case .ask:
-                    AskCard(onAsk: model.ask, onSent: {}, onEditing: { model.editing = $0 })
+                    AskCard(model: model)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .shelf: ShelfView(shelf: shelf, note: model.note, onEditing: { model.editing = $0 }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .music: MusicPanel(music: music).transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -1104,61 +1104,96 @@ private struct GreetingCard: View {
 /// Typing a question: Return sends it to ClickBait's chat (the same one as double-tap ⌥⌘),
 /// says so for a moment (`sentHold`), then folds.
 private struct AskCard: View {
-    let onAsk: (String) -> Void
-    let onSent: () -> Void
-    let onEditing: (Bool) -> Void
+    let model: NotchController.Model
+    @State private var typing = false
     @State private var text = ""
-    @State private var sent = false
+    @State private var voice: FollowUpPanel.Voice = .ready
     @FocusState private var focused: Bool
 
-    static let sentHold = 0.7
-
+    /// The dock card's follow-up pair (user's ask, 2026-10-23): text opens the field, voice
+    /// records until stop and asks what it heard. The notch stays open meanwhile.
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(sent ? "Sent to the chat…" : "Ask ClickBait").font(.system(size: 12, weight: .semibold))
-            HStack(spacing: 8) {
-                TextField("Type a question, then Return", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .focused($focused)
-                    .onSubmit(send)
-                Button(action: send) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(text.isEmpty ? NotchPalette.tertiary : CompanionTone.processing.color)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            if typing {
+                HStack(spacing: 8) {
+                    TextField("Type a question, then Return", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .focused($focused)
+                        .onSubmit(send)
+                    Button(action: send) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(text.isEmpty ? NotchPalette.tertiary : CompanionTone.processing.color)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(text.isEmpty)
+                    .accessibilityLabel("Ask")
                 }
-                .buttonStyle(.plain)
-                .disabled(text.isEmpty || sent)
-                .accessibilityLabel("Ask")
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(NotchPalette.ink, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
+            } else {
+                HStack(spacing: 6) {
+                    Button { typing = true; focused = true } label: { Label("text", systemImage: "character.cursor.ibeam") }
+                        .buttonStyle(AquaButtonStyle(selected: false))
+                        .accessibilityLabel("Ask by typing")
+                    VoiceButton(voice: voice, level: model.micLevel, action: tapVoice)
+                }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(NotchPalette.ink, in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
-            Text("Answers come in the chat · double-tap ⌥⌘ anywhere for the same")
-                .font(.system(size: 10.5))
-                .foregroundStyle(NotchPalette.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
         }
         .padding(.leading, 86)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .notchCard(wash: CompanionTone.processing.color.opacity(sent ? 0.4 : 0.22))
-        .animation(.easeOut(duration: 0.2), value: sent)
-        .onAppear { focused = true }
-        .onChange(of: focused) { _, now in onEditing(now) }
+        .notchCard(wash: CompanionTone.processing.color.opacity(voice == .recording ? 0.4 : 0.22))
+        .animation(.easeOut(duration: 0.2), value: typing)
+        .onChange(of: focused) { _, now in model.editing = now || voice.isBusy }
+        .onChange(of: voice) { _, now in model.editing = focused || now.isBusy }
+        .onDisappear {
+            if voice == .recording { model.voiceCancel() }
+            model.editing = false
+        }
+    }
+
+    private var title: String {
+        switch voice {
+        case .recording: "Listening… tap stop when you're done"
+        case .starting: "Starting the microphone…"
+        case .transcribing: "Working out what you said…"
+        case .failed(let reason): reason
+        case .ready: "Ask ClickBait"
+        }
     }
 
     private func send() {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty, !sent else { return }
+        guard !question.isEmpty else { return }
         text = ""
-        sent = true
-        onAsk(question)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(Self.sentHold))
-            onSent()
+        model.ask(question)
+    }
+
+    private func tapVoice() {
+        switch voice {
+        case .starting, .transcribing:
+            return
+        case .recording:
+            voice = .transcribing
+            Task { @MainActor in
+                switch await model.voiceFinish() {
+                case .success(let heard) where heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
+                    voice = .failed("Didn't hear anything. Tap voice to try again.")
+                case .success(let heard):
+                    voice = .ready
+                    model.ask(heard)
+                case .failure(let error):
+                    voice = .failed(error.message)
+                }
+            }
+        case .ready, .failed:
+            voice = .starting
+            if let reason = model.voiceStart() { voice = .failed(reason) } else { voice = .recording }
         }
     }
 }
