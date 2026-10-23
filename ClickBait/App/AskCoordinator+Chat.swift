@@ -337,6 +337,9 @@ extension AskCoordinator {
         flow.context = context
         flow.homeBundleID = frontmost?.bundleIdentifier
         flow.homePID = pid
+        // Its tab now, where it was asked: read later, the user may have moved on (and a
+        // move-on is what sends it to the dock).
+        readBrowserTab(for: flow, at: nil)
         currentFlow = flow
         state = .listening
         Log.ask.notice("Listening (frontmost: \(frontmost?.bundleIdentifier ?? "none", privacy: .private))")

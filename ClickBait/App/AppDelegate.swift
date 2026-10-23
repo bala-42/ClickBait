@@ -726,8 +726,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if found { Log.app.notice("Go there: its tab, by \(tab.browser.name, privacy: .public)") }
         }
+        var returned = AXInspector.HomeReturn.byTab
         if !found {
-            let returned = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
+            returned = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
             AXInspector.bringToFront(pid: pid)
             homeApp.activate()
             Log.app.notice("Go there: \(job.homeTab != nil ? "the tab is gone; " : "", privacy: .public)\(returned.rawValue, privacy: .public)")
@@ -738,6 +739,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let switched = await spaceChange.wait(upTo: .milliseconds(700))
         if switched { try? await Task.sleep(for: .milliseconds(150)) }  // the slide settles
+        // Its window was on another desktop (accessibility sees only this one's): now that the
+        // app's desktop is showing, look again and raise that exact window.
+        if returned == .none || returned == .byFrame {
+            let again = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
+            if again != .none { Log.app.notice("Go there: on its desktop, \(again.rawValue, privacy: .public)") }
+        }
         Log.app.notice("""
             Go there: app in front \(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid, privacy: .public), \
             desktop switched \(switched, privacy: .public)

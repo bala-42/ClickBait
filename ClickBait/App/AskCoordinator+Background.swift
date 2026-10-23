@@ -118,7 +118,7 @@ extension AskCoordinator {
         backgroundJobs.setSnipMemory(run.snipMemory, for: jobID)
         backgroundJobs.setChatMessages(messages, for: jobID)
         // The window it was asked in, for "go there!" (its context is complete by now), and
-        // in a browser its exact tab.
+        // in a browser its exact tab (read when it was asked; here only if it wasn't).
         backgroundJobs.setHomeWindow(title: flow.context.windowTitle, frame: flow.context.windowFrame, for: jobID)
         if flow.browserTab == nil { readBrowserTab(for: flow, at: nil) }
         if let reading = flow.browserTab {
@@ -240,6 +240,7 @@ extension AskCoordinator {
         flow.homeBundleID = frontmostBundleID
         flow.homePID = frontmostPID
         flow.task = askTask
+        readBrowserTab(for: flow, at: nil)  // its tab now, where it was asked (see `startListening`)
         if currentFlow == nil { currentFlow = flow }
         return flow
     }
