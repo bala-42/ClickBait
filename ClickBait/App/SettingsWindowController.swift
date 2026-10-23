@@ -23,6 +23,7 @@ struct SettingsView: View {
     /// Chrome's "Allow JavaScript from Apple Events": on, off, or unknown (Chrome isn't open).
     @State private var chromeScripting: Bool?
     @State private var checkingChrome = false
+    @State private var savedCovers = 0
 
     private let aqua = AquaDark.link
 
@@ -257,6 +258,16 @@ struct SettingsView: View {
                     Toggle(isOn: $settings.ignoreNotchInCaptures) {
                         RowLabel("Ignore ClickBait in captures", "Keeps ClickBait's own windows out of the screenshots it takes. Other apps' recordings are unchanged.")
                     }
+                }
+                SettingsSection("Saved covers") {
+                    HStack {
+                        RowLabel("\(savedCovers) cover\(savedCovers == 1 ? "" : "s") saved on this Mac",
+                                 "Spotify covers and YouTube thumbnails downloaded with Internet Mode on, kept so the notch shows them with it off.")
+                        Spacer(minLength: 12)
+                        Button("Clear") { CoverCache.clear(); savedCovers = 0 }
+                            .disabled(savedCovers == 0)
+                    }
+                    .onAppear { savedCovers = CoverCache.count }
                 }
                 SettingsSection("Uninstall") {
                     Button("Uninstall ClickBait…", role: .destructive) { Uninstaller.confirmAndRun() }

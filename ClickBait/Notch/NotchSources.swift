@@ -58,7 +58,6 @@ final class MusicBridge {
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var artworkKey: String?
-    @ObservationIgnored private var downloadedCovers: [String: NSImage] = [:]
     /// An app started or stopped sending sound: what's playing may have moved.
     @ObservationIgnored private var audio: AudioActivity?
     @ObservationIgnored private var audibleBrowsers: Set<String> = []
@@ -259,7 +258,7 @@ final class MusicBridge {
         // Also once Internet Mode is switched on while the video was showing without its picture.
         if key != artworkKey || (artwork == nil && youtubeArtworkAllowed()) {
             artworkKey = key
-            if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(nil, for: key) }
+            if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(CoverCache.image(for: key), for: key) }
         }
     }
 
@@ -405,25 +404,22 @@ final class MusicBridge {
             }
         case .spotify:
             guard let url, let link = URL(string: url), link.scheme == "https", spotifyArtworkAllowed() else {
-                setArtwork(nil, for: key)
+                setArtwork(CoverCache.image(for: key), for: key)  // seen before with Internet Mode on
                 return
             }
             download(link, for: key)
         }
     }
 
-    /// A cover from the web (Spotify's link, YouTube's thumbnail), cached for the session.
+    /// A cover from the web (Spotify's link, YouTube's thumbnail): the saved copy when this
+    /// track was seen before (no download), else downloaded and saved for Internet Mode off.
     private func download(_ link: URL, for key: String) {
-        if let cached = downloadedCovers[link.absoluteString] { setArtwork(cached, for: key); return }
+        if let saved = CoverCache.image(for: key) { setArtwork(saved, for: key); return }
         Task {
-            var request = URLRequest(url: link, timeoutInterval: 4)
-            request.setValue("ClickBait (notch artwork)", forHTTPHeaderField: "User-Agent")
+            let request = URLRequest(url: link, timeoutInterval: 4)
             let data = try? await URLSession(configuration: .ephemeral).data(for: request).0
             let image = data.flatMap(NSImage.init(data:))
-            if let image {
-                if downloadedCovers.count > 12 { downloadedCovers.removeAll() }
-                downloadedCovers[link.absoluteString] = image
-            }
+            if let data, image != nil { CoverCache.save(data, for: key) }
             setArtwork(image, for: key)
         }
     }
