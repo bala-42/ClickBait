@@ -348,7 +348,11 @@ private struct HUDWings: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: NotchPanel.hudWing)
-                Spacer(minLength: 0)
+                // The top middle: the four ghosts, each doing its own thing.
+                TimelineView(.animation(minimumInterval: 1.0 / 20, paused: reduceMotion)) { context in
+                    GhostParade(time: reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate, frightened: muted)
+                }
+                .frame(maxWidth: .infinity)
                 Text(muted ? "MUTE" : "\(Int((level * 100).rounded()))%")
                     .font(ArcadeFont.font(11))
                     .foregroundStyle(muted ? PacMan.red : .white)
@@ -391,24 +395,22 @@ private struct HUDWings: View {
             let span = proxy.size.width - 2 * inset
             let mid = proxy.size.height / 2
             ZStack(alignment: .topLeading) {
-                // The maze walls above and below the corridor.
+                // The maze walls above and below the corridor: hard pixel lines.
                 ForEach([3.0, proxy.size.height - 3], id: \.self) { y in
-                    RoundedRectangle(cornerRadius: 1).fill(PacMan.wall)
-                        .frame(width: proxy.size.width - 16, height: 1.5)
+                    Rectangle().fill(PacMan.wall)
+                        .frame(width: proxy.size.width - 16, height: 2)
                         .position(x: proxy.size.width / 2, y: y)
                 }
                 ForEach(0..<Self.pellets, id: \.self) { index in
                     let x = (Double(index) + 0.5) / Double(Self.pellets)
                     if x > at + 0.012 || x < at - 0.035 {  // under Pac-Man's mouth: gone from view
-                        RoundedRectangle(cornerRadius: 1)
+                        Rectangle()  // a pellet is a square of pixels
                             .fill(x < at ? PacMan.green : PacMan.red)
-                            .frame(width: 4, height: 4)
-                            .position(x: inset + span * x, y: mid)
+                            .frame(width: 3, height: 3)
+                            .position(x: (inset + span * x).rounded(), y: mid.rounded())
                     }
                 }
-                PacManShape(mouth: mouth)
-                    .fill(muted ? Color(white: 0.5) : PacMan.yellow)
-                    .frame(width: 15, height: 15)
+                PixelPacMan(mouth: mouth, color: muted ? Color(white: 0.5) : PacMan.yellow)
                     .scaleEffect(x: facingLeft ? -1 : 1)
                     .position(x: inset + span * at, y: mid)
             }
@@ -425,23 +427,101 @@ private enum PacMan {
     static let green = Color(hex: 0x3BE36B)
 }
 
-/// Pac-Man facing right: a disc with a wedge bitten out, `mouth` 0 (shut) … 1 (wide).
-private struct PacManShape: Shape {
-    var mouth: Double
-    var animatableData: Double {
-        get { mouth }
-        set { mouth = newValue }
-    }
+/// Pac-Man facing right as arcade pixels (user's ask, 2026-10-23): a 13 × 13 grid, each
+/// pixel in the disc and outside the mouth's wedge filled, `mouth` 0 (shut) … 1 (wide).
+private struct PixelPacMan: View {
+    let mouth: Double
+    let color: Color
+    /// 1.5 pt: three whole screen pixels on a Retina display, so no seams between them.
+    static let grid = 13, pixel: CGFloat = 1.5
 
-    func path(in rect: CGRect) -> Path {
-        let angle = 40.0 * mouth
-        var path = Path()
-        let centre = CGPoint(x: rect.midX, y: rect.midY)
-        path.move(to: centre)
-        path.addArc(center: centre, radius: min(rect.width, rect.height) / 2,
-                    startAngle: .degrees(angle), endAngle: .degrees(360 - angle), clockwise: false)
-        path.closeSubpath()
-        return path
+    var body: some View {
+        Canvas { context, _ in
+            let r = Double(Self.grid) / 2, half = 40 * mouth * .pi / 180
+            var shape = Path()
+            for y in 0..<Self.grid {
+                for x in 0..<Self.grid {
+                    let dx = Double(x) + 0.5 - r, dy = Double(y) + 0.5 - r
+                    guard dx * dx + dy * dy <= r * r - 0.6 else { continue }
+                    if dx > 0, abs(atan2(dy, dx)) < half { continue }  // the mouth
+                    shape.addRect(CGRect(x: CGFloat(x) * Self.pixel, y: CGFloat(y) * Self.pixel, width: Self.pixel, height: Self.pixel))
+                }
+            }
+            context.fill(shape, with: .color(color))  // one fill: no seams
+        }
+        .frame(width: CGFloat(Self.grid) * Self.pixel, height: CGFloat(Self.grid) * Self.pixel)
+    }
+}
+
+/// The four ghosts in the HUD's top middle (user's ask, 2026-10-23), each on its own beat:
+/// bobbing, their skirts flicking between two frames, eyes glancing left and right, drifting
+/// a little. Muted, they turn frightened blue. `time` 0 (Reduce Motion): they stand still.
+private struct GhostParade: View {
+    let time: TimeInterval
+    let frightened: Bool
+    static let colours = [0xFF0000, 0xFFB8FF, 0x00FFFF, 0xFFB852].map { Color(hex: UInt32($0)) }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ForEach(0..<4, id: \.self) { index in
+                let t = time + Double(index) * 0.73
+                PixelGhost(colour: frightened ? Color(hex: 0x2121FF) : Self.colours[index],
+                           skirt: Int(t * 6) % 2, looksRight: sin(t * 0.9 + Double(index)) > 0, frightened: frightened)
+                    .offset(x: (CGFloat(sin(t * 1.1)) * 2).rounded() * 1.5, y: sin(t * 4) > 0 ? 1.5 : 0)  // whole pixels, bobbing down
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// One ghost from the arcade's 14 × 14 bitmap: dome, body, a two-frame skirt, white eyes
+/// with blue pupils looking left or right (frightened: a wobbly mouth, no pupils).
+private struct PixelGhost: View {
+    let colour: Color
+    let skirt: Int
+    let looksRight: Bool
+    let frightened: Bool
+    static let pixel: CGFloat = 1.5
+
+    static let body = [
+        "     ####     ", "   ########   ", "  ##########  ", " ############ ", " ############ ", " ############ ",
+        "##############", "##############", "##############", "##############", "##############", "##############",
+    ]
+    static let skirts = [["##.###..###.##", "#...##..##...#"], ["####.####.####", ".##..####..##."]]
+
+    var body: some View {
+        Canvas { context, _ in
+            let p = Self.pixel
+            // Each colour's pixels gathered into one path and filled once: no seams.
+            var layers: [(Color, Path)] = []
+            func layer(_ c: Color, _ points: [(Int, Int)]) {
+                var path = Path()
+                for (x, y) in points { path.addRect(CGRect(x: CGFloat(x) * p, y: CGFloat(y) * p, width: p, height: p)) }
+                layers.append((c, path))
+            }
+            var bodyPoints: [(Int, Int)] = []
+            for (y, row) in (Self.body + Self.skirts[skirt]).enumerated() {
+                for (x, ch) in row.enumerated() where ch == "#" { bodyPoints.append((x, y)) }
+            }
+            layer(colour, bodyPoints)
+            if frightened {
+                let face = [3, 4, 9, 10].map { ($0, 5) } + (2...11).enumerated().map { ($0.element, $0.offset % 2 == 0 ? 9 : 8) }
+                layer(Color(hex: 0xFFB8AE), face)
+            } else {
+                var whites: [(Int, Int)] = [], pupils: [(Int, Int)] = []
+                for left in [2, 8] {
+                    for y in 3...7 {
+                        for x in left...(left + 3) where !((y == 3 || y == 7) && (x == left || x == left + 3)) { whites.append((x, y)) }
+                    }
+                    let pupil = looksRight ? left + 2 : left
+                    for y in 5...6 { for x in pupil...(pupil + 1) { pupils.append((x, y)) } }
+                }
+                layer(.white, whites)
+                layer(Color(hex: 0x2121DE), pupils)
+            }
+            for (c, path) in layers { context.fill(path, with: .color(c)) }
+        }
+        .frame(width: 14 * Self.pixel, height: 14 * Self.pixel)
     }
 }
 
