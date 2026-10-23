@@ -356,6 +356,19 @@ final class MusicBridge {
         }
     }
 
+    /// The player card's ✕: pauses whatever plays (the home card then goes back to space).
+    func pause() {
+        guard isPlaying else { return }
+        if youtubeTab != nil, player == nil {
+            send("playpause")
+        } else {
+            send("pause")
+            position = currentPosition()
+            positionAt = .now
+            isPlaying = false
+        }
+    }
+
     func setShuffling(_ on: Bool) {
         shuffling = on
         send(player == .music ? "set shuffle enabled to \(on)" : "set shuffling to \(on)")

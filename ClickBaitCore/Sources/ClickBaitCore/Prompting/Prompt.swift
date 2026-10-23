@@ -27,6 +27,9 @@ public enum Prompt {
         {"element": 7, "label": "Share"} — its position is exact. Use x and y otherwise.
         - Only point at things you can actually see. Never point at something unrelated just \
         because it's clickable.
+        - If they ask where something is and you can't see it on the screen, say so plainly \
+        ("I don't see a calendar on screen.") and leave "pointers" empty. Never describe a \
+        place on the screen ("bottom right") for something you can't see.
 
         Other rules:
         - Lead with the answer: the first sentence of "speech" is the result itself (the \

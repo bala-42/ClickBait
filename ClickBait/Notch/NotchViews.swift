@@ -672,15 +672,17 @@ private struct FocusCard: View {
             .padding(.leading, 108)
             .padding(.top, 4)
             if music.sourceName != nil {
-                Button { music.openPlayer() } label: {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x5F646D))
+                // ✕: stop the music and go back to the bean in space (the cover opens the player).
+                Button { music.pause() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color(hex: 0x8A8F98))
                         .frame(width: 16, height: 16)
                         .background(Color.white.opacity(0.07), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .help("Open \(music.sourceName ?? "the player")")
+                .help("Stop the music")
+                .accessibilityLabel("Stop the music")
                 .padding(.top, 8)
                 .padding(.trailing, 10)
                 .frame(maxWidth: .infinity, alignment: .trailing)

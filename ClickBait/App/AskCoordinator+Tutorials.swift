@@ -192,10 +192,16 @@ extension AskCoordinator {
         // (not a control) in another app the request names ("show me my Safari history").
         // Decided before any colour changes, so a "where" never flashes lavender.
         var findingHidden = false
+        // "Where's the calendar?" with Calendar not in front: it just opens (green), no
+        // walkthrough — that planned 18 s inside Calendar for one step (try-list c06).
+        var opensApp: String?
         if TutorialQuestion.isLocatingRequest(question), !Self.isOnScreen(question, in: elements),
            !TutorialQuestion.namesControl(question) {
             let named = TutorialQuestion.mentionedApp(in: question, apps: Array(AppLocator.installed().keys))
-            if let named, named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame {
+            if let named, named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
+               TutorialQuestion.onlyOpens(question, app: named) {
+                opensApp = named
+            } else if let named, named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame {
                 findingHidden = true
             } else if let target = InstantAnswer.locateTargets(in: question).first {
                 let pid = homePID
@@ -203,13 +209,19 @@ extension AskCoordinator {
                 findingHidden = (path?.count ?? 0) >= 2
             }
         }
-        guard asking || ordering || visiting || toSystemSettings || findingHidden, let provider, let tutorial else { return false }
+        guard asking || ordering || visiting || toSystemSettings || findingHidden || opensApp != nil,
+              let provider, let tutorial else { return false }
         // A walkthrough isn't sent away: a queued peel's tile goes and it runs once the foreground is free.
         if let flow {
             flow.kind = .command
             guard await settleQuick(flow) else { return true }
             ownsPlanningUI = true
             tutorialPlanningShown = false
+        }
+        if let opensApp {
+            Log.ask.notice("Locate: the app itself isn't in front; opening it")
+            _ = await perform(ActionRequest(name: "open_app", argument: opensApp), speak: speak)
+            return true
         }
         if findingHidden { Log.ask.notice("Tutorial: what they're looking for isn't on screen; walking them there") }
         let startedIn = NSWorkspace.shared.frontmostApplication
@@ -503,6 +515,12 @@ extension AskCoordinator {
         result.passages = await Task.detached(priority: .userInitiated) {
             OnDeviceLanguage.pickPassages(documents, question: question + " " + query)
         }.value
+        // Off-topic hits (a weak search's best guesses) are neither used nor credited.
+        let kept = result.passages.filter { WebRelevance.isRelevant(title: $0.title, text: $0.text, query: query.isEmpty ? question : query) }
+        if kept.count < result.passages.count {
+            Log.ask.notice("Lookup: dropped \(result.passages.count - kept.count, privacy: .public) off-topic passage(s)")
+        }
+        result.passages = kept
         var seen = Set<URL>()
         let cited = result.passages.filter { seen.insert($0.url).inserted }.prefix(3)
         if !cited.isEmpty {
