@@ -234,15 +234,16 @@ private struct BeanPlace {
 
     init(state: NotchPanel.State, tab: NotchController.Model.Tab, mirror: Bool, hud: Bool, greeting: Bool,
          cover: Bool, space: Bool, width: CGFloat, height: CGFloat) {
-        // Content starts under the 8 pt top and the 34 pt header; the bean sits a little low.
-        let cardCentre: CGFloat = 99
+        // The cards start under the 8 pt top and the 34 pt header and are 98 pt tall: their
+        // middle is 91 pt down (it was 99, so the bean sat 8 pt low, user's catch 2026-10-24).
+        let cardCentre: CGFloat = 8 + 34 + 98 / 2
         switch state {
         case .expanded where greeting: (x, y, size, visible) = (width / 2, 93, 78, true)
         // The tabs show their square's bean in the header instead (user's idea, 2026-10-24).
         case .expanded where tab == .mirror: (x, y, size, visible) = (25, 21, 18, false)
         // Nothing playing: big, in the middle of the space card (before the cover's corner,
         // which a paused track's artwork would otherwise claim).
-        case .expanded where !mirror && tab == .home && space: (x, y, size, visible, floats) = (10 + 322 / 2, cardCentre - 6, 76, true, true)
+        case .expanded where !mirror && tab == .home && space: (x, y, size, visible, floats) = (10 + 322 / 2, cardCentre, 76, true, true)
         case .expanded where !mirror && tab == .home && cover:
             let corner = FocusCard.coverCentre.x + 10 + FocusCard.coverSize / 2 - 4
             (x, y, size, visible) = (corner, 42 + FocusCard.coverCentre.y + FocusCard.coverSize / 2 - 6, 24, true)
