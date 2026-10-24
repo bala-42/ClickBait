@@ -74,6 +74,7 @@ final class TestDriver {
             case "world": await world()
             case "writing": await writing()
             case "downloads": await chromeDownloads()
+            case "mictest": await microphoneTest()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -338,6 +339,21 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// Settings' "Test microphone" runs without crashing (its audio tap once ran main-actor
+    /// code on the audio thread, 2026-10-25) and hears the room.
+    private func microphoneTest() async {
+        let test = MicrophoneTest()
+        test.start()
+        var heard: Float = 0
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(100))
+            heard = max(heard, test.level)
+        }
+        let running = test.isRunning
+        test.stop()
+        check(running && test.failure == nil, "microphone test runs 2 s without crashing (loudest \(String(format: "%.2f", heard)))")
     }
 
     /// "Show me my downloads" with Chrome in front: Chrome's own steps (it once planned Finder's

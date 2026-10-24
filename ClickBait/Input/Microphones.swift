@@ -83,7 +83,9 @@ final class MicrophoneTest {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { failure = "No microphone is available."; return }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        // @Sendable: the tap runs on the audio thread. Made inside this main-actor method it was
+        // main-actor isolated, and Swift stopped the app there (crash, 2026-10-25 00:58).
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { @Sendable [weak self] buffer, _ in
             guard let samples = buffer.floatChannelData?[0] else { return }
             let count = Int(buffer.frameLength)
             var sum: Float = 0
