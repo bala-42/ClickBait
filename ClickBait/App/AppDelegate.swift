@@ -671,6 +671,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             homeApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
         }
 
+        // A walkthrough: back there and start it, no chat. An opened chat took focus from
+        // that app, so the walkthrough thought the user had left and kept switching back.
+        if entry.walkthrough != nil {
+            backgroundJobs.remove(id)
+            Task { @MainActor in
+                await returnHome(job, homeApp: homeApp)
+                then?()
+            }
+            return
+        }
+
         if chat.isOpen {
             let oldHome = chat.homeApp
             let oldBundleID = chat.homeBundleID

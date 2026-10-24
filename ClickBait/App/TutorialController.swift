@@ -219,7 +219,9 @@ final class TutorialController {
         // the step just clicked opens that app ("System Settings…"): give it time to come.
         let opening = index > 0 && plan.steps[index].app.map { plan.steps[index - 1].opensApp($0) } == true
             && Date().timeIntervalSince(lastProgress) < 4
-        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted), !opening,
+        // ClickBait's own windows (checklist, chat) in front don't count as leaving the app.
+        let ownFront = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), !ownFront, isInstalledApp(wanted), !opening,
            switchedFor.insert(index).inserted, let openApp {
             await switchApp(to: wanted, using: openApp)
             return
