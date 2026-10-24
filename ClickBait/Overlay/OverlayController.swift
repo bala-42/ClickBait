@@ -382,6 +382,10 @@ final class OverlayController {
     private var cursorState: (shown: Bool, seed: Int32?)?
     private var cursorPoll: Task<Void, Never>?
     private var displayLink: CADisplayLink?
+    #if DEBUG
+    /// For the test driver: how many companion stalls have been logged.
+    private(set) var debugStalls = 0
+    #endif
     private lazy var frameTarget = FrameTarget(controller: self)
     private var hiddenByTyping = false
     /// Steady frames while moving, so the glide looks the same over any content. 60 Hz, as
@@ -424,6 +428,9 @@ final class OverlayController {
         // with what was going on, so it can be traced (the main thread was busy).
         if let last = lastFrame, now - last > 0.08, companionAlpha > 0,
            guide != nil || homeFlight != nil || anchor != NSEvent.mouseLocation {
+            #if DEBUG
+            debugStalls += 1
+            #endif
             Log.app.notice("Companion stalled \(Int((now - last) * 1000), privacy: .public) ms (\(String(describing: self.model.bubble).prefix(20), privacy: .public)\(self.guide != nil ? ", pointing" : "", privacy: .public))")
         }
         let elapsed = min(max(now - (lastFrame ?? now - 1.0 / 60), 1.0 / 240), 0.1)

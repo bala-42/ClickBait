@@ -239,6 +239,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runDockBenchmarkIfRequested()
         runCardVoiceTestIfRequested()
         runNotchVoiceTestIfRequested()
+        #if DEBUG
+        TestDriver.runIfRequested { [unowned self] in
+            TestDriver.Hooks(notch: notch, coordinator: coordinator, overlay: overlay, tutorial: tutorial,
+                             backgroundJobs: backgroundJobs, chat: chat, capsules: capsules,
+                             goThere: { [weak self] id in self?.capsules.onGoThere?(id) })
+        }
+        #endif
         runRouteBenchIfRequested()
         runGoThereTestIfRequested()
         runMenuTestIfRequested()
@@ -524,6 +531,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onSetupFinished = { [weak self] in self?.overlay.clearWorking() }
         coordinator.onTutorialPlanning = { [weak self] planning in self?.overlay.tutorialPlanning(planning) }
         tutorial.onFinished = { [weak self] message in
+            // Finished or stopped, the walkthrough no longer holds its chat: what's typed next is
+            // asked (left busy, it was ignored: test drive, 2026-10-24).
+            self?.chat.model.isBusy = false
             guard let self, let message else { return }
             // A tutorial that opened another app offers the way back (ignored = stay).
             if message == TutorialController.finishedMessage, let home = coordinator.tutorialReturnApp, !home.isTerminated,
@@ -566,9 +576,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Pointing, or a few friendly words: the companion says it; the chat isn't needed.
             let short = PillText.fits(response.speech, code: response.code)
             let pillSays = short || !pointers.isEmpty
+            // The answer is in: the chat waits no longer, open or parked out of sight (a pointing
+            // answer parks it first, and left busy it ignored the next question: test drive).
+            chat.model.isBusy = false
             if chat.isOpen {
                 chat.model.setAssistant(response.displayText)  // final text, with any code as a block
-                chat.model.isBusy = false
                 if !pillSays {
                     chat.untuck()
                 } else if chat.isTucked {

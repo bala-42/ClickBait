@@ -140,8 +140,12 @@ extension AskCoordinator {
         let namesContent = InstantAnswer.namesContent(question)
         let targets = !wordsOnly && snip == nil && selectedText == nil && !namesContent ? InstantAnswer.locateTargets(in: question) : []
         if namesContent { Log.ask.notice("Finding content (a date, day or event), not a control: reading the screen") }
+        // The menu bar's right side too (Control Center, Wi-Fi, the clock): the app's own list never
+        // has them, and the model pointed at the middle of the menu bar (test drive, 2026-10-24).
+        let barItems = targets.isEmpty ? [] : await Task.detached(priority: .userInitiated) { AXInspector.menuExtras() }.value
         let found = targets.compactMap {
             InstantAnswer.uniqueElement(named: $0, in: elements) ?? InstantAnswer.closeElement(named: $0, in: elements)
+                ?? InstantAnswer.uniqueElement(named: $0, in: barItems) ?? InstantAnswer.closeElement(named: $0, in: barItems)
         }
         // "Where do I type?": the focused field's caret, exact and instant, before any model —
         // in the app that was in front when asked, never one switched to on the way.

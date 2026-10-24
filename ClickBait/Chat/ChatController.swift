@@ -110,6 +110,9 @@ final class ChatController {
         let messages = model.messages
         closeNow()
         model.isClosing = false
+        // Its answer goes on in the dock: this chat isn't waiting any more. Left busy, the next
+        // chat opened (the same model) ignored what was typed into it (test drive, 2026-10-24).
+        model.isBusy = false
         return messages
     }
 

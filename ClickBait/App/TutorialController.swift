@@ -701,6 +701,13 @@ final class TutorialController {
         return frame
     }
 
+    #if DEBUG
+    /// For the test driver: which step it's on, of how many, and what it points at now.
+    var debugStep: (index: Int, count: Int, target: Rect?, label: String?) {
+        (index, plan.steps.count, currentFrame, index < plan.steps.count ? plan.steps[index].target : nil)
+    }
+    #endif
+
     private func sampleScreen() async {
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, width: 128,
                                                                            ignoreClickBait: ignoreClickBait) else { return }

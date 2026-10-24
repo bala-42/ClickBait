@@ -18,6 +18,9 @@ final class NotchController {
             onScroll?(event)
             super.scrollWheel(with: event)
         }
+        /// The first click acts (a square, the bean, ✕) even when the panel opened by hovering and
+        /// isn't key yet; it used to be spent making the panel key (test drive, 2026-10-24).
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
     private final class Panel: NSPanel {
@@ -563,6 +566,9 @@ final class NotchController {
     }
 
     func debugClose() { apply(.escape) }
+
+    /// For the test driver: the notch panel's frame (AppKit points), if it's showing.
+    var debugPanelFrame: CGRect? { primaryPanel.map { $0.frame } }
 
     var debugFrame: String { "\(primaryPanel?.frame ?? .zero), visible \(primaryPanel?.isVisible ?? false), displays \(panels.count)" }
 
