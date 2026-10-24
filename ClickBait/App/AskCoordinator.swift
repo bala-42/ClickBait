@@ -62,6 +62,8 @@ final class AskCoordinator {
     /// the user moves on, like a first explanation (user's rule, 2026-10-23). Read once
     /// by `sendTyped`.
     @ObservationIgnored var nextTypedIsSuggestion = false
+    /// The next typed follow-up is "tell me more": answered in depth (`AskRequest.detailed`).
+    @ObservationIgnored var nextTypedIsDetailed = false
     /// What goes to the dock if the user moves on while it's still working (`armMoveOn`).
     @ObservationIgnored var moveOnPeel: (() -> Void)?
     @ObservationIgnored var moveOnClicks: Any?

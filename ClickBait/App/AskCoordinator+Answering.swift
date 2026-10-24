@@ -316,6 +316,8 @@ extension AskCoordinator {
             request.contextJPEG = snipFollowUp?.context ?? snipContext
             request.codeAnswer = snip == nil && !ImpliedPointer.isLocating(question)
                 && CodeAnswer.wanted(question: question, selectedText: selectedText)
+            request.detailed = nextTypedIsDetailed
+            nextTypedIsDetailed = false
             if request.codeAnswer { Log.ask.notice("Code question: answering in Markdown") }
             request.remembered = MemoryStore.shared.block(for: question)
             request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn

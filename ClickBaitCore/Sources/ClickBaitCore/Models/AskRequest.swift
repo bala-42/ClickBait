@@ -110,6 +110,8 @@ public struct AskRequest: Sendable {
     public var routeIntent = false
     /// A code question: answered in Markdown (`CodeAnswer`), handed on as the usual answer JSON.
     public var codeAnswer = false
+    /// "Tell me more" on a snip's card: explain it in depth this time, not in 2–4 sentences.
+    public var detailed = false
     /// What the user asked ClickBait to remember, as the prompt block (`Memory.block`), or nil.
     public var remembered: String?
     /// When it was asked: today's date for the prompt (`DateFacts`).

@@ -125,6 +125,8 @@ public enum PeelRule {
     }
 
     public static let suggestedPartsPrompt = "show me the parts"
+    /// A snip's card: the short explanation, then this for the full one (user's ask, 2026-10-25).
+    public static let tellMorePrompt = "tell me more"
 
     // MARK: Peeling on its own
 

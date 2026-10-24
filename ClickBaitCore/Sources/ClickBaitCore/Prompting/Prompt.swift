@@ -316,6 +316,7 @@ public enum Prompt {
         if let brief = request.morningBrief { return brief }
         var text = baseUserText(for: request)
         if !request.web.isEmpty { text += "\n\n" + webBlock(request.web) }
+        if request.detailed { text += "\n\n" + detailedRule }
         // A plain ask gets today's date, and any "days until …" worked out: the model has no
         // clock and counts days badly ("30 days until Christmas" on 20 October).
         // An app the request names gets its card (`AppCards`): the real menus, not guessed ones.
@@ -488,6 +489,14 @@ public enum Prompt {
         "new line", "new paragraph".
         - When a word sounds like one in "Screen words", spell it that way.
         - Write in the style given. Add nothing else.
+        """
+
+    /// "Tell me more" on a snip's card: the full explanation, replacing the short-answer rule.
+    public static let detailedRule = """
+        This time, explain it in depth (the short-answer limits don't apply): what it is, how it \
+        works or what each part does, why it matters, and an example or common mistake where \
+        it helps. 6–10 sentences, or short points ("• ") if it has several parts. Build on your \
+        earlier answer; don't repeat it. Keep to what you can see or know; invent nothing.
         """
 
     /// fn+⌃ writing (text only): the user's spoken request carried out, the result typed into

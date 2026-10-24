@@ -197,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard chat.isOpen else { return }
                 // Its tour was placed in the dock: play it, no model asked.
                 if text == PeelRule.suggestedPartsPrompt, coordinator.playReadyTour() { return }
+                coordinator.nextTypedIsDetailed = text == PeelRule.tellMorePrompt
                 chat.model.draft = text
                 coordinator.nextTypedIsSuggestion = true  // slow → back to the dock
                 chat.model.send()  // as if typed: it's a follow-up in that chat
@@ -635,12 +636,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               case .done = entry.job.status, !askingSuggestions.contains(id) else { return }
         askingSuggestions.insert(id)
         let question = entry.job.question, answer = entry.job.answer
+        let isSnip = entry.job.kind == .snip
         Task { @MainActor [weak self] in
             guard let self else { return }
             let suggestions = await coordinator.suggestNext(question: question, answer: answer)
             askingSuggestions.remove(id)
-            // Slow or unusable: none this time; the next opening asks again.
-            if let suggestions { backgroundJobs.setSuggestions(suggestions, for: id) }
+            // A snip's card always offers the full explanation first (user's ask, 2026-10-25).
+            let more = isSnip ? [PeelRule.tellMorePrompt] : []
+            // Slow or unusable: none this time; the next opening asks again (a snip still gets "tell me more").
+            if let suggestions { backgroundJobs.setSuggestions(more + suggestions.prefix(isSnip ? 1 : 2), for: id) }
+            else if isSnip { backgroundJobs.setSuggestions(more, for: id) }
         }
     }
 

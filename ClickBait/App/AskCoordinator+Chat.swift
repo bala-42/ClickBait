@@ -181,6 +181,7 @@ extension AskCoordinator {
     /// through `sendTyped` like any typed follow-up (screen, pointing, actions).
     func startTypedChat(trigger: String = "⌥⌘ right-click") {
         onInvoked?()
+        nextTypedIsDetailed = false  // only ever for the "tell me more" it was set for
         if snipper.isActive { snipper.cancel() }
         let flags = NSEvent.modifierFlags
         if flags.contains(.option), flags.contains(.command) { ignoreExplainRelease = true }
