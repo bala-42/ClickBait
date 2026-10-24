@@ -282,8 +282,13 @@ final class MusicBridge {
         if tab.browser == .chrome {
             // In the Chrome process that owns the tab (see `ChromeTabs.execute`).
             let pids = NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue).map(\.processIdentifier)
-            let output = await Task.detached(priority: .userInitiated) {
-                pids.lazy.compactMap { ChromeTabs.execute(javascript, tabID: tab.tab, pid: $0) }.first
+            // Once per process, stopping at the first answer: `lazy.compactMap(...).first` ran the
+            // script twice (a play/pause undid itself) and crashed when the second run had nothing.
+            let output = await Task.detached(priority: .userInitiated) { () -> String? in
+                for pid in pids {
+                    if let output = ChromeTabs.execute(javascript, tabID: tab.tab, pid: pid) { return output }
+                }
+                return nil
             }.value
             if output != nil { youtubeScripting = true }
             return output
