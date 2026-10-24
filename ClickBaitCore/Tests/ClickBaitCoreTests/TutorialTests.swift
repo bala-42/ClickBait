@@ -505,6 +505,11 @@ struct ShowMePointsTests {
         #expect(TutorialQuestion.isLocatingRequest(text))
     }
 
+    @Test(arguments: ["which button closes this window", "which icon is wi-fi", "which tab has my email"])
+    func whichControlIsPointing(_ text: String) {
+        #expect(TutorialQuestion.isLocatingRequest(text))
+    }
+
     /// "Show me how to …" is a walkthrough (user's decision, 2026-10-24).
     @Test(arguments: ["show me how to start a new chat", "can you show me how to export a PDF", "show me how to turn on night shift"])
     func showMeHowIsAWalkthrough(_ text: String) {

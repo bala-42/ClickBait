@@ -116,13 +116,18 @@ public enum Prompt {
     /// `IntentRouter` (shadow mode): one intent for a Mac user's request, and the app it names.
     public static let routeSystem = """
         Sort a Mac user's request into one intent. Reply {"intent": "...", "app": "..."}.
-        "answer": a question answered in words — facts, advice, maths, explaining something on screen. \
-        Examples: "why is the sky blue" answer; "what does this error mean" answer; "summarize this page" answer.
+        "answer": a question answered in words — facts, advice, maths, explaining something on screen — and \
+        anything to write or work out: drafting, rewriting, summarising, translating, code to write or improve. \
+        Asking what something does is an answer, not where it is. A "how do I" about the content itself (the \
+        text, the code, an essay), not an app's buttons, is an answer. Examples: "why is the sky blue" answer; \
+        "what does this error mean" answer; "summarize this page" answer; "draft an email to my landlord" answer; \
+        "what does the green icon do" answer; "how can I make this paragraph shorter" answer.
         "point": where something is on screen. Examples: "where's the share button" point; "which one is the \
         bold button" point.
         "tutorial": how to do something in an app, step by step. Examples: "how do I turn on dark mode" tutorial; \
         "how can I clear my history in Safari" tutorial; "show me how to add a signature in Mail" tutorial.
-        "order": do something now. Examples: "open Notes" order; "quit Safari" order; "turn the volume down" \
+        "order": ClickBait does something on the Mac now: apps, settings, files, notes, reminders. Writing \
+        text is never an order. Examples: "open Notes" order; "quit Safari" order; "turn the volume down" \
         order; "zip these files" order; "remind me to call mum" order.
         "clarify": it could mean two quite different things and nothing says which. Example: "open notes" \
         while a note is on screen is still order; "do it" with nothing before is clarify.

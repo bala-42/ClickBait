@@ -369,6 +369,8 @@ public enum TutorialQuestion {
         }
         let joined = words.joined(separator: " ")
         if joined.hasPrefix("show me how ") { return false }  // a task: `asksForTutorial`
+        // "Which button closes this?", "which icon is Wi-Fi?": finding a control.
+        if words.count > 1, words[0] == "which", controlWords.contains(words[1]) { return true }
         let starts = ["where", "wheres", "show me", "point", "find", "highlight", "locate", "which one is", "which is"]
         return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
     }
