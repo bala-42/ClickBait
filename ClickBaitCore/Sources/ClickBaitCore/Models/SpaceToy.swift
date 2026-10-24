@@ -1,21 +1,22 @@
 import Foundation
 
-/// The Home card's bean as a toy (user's ask, 2026-10-24): dragged, flung, drifting in zero
-/// gravity, bouncing off the card's edges, drifting home when left alone. Points, y down;
-/// `offset` is from its resting place in the middle of the card.
+/// The Home card's bean as a toy (user's ask, 2026-10-24): dragged, and let go it springs back
+/// home on an elastic, overshooting and wobbling to rest; a flick throws it first, off the
+/// card's edges. Points, y down; `offset` is from its resting place in the middle of the card.
 public struct SpaceToy: Equatable, Sendable {
     public var offset = Point(x: 0, y: 0)
     /// Points per second.
     public var velocity = Point(x: 0, y: 0)
     public var held = false
-    /// Seconds since it was let go (or last hit an edge hard): after `homeAfter`, it goes home.
+    /// Seconds since it was let go.
     public var loose = 0.0
 
-    /// Its speed halves every this many seconds: a slow coast, as in space.
-    public static let halfLife = 0.9
+    /// The elastic home: stiffness (1/s²) and damping (1/s). Underdamped, so it overshoots
+    /// and wobbles a few times (about 2 Hz) before resting.
+    public static let stiffness = 170.0
+    public static let damping = 7.0
     /// The share of its speed it keeps off an edge.
     public static let bounce = 0.7
-    public static let homeAfter = 3.0
     /// A flick's top speed, so one wild flick can't tunnel through an edge.
     public static let topSpeed = 1_400.0
 
@@ -37,31 +38,24 @@ public struct SpaceToy: Equatable, Sendable {
     public mutating func step(_ dt: Double, limit: Point) -> Double {
         guard !held, dt > 0 else { return 0 }
         loose += dt
-        if loose > Self.homeAfter {
-            // Home: a damped spring back to the middle.
-            velocity.x += -offset.x * 9 * dt
-            velocity.y += -offset.y * 9 * dt
-            let damping = pow(0.5, dt / 0.18)
-            velocity = Point(x: velocity.x * damping, y: velocity.y * damping)
-        } else {
-            let coast = pow(0.5, dt / Self.halfLife)
-            velocity = Point(x: velocity.x * coast, y: velocity.y * coast)
-        }
+        velocity.x += -offset.x * Self.stiffness * dt
+        velocity.y += -offset.y * Self.stiffness * dt
+        let damping = exp(-Self.damping * dt)
+        velocity = Point(x: velocity.x * damping, y: velocity.y * damping)
         offset.x += velocity.x * dt
         offset.y += velocity.y * dt
+        // An edge turns it back only while it's heading out: let go beyond an edge (pulled
+        // there), the elastic brings it in without a jump.
         var hit = 0.0
-        if abs(offset.x) > limit.x {
-            offset.x = offset.x < 0 ? -limit.x : limit.x
+        if abs(offset.x) > limit.x, offset.x * velocity.x > 0 {
             hit = max(hit, abs(velocity.x))
             velocity.x = -velocity.x * Self.bounce
         }
-        if abs(offset.y) > limit.y {
-            offset.y = offset.y < 0 ? -limit.y : limit.y
+        if abs(offset.y) > limit.y, offset.y * velocity.y > 0 {
             hit = max(hit, abs(velocity.y))
             velocity.y = -velocity.y * Self.bounce
         }
-        if hit > 200 { loose = 0 }  // a hard bounce: let it ricochet before going home
-        if loose > Self.homeAfter, speed < 2, hypot(offset.x, offset.y) < 0.5 {
+        if speed < 2, hypot(offset.x, offset.y) < 0.5 {
             offset = Point(x: 0, y: 0)
             velocity = Point(x: 0, y: 0)
         }

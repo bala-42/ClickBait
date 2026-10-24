@@ -13,6 +13,8 @@ final class SpaceToyPlay {
     private var dizzyTask: Task<Void, Never>?
     /// Bumped on each hard bounce: the bean spins once.
     private(set) var spins = 0
+    /// Bumped when it's grabbed, let go or petted: a jelly wobble.
+    private(set) var jiggles = 0
     private var grabbedAt = Point(x: 0, y: 0)
     private var ticking: Task<Void, Never>?
     /// How far it may go from the middle of the card (its edges, less the bean's size).
@@ -30,17 +32,27 @@ final class SpaceToyPlay {
     func drag(_ translation: CGSize) {
         if !toy.held {
             toy.held = true
+            jiggles += 1
             grabbedAt = toy.offset
             toy.velocity = Point(x: 0, y: 0)
             run()
         }
-        toy.offset = Point(x: min(limit.x, max(-limit.x, grabbedAt.x + translation.width)),
-                           y: min(limit.y, max(-limit.y, grabbedAt.y + translation.height)))
+        // An elastic pull: it follows the pointer, resisting more the further it goes, never
+        // past `pull` (the card's sides; a little above and below it).
+        func elastic(_ x: Double, _ most: Double) -> Double { x / (1 + abs(x) / most) }
+        toy.offset = Point(x: elastic(grabbedAt.x + translation.width, limit.x * 1.6),
+                           y: elastic(grabbedAt.y + translation.height, 30))
     }
 
     func release(_ flick: CGSize) {
+        jiggles += 1
         toy.letGo(velocity: reduceMotion ? Point(x: 0, y: 0) : Point(x: flick.width, y: flick.height))
         run()
+    }
+
+    /// The pointer came onto it: a little wobble.
+    func pet() {
+        if !reduceMotion { jiggles += 1 }
     }
 
     /// Back to rest at once (the card closed or changed).
@@ -72,20 +84,20 @@ final class SpaceToyPlay {
                 let now = ContinuousClock.now
                 let dt = min(0.05, (now - last) / .seconds(1))
                 last = now
-                if reduceMotion, !toy.held, toy.loose > SpaceToy.homeAfter {
-                    toy = SpaceToy()  // no glide home: back in place at once
+                if reduceMotion, !toy.held {
+                    toy = SpaceToy()  // no elastic: back in place at once
                     continue
                 }
                 let hit = toy.step(dt, limit: limit)
-                if hit > 520, !reduceMotion { getDizzy() }
+                if hit > 350, !reduceMotion { getDizzy() }
             }
             self?.ticking = nil
         }
     }
 }
 
-/// Lets the Home card's bean be grabbed, flung and bounced (`SpaceToyPlay`); a click still
-/// hops it (a drag starts only once the pointer moves).
+/// Lets the Home card's bean be grabbed and pulled, springing back on an elastic when let go,
+/// soft as jelly (`SpaceToyPlay`); a click still hops it (a drag starts once the pointer moves).
 struct SpaceToyHandle: ViewModifier {
     let on: Bool
     let radius: CGFloat
@@ -94,8 +106,24 @@ struct SpaceToyHandle: ViewModifier {
 
     func body(content: Content) -> some View {
         let held = play.toy.held
+        // Jelly: stretched along the way it's moving, as hard as it's fast.
+        let velocity = play.toy.velocity
+        let stretch = reduceMotion ? 0 : min(0.24, hypot(velocity.x, velocity.y) / 2600)
+        let heading = Angle(radians: atan2(velocity.y, velocity.x))
         content
+            .rotationEffect(-heading)
+            .scaleEffect(x: 1 + stretch, y: 1 - stretch * 0.8)
+            .rotationEffect(heading)
             .scaleEffect(x: held ? 1.08 : 1, y: held ? 0.92 : 1)
+            .keyframeAnimator(initialValue: CGSize(width: 1, height: 1), trigger: play.jiggles) { view, scale in
+                view.scaleEffect(x: scale.width, y: scale.height, anchor: .center)
+            } keyframes: { _ in
+                SpringKeyframe(CGSize(width: 1.13, height: 0.87), duration: 0.09)
+                SpringKeyframe(CGSize(width: 0.9, height: 1.1), duration: 0.12)
+                SpringKeyframe(CGSize(width: 1.05, height: 0.95), duration: 0.12)
+                SpringKeyframe(CGSize(width: 0.98, height: 1.02), duration: 0.12)
+                SpringKeyframe(CGSize(width: 1, height: 1), duration: 0.25, spring: .bouncy)
+            }
             .keyframeAnimator(initialValue: 0.0, trigger: play.spins) { view, angle in
                 view.rotationEffect(.degrees(angle))
             } keyframes: { _ in
@@ -107,6 +135,7 @@ struct SpaceToyHandle: ViewModifier {
             .gesture(DragGesture(minimumDistance: 3)
                 .onChanged { value in if on { play.drag(value.translation) } }
                 .onEnded { value in if on { play.release(value.velocity) } })
+            .onHover { inside in if on, inside { play.pet() } }
             .onAppear { play.reduceMotion = reduceMotion }
             .onChange(of: on) { _, now in if !now { play.reset() } }
             .onChange(of: radius) { _, r in play.limit = Point(x: 161 - r, y: 8) }
