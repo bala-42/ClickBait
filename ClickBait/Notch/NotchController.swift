@@ -230,9 +230,11 @@ final class NotchController {
     }
 
     private func musicChanged() {
+        // Folded, the notch stays folded, music or not: the wings were dead space (user's rule,
+        // 2026-10-25). What's playing shows when the notch is opened.
         if music.hasTrack, music.isPlaying {
             pausedTask?.cancel()
-            setActivity(true)
+            setActivity(false)
         } else if !music.hasTrack {
             setActivity(false)
         } else {
