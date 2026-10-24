@@ -87,6 +87,8 @@ final class NotchController {
         var onChatEnd: @MainActor () -> Void = {}
         /// Showing the Ask tab's conversation.
         var showsChat: Bool { tab == .ask && chatting }
+        /// The pointer is near the notch: the folded handle shows.
+        var nearNotch = false
         /// The ⓘ shortcuts card hangs over the panel.
         var showsKeys = false
 
@@ -442,6 +444,12 @@ final class NotchController {
         let inside = panels.contains { displayID, panel in
             panel.isVisible && NotchPanel.pointerOn(point, frame: Self.rect(targets[displayID] ?? panel.frame), wasOn: pointerInside)
         }
+        // Near the notch (80 pt around it, at the top): the folded handle shows; otherwise it
+        // stays out of sight (user's ask, 2026-10-24).
+        let near = panels.contains { displayID, panel in
+            panel.isVisible && (targets[displayID] ?? panel.frame).insetBy(dx: -80, dy: -60).contains(mouse)
+        }
+        if model.nearNotch != near { model.nearNotch = near }
         guard inside != pointerInside else { return }
         pointerInside = inside
         pointerChanged()

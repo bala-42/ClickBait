@@ -136,11 +136,14 @@ struct NotchView: View {
         ZStack(alignment: .top) {
             shape.fill(Color.black.opacity(resting ? 0 : 1))
             if resting {
+                // Only when the pointer comes near: faded out quickly otherwise (user's ask).
                 Capsule()
                     .fill(Color.white.opacity(0.22))
                     .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
                     .frame(width: 60, height: 5)
                     .padding(.top, 8)
+                    .opacity(model.nearNotch ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: model.nearNotch)
                     .transition(.opacity)
                     .accessibilityHidden(true)
             }
