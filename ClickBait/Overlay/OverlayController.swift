@@ -644,6 +644,9 @@ final class OverlayController {
     private static var triangleInset: CGFloat { CompanionBubbleView.canvasMargin + triangleInContent }
 
     var isGuiding: Bool { guide != nil }
+    /// The companion is on its way to a target (not yet arrived): a walkthrough holds off its
+    /// screenshots and model checks, which share the graphics chip with the flight.
+    var isGuideFlying: Bool { guide.map { $0.settledAt == nil } ?? false }
 
     /// Clears a green "working" pill (setup over) without touching other pills.
     func clearWorking() {

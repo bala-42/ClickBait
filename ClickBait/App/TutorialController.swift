@@ -230,7 +230,7 @@ final class TutorialController {
 
         // Keep a recent screen sample at all times, so a change (a dialog closing) shows
         // up the moment it happens rather than after a fresh baseline.
-        if tick % 4 == 0 { await sampleScreen() }
+        if tick % 4 == 0, !overlay.isGuideFlying { await sampleScreen() }
 
         // A shortcut to press (⌘C, ⌘V): nothing to point at; the instruction by the cursor.
         let step = plan.steps[index]
@@ -471,6 +471,16 @@ final class TutorialController {
             finish()
             return
         }
+        // "Clear History…" opens a dialog whose button says "Clear History" (Empty Bin…, Force
+        // Quit…): that's the last click. Found by Accessibility, no model call.
+        if let clicked = lastClicked, clicked.target.hasSuffix("…") || clicked.target.hasSuffix("..."),
+           let button = await dialogButton(named: TutorialPlan.withoutEllipsis(clicked.target)) {
+            Log.ask.notice("Tutorial: the dialog's own button is the last step; no model")
+            plan.steps.append(TutorialStep(target: button, instruction: "Click \(button)", app: plan.steps.last?.app))
+            continuations = Self.maxContinuations  // that button finishes it
+            onChecklist?(checklistText)
+            return
+        }
         // The companion stays where it is while ClickBait looks (no flying back and forth).
         if let frame = currentFrame {
             point(at: frame, label: "checking…", menu: pointingAtMenu)
@@ -643,6 +653,31 @@ final class TutorialController {
     // MARK: - Screen and model
 
     /// A tiny grey copy of the screen compared with the last one: did anything change?
+    /// A button named `name` in what's on screen now (the dialog a "…" item opened), waiting a
+    /// moment for the dialog to appear.
+    private func dialogButton(named name: String) async -> String? {
+        for _ in 0..<4 {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard isActive else { return nil }
+            let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let display = Self.displayUnderMouse()
+            let elements = await Task.detached(priority: .userInitiated) {
+                AXInspector.visibleElements(frontmostPID: pid, display: display)
+            }.value
+            if let button = elements.first(where: {
+                $0.role == "AXButton" && ImpliedPointer.normalized($0.label) == ImpliedPointer.normalized(name)
+            }) { return button.label }
+        }
+        return nil
+    }
+
+    /// The companion is flying, or the user clicked a moment ago (menus open, the companion
+    /// sets off): no model call now. Gemma runs on the graphics chip that draws the screen,
+    /// and checks then made the flight hitch (80–190 ms, 2026-10-24).
+    private var busyOnScreen: Bool {
+        overlay.isGuideFlying || clickedStepAt.map { Date().timeIntervalSince($0) < 1.2 } ?? false
+    }
+
     /// When the screen was last read for this step, and what it found.
     private var screenTextTried: (index: Int, at: Date, frame: Rect?)?
 
@@ -698,7 +733,7 @@ final class TutorialController {
 
     /// The model looks at the screen: which step is next, or is it done?
     private func askModel() async {
-        guard let provider else { return }
+        guard let provider, !busyOnScreen else { return }
         checking = true
         lastModelCheck = Date()
         defer { checking = false }
