@@ -128,9 +128,10 @@ public enum PeelRule {
 
     // MARK: Peeling on its own
 
-    /// A highlight's or snip's explanation, or a walkthrough being planned, stays in front
-    /// while it works and goes to the dock only when the user moves on (user's rule,
-    /// 2026-10-23; it used to go after 0.5, then 0.8 s, which docked nearly every answer).
+    /// A highlight's or snip's explanation, a code answer, or a walkthrough being planned goes
+    /// to the dock once it's still working after this, or at once when the user moves on, so
+    /// they never wait to use ClickBait again (user's rule, 2026-10-24). Faster answers stay.
+    public static let dockAfter: Duration = .seconds(1)
 
     /// The two holds — Strawberry Red while a snip is worked out until its tour, Lavender while
     /// a walkthrough is planned until it starts — follow one set of rules (user's rule,

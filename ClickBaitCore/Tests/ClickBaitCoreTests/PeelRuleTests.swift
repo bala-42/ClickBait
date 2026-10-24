@@ -161,6 +161,10 @@ struct AutoPeelTests {
         PeelRule.autoPeels(.init(phase: phase, work: work, hasRoom: room))
     }
 
+    @Test func docksAfterOneSecond() {
+        #expect(PeelRule.dockAfter == .seconds(1))
+    }
+
     @Test func explanationPeelsOnlyWhileStreaming() {
         #expect(auto(.streaming, .answer))
         for phase: PeelRule.Phase in [.idle, .listening, .buildingRequest, .explained, .tour] {

@@ -50,8 +50,8 @@ extension AskCoordinator {
 
     // MARK: Lavender's hold (as Strawberry Red's: `PeelRule.Hold`)
 
-    /// Planning has begun: it stays in front, lavender, and goes to the dock only if the
-    /// user moves on while it's still planning (user's rule, 2026-10-23).
+    /// Planning has begun: still planning after `PeelRule.dockAfter`, or the user moves on, it
+    /// goes to the dock as a lavender card (user's rule, 2026-10-24).
     func startWalkthroughHold(question: String) {
         walkthroughPlanning = true
         armMoveOn { [weak self] in

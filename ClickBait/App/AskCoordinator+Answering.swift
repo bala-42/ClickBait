@@ -353,7 +353,9 @@ extension AskCoordinator {
                 Log.ask.notice("Peel joined: \(jobID.uuidString, privacy: .public)")
             }
             // A first highlight or snip explanation, or a clicked suggestion, goes to the dock by itself when slow.
-            if !queued, autoPeels || (history.isEmpty && explaining) { scheduleAutoPeel(flow, run) }
+            // Explanations, snips, clicked suggestions and code answers (the slowest) go to the
+            // dock after 1 s or when the user moves on, whichever comes first.
+            if !queued, autoPeels || (history.isEmpty && explaining) || request.codeAnswer { scheduleAutoPeel(flow, run) }
             if backgroundJobs?.entries.contains(where: { $0.job.isWorking && $0.id != flow.jobID }) == true {
                 Log.ask.notice("Foreground answer submitted while Ollama is serving a background capsule; Ollama will queue it")
             }

@@ -65,6 +65,8 @@ final class AskCoordinator {
     /// What goes to the dock if the user moves on while it's still working (`armMoveOn`).
     @ObservationIgnored var moveOnPeel: (() -> Void)?
     @ObservationIgnored var moveOnClicks: Any?
+    /// The armed peel's id, so an old timer can't fire a newer one.
+    @ObservationIgnored var moveOnArmed: UUID?
     @ObservationIgnored var moveOnSwitches: NSObjectProtocol?
     /// The chat a provisional explanation detached: still on screen, put back by
     /// `undoExplain`, closed by `commitExplain`.
