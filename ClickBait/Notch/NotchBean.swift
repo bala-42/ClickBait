@@ -145,6 +145,8 @@ struct BeanFace: View {
     static let pearlTop = Color(hex: 0xF3F3F6)
     static let pearlBottom = Color(hex: 0xC9CAD1)
     private static let ink = Color(hex: 0x26272C)
+    /// The asleep bean's X-ray glow.
+    private static let xray = Color(hex: 0x9FE8FF)
     private static let holoHues = [0xFFB8E8, 0xB8E4FF, 0xCDB8FF, 0xB8FFDD, 0xFFF1B8, 0xFFB8E8].map { Color(hex: $0) }
 
     var body: some View {
@@ -183,6 +185,15 @@ struct BeanFace: View {
                     .overlay(BeanShape().stroke(.white.opacity(0.35), lineWidth: 0.5))
             } else if solid {
                 BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
+            } else if mood == .sleepy {
+                // Asleep: see-through, like an X-ray (user's choice, 2026-10-24): a glowing cyan
+                // outline over a faint film, its z eyes showing inside.
+                BeanShape()
+                    .fill(RadialGradient(colors: [Self.xray.opacity(0.28), Self.xray.opacity(0.06)],
+                                         center: .center, startRadius: 0, endRadius: width * 0.6))
+                    .overlay(BeanShape().stroke(Self.xray.opacity(0.9), lineWidth: max(1, size * 0.025)))
+                    .overlay(BeanShape().scale(0.84).stroke(Self.xray.opacity(0.25), lineWidth: max(0.5, size * 0.012)))
+                    .shadow(color: Self.xray.opacity(0.55), radius: size * 0.12)
             } else {
                 // Plain pearl with a soft white glow at rest; a state tints it and glows its colour.
                 let resting = NotchBean.isResting(mood)
@@ -226,8 +237,9 @@ struct BeanFace: View {
             // Height and tilt glide to the new pair; Reduce Motion (time 0) swaps at once.
             .animation(time > 0 ? .spring(duration: 0.3, bounce: 0.35) : nil, value: eyes)
         }
-        // Pearl and chrome eyes are ink; a pill's solid bean wears white eyes on its colour.
-        .foregroundStyle(eyeColor ?? (solid && !holo ? .white : Self.ink))
+        // Pearl and chrome eyes are ink; a pill's solid bean wears white eyes on its colour; an
+        // X-ray (asleep) bean's glow cyan.
+        .foregroundStyle(eyeColor ?? (solid && !holo ? .white : mood == .sleepy && !holo ? Self.xray : Self.ink))
     }
 
     @ViewBuilder private func badgeView(tone: Color) -> some View {
@@ -235,8 +247,7 @@ struct BeanFace: View {
         case .thinking: "···"
         case .error: "!"
         case .happy: "✓"
-        case .sleepy: "z"
-        case .idle, .listening, .working, .panicked, .warm, .tired, .hello: nil
+        case .idle, .listening, .working, .panicked, .warm, .tired, .hello, .sleepy: nil
         }
         if let mark {
             Text(mark)
@@ -291,9 +302,25 @@ struct BeanEye: View {
                 Chevron()
                     .stroke(style: StrokeStyle(lineWidth: size * 0.08, lineCap: .round, lineJoin: .round))
                     .frame(width: size * 0.15, height: size * 0.09)
+            case .z:
+                ZMark()
+                    .stroke(style: StrokeStyle(lineWidth: size * 0.055, lineCap: .round, lineJoin: .round))
+                    .frame(width: size * 0.14, height: size * 0.14)
             }
         }
         .frame(width: size * 0.2, height: size * 0.38)
+    }
+
+    /// A "z": top bar, diagonal, bottom bar.
+    private struct ZMark: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            return path
+        }
     }
 
     /// An upturned "^".

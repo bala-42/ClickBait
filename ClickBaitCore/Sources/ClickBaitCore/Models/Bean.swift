@@ -42,6 +42,8 @@ public enum Bean {
         case chevron
         /// A round dot: wide awake or startled.
         case dot
+        /// A little "z": asleep (in place of the badge's z, user's choice 2026-10-24).
+        case z
     }
 
     public struct EyePair: Sendable, Hashable {
@@ -67,7 +69,7 @@ public enum Bean {
         case .happy: [.both(.chevron), .init(.chevron, .pill(tilt: 10))]
         case .hello: [.both(.chevron), .init(.pill(), .dash())]
         case .error: [.init(.pill(tilt: -22), .pill(tilt: 22)), .init(.pill(tilt: -22), .dash())]
-        case .sleepy: [.both(.dash()), .init(.dash(tilt: 8), .dash(tilt: -8))]
+        case .sleepy: [.both(.z), .init(.dash(), .z)]
         case .panicked: [.both(.dot), .init(.dot, .pill(height: 1.2))]
         case .warm: [.both(.dash()), .both(.pill(height: 0.6))]
         case .tired: [.both(.pill(height: 0.55)), .init(.dash(), .pill(height: 0.55))]

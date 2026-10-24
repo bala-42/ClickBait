@@ -1,5 +1,6 @@
 import AppKit
 import ClickBaitCore
+import SwiftUI
 import Testing
 @testable import ClickBait
 
@@ -47,6 +48,15 @@ struct NotchSmokeTests {
         let hud = try #require(notch.snapshot(.collapsed, hud: (0.6, false)), "hud")
         #expect(Self.colours(in: hud) >= 6, "hud looks blank")
         try hud.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "hud.png"))
+        // The bean asleep: X-ray body, z eyes (both pairs).
+        for (name, eyes) in [("sleep", Bean.EyePair.both(.z)), ("sleep-wink", Bean.EyePair(.dash(), .z))] {
+            let renderer = ImageRenderer(content: BeanFace(mood: .sleepy, eyes: eyes, size: 76, badge: false)
+                .padding(20).background(Color.black))
+            renderer.scale = 2
+            let image = try #require(renderer.nsImage, "\(name)")
+            try image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) }?
+                .representation(using: .png, properties: [:])?.write(to: folder.appending(path: "\(name).png"))
+        }
         // The brightness sky through the day: night, dawn, sunrise, noon.
         for level in [0.05, 0.3, 0.5, 1.0] {
             let sky = try #require(notch.snapshot(.collapsed, sky: level), "sky \(level)")
