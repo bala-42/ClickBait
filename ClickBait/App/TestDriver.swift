@@ -76,6 +76,7 @@ final class TestDriver {
             case "downloads": await chromeDownloads()
             case "mictest": await microphoneTest()
             case "snip": await snipExplains()
+            case "motion": await notchMotion()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -340,6 +341,19 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// Opens and folds the notch by hand five times; the frame probe logs each motion
+    /// ("Notch motion:") for comparing smoothness before and after a change.
+    private func notchMotion() async {
+        for _ in 0..<5 {
+            _ = await openByHand()
+            try? await Task.sleep(for: .seconds(1.2))
+            hooks.notch.debugClose()
+            if let screen = NSScreen.main { move(to: quartz(CGPoint(x: screen.frame.midX, y: screen.frame.midY))) }
+            try? await Task.sleep(for: .seconds(1.2))
+        }
+        check(true, "opened and folded the notch 5 times (see \"Notch motion\" in the log)")
     }
 
     /// A small box over a known page explains what's there, not a guess (a small circle on a 1×

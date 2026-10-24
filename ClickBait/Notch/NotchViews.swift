@@ -89,6 +89,15 @@ struct NotchShape: InsettableShape {
     }
 }
 
+/// The open notch is showing and done moving: its own animations (the stars) run only then.
+private struct NotchLiveKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var notchLive: Bool {
+        get { self[NotchLiveKey.self] }
+        set { self[NotchLiveKey.self] = newValue }
+    }
+}
+
 struct NotchView: View {
     let model: NotchController.Model
     /// The display this panel is on: unless the notch is open here, it draws folded.
@@ -146,7 +155,10 @@ struct NotchView: View {
         // HeyClicky's (user's choice, 2026-10-23). The black grows in from it as it opens.
         let resting = state == .collapsed && !model.activity && hud == nil
         ZStack(alignment: .top) {
+            // Solid almost at once, so the shape grows out of the handle instead of fading in
+            // on the same spring (half-see-through for the first frames).
             shape.fill(Color.black.opacity(resting ? 0 : 1))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: resting)
             if resting {
                 // Only when the pointer comes near: faded out quickly otherwise (user's ask).
                 Capsule()
@@ -158,6 +170,21 @@ struct NotchView: View {
                     .animation(.easeOut(duration: 0.2), value: model.nearNotch)
                     .transition(.opacity)
                     .accessibilityHidden(true)
+            }
+            // The open panel (Home, Ask, Shelf, Music) stays built and is revealed, so opening
+            // only grows the shape: building it in the spring's frames dropped 2–5 frames each
+            // open, up to 686 ms the first time (frame probe, 2026-10-25).
+            if keepsOpenPanel {
+                OpenNotch(model: model, music: music, shelf: shelf, settings: settings, tabBeans: tabBeans,
+                          onTabChange: onTabChange, onMirror: { onTabChange(.mirror) }, onCollapse: onCollapse)
+                    .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
+                    .padding(.horizontal, ear)
+                    .frame(width: CGFloat(look.width) + 2 * ear, height: CGFloat(look.height), alignment: .top)
+                    // In just after the shape starts growing; out at once when it folds.
+                    .opacity(open ? 1 : 0)
+                    .animation(reduceMotion ? nil : open ? .easeOut(duration: 0.22).delay(0.08) : .easeIn(duration: 0.1), value: open)
+                    .allowsHitTesting(open)
+                    .accessibilityHidden(!open)
             }
             Group {
                 if open {
@@ -171,11 +198,6 @@ struct NotchView: View {
                                      permissions: model.permissions, startPage: model.settingsPage,
                                      returnLabel: Self.backLabel(model.settingsReturnTab),
                                      onBack: { onTabChange(model.settingsReturnTab) }, onCollapse: onCollapse)
-                            .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
-                            .transition(.opacity)
-                    } else {
-                        OpenNotch(model: model, music: music, shelf: shelf, settings: settings, tabBeans: tabBeans,
-                                  onTabChange: onTabChange, onMirror: { onTabChange(.mirror) }, onCollapse: onCollapse)
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
                     }
@@ -212,16 +234,27 @@ struct NotchView: View {
         .contentShape(shape)
         .dropDestination(for: URL.self) { _, _ in false } isTargeted: { if $0, !open { onDragIn() } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(reduceMotion ? nil : spring(open: open), value: open)
-        .animation(reduceMotion ? nil : spring(open: state != .collapsed), value: state)
-        .animation(reduceMotion ? nil : spring(open: true), value: model.tab)
-        .animation(reduceMotion ? nil : spring(open: true), value: look.width)
-        .animation(reduceMotion ? nil : spring(open: true), value: look.height)
-        .animation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.8), value: model.activity)
+        // One curve for the whole motion: growing or tab-changing springs, folding eases out.
+        // (Width and height used to always take the opening spring, even while folding.)
+        .animation(reduceMotion ? nil : spring(open: state != .collapsed),
+                   value: Motion(state: state, tab: model.tab, width: look.width, height: look.height, activity: model.activity))
+        .environment(\.notchLive, open && model.settled)
         .accessibilityElement(children: open ? .contain : .ignore)
         .accessibilityLabel(open ? "ClickBait notch" : model.activity ? "Now playing: \(music.title)" : "ClickBait notch, closed")
         .accessibilityHint(open ? "" : "Click to open")
         .accessibilityAddTraits(open ? [] : .isButton)
+    }
+
+    /// Home, Ask, Shelf and Music: kept built; Mirror (the camera) and Settings build on demand.
+    private var keepsOpenPanel: Bool { isHere && model.tab != .mirror && model.tab != .settings }
+
+    /// Everything the notch's shape follows, animated as one.
+    private struct Motion: Equatable {
+        let state: NotchPanel.State
+        let tab: NotchController.Model.Tab
+        let width: Double
+        let height: Double
+        let activity: Bool
     }
 
     /// The motion: a lively spring opening (and for tab changes), a quick ease-out closing.
@@ -402,6 +435,8 @@ private struct OpenNotch: View {
         }
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: model.showsKeys)
         .onChange(of: model.tab) { _, _ in model.showsKeys = false }
+        // Kept built between opens now: a new cheer each time it opens.
+        .onChange(of: model.state) { _, state in if state == .expanded { cheer = NotchCheer.next(after: cheer) } }
     }
 
     private var header: some View {
@@ -909,10 +944,11 @@ struct TabBean: View {
     let pill: IslandPills.Pill
     let size: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.notchLive) private var live
 
     var body: some View {
         Gazing { look in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !pill.holo || reduceMotion)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !pill.holo || reduceMotion || !live)) { timeline in
                 BeanFace(mood: pill.mood, eyes: pill.eyes, size: size, look: look, badge: false, solid: true, holo: pill.holo,
                          sheen: reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate,
                          tint: pill.tint, eyeColor: pill.inkEyes ? NotchPalette.ink : nil)

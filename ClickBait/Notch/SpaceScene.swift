@@ -5,6 +5,7 @@ import SwiftUI
 /// streaks. Every frame is a function of the clock; Reduce Motion holds the stars still.
 struct SpaceScene: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.notchLive) private var live
     /// The bean being flung: the stars streak away from where it heads (a little hyperspace).
     @State private var play = SpaceToyPlay.shared
 
@@ -30,7 +31,7 @@ struct SpaceScene: View {
     private static let cycle = 9.0
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !live)) { timeline in
             let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
             let velocity = reduceMotion ? .zero : CGVector(dx: play.toy.velocity.x, dy: play.toy.velocity.y)
             Canvas { context, size in

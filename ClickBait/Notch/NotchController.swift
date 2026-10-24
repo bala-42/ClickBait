@@ -98,6 +98,8 @@ final class NotchController {
         /// The display the notch is open on (peek, open, a HUD); every other display's panel
         /// stays folded (user's ask, 2026-10-24: it opened on both monitors). Nil: one display.
         var activeDisplay: UInt32?
+        /// Open and done moving: the open panel's own animations run only then (`notchLive`).
+        var settled = false
         /// The ⓘ shortcuts card hangs over the panel.
         var showsKeys = false
 
@@ -119,6 +121,7 @@ final class NotchController {
     private var holdTask: Task<Void, Never>?
     private var pointerMonitors: [Any] = []
     private var hudTask: Task<Void, Never>?
+    private var settleTask: Task<Void, Never>?
     private var frameTasks: [UInt32: Task<Void, Never>] = [:]
     /// Each panel's settled frame: its window is briefly bigger while the shape springs.
     private var targets: [UInt32: CGRect] = [:]
@@ -208,6 +211,9 @@ final class NotchController {
         if case .enabled(true) = event, NSScreen.screens.isEmpty { event = .displayAvailable(false) }
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }
+        #if DEBUG
+        primaryPanel?.contentView.map { NotchFrameProbe.measure($0, label: "\(before) → \(after)") }
+        #endif
         // Opening from folded: on the display the pointer is on; it stays there until it folds.
         if before == .collapsed || before == .hidden { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
@@ -215,15 +221,23 @@ final class NotchController {
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
         if after != .expanded, model.chatting { model.chatting = false; model.onChatEnd() }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
+        model.settled = false
+        settleTask?.cancel()
         if after == .expanded {
-            music.refresh()
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            // The music check, the model's health and the panel's own animations wait until the
+            // shape has finished growing: in the same frames they made opening drop frames.
+            settleTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(450))
+                guard !Task.isCancelled, let self, model.state == .expanded else { return }
+                model.settled = true
+                music.refresh()
                 model.health = await model.checkHealth()
             }
             watchEscape(true)
         } else if before == .expanded {
             watchEscape(false)
+            // The open panel stays built (hidden) now: a recording in its Ask card stops with it.
+            if model.tab == .ask { model.voiceCancel() }
         }
         place()
         pointerChanged()
@@ -351,6 +365,27 @@ final class NotchController {
         }
     }
 
+    /// Folded, with the pointer coming near: the clear window grows to the open size now, so a
+    /// click only grows the shape. Resizing it in the motion's first frames dropped 2–4 frames
+    /// each open (frame probe, 2026-10-25). Clear pixels let clicks through; `targets` (what
+    /// counts as on the notch) stays the folded frame.
+    private func makeRoom(_ near: Bool) {
+        guard model.state == .collapsed, model.hud == nil else { return }
+        for screen in NSScreen.screens {
+            guard let displayID = Self.displayID(screen), let panel = panels[displayID], let target = targets[displayID],
+                  frameTasks[displayID] == nil || frameTasks[displayID]?.isCancelled == true || !near else { continue }
+            var room = target
+            if near, let open = NotchPanel.frame(.expanded, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
+                                                 notch: Self.notch(on: screen), activity: model.activity, hud: false,
+                                                 shelf: model.tab == .shelf, settings: model.tab == .settings,
+                                                 mirror: model.tab == .mirror, chat: model.showsChat) {
+                let width = max(open.width, target.width) * 1.12, height = max(open.height, target.height) * 1.12
+                room = CGRect(x: target.midX - width / 2, y: target.maxY - height, width: width, height: height)
+            }
+            if panel.frame != room { panel.setFrame(room, display: false) }
+        }
+    }
+
     /// Whether this display is the one the notch is open on (always, while folded).
     private func isActive(_ displayID: UInt32) -> Bool {
         model.state == .collapsed && model.hud == nil || model.activeDisplay == nil || model.activeDisplay == displayID
@@ -397,12 +432,57 @@ final class NotchController {
         let height = max(current.height, target.height) + abs(target.height - current.height) * overshoot
         let room = CGRect(x: target.midX - width / 2, y: target.maxY - height, width: width, height: height)
         if room != current { panel.setFrame(room, display: true) }
-        frameTasks[displayID] = Task { @MainActor [weak panel] in
+        frameTasks[displayID] = Task { @MainActor [weak self, weak panel] in
             try? await Task.sleep(for: .seconds(Self.motionSettles))
-            guard !Task.isCancelled else { return }
-            panel?.setFrame(target, display: true)
+            guard !Task.isCancelled, let self else { return }
+            frameTasks[displayID] = nil
+            if model.state == .collapsed && model.nearNotch { makeRoom(true) } else { panel?.setFrame(target, display: true) }
         }
     }
+
+    #if DEBUG
+    /// Debug only: how smooth a notch motion was. Every frame's gap for 0.8 s after a state
+    /// change; logs the count, the slowest and how many took over 20 ms ("Notch motion:").
+    @MainActor final class NotchFrameProbe: NSObject {
+        private static var current: NotchFrameProbe?
+        private var link: CADisplayLink?
+        private var last: CFTimeInterval?
+        private var gaps: [CFTimeInterval] = []
+        private var start: CFTimeInterval = 0
+        private let label: String
+
+        private init(label: String) { self.label = label }
+
+        static func measure(_ view: NSView, label: String) {
+            current?.finish()
+            let probe = NotchFrameProbe(label: label)
+            let link = view.displayLink(target: probe, selector: #selector(tick(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+            link.add(to: .main, forMode: .common)
+            probe.link = link
+            probe.start = CACurrentMediaTime()
+            current = probe
+        }
+
+        @objc private func tick(_ link: CADisplayLink) {
+            let now = link.timestamp
+            if let last { gaps.append(now - last) }
+            last = now
+            if now - start > 0.8 { finish() }
+        }
+
+        private func finish() {
+            link?.invalidate()
+            link = nil
+            guard !gaps.isEmpty else { return }
+            let slow = gaps.filter { $0 > 0.02 }.count
+            let at = gaps.indices.filter { gaps[$0] > 0.02 }.map { "#\($0):\(Int(gaps[$0] * 1000))" }.joined(separator: " ")
+            let worst = Int((gaps.max() ?? 0) * 1000)
+            Log.app.notice("Notch motion \(self.label, privacy: .public): \(self.gaps.count, privacy: .public) frames, \(slow, privacy: .public) over 20 ms, slowest \(worst, privacy: .public) ms (\(at, privacy: .public))")
+            if Self.current === self { Self.current = nil }
+        }
+    }
+    #endif
 
     /// Long enough for the open spring and the close curve to come to rest.
     private static let motionSettles = 0.8
@@ -481,7 +561,10 @@ final class NotchController {
         let near = panels.contains { displayID, panel in
             panel.isVisible && (targets[displayID] ?? panel.frame).insetBy(dx: -80, dy: -60).contains(mouse)
         }
-        if model.nearNotch != near { model.nearNotch = near }
+        if model.nearNotch != near {
+            model.nearNotch = near
+            makeRoom(near)
+        }
         guard inside != pointerInside else { return }
         pointerInside = inside
         pointerChanged()
