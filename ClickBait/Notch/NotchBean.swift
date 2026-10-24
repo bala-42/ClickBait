@@ -145,8 +145,8 @@ struct BeanFace: View {
     static let pearlTop = Color(hex: 0xF3F3F6)
     static let pearlBottom = Color(hex: 0xC9CAD1)
     private static let ink = Color(hex: 0x26272C)
-    /// The asleep bean's X-ray glow.
-    private static let xray = Color(hex: 0x9FE8FF)
+    /// The asleep bean's X-ray glow: a ghostly blue-green (user's ask, 2026-10-24).
+    private static let xray = Color(hex: 0x3DF5C8)
     private static let holoHues = [0xFFB8E8, 0xB8E4FF, 0xCDB8FF, 0xB8FFDD, 0xFFF1B8, 0xFFB8E8].map { Color(hex: $0) }
 
     var body: some View {
@@ -186,14 +186,16 @@ struct BeanFace: View {
             } else if solid {
                 BeanShape().fill(LinearGradient(colors: [tone.opacity(0.95), tone], startPoint: .top, endPoint: .bottom))
             } else if mood == .sleepy {
-                // Asleep: see-through, like an X-ray (user's choice, 2026-10-24): a glowing cyan
-                // outline over a faint film, its z eyes showing inside.
+                // Asleep: see-through, like an X-ray (user's choice, 2026-10-24): a glowing
+                // blue-green outline over a faint film, its z eyes showing inside, flickering
+                // faintly and unevenly like something paranormal.
+                let flicker = time > 0 ? 0.82 + 0.18 * sin(time * 3.1) * sin(time * 7.7) : 1
                 BeanShape()
-                    .fill(RadialGradient(colors: [Self.xray.opacity(0.28), Self.xray.opacity(0.06)],
+                    .fill(RadialGradient(colors: [Self.xray.opacity(0.3), Self.xray.opacity(0.05)],
                                          center: .center, startRadius: 0, endRadius: width * 0.6))
-                    .overlay(BeanShape().stroke(Self.xray.opacity(0.9), lineWidth: max(1, size * 0.025)))
-                    .overlay(BeanShape().scale(0.84).stroke(Self.xray.opacity(0.25), lineWidth: max(0.5, size * 0.012)))
-                    .shadow(color: Self.xray.opacity(0.55), radius: size * 0.12)
+                    .overlay(BeanShape().stroke(Self.xray.opacity(0.95 * flicker), lineWidth: max(1, size * 0.025)))
+                    .overlay(BeanShape().scale(0.84).stroke(Self.xray.opacity(0.28 * flicker), lineWidth: max(0.5, size * 0.012)))
+                    .shadow(color: Self.xray.opacity(0.7 * flicker), radius: size * 0.16)
             } else {
                 // Plain pearl with a soft white glow at rest; a state tints it and glows its colour.
                 let resting = NotchBean.isResting(mood)
@@ -238,7 +240,7 @@ struct BeanFace: View {
             .animation(time > 0 ? .spring(duration: 0.3, bounce: 0.35) : nil, value: eyes)
         }
         // Pearl and chrome eyes are ink; a pill's solid bean wears white eyes on its colour; an
-        // X-ray (asleep) bean's glow cyan.
+        // X-ray (asleep) bean's glow blue-green.
         .foregroundStyle(eyeColor ?? (solid && !holo ? .white : mood == .sleepy && !holo ? Self.xray : Self.ink))
     }
 
