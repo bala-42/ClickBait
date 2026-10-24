@@ -89,6 +89,8 @@ public struct AskRequest: Sendable {
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.
     public var menuOutline: [String] = []
+    /// How things are done on a Mac that bear on the request (`MacGuide.facts`), for tutorial plans.
+    public var guide: [String] = []
     /// The user's web browser ("Safari"), for website steps in a tutorial plan.
     public var browser: String?
     /// Sort a how-to-sounding request: a walkthrough, or a question to answer?

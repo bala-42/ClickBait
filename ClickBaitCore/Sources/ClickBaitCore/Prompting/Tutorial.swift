@@ -181,7 +181,7 @@ public struct TutorialPlan: Equatable, Sendable {
     }
 
     /// The Apple menu as plans name it.
-    static let appleMenuNames: Set = ["apple", "apple menu", "", "apple logo"]
+    public static let appleMenuNames: Set = ["apple", "apple menu", "", "apple logo"]
 
     /// "System Settings…" → "System Settings".
     public static func withoutEllipsis(_ target: String) -> String {
@@ -518,6 +518,16 @@ public struct TutorialProgress: Equatable, Sendable {
 /// model knows where things live) plus the items sharing a word with the question.
 /// 160 lines of Safari menus made planning slower without making it better.
 public enum MenuOutline {
+    /// The menu path to an item named `label` (["History", "Clear History…"]), from outline
+    /// lines; nil when no item has that name. "…" and case don't matter.
+    public static func path(to label: String, in lines: [String]) -> [String]? {
+        let name = { (text: String) in ImpliedPointer.normalized(TutorialPlan.withoutEllipsis(text)) }
+        let wanted = name(label)
+        guard !wanted.isEmpty else { return nil }
+        return lines.map { $0.components(separatedBy: " ▸ ") }
+            .first { $0.count >= 2 && name($0[$0.count - 1]) == wanted }
+    }
+
     public static func relevant(_ lines: [String], to question: String, limit: Int = 40) -> [String] {
         let words = Set(ImpliedPointer.normalized(question).split(separator: " ").filter { $0.count >= 4 }.map(String.init))
         var titles: [String] = []

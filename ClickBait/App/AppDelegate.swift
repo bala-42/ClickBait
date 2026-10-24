@@ -233,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runCardVoiceTestIfRequested()
         runGoThereTestIfRequested()
         runMenuTestIfRequested()
+        MenuMemory.learnOpenApps()
         #if DEBUG
         runGuidanceTestIfRequested()
         #endif
@@ -287,6 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            // Each app's menus are learnt as it comes to the front, for when it later won't share them.
+            if app.processIdentifier != ProcessInfo.processInfo.processIdentifier { MenuMemory.learn(pid: app.processIdentifier) }
             MainActor.assumeIsolated {
                 guard let self else { return }
                 // A walkthrough switching apps takes the chat (its checklist) along.

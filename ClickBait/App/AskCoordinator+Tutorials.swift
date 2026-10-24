@@ -169,8 +169,14 @@ extension AskCoordinator {
     /// A step is there to point at: on screen, or in the app's menus (or a shortcut).
     nonisolated static func canFind(_ step: TutorialStep, in elements: [ScreenElement], pid: pid_t?) async -> Bool {
         if step.isShortcut || step.typing != nil || StepMatcher.find(step.target, in: elements) != nil { return true }
+        if TutorialPlan.appleMenuNames.contains(step.target.lowercased()) { return true }
         let target = step.target
-        return await Task.detached(priority: .userInitiated) { AXInspector.menuPath(to: target, frontmostPID: pid) != nil }.value
+        return await Task.detached(priority: .userInitiated) {
+            if AXInspector.menuPath(to: target, frontmostPID: pid) != nil || MenuMemory.path(to: target, pid: pid) != nil { return true }
+            // A menu's own title ("History"), from the remembered menus; a status item (Control Center).
+            if MenuMemory.outline(pid: pid).contains(where: { $0.hasPrefix(target + " ▸ ") }) { return true }
+            return StepMatcher.find(target, in: AXInspector.menuExtras(), minimum: 0.85) != nil
+        }.value
     }
 
     /// The plan for a walkthrough in another app, made in the dock without bringing that app
@@ -180,12 +186,21 @@ extension AskCoordinator {
                        isInstalledApp: @escaping (String) -> Bool) async -> TutorialPlan? {
         let pid = NSWorkspace.shared.runningApplications
             .first { $0.localizedName?.caseInsensitiveCompare(app) == .orderedSame }?.processIdentifier
-        let menus = await Task.detached(priority: .userInitiated) { pid.map { AXInspector.menuOutline(frontmostPID: $0) } ?? [] }.value
+        let bundleID = AppLocator.installed()[app].flatMap { Bundle(url: $0)?.bundleIdentifier }
+        let menus = await Task.detached(priority: .userInitiated) {
+            pid.map { MenuMemory.outline(pid: $0) } ?? bundleID.map(MenuMemory.saved(bundleID:)) ?? []
+        }.value
+        // Known for sure: that app's own menus, then ClickBait's Mac guide; no model.
+        if let instant = InstantAnswer.menuPlan(for: question, app: app, outline: menus) ?? MacGuide.plan(for: question, app: app, outline: menus) {
+            Log.ask.notice("Walkthrough hold: \(instant.steps.count, privacy: .public) step(s) for another app, instant (menus or the Mac guide)")
+            return instant.separatingSetup(frontmostApp: app, isInstalledApp: isInstalledApp)
+        }
         var request = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
                                  context: ScreenContext(appName: app))
         request.planTutorial = true
         request.browser = AppLocator.defaultBrowserName()
         request.menuOutline = MenuOutline.relevant(menus, to: question, limit: 25)
+        request.guide = MacGuide.facts(for: question, app: app)
         let start = ContinuousClock.now
         let reply = await Self.reply(from: provider, to: request, within: ProviderOperation.planTutorialWithScreenshot.timeout)
         let plan = reply.flatMap { TutorialPlan.parse($0)?.expandingMenus(using: menus) }?
@@ -425,16 +440,12 @@ extension AskCoordinator {
         }
         Log.ask.notice("Tutorial steps: \(plan.steps.map { "\($0.target) [\($0.app ?? "-")]\($0.typing.map { " type " + $0 } ?? "")" }.joined(separator: " → "), privacy: .public)")
         // Its first click must be findable (on screen or in the app's menus).
-        if StepMatcher.find(first.target, in: elements) == nil, !first.isShortcut {
-            let pid = frontmostPID
-            let inMenus = await Task.detached(priority: .userInitiated) {
-                AXInspector.menuPath(to: first.target, frontmostPID: pid) != nil
-            }.value
-            guard inMenus else {
-                onSetupFinished?()
-                Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
-                return false
-            }
+        // In another app (a guide step for Finder), it's checked once that app is in front.
+        let elsewhere = first.app.map { $0.caseInsensitiveCompare(context.appName ?? "") != .orderedSame } ?? false
+        if !elsewhere, !(await Self.canFind(first, in: elements, pid: frontmostPID)) {
+            onSetupFinished?()
+            Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
+            return false
         }
         if !offered, await dockReadyWalkthrough(PendingWalkthrough(plan: plan, app: nil, question: question, display: display),
                                                 owns: ownsPlanningUI) {
@@ -711,14 +722,20 @@ extension AskCoordinator {
         request.planTutorial = true
         request.browser = AppLocator.defaultBrowserName()
         let pid = frontmostPID
-        let menus = await Task.detached(priority: .userInitiated) { AXInspector.menuOutline(frontmostPID: pid) }.value
+        let menus = await Task.detached(priority: .userInitiated) { MenuMemory.outline(pid: pid) }.value
         request.menuOutline = MenuOutline.relevant(menus, to: question, limit: 25)
+        request.guide = MacGuide.facts(for: question, app: context.appName)
         // The request names exactly one menu item ("clear history" → History ▸ Clear
         // History…): start at once from the app's own menus; whatever follows (a dialog's
         // button) is planned by the model after the item is chosen.
         if let instant = InstantAnswer.menuPlan(for: question, app: context.appName, outline: menus) {
             Log.ask.notice("Tutorial plan: instant, from the menus (\(instant.steps.count, privacy: .public) steps)")
             return instant
+        }
+        // A task ClickBait's Mac guide knows (the menu bar, Finder, the browsers): no model either.
+        if let guided = MacGuide.plan(for: question, app: context.appName, outline: menus) {
+            Log.ask.notice("Tutorial plan: instant, from the Mac guide (\(guided.steps.count, privacy: .public) steps)")
+            return guided
         }
         // A how-to about content ("how do I make this code faster?") is a question: a quick
         // sort (~1 s) spots it. It runs alongside the plan instead of before it, so a real

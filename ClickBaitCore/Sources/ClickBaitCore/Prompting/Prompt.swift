@@ -343,6 +343,10 @@ public enum Prompt {
                 lines.append("The app's menu bar (menu ▸ item):")
                 lines.append(contentsOf: request.menuOutline)
             }
+            if !request.guide.isEmpty {
+                lines.append("How this is done on a Mac (facts; use these names):")
+                lines.append(contentsOf: request.guide)
+            }
             if !request.elements.isEmpty {
                 lines.append("On-screen elements (id: kind \"name\" at x, y):")
                 lines.append(contentsOf: request.elements.map { $0.line(for: request) })

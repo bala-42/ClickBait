@@ -345,6 +345,18 @@ final class TutorialController {
             }
         }
 
+        // Nothing Accessibility shows: the menu bar's right side (Control Center, the clock), the
+        // Apple menu, then the words on screen (the menus of an app that won't share them).
+        if let frame = await fallbackFrame(for: step.target) {
+            if loggedTarget != index {
+                loggedTarget = index
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at it by the menu bar or the screen's text")
+            }
+            point(at: frame, label: instruction, menu: false)
+            await checkForCompletion()
+            return
+        }
+
         // Nowhere to point. Give it a moment (menus redraw, windows animate) before
         // the companion leaves the last spot to show the instruction instead.
         if targetMissingSince == nil { targetMissingSince = Date() }
@@ -631,6 +643,29 @@ final class TutorialController {
     // MARK: - Screen and model
 
     /// A tiny grey copy of the screen compared with the last one: did anything change?
+    /// When the screen was last read for this step, and what it found.
+    private var screenTextTried: (index: Int, at: Date, frame: Rect?)?
+
+    private func fallbackFrame(for target: String) async -> Rect? {
+        let extras = await Task.detached(priority: .userInitiated) { AXInspector.menuExtras() }.value
+        if TutorialPlan.withoutEllipsis(target).caseInsensitiveCompare("Clock") == .orderedSame, let clock = extras.last {
+            return clock.frame  // the date and time: the right-most status item
+        }
+        if let item = StepMatcher.find(target, in: extras, minimum: 0.85) { return item.frame }
+        let display = Self.displayUnderMouse()
+        if target.caseInsensitiveCompare("Apple") == .orderedSame {
+            return Rect(x: display.minX + 6, y: display.minY + 3, width: 32, height: 28)  // the  at the far left
+        }
+        // Reading the screen takes a moment: at most every 1.5 s per step, the answer kept between.
+        if let tried = screenTextTried, tried.index == index, Date().timeIntervalSince(tried.at) < 1.5 { return tried.frame }
+        var frame: Rect?
+        if let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait) {
+            frame = await ScreenText.find(target, in: display, of: capture)
+        }
+        screenTextTried = (index, Date(), frame)
+        return frame
+    }
+
     private func sampleScreen() async {
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, width: 128,
                                                                            ignoreClickBait: ignoreClickBait) else { return }

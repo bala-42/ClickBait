@@ -497,6 +497,20 @@ enum AXInspector {
         return lines
     }
 
+    /// The menu bar's right side: Control Center, Wi‑Fi, Battery, the clock and the other
+    /// system status items (Control Center's and SystemUIServer's), left to right.
+    static func menuExtras() -> [ScreenElement] {
+        guard isTrusted else { return [] }
+        let owners = ["com.apple.controlcenter", "com.apple.systemuiserver"]
+        let items = owners.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }.flatMap { app in
+            element(AXUIElementCreateApplication(app.processIdentifier)).element(kAXExtrasMenuBarAttribute)?
+                .children(kAXChildrenAttribute).compactMap { item in
+                    item.frame.map { ScreenElement(role: "AXMenuBarItem", label: item.name, frame: $0) }
+                } ?? []
+        }
+        return items.sorted { $0.frame.x < $1.frame.x }
+    }
+
     // MARK: - Finder items
 
     /// The files under `points` (Quartz) in Finder: list, column and icon view and the
