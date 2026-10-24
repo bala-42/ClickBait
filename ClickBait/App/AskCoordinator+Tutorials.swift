@@ -800,11 +800,20 @@ extension AskCoordinator {
             return nil
         }
         let deadline = ContinuousClock.now + .seconds(8)
+        var frontSince: ContinuousClock.Instant?
         while ContinuousClock.now < deadline {
             if Task.isCancelled { return nil }
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
+                // In front a second already: go on even if Accessibility can't describe it yet.
+                let since = frontSince ?? .now
+                frontSince = since
+                if ContinuousClock.now - since > .seconds(1) { break }
+                // Ready once it shows a window or its menus. Not menus alone: an app whose menu bar
+                // Accessibility can't read (Safari after days running) made this wait the full 8 s.
                 let pid = app.processIdentifier
-                let ready = await Task.detached(priority: .userInitiated) { !AXInspector.menuOutline(frontmostPID: pid, limit: 5).isEmpty }.value
+                let ready = await Task.detached(priority: .userInitiated) {
+                    AXInspector.focusedWindowFrameOnScreen(pid: pid) != nil || !AXInspector.menuOutline(frontmostPID: pid, limit: 5).isEmpty
+                }.value
                 if ready { break }
             } else {
                 app.activate()

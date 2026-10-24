@@ -232,6 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runDockBenchmarkIfRequested()
         runCardVoiceTestIfRequested()
         runGoThereTestIfRequested()
+        runMenuTestIfRequested()
         #if DEBUG
         runGuidanceTestIfRequested()
         #endif
@@ -846,6 +847,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     #endif
+
+    /// `CLICKBAIT_TEST_MENUS=1`: logs what Accessibility returns for each running app's menu
+    /// bar (raw error codes), to tell a ClickBait bug from macOS not exposing menus.
+    private func runMenuTestIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_TEST_MENUS"] != nil else { return }
+        Task.detached {
+            try? await Task.sleep(for: .seconds(2))
+            for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+                let element = AXUIElementCreateApplication(app.processIdentifier)
+                var bar: CFTypeRef?
+                let barError = AXUIElementCopyAttributeValue(element, kAXMenuBarAttribute as CFString, &bar)
+                var names: [String] = []
+                if barError == .success, let bar {
+                    var children: CFTypeRef?
+                    AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString, &children)
+                    for child in (children as? [AXUIElement] ?? []).prefix(8) {
+                        var title: CFTypeRef?
+                        AXUIElementCopyAttributeValue(child, kAXTitleAttribute as CFString, &title)
+                        names.append(title as? String ?? "?")
+                    }
+                }
+                let outline = AXInspector.menuOutline(frontmostPID: app.processIdentifier).count
+                Log.app.notice("Menu test: \(app.localizedName ?? "?", privacy: .public) bar \(barError.rawValue, privacy: .public) items \(names.joined(separator: ","), privacy: .public) outline \(outline, privacy: .public) trusted \(AXIsProcessTrusted(), privacy: .public)")
+            }
+        }
+    }
 
     /// `CLICKBAIT_TEST_GOTHERE=<Chrome pid>`: a done job whose home is a tab that isn't
     /// showing, in Chrome's back-most window with more than one tab; "go there!" on it; then
