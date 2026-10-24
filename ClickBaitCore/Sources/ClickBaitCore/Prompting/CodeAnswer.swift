@@ -77,4 +77,74 @@ public enum CodeAnswer {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
+
+    /// A code answer as it streams (user's ask, 2026-10-24: a 13 s answer showed nothing until
+    /// it was done): the words before the code go out at once as the answer JSON's "speech",
+    /// tidied as they come; the code, its language and any words after it close the JSON at
+    /// the end ("after"). Concatenated, the pieces are one valid answer.
+    public struct Stream: Sendable {
+        private var markdown = ""
+        private var sent = 0  // characters of the opening words already sent
+        private var opened = false
+        private var wordsClosed = false
+
+        public init() {}
+
+        /// The next piece of the answer JSON for `chunk` (often "").
+        public mutating func feed(_ chunk: String) -> String {
+            markdown += chunk
+            var out = ""
+            if !opened { out = "{\"speech\": \""; opened = true }
+            guard !wordsClosed else { return out }
+            let text = Array(markdown)
+            if let fence = markdown.range(of: "```") {
+                let end = markdown.distance(from: markdown.startIndex, to: fence.lowerBound)
+                out += Self.escaped(Self.tidy(String(text[min(sent, end)..<end]))) + "\""
+                sent = end
+                wordsClosed = true
+            } else {
+                let safe = max(sent, text.count - 2)  // a "`" or "``" may start a fence
+                out += Self.escaped(Self.tidy(String(text[sent..<safe])))
+                sent = safe
+            }
+            return out
+        }
+
+        /// The rest: closes the words if no code came, then the code, language and after-words.
+        public mutating func finish() -> String {
+            var out = opened ? "" : "{\"speech\": \""
+            let whole = json(fromMarkdown: markdown)
+            let object = (try? JSONSerialization.jsonObject(with: Data(whole.utf8))) as? [String: Any] ?? [:]
+            if !wordsClosed {
+                let text = Array(markdown)
+                out += Self.escaped(Self.tidy(String(text[min(sent, text.count)...]))) + "\""
+                if sent == 0, markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    out += ", \"after\": " + Self.quoted(object["speech"] as? String ?? "")
+                }
+            } else if let close = markdown.range(of: "```", range: markdown.range(of: "```")!.upperBound..<markdown.endIndex) {
+                let after = Self.tidy(String(markdown[close.upperBound...]))
+                if !after.trimmingCharacters(in: .whitespaces).isEmpty { out += ", \"after\": " + Self.quoted(after) }
+            }
+            if let code = object["code"] as? String { out += ", \"code\": " + Self.quoted(code) }
+            if let language = object["language"] as? String { out += ", \"language\": " + Self.quoted(language) }
+            return out + ", \"pointers\": []}"
+        }
+
+        /// Spoken words: no Markdown marks or line breaks.
+        static func tidy(_ words: String) -> String {
+            words.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "`", with: "")
+                .replacingOccurrences(of: "\n", with: " ")
+        }
+
+        static func escaped(_ text: String) -> String {
+            let quoted = Self.quoted(text)
+            return String(quoted.dropFirst().dropLast())
+        }
+
+        static func quoted(_ text: String) -> String {
+            guard let data = try? JSONSerialization.data(withJSONObject: [text], options: [.fragmentsAllowed]),
+                  let array = String(data: data, encoding: .utf8) else { return "\"\"" }
+            return String(array.dropFirst().dropLast())  // ["…"] → "…"
+        }
+    }
 }

@@ -35,3 +35,37 @@ struct CodeAnswerTests {
         #expect(Prompt.system(for: ask) == CodeAnswer.system)
     }
 }
+
+struct CodeAnswerStreamTests {
+    private func stream(_ chunks: [String]) -> (pieces: [String], whole: String) {
+        var stream = CodeAnswer.Stream()
+        var pieces = chunks.map { stream.feed($0) }
+        pieces.append(stream.finish())
+        return (pieces, pieces.joined())
+    }
+
+    @Test func wordsComeFirstAndTheWholeIsOneAnswer() {
+        let (pieces, whole) = stream(["Here's **a short** one", ":\n```py", "thon\nprint(1)\n", "```\nRun it."])
+        #expect(pieces[0].contains("Here's a short"))  // shown before the code arrives
+        let parsed = ResponseParser.parse(whole, imageWidth: 100, imageHeight: 100)
+        #expect(!parsed.usedFallback)
+        #expect(parsed.response.code == "print(1)")
+        #expect(parsed.response.language == "python")
+        #expect(parsed.response.speech.contains("Here's a short one"))
+        #expect(parsed.response.speech.contains("Run it."))
+    }
+
+    @Test func noCodeIsStillAnAnswer() {
+        let parsed = ResponseParser.parse(stream(["It's ", "\"fine\" as is."]).whole, imageWidth: 1, imageHeight: 1)
+        #expect(!parsed.usedFallback)
+        #expect(parsed.response.speech == "It's \"fine\" as is.")
+        #expect(parsed.response.code == nil)
+    }
+
+    @Test func aFenceSplitAcrossChunksIsCaught() {
+        let (_, whole) = stream(["Fixed:\n`", "``swift\nlet a = 1\n```"])
+        let parsed = ResponseParser.parse(whole, imageWidth: 1, imageHeight: 1)
+        #expect(parsed.response.code == "let a = 1")
+        #expect(!parsed.response.speech.contains("`"))
+    }
+}

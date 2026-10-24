@@ -91,13 +91,16 @@ public struct OllamaProvider: LLMProvider {
                         unreachableMessage: Self.unreachable,
                         errorMessage: { [model] status, body in Self.error(status: status, body: body, model: model) }
                     )
-                    var markdown = ""  // a code answer: kept whole, handed on as JSON at the end
+                    // A code answer comes as Markdown, handed on as answer JSON as it streams:
+                    // its words at once, its code when complete (`CodeAnswer.Stream`).
+                    var codeStream = CodeAnswer.Stream()
                     for try await line in lines {
                         guard let chunk = try OllamaStreamDecoder.decode(line: line) else { continue }
-                        if request.codeAnswer { markdown += chunk.text } else if !chunk.text.isEmpty { continuation.yield(chunk.text) }
+                        let piece = request.codeAnswer ? codeStream.feed(chunk.text) : chunk.text
+                        if !piece.isEmpty { continuation.yield(piece) }
                         if chunk.done { break }
                     }
-                    if request.codeAnswer { continuation.yield(CodeAnswer.json(fromMarkdown: markdown)) }
+                    if request.codeAnswer { continuation.yield(codeStream.finish()) }
                     continuation.finish()
                     if request.interpretOrder { await checkBothFit() }
                 } catch {

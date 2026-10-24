@@ -333,8 +333,9 @@ enum SettingsLook {
     static let card = Color.white.opacity(0.055)
     static let selected = Color.white.opacity(0.1)
     static let hairline = Color.white.opacity(0.08)
-    static let secondary = Color.white.opacity(0.55)
-    static let tertiary = Color.white.opacity(0.35)
+    static let secondary = Color.white.opacity(0.62)
+    /// Descriptions and group names: 0.5 white reads at about 4.6:1 on the page (0.35 didn't).
+    static let tertiary = Color.white.opacity(0.5)
     static let accent = AquaDark.link
 }
 

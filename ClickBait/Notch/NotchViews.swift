@@ -739,6 +739,10 @@ private struct FocusCard: View {
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
                     .onTapGesture { music.openPlayer() }
+                    .accessibilityElement()
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Open \(music.sourceName ?? "the player")")
+                    .accessibilityAction { music.openPlayer() }
                     .help("Open \(music.sourceName ?? "the player")")
                     .position(Self.coverCentre)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -947,6 +951,10 @@ private struct MusicPanel: View {
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
                     .onTapGesture { music.openPlayer() }
+                    .accessibilityElement()
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Open \(music.sourceName ?? "the player")")
+                    .accessibilityAction { music.openPlayer() }
                 VStack(alignment: .leading, spacing: 3) {
                     MarqueeText(text: music.hasTrack ? music.title : "Nothing playing", font: .system(size: 14, weight: .semibold))
                     Text(music.hasTrack ? music.artist : "Pick a player on the right")

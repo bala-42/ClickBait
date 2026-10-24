@@ -33,8 +33,12 @@ public enum ResponseParser {
             return Result(response: AssistantResponse(speech: salvageSpeech(from: raw)), usedFallback: true, droppedPointers: 0)
         }
 
-        let written = (object["speech"] as? String ?? object["answer"] as? String ?? object["text"] as? String)?
+        var written = (object["speech"] as? String ?? object["answer"] as? String ?? object["text"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // A streamed code answer's words after its code (`CodeAnswer.Stream`).
+        if let after = (object["after"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !after.isEmpty {
+            written = written.isEmpty ? after : written + " " + after
+        }
         // Positions never belong in the text (they'd show in the chat or be read aloud).
         let (speech, partsInText) = CoordinateScrubber.scrub(written)
 

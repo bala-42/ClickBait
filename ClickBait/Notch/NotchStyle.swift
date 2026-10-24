@@ -10,7 +10,8 @@ import SwiftUI
 enum NotchPalette {
     static let text = Color(hex: 0xF5F6F8)
     static let secondary = Color(hex: 0x8E939C)
-    static let tertiary = Color(hex: 0x6B7079)
+    /// Lifted from #6B7079 (about 3.8:1 on the cards) to read at small sizes: about 5:1.
+    static let tertiary = Color(hex: 0x878C95)
     static let hover = Color(hex: 0xB0B5BE)
     static let control = Color(hex: 0xC5C8CD)
     static let card = Color(hex: 0x141518)
