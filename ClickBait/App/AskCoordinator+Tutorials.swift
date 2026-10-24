@@ -83,7 +83,7 @@ extension AskCoordinator {
         speaker.stop()
         currentFlow = nil
         if state == .thinking { state = .idle }
-        Log.ask.notice("Walkthrough hold: planning sent to the dock (the user moved on)")
+        Log.ask.notice("Walkthrough hold: sent to the dock")
     }
 
     /// The plan is ready (or it needs its app first) in the dock: the card says what it'll do
@@ -269,9 +269,20 @@ extension AskCoordinator {
         // Said yes already ("show me in Safari!"): never asked a second time.
         var offered = false
         if let named = taskApp, named.lowercased() != context.appName?.lowercased() {
-            // It happens in another app: asked in front, by the cursor, before switching apps
-            // (no plan yet: it's made in that app), so a no gets a written answer instead. (It
-            // used to go to the dock after 0.8 s; the user's rule, 2026-10-23: stay in front.)
+            // It happens in another app: nothing to plan here, so it goes straight to the dock
+            // as a lavender card whose "show me!" opens that app and walks through it there —
+            // waiting for the user, never declining by itself (user's ask, 2026-10-24).
+            if ownsPlanningUI, PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: backgroundJobs?.hasRoom ?? false) {
+                showTutorialPlanning()
+                peelWalkthrough(question: question)
+                if let jobID = walkthroughJobID {
+                    walkthroughJobID = nil
+                    finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: nil, app: named, question: question, display: display))
+                }
+                return true
+            }
+            // A full dock: asked in front before switching apps (no plan yet: it's made in that
+            // app), so a no gets a written answer instead.
             guard await offerWalkthrough(opening: named) else {
                 answerInWordsOnly = true
                 return false
