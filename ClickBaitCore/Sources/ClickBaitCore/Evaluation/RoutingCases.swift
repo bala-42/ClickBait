@@ -20,9 +20,10 @@ public enum RoutingCases {
         .init(question: "where do I click to log in", expected: .point),
         .init(question: "where's the settings icon", expected: .point),
         .init(question: "find the reply button", expected: .point),
-        // "Show me …" is pointing, even "show me how to …" (user's rule, 2026-10-04).
-        .init(question: "show me how to turn on night shift", expected: .point),
-        .init(question: "show me how to open an incognito window in chrome", expected: .point),
+        // "Show me how to …" is a walkthrough; "show me the …" points (user's decision, 2026-10-24).
+        .init(question: "show me how to turn on night shift", expected: .tutorial),
+        .init(question: "show me how to open an incognito window in chrome", expected: .tutorial),
+        .init(question: "show me the share button", expected: .point),
         // How to do something: a walkthrough.
         .init(question: "how do I clear my history in safari", expected: .tutorial),
         .init(question: "how do I change my wallpaper", expected: .tutorial),

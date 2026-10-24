@@ -320,14 +320,15 @@ public enum TutorialQuestion {
     static let phrases = ["how do i", "how can i", "how to", "how would i", "walk me through", "teach me",
                           "guide me", "tutorial", "steps to", "what are the steps"]
 
-    /// "Show me …" — the thing, or even how to do something — asks to be shown where to
-    /// click: blue pointing, never a lavender walkthrough (user's rule, 2026-10-04).
+    /// "Show me the X", "show me where X is": asks to be shown where to click, blue pointing
+    /// (user's rule, 2026-10-04). "Show me how to X" is a task, a lavender walkthrough (user's
+    /// decision, 2026-10-24: one point can't show a task of several clicks).
     public static func asksToBeShown(_ text: String) -> Bool {
         var words = ImpliedPointer.normalized(text).split(separator: " ").map(String.init)
         while let first = words.first, ["please", "can", "could", "you", "would", "will", "hey", "clickbait", "just"].contains(first) {
             words.removeFirst()
         }
-        return words.starts(with: ["show", "me"])
+        return words.starts(with: ["show", "me"]) && words.dropFirst(2).first != "how"
     }
 
     /// Asking outright to be walked through it: always a walkthrough, never sorted away.
@@ -367,6 +368,7 @@ public enum TutorialQuestion {
             words.removeFirst()
         }
         let joined = words.joined(separator: " ")
+        if joined.hasPrefix("show me how ") { return false }  // a task: `asksForTutorial`
         let starts = ["where", "wheres", "show me", "point", "find", "highlight", "locate", "which one is", "which is"]
         return starts.contains { joined == $0 || joined.hasPrefix($0 + " ") }
     }

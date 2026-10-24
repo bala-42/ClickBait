@@ -18,7 +18,7 @@ struct TutorialTests {
     }
 
     @Test(arguments: [
-        ("How do I export this as a PDF?", true), ("walk me through sharing this", true), ("Show me how to add a column", false),
+        ("How do I export this as a PDF?", true), ("walk me through sharing this", true), ("Show me how to add a column", true),
         ("Where is the share button?", false), ("What is a PDF?", false), ("Export this as a PDF", false),
     ])
     func spotsTutorialQuestions(_ question: String, _ expected: Bool) {
@@ -276,7 +276,7 @@ struct FindVersusDoTests {
         ("Where is the refresh button?", true, false), ("Show me the refresh button.", true, false),
         ("Point at the share button", true, false), ("Find the bookmarks bar", true, false),
         // Doing a task → lavender tutorial.
-        ("Refresh the page.", false, false), ("How do I refresh?", false, true), ("Show me how to refresh this", true, false),
+        ("Refresh the page.", false, false), ("How do I refresh?", false, true), ("Show me how to refresh this", false, true),
     ])
     func findingVersusDoing(_ text: String, _ locating: Bool, _ tutorial: Bool) {
         #expect(TutorialQuestion.isLocatingRequest(text) == locating)
@@ -458,7 +458,7 @@ struct InstantPluralTests {
 
 struct SortingTests {
     @Test func explicitWalkthroughs() {
-        #expect(!TutorialQuestion.insistsOnWalkthrough("show me how to export a PDF"))  // "show me" points
+        #expect(!TutorialQuestion.insistsOnWalkthrough("show me how to export a PDF"))  // a how-to, still sorted
         #expect(TutorialQuestion.insistsOnWalkthrough("walk me through changing my wallpaper"))
         #expect(!TutorialQuestion.insistsOnWalkthrough("how do I make this code faster"))
     }
@@ -498,12 +498,19 @@ struct BackToAppTests {
 }
 
 struct ShowMePointsTests {
-    @Test(arguments: ["show me the new chat button", "show me how to start a new chat", "can you show me how to export a PDF",
-                      "show me where the settings are"])
+    @Test(arguments: ["show me the new chat button", "show me where the settings are", "can you show me the share button"])
     func showMeIsPointing(_ text: String) {
         #expect(TutorialQuestion.asksToBeShown(text))
         #expect(!TutorialQuestion.asksForTutorial(text))
         #expect(TutorialQuestion.isLocatingRequest(text))
+    }
+
+    /// "Show me how to …" is a walkthrough (user's decision, 2026-10-24).
+    @Test(arguments: ["show me how to start a new chat", "can you show me how to export a PDF", "show me how to turn on night shift"])
+    func showMeHowIsAWalkthrough(_ text: String) {
+        #expect(!TutorialQuestion.asksToBeShown(text))
+        #expect(TutorialQuestion.asksForTutorial(text))
+        #expect(!TutorialQuestion.isLocatingRequest(text))
     }
 
     @Test func howDoIStaysAWalkthrough() {

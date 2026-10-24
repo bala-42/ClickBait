@@ -31,5 +31,5 @@ struct RoutingCasesTests {
     /// Today's accuracy (2026-10-24: 48 of 50; misses "which button closes this window", read
     /// as an answer, and "how do I make this code faster", a how-to the model's sort catches).
     /// Raise it as the rules improve.
-    static let baseline = 0.96
+    static let baseline = 0.96  // 49 of 51 after "show me how to" became a walkthrough
 }
