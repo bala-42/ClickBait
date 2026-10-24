@@ -219,9 +219,10 @@ final class TutorialController {
         // the step just clicked opens that app ("System Settings…"): give it time to come.
         let opening = index > 0 && plan.steps[index].app.map { plan.steps[index - 1].opensApp($0) } == true
             && Date().timeIntervalSince(lastProgress) < 4
-        // ClickBait's own windows (checklist, chat) in front don't count as leaving the app.
-        let ownFront = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier
-        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), !ownFront, isInstalledApp(wanted), !opening,
+        // ClickBait's own window in front (its chat, its checklist): wait. Looking there for the
+        // step's button found nothing, so the companion never went out to point.
+        if front?.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
+        if let wanted = plan.steps[index].app, !Self.isApp(wanted, front), isInstalledApp(wanted), !opening,
            switchedFor.insert(index).inserted, let openApp {
             await switchApp(to: wanted, using: openApp)
             return
@@ -537,12 +538,11 @@ final class TutorialController {
         if speakSteps { speak?(plan.steps[index].instruction) }
     }
 
-    /// Green between lavender steps: open the step's app, then plan this app's part from
+    /// Still lavender (a walkthrough is never green): open the step's app, then plan this app's part from
     /// what's really there (the steps were guesses made in another app).
     private func switchApp(to app: String, using openApp: (String) async -> Bool) async {
         let segmentEnd = plan.steps[index...].firstIndex { $0.app?.lowercased() != app.lowercased() } ?? plan.steps.count
         Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is in another app; switching")
-        overlay.setTutoring(false)
         currentFrame = nil
         let opened = await openApp(app)
         guard isActive else { return }

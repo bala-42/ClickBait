@@ -288,8 +288,8 @@ extension AskCoordinator {
                 return false
             }
             offered = true
+            showTutorialPlanning()  // lavender while the app opens too: a walkthrough is never green
             guard let ready = await openForTutorial(named, url: apps[named]) else { return false }
-            showTutorialPlanning()
             (capture, screenshot, elements) = ready
         }
 
@@ -319,7 +319,7 @@ extension AskCoordinator {
             plan = await planTutorial(question, capture: capture, screenshot: screenshot, elements: elements, provider: provider,
                                       holdable: ownsPlanningUI && walkthroughJobID == nil)?
                 .separatingSetup(frontmostApp: context.appName, isInstalledApp: { installedName($0) != nil })
-            // The plan says it happens in another app: ask, then open it (green) and plan again there —
+            // The plan says it happens in another app: ask, then open it and plan again there —
             // not while held in the dock (no app opens during a hold; "show me!" opens it later).
             guard walkthroughJobID == nil, let other = plan?.app.flatMap(installedName), let url = apps[other] else { break }
             if !offered {
@@ -329,8 +329,8 @@ extension AskCoordinator {
                     return false
                 }
             }
+            showTutorialPlanning()  // lavender while the app opens too: a walkthrough is never green
             guard let ready = await openForTutorial(other, url: url) else { return false }
-            showTutorialPlanning()
             (capture, screenshot, elements) = ready
         }
         if let jobID = walkthroughJobID {
