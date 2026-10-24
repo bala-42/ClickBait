@@ -34,6 +34,7 @@ extension AskCoordinator {
 
     /// Declined: the plan's steps in the chat instead of the pointer.
     func writeSteps(_ plan: TutorialPlan, question: String, display: String) {
+        currentFlow?.walkthrough = true
         let text = (plan.intro.isEmpty ? "" : plan.intro + "\n\n") + plan.checklist(done: 0)
         if conversation == nil || !chatShown {
             conversation = Conversation()
@@ -70,6 +71,7 @@ extension AskCoordinator {
     /// the cursor (the hold ends for the foreground); the plan carries on in the background and
     /// nothing is pointed at or opened until "show me!".
     func peelWalkthrough(question: String) {
+        currentFlow?.walkthrough = true
         guard let backgroundJobs else { return }
         let job = BackgroundJob(question: question, kind: .walkthrough, homeBundleID: frontmostBundleID, homePID: frontmostPID,
                                 conversation: conversation ?? Conversation())
@@ -685,6 +687,7 @@ extension AskCoordinator {
     func beginTutorial(_ plan: TutorialPlan, question: String, startedIn: NSRunningApplication?, speak: Bool,
                                display: String, installedName: @escaping (String) -> String?, apps: [String: URL],
                                provider: any LLMProvider, tutorial: TutorialController, continues: Bool = true) async -> Bool {
+        currentFlow?.walkthrough = true
         if let startedIn, startedIn.processIdentifier != frontmostPID { tutorialReturnApp = startedIn }
         onSetupFinished?()
 

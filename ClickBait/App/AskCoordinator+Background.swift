@@ -363,7 +363,7 @@ extension AskCoordinator {
     func shadowRoute(_ flow: QuestionFlow) {
         guard Self.routerShadowOn, let question = flow.heard, !question.isEmpty, let provider = flow.provider else { return }
         let actual: IntentRouter.Intent
-        if tutorial?.isActive == true { actual = .tutorial }
+        if flow.walkthrough || tutorial?.isActive == true { actual = .tutorial }
         else if flow.kind == .command { actual = .order }
         else if flow.kind == .instantPick || flow.pointed { actual = .point }
         else { actual = .answer }

@@ -54,6 +54,9 @@ final class QuestionFlow {
     var stage: JobStage?
     /// The model's answer pointed at something (for `IntentRouter`'s shadow comparison).
     var pointed = false
+    /// It became a walkthrough, in front, in the dock or written out (for the same comparison:
+    /// a docked walkthrough isn't running when it's made, and was counted as an order).
+    var walkthrough = false
     /// Captured at the press, so a newer question can't change what this one asks with.
     var provider: (any LLMProvider)?
     var context = ScreenContext()

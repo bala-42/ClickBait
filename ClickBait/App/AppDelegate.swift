@@ -238,6 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runChatBenchmarkIfRequested()
         runDockBenchmarkIfRequested()
         runCardVoiceTestIfRequested()
+        runNotchVoiceTestIfRequested()
+        runRouteBenchIfRequested()
         runGoThereTestIfRequested()
         runMenuTestIfRequested()
         MenuMemory.learnOpenApps()
@@ -967,6 +969,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             capsules.followUp(done.id, .tap(.voice))
             capsules.followUp(done.id, .tap(.voice))  // pressed while the mic starts: gives up
             Log.app.notice("Test: rapid voice ×2: \(self.capsules.followUpState(done.id), privacy: .public), recording \(self.coordinator.isCardRecording, privacy: .public)")
+        }
+    }
+
+    /// `CLICKBAIT_TEST_NOTCH_VOICE=1`: the notch Ask card's voice wiring end to end, as the
+    /// card calls it (its start once read success as "isn't ready" and left the microphone on,
+    /// 2026-10-24). Records ~1 s of the room each step; nothing is asked. Logs PASS or FAIL.
+    private func runNotchVoiceTestIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_TEST_NOTCH_VOICE"] != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))  // the speech model loads
+            var failures: [String] = []
+            func check(_ ok: Bool, _ what: String) {
+                if !ok { failures.append(what) }
+                Log.app.notice("Notch voice test: \(ok ? "ok" : "FAILED", privacy: .public) \(what, privacy: .public)")
+            }
+            // 1. Start: success is nil, and the microphone is on.
+            let reason = notch.model.voiceStart()
+            check(reason == nil && coordinator.isCardRecording, "start → recording (got \(reason ?? "nil"))")
+            try? await Task.sleep(for: .seconds(1))
+            // 2. Stop: a result, and the microphone is off.
+            let result = await notch.model.voiceFinish()
+            if case .failure(let error) = result { check(false, "stop → \(error.message)") } else { check(true, "stop → heard") }
+            check(!coordinator.isCardRecording, "stop → microphone off")
+            // 3. Dictation takes the microphone from a recording.
+            _ = notch.model.voiceStart()
+            let dictation = coordinator.startDictation()
+            check(dictation == nil && !coordinator.isCardRecording, "dictation takes over (got \(dictation ?? "nil"))")
+            _ = await coordinator.finishDictation(prompt: "")
+            coordinator.endDictation()
+            // 4. Esc stops a recording.
+            _ = notch.model.voiceStart()
+            _ = overlay.onEscape?()
+            check(!coordinator.isCardRecording, "Esc stops the recording")
+            Log.app.notice("Notch voice test: \(failures.isEmpty ? "PASS" : "FAIL: " + failures.joined(separator: "; "), privacy: .public)")
+        }
+    }
+
+    /// `CLICKBAIT_ROUTE_BENCH=1`: the local model sorts every labelled question (`RoutingCases`)
+    /// as the shadow router does, with no screen; logs each miss and the accuracy. Asks the model
+    /// ~50 short questions (a minute or two).
+    private func runRouteBenchIfRequested() {
+        guard ProcessInfo.processInfo.environment["CLICKBAIT_ROUTE_BENCH"] != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            let provider = settings.makeProvider()
+            let apps = Array(AppLocator.installed().keys)
+            var right = 0
+            let start = ContinuousClock.now
+            for item in RoutingCases.all {
+                var ask = AskRequest(question: item.question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                                     context: ScreenContext(appName: "Safari"))
+                ask.routeIntent = true
+                let reply = await AskCoordinator.reply(from: provider, to: ask, within: ProviderOperation.classifyRequest.timeout)
+                let got = reply.flatMap { IntentRouter.parse($0, apps: apps) }?.intent
+                if got == item.expected { right += 1 } else {
+                    Log.app.notice("Route bench: miss \"\(item.question, privacy: .public)\": \(item.expected.rawValue, privacy: .public) → \(got?.rawValue ?? "no reply", privacy: .public)")
+                }
+            }
+            Log.app.notice("Route bench: \(right, privacy: .public)/\(RoutingCases.all.count, privacy: .public) right in \(String(describing: ContinuousClock.now - start), privacy: .public)")
         }
     }
 
