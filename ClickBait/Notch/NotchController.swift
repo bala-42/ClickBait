@@ -398,6 +398,8 @@ final class NotchController {
                 guard let self else { return }
                 if tab == .settings, model.tab != .settings { model.settingsReturnTab = model.tab }
                 model.editing = false  // the field it was typing in is gone
+                // Leaving Ask with a chat open ends that chat (it isn't kept out of sight).
+                if model.chatting, tab != .ask { model.chatting = false; model.onChatEnd() }
                 model.tab = tab
                 self.place()
             },

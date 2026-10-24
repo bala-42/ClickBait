@@ -630,7 +630,10 @@ private struct OpenNotch: View {
                     model.settingsPage = .general
                     onTabChange(.settings)
                 }
-                NotchHeaderIcon(symbol: "xmark", label: "Close", action: onCollapse)
+                // In a tab (Ask, Shelf, Music, a chat): back to the main panel; at Home: fold.
+                NotchHeaderIcon(symbol: "xmark", label: model.tab == .home ? "Close" : "Back to Home") {
+                    if model.tab == .home { onCollapse() } else { onTabChange(.home) }
+                }
             }
             .padding(.trailing, 16)
         }
