@@ -205,6 +205,7 @@ private final class CameraPreviewHost: NSView {
 /// ~/Pictures/ClickBait) and the way back. Unsaved shots are deleted when it closes.
 struct PhotoBooth: View {
     @StateObject private var camera = CameraMirrorModel()
+    let tabBeans: Namespace.ID
     let onClose: () -> Void
     @State private var count: Int?
     @State private var flash = false
@@ -212,9 +213,14 @@ struct PhotoBooth: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
+            HStack(spacing: 6) {
+                // The Mirror square's holo bean, flown up from Home.
+                if let pill = IslandPills.pill(for: .mirror, music: nil) {
+                    TabBean(pill: pill, size: 18)
+                        .matchedGeometryEffect(id: NotchController.Model.Tab.mirror, in: tabBeans)
+                        .accessibilityHidden(true)
+                }
                 Text("Mirror").font(.system(size: 12, weight: .semibold))
-                    .padding(.leading, 20)  // after the bean (`BeanPlace`)
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))

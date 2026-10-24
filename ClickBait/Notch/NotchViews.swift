@@ -103,6 +103,9 @@ struct NotchView: View {
     let onCollapse: () -> Void
 
     @Namespace private var art
+    /// The four squares' beans and their tabs' header badges: the one clicked flies to the
+    /// top left (user's idea, 2026-10-24), and back into its square on the way home.
+    @Namespace private var tabBeans
 
     /// Settings' way back, named after the tab it came from.
     private static func backLabel(_ tab: NotchController.Model.Tab) -> String {
@@ -150,7 +153,7 @@ struct NotchView: View {
             Group {
                 if open {
                     if model.tab == .mirror {
-                        PhotoBooth { onTabChange(.home) }
+                        PhotoBooth(tabBeans: tabBeans) { onTabChange(.home) }
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
                     } else if model.tab == .settings {
@@ -162,7 +165,7 @@ struct NotchView: View {
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
                     } else {
-                        OpenNotch(model: model, music: music, shelf: shelf, settings: settings,
+                        OpenNotch(model: model, music: music, shelf: shelf, settings: settings, tabBeans: tabBeans,
                                   onTabChange: onTabChange, onMirror: { onTabChange(.mirror) }, onCollapse: onCollapse)
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
@@ -235,8 +238,8 @@ private struct BeanPlace {
         let cardCentre: CGFloat = 99
         switch state {
         case .expanded where greeting: (x, y, size, visible) = (width / 2, 93, 78, true)
-        // The photo booth: small, top left, before its title (user's choice, 2026-10-23).
-        case .expanded where tab == .mirror: (x, y, size, visible) = (25, 21, 18, true)
+        // The tabs show their square's bean in the header instead (user's idea, 2026-10-24).
+        case .expanded where tab == .mirror: (x, y, size, visible) = (25, 21, 18, false)
         // Nothing playing: big, in the middle of the space card (before the cover's corner,
         // which a paused track's artwork would otherwise claim).
         case .expanded where !mirror && tab == .home && space: (x, y, size, visible, floats) = (10 + 322 / 2, cardCentre - 6, 76, true, true)
@@ -244,7 +247,7 @@ private struct BeanPlace {
             let corner = FocusCard.coverCentre.x + 10 + FocusCard.coverSize / 2 - 4
             (x, y, size, visible) = (corner, 42 + FocusCard.coverCentre.y + FocusCard.coverSize / 2 - 6, 24, true)
         case .expanded where !mirror && tab == .home: (x, y, size, visible) = (62, cardCentre, 66, true)
-        case .expanded where !mirror && tab == .ask: (x, y, size, visible) = (52, cardCentre, 44, true)
+        case .expanded where !mirror && tab == .ask: (x, y, size, visible) = (25, 25, 18, false)
         case .peek where !hud: (x, y, size, visible) = (40, height / 2, 20, true)
         default: (x, y, size, visible) = (46, 16, 6, false)
         }
@@ -344,6 +347,7 @@ private struct OpenNotch: View {
     let music: MusicBridge
     let shelf: ShelfStore
     @Bindable var settings: AppSettings
+    let tabBeans: Namespace.ID
     let onTabChange: (NotchController.Model.Tab) -> Void
     let onMirror: () -> Void
     let onCollapse: () -> Void
@@ -392,6 +396,14 @@ private struct OpenNotch: View {
 
     private var header: some View {
         HStack(spacing: 0) {
+            // In a tab: its square's bean, flown up from Home.
+            if let pill = IslandPills.pill(for: model.tab, music: music) {
+                TabBean(pill: pill, size: 18)
+                    .matchedGeometryEffect(id: model.tab, in: tabBeans)
+                    .padding(.leading, 14)
+                    .padding(.trailing, -8)
+                    .accessibilityHidden(true)
+            }
             // A cheer in place of the tabs (Ask and Shelf are pills): clicked, it goes home, or
             // at home says something new. Same type as the companion's pills.
             Button {
@@ -435,14 +447,13 @@ private struct OpenNotch: View {
                 .notchCard(wash: FocusCard.wash(for: model.mood()))
             // Laid out as the Windows logo's four squares, each square keeping its colour (user's
             // choice, 2026-10-23): Ask first, top-left in red; Music bottom-right in yellow.
-            IslandPills(pills: [
-                .init(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed) { onTabChange(.ask) },
-                .init(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen) { onTabChange(.shelf) },
-                .init(name: "Mirror", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, action: onMirror),
-                .init(name: music.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow) {
-                    onTabChange(.music)
-                },
-            ])
+            IslandPills(pills: [NotchController.Model.Tab.ask, .shelf, .mirror, .music].compactMap { tab in
+                IslandPills.pill(for: tab, music: music).map { pill in
+                    var pill = pill
+                    pill.action = tab == .mirror ? onMirror : { onTabChange(tab) }
+                    return pill
+                }
+            }, tabBeans: tabBeans, showing: model.tab)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .notchCard()
         }
@@ -793,7 +804,7 @@ private struct MusicPanel: View {
 }
 
 /// The home's right card: four pills, two by two, each with a small bean.
-private struct IslandPills: View {
+struct IslandPills: View {
     struct Pill: Identifiable {
         let name: String
         let mood: Bean.Mood
@@ -805,14 +816,30 @@ private struct IslandPills: View {
         /// Dark eyes on a light colour (the yellow); white on the others.
         var inkEyes: Bool { tint == NotchPalette.windowsYellow }
         var action: () -> Void = {}
+        /// The tab it opens (its bean flies to that tab's header).
+        var tab: NotchController.Model.Tab = .home
         var id: String { name }
     }
 
     let pills: [Pill]
+    let tabBeans: Namespace.ID
+    /// The tab open now: its square's bean is up in the header, not here.
+    let showing: NotchController.Model.Tab
+
+    /// Each square's look, in one place for the square and its tab's header.
+    static func pill(for tab: NotchController.Model.Tab, music: MusicBridge?) -> Pill? {
+        switch tab {
+        case .ask: Pill(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed, tab: .ask)
+        case .shelf: Pill(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen, tab: .shelf)
+        case .mirror: Pill(name: "Mirror", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
+        case .music: Pill(name: music?.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow, tab: .music)
+        case .home, .settings: nil
+        }
+    }
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], spacing: 4) {
-            ForEach(pills) { IslandPill(pill: $0) }
+            ForEach(pills) { IslandPill(pill: $0, tabBeans: tabBeans, away: $0.tab == showing) }
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -821,6 +848,9 @@ private struct IslandPills: View {
 
 private struct IslandPill: View {
     let pill: IslandPills.Pill
+    let tabBeans: Namespace.ID
+    /// Its tab is open: the bean is in the header.
+    let away: Bool
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -838,14 +868,9 @@ private struct IslandPill: View {
                 Capsule().fill(hovering ? color.opacity(0.18) : NotchPalette.ink)
                 Capsule().stroke(color.opacity(hovering ? 0.55 : 0.14), lineWidth: 1)
                 HStack(spacing: 0) {
-                    Gazing { look in
-                        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !pill.holo || reduceMotion)) { timeline in
-                            BeanFace(mood: pill.mood, eyes: pill.eyes, size: 22, look: look, badge: false, solid: true, holo: pill.holo,
-                                     sheen: reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate,
-                                     tint: pill.tint, eyeColor: pill.inkEyes ? NotchPalette.ink : nil)
-                        }
-                    }
-                        .frame(width: 22, height: 22)
+                    TabBean(pill: pill, size: 22)
+                        .matchedGeometryEffect(id: pill.tab, in: tabBeans, isSource: !away)
+                        .opacity(away ? 0 : 1)
                         .padding(.leading, 8)
                     Spacer()
                 }
@@ -858,6 +883,25 @@ private struct IslandPill: View {
             .frame(maxWidth: .infinity)
             .frame(height: 28)
             .shadow(color: color.opacity(hovering ? 0.35 : 0), radius: 10, y: 2)
+    }
+}
+
+/// A square's bean (solid in its colour, the Mirror's holo), watching the pointer: in its
+/// square at Home, in its tab's header elsewhere.
+struct TabBean: View {
+    let pill: IslandPills.Pill
+    let size: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Gazing { look in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !pill.holo || reduceMotion)) { timeline in
+                BeanFace(mood: pill.mood, eyes: pill.eyes, size: size, look: look, badge: false, solid: true, holo: pill.holo,
+                         sheen: reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate,
+                         tint: pill.tint, eyeColor: pill.inkEyes ? NotchPalette.ink : nil)
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -950,7 +994,7 @@ private struct AskCard: View {
                 }
             }
         }
-        .padding(.leading, 86)
+        .padding(.leading, 16)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .notchCard(wash: CompanionTone.processing.color.opacity(voice == .recording ? 0.4 : 0.22))
