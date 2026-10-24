@@ -15,6 +15,8 @@ enum NotchPalette {
     static let hover = Color(hex: 0xB0B5BE)
     static let control = Color(hex: 0xC5C8CD)
     static let card = Color(hex: 0x141518)
+    /// The four squares' names: one dark grey on their coloured shades.
+    static let pillText = Color(hex: 0x24262B)
     static let tabOn = Color(hex: 0x1D1F23)
     static let ink = Color(hex: 0x0E0F11)
     /// The shelf's drop targets, selection and note focus.

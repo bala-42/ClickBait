@@ -874,19 +874,26 @@ private struct IslandPill: View {
 
     private var face: some View {
         let color = pill.tint ?? NotchBean.color(for: pill.mood)
+        // A see-through shade of its own colour, the four names in one dark grey (user's choice,
+        // 2026-10-24); the bean sits on a soft dark halo so it stands out from the same colour.
         return ZStack {
-                Capsule().fill(hovering ? color.opacity(0.18) : NotchPalette.ink)
-                Capsule().stroke(color.opacity(hovering ? 0.55 : 0.14), lineWidth: 1)
+                // A light, see-through shade of its colour: the colour over a frosted white, so the
+                // dark grey name and the full-colour bean both stand out against it.
+                Capsule().fill(.white.opacity(hovering ? 0.62 : 0.55))
+                Capsule().fill(color.opacity(hovering ? 0.62 : 0.5))
+                Capsule().fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
+                Capsule().stroke(.white.opacity(hovering ? 0.6 : 0.35), lineWidth: 1)
                 HStack(spacing: 0) {
                     TabBean(pill: pill, size: 22)
                         .matchedGeometryEffect(id: pill.tab, in: tabBeans, isSource: !away)
                         .opacity(away ? 0 : 1)
+                        .shadow(color: .black.opacity(0.45), radius: 2.5, y: 1)
                         .padding(.leading, 8)
                     Spacer()
                 }
                 Text(pill.name)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(hovering ? color : NotchPalette.secondary)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(NotchPalette.pillText)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity)
             }
