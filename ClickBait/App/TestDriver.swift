@@ -47,7 +47,7 @@ final class TestDriver {
         guard let spec = env["CLICKBAIT_TEST_DRIVE"] else { return }
         let folder = URL(fileURLWithPath: env["CLICKBAIT_TEST_DRIVE_OUT"] ?? NSTemporaryDirectory() + "ClickBaitDrive")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let all = ["handle", "tabs", "bean", "keys", "voice", "stutter", "dock", "walkthroughs", "pointing", "safari"]
+        let all = ["handle", "displays", "tabs", "bean", "keys", "voice", "stutter", "dock", "walkthroughs", "pointing", "safari"]
         let wanted = spec == "all" ? all : spec.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))  // the speech model and the notch settle
@@ -62,6 +62,7 @@ final class TestDriver {
             note("\n## \(name)")
             switch name {
             case "handle": await handle()
+            case "displays": await displays()
             case "tabs": await tabs()
             case "bean": await bean()
             case "keys": await keys()
@@ -95,6 +96,18 @@ final class TestDriver {
         move(to: quartz(CGPoint(x: screen.frame.midX, y: screen.frame.midY)))
     }
 
+    /// With two displays, the notch opens on the one it was opened on; the other stays folded.
+    private func displays() async {
+        guard NSScreen.screens.count > 1 else { return note("- (one display: skipped)") }
+        guard await openByHand() else { return check(false, "notch opens by pointing and clicking") }
+        try? await Task.sleep(for: .milliseconds(700))
+        let frames = hooks.notch.debugPanelFrames
+        let open = frames.filter { $0.width >= 600 }.count
+        check(frames.count > 1 && open == 1, "open on one display only (\(frames.map { Int($0.width) }) pt wide)")
+        await shot("displays-open")
+        hooks.notch.debugClose()
+    }
+
     /// Each square opens its tab (its bean flies to the corner) and ✕ goes back home.
     private func tabs() async {
         guard await openByHand() else { return check(false, "notch opens by pointing and clicking") }
@@ -111,8 +124,15 @@ final class TestDriver {
             check(opened, "\(label) square opens its tab")
             try? await Task.sleep(for: .milliseconds(500))
             await shot("tab-\(label)")
+            // The panel springs to the tab's size first: let it settle, then find ✕ where it is now.
+            try? await Task.sleep(for: .milliseconds(500))
             if let back = await element("Back to Home") { await click(at: centre(back)) }
-            let home = await wait(2) { self.hooks.notch.model.tab == .home }
+            var home = await wait(2) { self.hooks.notch.model.tab == .home }
+            if !home, let back = await element("Back to Home") {
+                note("  - ✕ didn't take on the first click; clicked again")
+                await click(at: centre(back))
+                home = await wait(2) { self.hooks.notch.model.tab == .home }
+            }
             check(home, "✕ in \(label) goes back home")
             try? await Task.sleep(for: .milliseconds(400))
         }

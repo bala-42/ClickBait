@@ -95,6 +95,9 @@ final class NotchController {
         var showsChat: Bool { tab == .ask && chatting }
         /// The pointer is near the notch: the folded handle shows.
         var nearNotch = false
+        /// The display the notch is open on (peek, open, a HUD); every other display's panel
+        /// stays folded (user's ask, 2026-10-24: it opened on both monitors). Nil: one display.
+        var activeDisplay: UInt32?
         /// The ⓘ shortcuts card hangs over the panel.
         var showsKeys = false
 
@@ -205,6 +208,8 @@ final class NotchController {
         if case .enabled(true) = event, NSScreen.screens.isEmpty { event = .displayAvailable(false) }
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }
+        // Opening from folded: on the display the pointer is on; it stays there until it folds.
+        if before == .collapsed || before == .hidden { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
@@ -321,16 +326,20 @@ final class NotchController {
             targets.removeValue(forKey: displayID)
         }
         for screen in screens {
+            // Only the active display opens (or shows a HUD); the others stay folded.
+            let here = Self.displayID(screen).map(isActive) ?? true
+            let state = here ? model.state : .collapsed
+            let hud = here && model.hud != nil
             guard let displayID = Self.displayID(screen),
                   let notch = Self.notch(on: screen),
-                  let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
-                                               notch: notch, activity: model.activity, hud: model.hud != nil,
+                  let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
+                                               notch: notch, activity: model.activity, hud: hud,
                                                shelf: model.tab == .shelf, settings: model.tab == .settings,
                                                mirror: model.tab == .mirror, chat: model.showsChat) else {
                 // Displays without a physical notch still receive the same centered panel.
                 guard let displayID = Self.displayID(screen),
-                      let frame = NotchPanel.frame(model.state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
-                                                   notch: nil, activity: model.activity, hud: model.hud != nil,
+                      let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
+                                                   notch: nil, activity: model.activity, hud: hud,
                                                    shelf: model.tab == .shelf, settings: model.tab == .settings,
                                                    mirror: model.tab == .mirror, chat: model.showsChat) else { continue }
                 positionPanel(frame, notch: nil, displayID: displayID)
@@ -338,6 +347,17 @@ final class NotchController {
             }
             positionPanel(frame, notch: notch, displayID: displayID)
         }
+    }
+
+    /// Whether this display is the one the notch is open on (always, while folded).
+    private func isActive(_ displayID: UInt32) -> Bool {
+        model.state == .collapsed && model.hud == nil || model.activeDisplay == nil || model.activeDisplay == displayID
+    }
+
+    /// The display under the pointer, else the notch's own.
+    private static func displayUnderPointer() -> UInt32? {
+        let mouse = NSEvent.mouseLocation
+        return (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? screen).flatMap(displayID)
     }
 
     private static func displayID(_ screen: NSScreen) -> UInt32? {
@@ -399,7 +419,7 @@ final class NotchController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         let host = PullHostingView(rootView: NotchView(
-            model: model, notch: notch, music: music, shelf: shelf,
+            model: model, displayID: displayID, notch: notch, music: music, shelf: shelf,
             settings: settings, speech: speech, speaker: speaker, searxng: searxng,
             onDragIn: { [weak self] in self?.dragArrived() },
             onTabChange: { [weak self] tab in
@@ -447,8 +467,12 @@ final class NotchController {
     private func pointerMoved() {
         guard model.state != .hidden else { return }
         let mouse = NSEvent.mouseLocation, point = Point(x: mouse.x, y: mouse.y)
+        // Folded: any display's handle can be opened. Peeking or open: only its own display counts,
+        // so the other monitor's handle neither keeps it open nor opens a second one.
+        let active = model.state == .collapsed ? nil : model.activeDisplay
         let inside = panels.contains { displayID, panel in
-            panel.isVisible && NotchPanel.pointerOn(point, frame: Self.rect(targets[displayID] ?? panel.frame), wasOn: pointerInside)
+            (active == nil || displayID == active) && panel.isVisible
+                && NotchPanel.pointerOn(point, frame: Self.rect(targets[displayID] ?? panel.frame), wasOn: pointerInside)
         }
         // Near the notch (80 pt around it, at the top): the folded handle shows; otherwise it
         // stays out of sight (user's ask, 2026-10-24).
@@ -546,6 +570,7 @@ final class NotchController {
     }
 
     private func showHUD(_ hud: (level: Double, muted: Bool, sky: Bool)) {
+        if model.hud == nil { model.activeDisplay = Self.displayUnderPointer() }
         let first = model.hud == nil || model.hud?.sky != hud.sky
         model.hud = hud
         if first { place() }
@@ -569,6 +594,9 @@ final class NotchController {
 
     /// For the test driver: the notch panel's frame (AppKit points), if it's showing.
     var debugPanelFrame: CGRect? { primaryPanel.map { $0.frame } }
+
+    /// For the test driver: every display's notch panel frame.
+    var debugPanelFrames: [CGRect] { panels.values.map(\.frame) }
 
     var debugFrame: String { "\(primaryPanel?.frame ?? .zero), visible \(primaryPanel?.isVisible ?? false), displays \(panels.count)" }
 

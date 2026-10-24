@@ -91,6 +91,8 @@ struct NotchShape: InsettableShape {
 
 struct NotchView: View {
     let model: NotchController.Model
+    /// The display this panel is on: unless the notch is open here, it draws folded.
+    var displayID: UInt32?
     let notch: Rect?
     let music: MusicBridge
     let shelf: ShelfStore
@@ -117,9 +119,16 @@ struct NotchView: View {
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Open (or showing a HUD) on this display; the others draw folded.
+    private var isHere: Bool {
+        model.state == .collapsed && model.hud == nil || model.activeDisplay == nil || displayID == nil || model.activeDisplay == displayID
+    }
+    private var state: NotchPanel.State { isHere ? model.state : .collapsed }
+    private var hud: (level: Double, muted: Bool, sky: Bool)? { isHere ? model.hud : nil }
+
     var body: some View {
-        let open = model.state == .expanded
-        let look = NotchPanel.shape(model.state, notch: notch, activity: model.activity, hud: model.hud != nil,
+        let open = state == .expanded
+        let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil,
                                     shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
                                     chat: model.showsChat)
         let ear = CGFloat(NotchPanel.ear)
@@ -130,12 +139,12 @@ struct NotchView: View {
                                         shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
                                         chat: model.showsChat)
         let openFrame = CGSize(width: CGFloat(openLook.width), height: CGFloat(openLook.height))
-        let place = BeanPlace(state: model.state, tab: model.tab, mirror: model.tab == .mirror || model.showsChat, hud: model.hud != nil,
+        let place = BeanPlace(state: state, tab: model.tab, mirror: model.tab == .mirror || model.showsChat, hud: hud != nil,
                               greeting: model.greeting, cover: music.hasTrack && music.artwork != nil, space: FocusCard.showsSpace(music),
                               width: CGFloat(look.width), height: CGFloat(look.height))
         // Folded with nothing to show: no black block, only a small see-through handle, as
         // HeyClicky's (user's choice, 2026-10-23). The black grows in from it as it opens.
-        let resting = model.state == .collapsed && !model.activity && model.hud == nil
+        let resting = state == .collapsed && !model.activity && hud == nil
         ZStack(alignment: .top) {
             shape.fill(Color.black.opacity(resting ? 0 : 1))
             if resting {
@@ -170,11 +179,11 @@ struct NotchView: View {
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
                     }
-                } else if let hud = model.hud, hud.sky {
+                } else if let hud = hud, hud.sky {
                     SkyWings(level: hud.level)
-                } else if let hud = model.hud {
+                } else if let hud = hud {
                     HUDWings(level: hud.level, muted: hud.muted)
-                } else if model.state == .peek {
+                } else if state == .peek {
                     PeekContent(music: music)
                         .transition(.opacity)
                 } else if model.activity {
@@ -204,7 +213,7 @@ struct NotchView: View {
         .dropDestination(for: URL.self) { _, _ in false } isTargeted: { if $0, !open { onDragIn() } }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(reduceMotion ? nil : spring(open: open), value: open)
-        .animation(reduceMotion ? nil : spring(open: model.state != .collapsed), value: model.state)
+        .animation(reduceMotion ? nil : spring(open: state != .collapsed), value: state)
         .animation(reduceMotion ? nil : spring(open: true), value: model.tab)
         .animation(reduceMotion ? nil : spring(open: true), value: look.width)
         .animation(reduceMotion ? nil : spring(open: true), value: look.height)
