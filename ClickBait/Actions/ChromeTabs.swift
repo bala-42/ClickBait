@@ -11,10 +11,9 @@ enum ChromeTabs {
     /// Each window holding `point` (Quartz; every window when nil), front to back, with its
     /// showing tab.
     static func read(pid: pid_t, at point: Point?) -> [BrowserTab] {
-        guard let app = SBApplication(processIdentifier: pid),
-              let windows = app.value(forKey: "windows") as? SBElementArray else { return [] }
+        guard let app = SBApplication(processIdentifier: pid) else { return [] }
         var found: [BrowserTab] = []
-        for case let window as SBObject in windows {
+        for window in snapshot(app.value(forKey: "windows")) {  // never the live list (see `readAll`)
             guard let id = number(window.value(forKey: "id")) else { continue }
             if let point {
                 guard let bounds = rect(window.value(forKey: "bounds")),
@@ -30,31 +29,40 @@ enum ChromeTabs {
 
     /// Every tab of every window, front window first, each window's showing tab before its others.
     static func readAll(pid: pid_t) -> [BrowserTab] {
-        guard let app = SBApplication(processIdentifier: pid),
-              let windows = app.value(forKey: "windows") as? SBElementArray else { return [] }
+        guard let app = SBApplication(processIdentifier: pid) else { return [] }
         var showing: [BrowserTab] = [], others: [BrowserTab] = []
-        for case let window as SBObject in windows {
+        for window in snapshot(app.value(forKey: "windows")) {
             guard let id = number(window.value(forKey: "id")), let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
             let active = (window.value(forKey: "activeTab") as? SBObject).flatMap { number($0.value(forKey: "id")) }
-            for case let tab as SBObject in tabs {
-                guard let tabID = number(tab.value(forKey: "id")) else { continue }
+            // Each property for every tab in one request, never walking the live list: a tab
+            // opened or closed mid-walk raised an exception Swift can't catch (crash, 22:46).
+            let ids = (tabs.value(forKey: "id") as? [Any]) ?? []
+            let titles = (tabs.value(forKey: "title") as? [Any]) ?? []
+            let urls = (tabs.value(forKey: "URL") as? [Any]) ?? []
+            guard ids.count == titles.count, ids.count == urls.count else { continue }  // changed between requests
+            for index in ids.indices {
+                guard let tabID = number(ids[index]) else { continue }
                 let found = BrowserTab(browser: .chrome, windowID: id, tab: tabID,
-                                       title: string(tab.value(forKey: "title")) ?? "", url: string(tab.value(forKey: "URL")) ?? "")
+                                       title: string(titles[index]) ?? "", url: string(urls[index]) ?? "")
                 if tabID == active { showing.append(found) } else { others.append(found) }
             }
         }
         return showing + others
     }
 
+    /// A Scripting Bridge list as plain objects, fetched in one request (`get`), so it can't
+    /// change while it's being gone through.
+    private static func snapshot(_ list: Any?) -> [SBObject] {
+        ((list as? SBElementArray)?.get() as? [Any] ?? []).compactMap { $0 as? SBObject }
+    }
+
     /// Runs JavaScript in the tab with this id, in this Chrome process (by process: a second,
     /// hidden Chrome can share the bundle id, and AppleScript's `tell` reached it instead).
     /// Nil when that process has no such tab or Chrome refuses (its JavaScript switch is off).
     static func execute(_ javascript: String, tabID: Int, pid: pid_t) -> String? {
-        guard let app = SBApplication(processIdentifier: pid),
-              let windows = app.value(forKey: "windows") as? SBElementArray else { return nil }
-        for case let window as SBObject in windows {
-            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
-            for case let tab as SBObject in tabs where number(tab.value(forKey: "id")) == tabID {
+        guard let app = SBApplication(processIdentifier: pid) else { return nil }
+        for window in snapshot(app.value(forKey: "windows")) {
+            for tab in snapshot(window.value(forKey: "tabs")) where number(tab.value(forKey: "id")) == tabID {
                 let result = tab.perform(NSSelectorFromString("executeJavascript:"), with: javascript)?.takeUnretainedValue()
                 return string(result) ?? (result as? NSNumber)?.stringValue
             }
@@ -65,12 +73,10 @@ enum ChromeTabs {
     /// Selects the tab (wherever it is now), brings its window to the front and Chrome
     /// forward, which switches to that window's desktop. False when the tab is gone.
     static func select(_ target: BrowserTab, pid: pid_t) -> Bool {
-        guard let app = SBApplication(processIdentifier: pid),
-              let windows = app.value(forKey: "windows") as? SBElementArray else { return false }
-        for case let window as SBObject in windows {
-            guard let tabs = window.value(forKey: "tabs") as? SBElementArray else { continue }
-            for (index, element) in tabs.enumerated() {
-                guard let tab = element as? SBObject, number(tab.value(forKey: "id")) == target.tab else { continue }
+        guard let app = SBApplication(processIdentifier: pid) else { return false }
+        for window in snapshot(app.value(forKey: "windows")) {
+            for (index, tab) in snapshot(window.value(forKey: "tabs")).enumerated() {
+                guard number(tab.value(forKey: "id")) == target.tab else { continue }
                 window.setValue(index + 1, forKey: "activeTabIndex")
                 window.setValue(1, forKey: "index")
                 app.activate()
