@@ -100,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return await coordinator.finishCardRecording()
         }
         notch.model.voiceCancel = { [weak self] in self?.coordinator.cancelCardRecording() }
+        coordinator.onCardRecordingDropped = { [weak self] in self?.notch.model.voiceDrops += 1 }
         notch.model.micLevel = { [weak self] in self?.coordinator.cardMicrophoneLevel ?? 0 }
         notch.model.permissions = permissions
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
@@ -269,6 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         escape.isBusy = { [weak self] in
             guard let self else { return false }
             return coordinator.ownsEscape || overlay.looksBusy || confirm.isShowing || readyPillShown
+                || coordinator.isCardRecording
         }
         escape.onEscape = { [weak self] in _ = self?.overlay.onEscape?() }
         escape.onEscapeSeen = { [weak self] in self?.notch.escapePressed() }
@@ -338,6 +340,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Esc, in layers: stop what's happening; else stop pointing; else close the chat.
         overlay.onEscape = { [weak self] in
             guard let self else { return false }
+            if coordinator.isCardRecording {  // Esc stops a voice recording (dropped, not asked)
+                coordinator.dropCardRecording(reason: "Esc")
+                return true
+            }
             if readyPillShown {  // Esc on "let's see! / later." means later.
                 readyPillShown = false
                 confirm.hide()

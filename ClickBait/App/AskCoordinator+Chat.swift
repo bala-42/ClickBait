@@ -383,7 +383,25 @@ extension AskCoordinator {
         if let error = startRecorder(for: "Card voice") { return "Couldn't start the microphone: \(error.localizedDescription)" }
         isCardRecording = true
         Log.ask.notice("Card voice: recording")
+        // Never left on: a recording nobody stopped (a missed tap) held the microphone and
+        // turned every dictation away as "busy" until a restart (2026-10-24).
+        let session = UUID()
+        cardRecordingSession = session
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard let self, cardRecordingSession == session, isCardRecording else { return }
+            dropCardRecording(reason: "a minute without a stop")
+        }
         return nil
+    }
+
+    /// Stops a card's recording that's in the way (Esc, dictation, the minute's up) and tells
+    /// its panel, so its button reads "voice" again.
+    func dropCardRecording(reason: String) {
+        guard isCardRecording else { return }
+        cancelCardRecording()
+        Log.ask.notice("Card voice: dropped (\(reason, privacy: .public))")
+        onCardRecordingDropped?()
     }
 
     /// Why the microphone can't be used for a card's voice panel or dictation now, or nil.

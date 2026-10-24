@@ -291,6 +291,10 @@ final class AskCoordinator {
 
     /// The microphone is on for a card's voice panel (not ⌃⌥ listening).
     @ObservationIgnored var isCardRecording = false
+    /// The current card recording, so an old one's minute limit can't stop a newer one.
+    @ObservationIgnored var cardRecordingSession: UUID?
+    /// A card's recording was stopped for it (Esc, dictation, its minute): its panel resets.
+    @ObservationIgnored var onCardRecordingDropped: (() -> Void)?
     /// The microphone is on for dictation, or its words are still being turned into text.
     @ObservationIgnored var isDictating = false
     var routeCache = IntentRouter.Cache()

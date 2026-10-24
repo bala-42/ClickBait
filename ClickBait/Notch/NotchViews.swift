@@ -1377,6 +1377,7 @@ private struct AskCard: View {
         .animation(.easeOut(duration: 0.2), value: typing)
         .onChange(of: focused) { _, now in model.editing = now || voice.isBusy }
         .onChange(of: voice) { _, now in model.editing = focused || now.isBusy }
+        .onChange(of: model.voiceDrops) { _, _ in if voice == .recording { voice = .ready } }
         .onDisappear {
             if voice == .recording { model.voiceCancel() }
             model.editing = false

@@ -10,6 +10,8 @@ extension AskCoordinator {
 
     /// Starts the microphone for dictation. Nil, or why it can't.
     func startDictation() -> String? {
+        // Holding the dictation key is asked now: it takes the microphone from a card's recording.
+        dropCardRecording(reason: "dictation")
         if let reason = voiceUnavailable() { return reason }
         if let error = startRecorder(for: "Dictation") { return "Couldn't start the microphone: \(error.localizedDescription)" }
         isDictating = true

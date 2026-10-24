@@ -66,6 +66,8 @@ final class NotchController {
         }
         var voiceCancel: @MainActor () -> Void = {}
         var micLevel: @MainActor () -> Float = { 0 }
+        /// Bumped when the Ask card's recording was stopped for it (`onCardRecordingDropped`).
+        var voiceDrops = 0
         /// Typing in the panel (the ask field, the shelf's note): the pointer leaving doesn't fold it.
         var editing = false
         /// The worst thing wrong right now (`HealthLadder`), read each time the panel opens (set by the app delegate).
