@@ -50,11 +50,12 @@ extension AskCoordinator {
 
     // MARK: Lavender's hold (as Strawberry Red's: `PeelRule.Hold`)
 
-    /// Planning has begun: still planning after `PeelRule.dockAfter`, or the user moves on, it
-    /// goes to the dock as a lavender card (user's rule, 2026-10-24).
+    /// Planning has begun: once the "planning…" pill has been read (`PeelRule.walkthroughDockAfter`),
+    /// or at once if the user moves on, it goes to the dock as a lavender card and plans there
+    /// (user's rule, 2026-10-24).
     func startWalkthroughHold(question: String) {
         walkthroughPlanning = true
-        armMoveOn { [weak self] in
+        armMoveOn(after: PeelRule.walkthroughDockAfter) { [weak self] in
             guard let self, walkthroughPlanning, walkthroughJobID == nil else { return }
             let room = backgroundJobs?.hasRoom ?? false
             guard PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: room) else {
@@ -75,6 +76,14 @@ extension AskCoordinator {
         guard backgroundJobs.add(job, task: askTask) else { return }
         walkthroughJobID = job.id
         backgroundJobs.setStage(.planningSteps, for: job.id)
+        // The exact window and tab it was asked in, so "show me!" goes back there (without
+        // them it only found the app: "its window wasn't found").
+        let asked = currentFlow?.context ?? context
+        backgroundJobs.setHomeWindow(title: asked.windowTitle, frame: asked.windowFrame, for: job.id)
+        if let reading = currentFlow?.browserTab {
+            let id = job.id
+            Task { @MainActor [weak self] in self?.backgroundJobs?.setHomeTab(await reading.value, for: id) }
+        }
         _ = onPeel?(job)
         // The task belongs to the tile now: Esc or a new question mustn't cancel it.
         askTask = nil
@@ -91,8 +100,9 @@ extension AskCoordinator {
     func finishWalkthroughInDock(_ jobID: UUID, pending: PendingWalkthrough) {
         guard let backgroundJobs else { return }
         let text: String
-        if let plan = pending.plan, !plan.steps.isEmpty, pending.app == nil {
-            text = [plan.intro, plan.checklist(done: 0)].filter { !$0.isEmpty }.joined(separator: "\n")
+        if let plan = pending.plan, !plan.steps.isEmpty {
+            let place = pending.app.map { "In \($0):" } ?? ""
+            text = [plan.intro, place, plan.checklist(done: 0)].filter { !$0.isEmpty }.joined(separator: "\n")
         } else if let app = pending.app {
             text = "Ready to walk you through it in \(app). \"show me!\" opens \(app) and starts."
         } else {
@@ -121,31 +131,82 @@ extension AskCoordinator {
         context = ScreenContext(appName: frontmost?.localizedName)
         Log.ask.notice("Walkthrough hold: resumed from the dock")
         askTask = Task {
+            // Lavender from "show me!" to the first point: never green, never blue in between.
+            tutorialPlanningShown = false
+            showTutorialPlanning()
+            defer { if tutorialPlanningShown, !(tutorial.isActive) { onTutorialPlanning?(false) }; tutorialPlanningShown = false }
             var plan = pending.plan
-            // It happens in another app: open it now (the user said "show me!") and plan there,
-            // in front — they're waiting for it, so no second hold.
+            // It happens in another app: open it now (the user said "show me!"). Its plan was made
+            // in the dock from that app's menus; it starts at once if its first step is there,
+            // else it's planned again from what's really on screen.
             if let app = pending.app.flatMap(installedName), app.caseInsensitiveCompare(frontmost?.localizedName ?? "") != .orderedSame {
-                tutorialPlanningShown = false
-                showTutorialPlanning()
-                defer { if tutorialPlanningShown, !(tutorial.isActive) { onTutorialPlanning?(false) }; tutorialPlanningShown = false }
                 guard let ready = await openForTutorial(app, url: apps[app]) else { return }
                 context = ScreenContext(appName: app)
-                plan = await planTutorial(pending.question, capture: ready.0, screenshot: ready.1, elements: ready.2, provider: provider)?
-                    .separatingSetup(frontmostApp: app, isInstalledApp: { installedName($0) != nil })
+                if let first = plan?.steps.first, await !Self.canFind(first, in: ready.2, pid: frontmostPID) {
+                    Log.ask.notice("Walkthrough hold: the dock's plan doesn't fit \(app, privacy: .public); planning again there")
+                    plan = nil
+                }
+                if plan == nil {
+                    plan = await planTutorial(pending.question, capture: ready.0, screenshot: ready.1, elements: ready.2, provider: provider)?
+                        .separatingSetup(frontmostApp: app, isInstalledApp: { installedName($0) != nil })
+                }
                 guard let plan, !plan.steps.isEmpty else {
                     show(error: "Couldn't work out the steps in \(app).")
                     return
                 }
                 _ = await beginTutorial(plan, question: pending.question, startedIn: frontmost, speak: false,
                                         display: pending.display, installedName: installedName, apps: apps,
-                                        provider: provider, tutorial: tutorial)
+                                        provider: provider, tutorial: tutorial, continues: pending.continues)
                 return
             }
             guard let plan, !plan.steps.isEmpty else { return }
             _ = await beginTutorial(plan, question: pending.question, startedIn: frontmost, speak: false,
                                     display: pending.display, installedName: installedName, apps: apps,
-                                    provider: provider, tutorial: tutorial)
+                                    provider: provider, tutorial: tutorial, continues: pending.continues)
         }
+    }
+
+    /// A step is there to point at: on screen, or in the app's menus (or a shortcut).
+    nonisolated static func canFind(_ step: TutorialStep, in elements: [ScreenElement], pid: pid_t?) async -> Bool {
+        if step.isShortcut || step.typing != nil || StepMatcher.find(step.target, in: elements) != nil { return true }
+        let target = step.target
+        return await Task.detached(priority: .userInitiated) { AXInspector.menuPath(to: target, frontmostPID: pid) != nil }.value
+    }
+
+    /// The plan for a walkthrough in another app, made in the dock without bringing that app
+    /// forward: from its menus (read in the background when it's running) and the question.
+    /// "show me!" checks it against the real screen (`resumeWalkthrough`).
+    func planElsewhere(_ app: String, question: String, provider: any LLMProvider,
+                       isInstalledApp: @escaping (String) -> Bool) async -> TutorialPlan? {
+        let pid = NSWorkspace.shared.runningApplications
+            .first { $0.localizedName?.caseInsensitiveCompare(app) == .orderedSame }?.processIdentifier
+        let menus = await Task.detached(priority: .userInitiated) { pid.map { AXInspector.menuOutline(frontmostPID: $0) } ?? [] }.value
+        var request = AskRequest(question: question, screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                                 context: ScreenContext(appName: app))
+        request.planTutorial = true
+        request.browser = AppLocator.defaultBrowserName()
+        request.menuOutline = MenuOutline.relevant(menus, to: question, limit: 25)
+        let start = ContinuousClock.now
+        let reply = await Self.reply(from: provider, to: request, within: ProviderOperation.planTutorialWithScreenshot.timeout)
+        let plan = reply.flatMap { TutorialPlan.parse($0)?.expandingMenus(using: menus) }?
+            .separatingSetup(frontmostApp: app, isInstalledApp: isInstalledApp)
+        Log.ask.notice("Walkthrough hold: planned \(plan?.steps.count ?? 0, privacy: .public) step(s) for another app in the dock in \(String(describing: ContinuousClock.now - start), privacy: .public) (\(menus.count, privacy: .public) menu items)")
+        return plan?.steps.isEmpty == false ? plan : nil
+    }
+
+    /// A walkthrough planned in front (instantly, or with no time to dock): it goes to the dock
+    /// ready, its "show me!" waiting there. False when there's no room (asked in front instead).
+    func dockReadyWalkthrough(_ pending: PendingWalkthrough, owns: Bool) async -> Bool {
+        guard owns, walkthroughJobID == nil,
+              PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: backgroundJobs?.hasRoom ?? false) else { return false }
+        showTutorialPlanning()
+        try? await Task.sleep(for: PeelRule.walkthroughDockAfter)  // the "planning…" pill is read
+        guard !Task.isCancelled else { return true }  // Esc: dropped, not docked or asked
+        peelWalkthrough(question: pending.question)
+        guard let jobID = walkthroughJobID else { return false }
+        walkthroughJobID = nil
+        finishWalkthroughInDock(jobID, pending: pending)
+        return true
     }
 
     /// Lavender and spinning from the moment it's known to be a walkthrough, not only once
@@ -257,6 +318,11 @@ extension AskCoordinator {
             let route = SystemSettingsMap.route(for: question) ?? []
             Log.ask.notice("Tutorial: System Settings by the Apple menu\(route.isEmpty ? "" : " → " + route.joined(separator: " → "), privacy: .public)")
             let settingsPlan = TutorialPlan.systemSettingsByAppleMenu(from: context.appName, route: route)
+            let settingsContinue = !TutorialQuestion.onlyOpens(question, app: "System Settings")
+            if await dockReadyWalkthrough(PendingWalkthrough(plan: settingsPlan, app: nil, question: question, display: display,
+                                                             continues: settingsContinue), owns: ownsPlanningUI) {
+                return true
+            }
             guard await offerWalkthrough(opening: nil) else {
                 writeSteps(settingsPlan, question: question, display: display)
                 return true
@@ -274,10 +340,14 @@ extension AskCoordinator {
             // waiting for the user, never declining by itself (user's ask, 2026-10-24).
             if ownsPlanningUI, PeelRule.holdPeels(.walkthrough, stillWorking: true, hasRoom: backgroundJobs?.hasRoom ?? false) {
                 showTutorialPlanning()
+                try? await Task.sleep(for: PeelRule.walkthroughDockAfter)  // the "planning…" pill is read
+                guard !Task.isCancelled else { return true }  // Esc: dropped
                 peelWalkthrough(question: question)
                 if let jobID = walkthroughJobID {
                     walkthroughJobID = nil
-                    finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: nil, app: named, question: question, display: display))
+                    let plan = await planElsewhere(named, question: question, provider: provider,
+                                                   isInstalledApp: { installedName($0) != nil })
+                    finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: plan, app: named, question: question, display: display))
                 }
                 return true
             }
@@ -304,6 +374,11 @@ extension AskCoordinator {
             let plan = TutorialPlan(intro: "Type \(site.name)'s address in \(browser).", steps: [step])
             Log.ask.notice("Tutorial: website \(site.address, privacy: .public) in the browser")
             let switching = browser.caseInsensitiveCompare(context.appName ?? "") != .orderedSame
+            if await dockReadyWalkthrough(PendingWalkthrough(plan: plan, app: nil, question: question, display: display,
+                                                             continues: !Websites.isJustAVisit(question, site: site.name)),
+                                          owns: ownsPlanningUI) {
+                return true
+            }
             guard await offerWalkthrough(opening: switching ? browser : nil) else {
                 writeSteps(plan, question: question, display: display)
                 return true
@@ -336,6 +411,10 @@ extension AskCoordinator {
         if let jobID = walkthroughJobID {
             walkthroughJobID = nil
             let elsewhere = plan?.app.flatMap(installedName)
+            if let elsewhere {
+                plan = await planElsewhere(elsewhere, question: question, provider: provider,
+                                           isInstalledApp: { installedName($0) != nil })
+            }
             finishWalkthroughInDock(jobID, pending: PendingWalkthrough(plan: plan, app: elsewhere, question: question, display: display))
             return true
         }
@@ -356,6 +435,10 @@ extension AskCoordinator {
                 Log.ask.notice("Tutorial: first step (\(first.target, privacy: .public)) isn't on screen; answering normally")
                 return false
             }
+        }
+        if !offered, await dockReadyWalkthrough(PendingWalkthrough(plan: plan, app: nil, question: question, display: display),
+                                                owns: ownsPlanningUI) {
+            return true
         }
         if !offered, !(await offerWalkthrough(opening: nil)) {
             writeSteps(plan, question: question, display: display)

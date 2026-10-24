@@ -229,6 +229,8 @@ struct PendingWalkthrough {
     let app: String?
     let question: String
     let display: String
+    /// Whether the walkthrough plans more once its steps are done (false: just a visit).
+    var continues = true
 }
 
 extension BackgroundJob.Kind {

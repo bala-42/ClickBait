@@ -675,6 +675,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // that app, so the walkthrough thought the user had left and kept switching back.
         if entry.walkthrough != nil {
             backgroundJobs.remove(id)
+            // Lavender from here to the first point ("taking you to Safari…"), never green.
+            overlay.setTutoring(true)
+            overlay.showWorking("taking you to \(homeApp?.localizedName ?? "where you asked")…")
             Task { @MainActor in
                 await returnHome(job, homeApp: homeApp)
                 then?()

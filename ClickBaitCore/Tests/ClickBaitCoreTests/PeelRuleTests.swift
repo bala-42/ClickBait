@@ -163,6 +163,8 @@ struct AutoPeelTests {
 
     @Test func docksAfterOneSecond() {
         #expect(PeelRule.dockAfter == .seconds(1))
+        // A walkthrough's "planning…" pill is read before it docks, and it never waits longer.
+        #expect(PeelRule.walkthroughDockAfter < PeelRule.dockAfter)
     }
 
     @Test func explanationPeelsOnlyWhileStreaming() {

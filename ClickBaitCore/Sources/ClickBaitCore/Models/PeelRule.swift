@@ -132,6 +132,9 @@ public enum PeelRule {
     /// to the dock once it's still working after this, or at once when the user moves on, so
     /// they never wait to use ClickBait again (user's rule, 2026-10-24). Faster answers stay.
     public static let dockAfter: Duration = .seconds(1)
+    /// A walkthrough always plans in the dock: by the cursor only while it gathers what it
+    /// needs, with a lavender "planning…" pill held this long to be read (user's ask, 2026-10-24).
+    public static let walkthroughDockAfter: Duration = .milliseconds(600)
 
     /// The two holds — Strawberry Red while a snip is worked out until its tour, Lavender while
     /// a walkthrough is planned until it starts — follow one set of rules (user's rule,

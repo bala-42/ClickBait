@@ -174,15 +174,15 @@ extension AskCoordinator {
     /// Until `PeelRule.dockAfter` passes or the user moves on — clicks outside ClickBait or
     /// switches apps (a new question peels through its own keys) — `peel` waits; then it runs
     /// once. Replaces any earlier one.
-    func armMoveOn(_ peel: @escaping () -> Void) {
+    func armMoveOn(after delay: Duration = PeelRule.dockAfter, _ peel: @escaping () -> Void) {
         disarmMoveOn()
         moveOnPeel = peel
         let armed = UUID()
         moveOnArmed = armed
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: PeelRule.dockAfter)
+            try? await Task.sleep(for: delay)
             guard let self, moveOnArmed == armed else { return }
-            userMovedOn("still working after \(String(describing: PeelRule.dockAfter))")
+            userMovedOn("still working after \(String(describing: delay))")
         }
         // Clicks in other apps only: a global monitor never sees ClickBait's own windows.
         moveOnClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
