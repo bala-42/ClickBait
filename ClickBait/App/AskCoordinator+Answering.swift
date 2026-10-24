@@ -318,6 +318,10 @@ extension AskCoordinator {
                 && CodeAnswer.wanted(question: question, selectedText: selectedText)
             request.detailed = nextTypedIsDetailed
             nextTypedIsDetailed = false
+            if snip != nil {
+                request.snipWords = flow.snipWords
+                request.snipMarked = flow.snipMarked
+            }
             if request.codeAnswer { Log.ask.notice("Code question: answering in Markdown") }
             request.remembered = MemoryStore.shared.block(for: question)
             request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn

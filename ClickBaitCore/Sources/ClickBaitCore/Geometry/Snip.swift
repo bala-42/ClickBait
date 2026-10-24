@@ -109,14 +109,25 @@ public enum SnipLayout {
     static let paddingFraction = 0.15
     static let minPadding = 24.0
     /// Tiny regions are widened to this so there's still something around them to read.
-    static let minCropSide = 280.0
+    public static let minCropSide = 280.0
+    /// The close-up is enlarged to 1280 px; past about 3× it's mush (a small circle on a 1×
+    /// external display was enlarged ~4.6× and the model guessed, 2026-10-25).
+    public static let maxEnlargement = 3.0
+
+    /// The smallest crop side, in points, that gives the 1280 px close-up enough real pixels.
+    public static func minSide(pixelsPerPoint: Double, longEdge: Double = 1280) -> Double {
+        max(minCropSide, longEdge / maxEnlargement / max(pixelsPerPoint, 0.5))
+    }
 
     /// The crop in display-local points (top-left origin), kept inside the display.
     /// `region` is display-local too.
-    public static func crop(around region: Rect, displayWidth: Double, displayHeight: Double) -> Rect {
+    /// `minSide`: the smallest side in points; on a standard-resolution display it's raised so the
+    /// close-up has enough real pixels (`minSide(pixelsPerPoint:)`).
+    public static func crop(around region: Rect, displayWidth: Double, displayHeight: Double,
+                            minSide: Double = minCropSide) -> Rect {
         let padding = max(minPadding, max(region.width, region.height) * paddingFraction)
-        var width = max(region.width + 2 * padding, minCropSide)
-        var height = max(region.height + 2 * padding, minCropSide)
+        var width = max(region.width + 2 * padding, minSide)
+        var height = max(region.height + 2 * padding, minSide)
         width = min(width, displayWidth)
         height = min(height, displayHeight)
         let centerX = region.x + region.width / 2, centerY = region.y + region.height / 2

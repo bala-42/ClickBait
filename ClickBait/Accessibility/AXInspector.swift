@@ -497,6 +497,27 @@ enum AXInspector {
         return lines
     }
 
+    /// The words the app shows inside `region` (Quartz points): text, headings, links, buttons,
+    /// in its windows, capped; for a snip, exact even when the close-up is soft.
+    static func texts(in region: Rect, pid: pid_t?, budget: TimeInterval = 0.3) -> String {
+        guard isTrusted, let pid else { return "" }
+        let deadline = Date().addingTimeInterval(budget)
+        var parts: [String] = []
+        var stack = element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute)
+        while let item = stack.popLast(), Date() < deadline, parts.joined().count < 800 {
+            guard let frame = item.frame, frame.maxX >= region.minX, frame.minX <= region.maxX,
+                  frame.maxY >= region.minY, frame.minY <= region.maxY else { continue }
+            let role = item.string(kAXRoleAttribute) ?? ""
+            if role == "AXSecureTextField" { continue }
+            if ["AXStaticText", "AXHeading", "AXLink", "AXButton", "AXTextArea", "AXTextField", "AXCell"].contains(role) {
+                let text = (item.attribute(kAXValueAttribute) as? String) ?? item.name
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !parts.contains(text) { parts.append(text) }
+            }
+            stack.append(contentsOf: item.children(kAXChildrenAttribute).reversed())
+        }
+        return parts.joined(separator: " · ")
+    }
+
     /// Where a menu's title is in the app's menu bar ("History"), named exactly (case aside).
     static func menuBarItemFrame(_ title: String, pid: pid_t?) -> Rect? {
         guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }

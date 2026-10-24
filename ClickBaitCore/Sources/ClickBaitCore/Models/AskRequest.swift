@@ -110,6 +110,10 @@ public struct AskRequest: Sendable {
     public var routeIntent = false
     /// A code question: answered in Markdown (`CodeAnswer`), handed on as the usual answer JSON.
     public var codeAnswer = false
+    /// A snip: the words inside what was marked (from the app, and read off the screen), exact
+    /// even when the close-up is soft; and where in the close-up the marked part is (pixels).
+    public var snipWords: String?
+    public var snipMarked: Rect?
     /// "Tell me more" on a snip's card: explain it in depth this time, not in 2–4 sentences.
     public var detailed = false
     /// What the user asked ClickBait to remember, as the prompt block (`Memory.block`), or nil.

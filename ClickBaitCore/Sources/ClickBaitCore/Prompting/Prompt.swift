@@ -446,6 +446,13 @@ public enum Prompt {
         if let snip = request.snip {
             _ = snip
             lines.append("The image is a close-up of part of the user's screen that they want explained.")
+            if let marked = request.snipMarked {
+                lines.append("They marked the part from x \(Int(marked.minX)) to \(Int(marked.maxX)), y \(Int(marked.minY)) to \(Int(marked.maxY)): explain that; the rest is only context.")
+            }
+            if let words = request.snipWords, !words.isEmpty {
+                lines.append("Words in the marked part (exact, from the app): \(String(words.prefix(800)))")
+            }
+            lines.append("If the image is too unclear to tell what it is, say what you can make out and ask; never guess a name for it.")
             lines.append("")
             let question = request.question.trimmingCharacters(in: .whitespacesAndNewlines)
             lines.append(question.isEmpty

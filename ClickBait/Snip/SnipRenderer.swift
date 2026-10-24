@@ -10,8 +10,10 @@ enum SnipRenderer {
     /// which part of the screen it shows, so positions in it map back to the screen.
     static func view(_ capture: ScreenCapture, region: Rect) throws -> SnipView {
         let local = displayLocal(region, in: capture)
-        let crop = SnipLayout.crop(around: local, displayWidth: capture.displayFrame.width, displayHeight: capture.displayFrame.height)
         let scale = Double(capture.image.width) / capture.displayFrame.width
+        // Enough real pixels to enlarge from: a wider crop on a standard-resolution display.
+        let crop = SnipLayout.crop(around: local, displayWidth: capture.displayFrame.width, displayHeight: capture.displayFrame.height,
+                                   minSide: SnipLayout.minSide(pixelsPerPoint: scale, longEdge: SnipView.longEdge))
         let pixelCrop = CGRect(x: crop.x * scale, y: crop.y * scale, width: crop.width * scale, height: crop.height * scale).integral
         guard let cropped = capture.image.cropping(to: pixelCrop) else { throw CocoaError(.coderInvalidValue) }
         let factor = SnipView.longEdge / Double(max(cropped.width, cropped.height))

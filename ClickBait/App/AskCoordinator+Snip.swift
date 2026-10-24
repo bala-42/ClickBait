@@ -132,6 +132,16 @@ extension AskCoordinator {
         let text = Task { await TextReader.read(view.image) }
         let objects = Self.findObjects(in: view)
         flow.pendingSnipView = (view, text, objects)
+        // The words inside what was marked, for the model as exact text: from the app, and read off
+        // the close-up (a small circle on a 1× display came out too soft to read, 2026-10-25).
+        flow.snipMarked = view.marked
+        let appWords = await Task.detached(priority: .userInitiated) { AXInspector.texts(in: region, pid: pid) }.value
+        let read = await TextReader.read(text, within: .milliseconds(600))
+            .filter { view.marked.minX...view.marked.maxX ~= $0.center.x && view.marked.minY...view.marked.maxY ~= $0.center.y }
+            .map(\.text).joined(separator: " ")
+        let words = [appWords, read].filter { !$0.isEmpty }.joined(separator: " · ")
+        flow.snipWords = words.isEmpty ? nil : words
+        Log.ask.notice("Snip words: \(appWords.count, privacy: .public) characters from the app, \(read.count, privacy: .public) read off the close-up")
         // No whole-screen context picture: with qwen2.5vl:7b it doubled the wait (8–13 s)
         // and made answers worse; the window title gives the context instead.
         let contextImage: Data? = nil

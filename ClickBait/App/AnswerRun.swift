@@ -88,6 +88,9 @@ final class QuestionFlow {
     var chatMessages: [ChatModel.Message] = []
     /// A snip's close-up geometry and text recognition, from `finishSnip` to `respond`.
     var pendingSnipView: (view: SnipView, text: Task<[TextBox], Never>, objects: Task<[FoundObject], Never>)?
+    /// A snip's words inside what was marked, and where that is in the close-up (`AskRequest`).
+    var snipWords: String?
+    var snipMarked: Rect?
 
     init(work: PeelRule.Work, phase: PeelRule.Phase) {
         self.work = work

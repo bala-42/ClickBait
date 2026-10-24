@@ -75,6 +75,7 @@ final class TestDriver {
             case "writing": await writing()
             case "downloads": await chromeDownloads()
             case "mictest": await microphoneTest()
+            case "snip": await snipExplains()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -341,6 +342,43 @@ final class TestDriver {
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
     }
 
+    /// A small box over a known page explains what's there, not a guess (a small circle on a 1×
+    /// display came out too soft and the answer was nonsense, 2026-10-25). Needs
+    /// CLICKBAIT_TEST_SNIP_PAGE: a page whose top shows "Photosynthesis". Closes the tab.
+    private func snipExplains() async {
+        guard let page = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_SNIP_PAGE"],
+              let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
+            return note("- (no test page or Chrome: skipped)")
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        _ = try? await NSWorkspace.shared.open([URL(fileURLWithPath: page)], withApplicationAt: chrome, configuration: configuration)
+        // Wait for the page itself (full-screen Chrome takes a moment to show the new tab), then
+        // box its heading and sentence, wherever they are.
+        var heading: CGRect?
+        for _ in 0..<20 where heading == nil {
+            try? await Task.sleep(for: .milliseconds(500))
+            if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { heading = Self.find("Photosynthesis", prefix: false, pid: pid) }
+        }
+        guard let heading else { return check(false, "the test page's heading found") }
+        try? await Task.sleep(for: .milliseconds(500))
+        let region = Rect(x: heading.minX - 8, y: heading.minY - 6, width: 300, height: heading.height + 34)
+        let jobsBefore = Set(hooks.backgroundJobs.entries.map(\.id))
+        hooks.coordinator.snip(.boxed, region: region, path: [])
+        _ = await wait(40) {
+            !self.hooks.coordinator.isBusy && (self.hooks.backgroundJobs.entries.contains { entry in
+                guard !jobsBefore.contains(entry.id), case .done = entry.job.status else { return false }
+                return true
+            } || self.hooks.chat.model.messages.last?.role == .assistant)
+        }
+        let answer = hooks.backgroundJobs.entries.first { !jobsBefore.contains($0.id) }?.job.answer
+            ?? hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
+        note("  - explanation: \"\(answer.prefix(220))\"")
+        await shot("snip")
+        check(answer.lowercased().contains("photosynth"), "a small box over \"Photosynthesis\" is explained as that")
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.google.Chrome" { key(13, flags: .maskCommand) }  // ⌘W
+    }
+
     /// Settings' "Test microphone" runs without crashing (its audio tap once ran main-actor
     /// code on the audio thread, 2026-10-25) and hears the room.
     private func microphoneTest() async {
@@ -487,7 +525,7 @@ final class TestDriver {
             if let role = string(element, kAXRoleAttribute), ["AXMenuBar", "AXMenu", "AXMenuBarItem", "AXMenuItem"].contains(role) {
                 continue
             }
-            for name in [kAXDescriptionAttribute, kAXTitleAttribute] {
+            for name in [kAXDescriptionAttribute, kAXTitleAttribute, kAXValueAttribute] {
                 if let text = string(element, name), prefix ? text.hasPrefix(label) : text == label, let rect = frame(element), rect.width > 0 {
                     return rect
                 }
