@@ -23,6 +23,8 @@ final class InputInterceptor {
     var onTypeToAsk: () -> Void = {}
     /// A volume key went down: true if the notch HUD handled it (the key is then taken).
     var onVolumeKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
+    /// The brightness keys, when the notch's sky takes them (true: swallowed, as the volume's).
+    var onBrightnessKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
     /// The key-up of a taken volume key is taken too.
     fileprivate var swallowVolumeUp: Int?
     /// The matching right-mouse-up is taken too, so the app never sees half a click.
@@ -102,14 +104,15 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
         // Media keys: subtype 8; key code in data1's top 16 bits, state 0xA down / 0xB up.
         guard let system = NSEvent(cgEvent: event), system.subtype.rawValue == 8 else { return Unmanaged.passUnretained(event) }
         let code = (system.data1 & 0xFFFF_0000) >> 16, down = (system.data1 & 0xFF00) >> 8 == 0xA
-        guard let key = VolumeStep.key(forSystemCode: code) else { return Unmanaged.passUnretained(event) }
+        let volume = VolumeStep.key(forSystemCode: code)
+        guard let key = volume ?? BrightnessStep.key(forSystemCode: code) else { return Unmanaged.passUnretained(event) }
         let fine = system.modifierFlags.contains(.option) && system.modifierFlags.contains(.shift)
         let taken = MainActor.assumeIsolated { () -> Bool in
             if !down {
                 defer { interceptor.swallowVolumeUp = nil }
                 return interceptor.swallowVolumeUp == code
             }
-            guard interceptor.onVolumeKey(key, fine) else { return false }
+            guard volume != nil ? interceptor.onVolumeKey(key, fine) : interceptor.onBrightnessKey(key, fine) else { return false }
             interceptor.swallowVolumeUp = code
             return true
         }

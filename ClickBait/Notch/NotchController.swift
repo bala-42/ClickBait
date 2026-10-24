@@ -46,8 +46,9 @@ final class NotchController {
         var notch: Rect?
         /// Music playing: the artwork and visualizer in the wings.
         var activity = false
-        /// The volume HUD while it shows: the level (0…1) and whether muted.
-        var hud: (level: Double, muted: Bool)?
+        /// The HUD while it shows: the level (0…1), whether muted, and whether it's the
+        /// brightness sky (else the volume's Pac-Man).
+        var hud: (level: Double, muted: Bool, sky: Bool)?
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
         enum Tab { case home, ask, shelf, settings, mirror, music }
@@ -523,8 +524,25 @@ final class NotchController {
               Self.notch(on: screen) != nil, let now = SystemVolume.read() else { return false }
         let next = VolumeStep.apply(key, volume: now.volume, muted: now.muted, fine: fine)
         guard SystemVolume.write(volume: next.volume, muted: next.muted) else { return false }
-        let first = model.hud == nil
-        model.hud = (next.muted ? 0 : next.volume, next.muted)
+        showHUD((next.muted ? 0 : next.volume, next.muted, false))
+        return true
+    }
+
+    /// A brightness key: the built-in screen's brightness set here, the sky's time of day shown
+    /// in the wings. False (the key goes to macOS) in the same cases as the volume's, or when
+    /// the brightness can't be read or set (`SystemBrightness`).
+    func handleBrightnessKey(_ key: VolumeStep.Key, fine: Bool) -> Bool {
+        guard settings.notchBrightnessHUD, model.state == .collapsed || model.state == .peek, let screen = Self.screen,
+              Self.notch(on: screen) != nil, let now = SystemBrightness.read() else { return false }
+        let next = BrightnessStep.apply(key, level: now, fine: fine)
+        guard SystemBrightness.write(next) else { return false }
+        showHUD((next, false, true))
+        return true
+    }
+
+    private func showHUD(_ hud: (level: Double, muted: Bool, sky: Bool)) {
+        let first = model.hud == nil || model.hud?.sky != hud.sky
+        model.hud = hud
         if first { place() }
         hudTask?.cancel()
         hudTask = Task { @MainActor [weak self] in
@@ -533,7 +551,6 @@ final class NotchController {
             model.hud = nil
             place()
         }
-        return true
     }
 
     #if DEBUG
@@ -569,7 +586,8 @@ final class NotchController {
     /// `ImageRenderer`. For the UI smoke tests (ClickBaitTests) and `debugRender`.
     func snapshot(_ state: NotchPanel.State, tab: Model.Tab = .home, greeting: Bool = false,
                   activity: Bool = false, chat: ChatModel? = nil, keys: Bool = false,
-                  hud: (level: Double, muted: Bool)? = nil) -> NSBitmapImageRep? {
+                  hud: (level: Double, muted: Bool)? = nil, sky: Double? = nil) -> NSBitmapImageRep? {
+        let hud = sky.map { (level: $0, muted: false, sky: true) } ?? hud.map { (level: $0.level, muted: $0.muted, sky: false) }
         let saved = (model.state, model.tab, model.greeting, model.activity, model.chat, model.chatting, model.onResize, model.showsKeys, model.hud)
         defer { (model.state, model.tab, model.greeting, model.activity, model.chat, model.chatting, model.onResize, model.showsKeys, model.hud) = saved }
         model.onResize = {}  // a render: the real window stays as it is

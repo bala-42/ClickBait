@@ -224,6 +224,25 @@ public enum VolumeStep {
 }
 
 
+/// The brightness keys, as the notch's sky HUD takes them: macOS's 16 steps (a quarter step
+/// with ⌥⇧), as the volume's.
+public enum BrightnessStep {
+    /// The `NX_SYSDEFINED` key codes (`NX_KEYTYPE_BRIGHTNESS_UP` 2, `…_DOWN` 3).
+    public static func key(forSystemCode code: Int) -> VolumeStep.Key? {
+        switch code {
+        case 2: .up
+        case 3: .down
+        default: nil
+        }
+    }
+
+    public static func apply(_ key: VolumeStep.Key, level: Double, fine: Bool = false) -> Double {
+        let size = fine ? VolumeStep.fineStep : VolumeStep.step
+        let next = key == .up ? level + size : key == .down ? level - size : level
+        return (min(1, max(0, next)) * 1000).rounded() / 1000
+    }
+}
+
 /// A track's times as the GIF shows them ("2:57", "3:54", "1:02:05" past an hour), and the
 /// position a drag along the progress bar asks for. Pure.
 public enum TrackTime {

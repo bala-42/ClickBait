@@ -47,6 +47,12 @@ struct NotchSmokeTests {
         let hud = try #require(notch.snapshot(.collapsed, hud: (0.6, false)), "hud")
         #expect(Self.colours(in: hud) >= 6, "hud looks blank")
         try hud.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "hud.png"))
+        // The brightness sky through the day: night, dawn, sunrise, noon.
+        for level in [0.05, 0.3, 0.5, 1.0] {
+            let sky = try #require(notch.snapshot(.collapsed, sky: level), "sky \(level)")
+            #expect(Self.colours(in: sky) >= 6, "sky \(level) looks blank")
+            try sky.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "sky-\(Int(level * 100)).png"))
+        }
     }
 
     /// How many different colours a coarse sample finds: a blank render has one or two.

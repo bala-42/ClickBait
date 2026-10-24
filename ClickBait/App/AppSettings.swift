@@ -10,6 +10,7 @@ final class AppSettings {
         static let notchPanel = "settings.notchPanel"
         static let notchNote = "settings.notchNote"
         static let notchVolumeHUD = "settings.notchVolumeHUD"
+        static let notchBrightnessHUD = "settings.notchBrightnessHUD"
         static let soundCues = "settings.soundCues"
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
@@ -124,6 +125,9 @@ final class AppSettings {
     var notchVolumeHUD: Bool {
         didSet { defaults.set(notchVolumeHUD, forKey: Key.notchVolumeHUD) }
     }
+    var notchBrightnessHUD: Bool {
+        didSet { defaults.set(notchBrightnessHUD, forKey: Key.notchBrightnessHUD) }
+    }
 
     /// Spotify's album covers in the notch are downloaded from its artwork link: always (true),
     /// or only with Internet Mode on (false, the default). Apple Music's come from the Mac.
@@ -152,6 +156,7 @@ final class AppSettings {
         ignoreNotchInCaptures = defaults.object(forKey: Key.ignoreNotchInCaptures) as? Bool ?? true
         notchNote = defaults.string(forKey: Key.notchNote) ?? ""
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
+        notchBrightnessHUD = defaults.object(forKey: Key.notchBrightnessHUD) as? Bool ?? true
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)

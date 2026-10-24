@@ -103,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notch.model.micLevel = { [weak self] in self?.coordinator.cardMicrophoneLevel ?? 0 }
         notch.model.permissions = permissions
         escape.onVolumeKey = { [weak self] key, fine in self?.notch.handleVolumeKey(key, fine: fine) ?? false }
+        escape.onBrightnessKey = { [weak self] key, fine in self?.notch.handleBrightnessKey(key, fine: fine) ?? false }
         overlay.start()
         greeter.start(helloAtLaunch: true)  // by the cursor too, not only the notch's (user's ask, 2026-10-23)
         // Morning cards: a done "Good morning" card in the dock, its cards as the suggestions.

@@ -154,6 +154,9 @@ struct SettingsView: View {
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Volume in the notch", "The volume keys show Pac-Man's level instead of macOS's.", isOn: $settings.notchVolumeHUD)
                 Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Brightness in the notch", "The brightness keys show the sky's time of day instead of macOS's.",
+                          isOn: $settings.notchBrightnessHUD)
+                Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Spotify covers always", "Download album art even with Internet Mode off.", isOn: $settings.spotifyArtworkAlways)
             }
             SettingsGroup("Your things") {
