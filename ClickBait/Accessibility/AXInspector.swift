@@ -745,6 +745,12 @@ struct DictationTarget: Sendable {
     var editable = false
     /// Its text up to the caret (the last few hundred characters).
     var textBeforeCaret: String?
+    /// The text selected in it, if any (fn+⌃ writing reworks it).
+    var selectedText: String?
+    /// All its text (capped), for "make it shorter" on a draft.
+    var fieldText: String?
+    /// The window's visible text (capped), for "reply to this email".
+    var windowText: String?
 }
 
 extension AXInspector {
@@ -775,11 +781,54 @@ extension AXInspector {
                 }
                 let before = String(value.utf16.prefix(max(0, min(caret, value.utf16.count)))) ?? ""
                 target.textBeforeCaret = String(before.suffix(300))
+                target.fieldText = String(value.prefix(DictationWriting.maxSubject))
+                if let selected = focused.attribute(kAXSelectedTextAttribute) as? String,
+                   !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    target.selectedText = String(selected.prefix(DictationWriting.maxSubject))
+                }
             }
         }
         if let frame = window?.frame {
             target.labels = visibleElements(frontmostPID: pid, display: frame, budget: 0.25, limit: 80).map(\.label)
         }
+        if let window { target.windowText = windowText(window) }
         return target
+    }
+
+    /// The window's words, in reading order as far as Accessibility gives them (static text and
+    /// text areas), capped; a short time budget so the press never waits on a huge page.
+    private static func windowText(_ window: AXElement, budget: TimeInterval = 0.35) -> String {
+        let deadline = Date().addingTimeInterval(budget)
+        var parts: [String] = []
+        var total = 0
+        var stack = [window]
+        while let element = stack.popLast(), Date() < deadline, total < DictationWriting.maxScreen {
+            let role = element.string(kAXRoleAttribute) ?? ""
+            if role == "AXSecureTextField" { continue }
+            if ["AXStaticText", "AXTextArea", "AXTextField", "AXHeading", "AXLink"].contains(role),
+               let value = (element.attribute(kAXValueAttribute) as? String) ?? element.string(kAXTitleAttribute),
+               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append(value)
+                total += value.count
+            }
+            stack.append(contentsOf: element.children(kAXChildrenAttribute).reversed())
+        }
+        return String(parts.joined(separator: "\n").prefix(DictationWriting.maxScreen))
+    }
+
+    /// Selects `text` in the focused field (its last occurrence; the whole field when nil), so
+    /// what's pasted next replaces it. False when the field won't say or won't take a selection.
+    static func selectInFocusedField(_ text: String?, pid: pid_t?) -> Bool {
+        guard isTrusted, let pid else { return false }
+        let app = element(AXUIElementCreateApplication(pid))
+        guard let focused = element(AXUIElementCreateSystemWide()).element(kAXFocusedUIElementAttribute)
+                ?? app.element(kAXFocusedUIElementAttribute),
+              let value = focused.attribute(kAXValueAttribute) as? String else { return false }
+        let whole = value as NSString
+        let range = text.map { whole.range(of: $0, options: .backwards) } ?? NSRange(location: 0, length: whole.length)
+        guard range.location != NSNotFound, range.length > 0 else { return false }
+        var cfRange = CFRange(location: range.location, length: range.length)
+        guard let axRange = AXValueCreate(.cfRange, &cfRange) else { return false }
+        return AXUIElementSetAttributeValue(focused.ref, kAXSelectedTextRangeAttribute as CFString, axRange) == .success
     }
 }

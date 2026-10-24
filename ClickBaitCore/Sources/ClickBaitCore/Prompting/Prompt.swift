@@ -84,7 +84,8 @@ public enum Prompt {
     /// The system prompt for a request: the normal one, or the close-up locate one.
     public static func system(for request: AskRequest) -> String {
         let text: String
-        if request.dictation != nil { text = dictationSystem }
+        if request.writeInstruction != nil { text = writingSystem }
+        else if request.dictation != nil { text = dictationSystem }
         else if request.routeIntent { text = routeSystem }
         else if request.lookupQuery { text = lookupSystem }
         else if request.suggestNextAfter != nil { text = nextSystem }
@@ -295,6 +296,14 @@ public enum Prompt {
     /// The text that accompanies the screenshot.
     public static func userText(for request: AskRequest) -> String {
         if request.lookupQuery { return lookupText(for: request) }
+        if let instruction = request.writeInstruction {
+            let style = Dictation.Style(app: request.context.appName)
+            return ["App: \(request.context.appName ?? "unknown")", "Style: \(style.instruction)",
+                    request.writeScreen.map { "On screen (context; may be cut short):\n\(String($0.prefix(DictationWriting.maxScreen)))" },
+                    request.writeSubject.map { "Text to rework:\n\(String($0.prefix(DictationWriting.maxSubject)))" },
+                    "Request: \(instruction)"]
+                .compactMap { $0 }.joined(separator: "\n\n")
+        }
         if let heard = request.dictation {
             let style = Dictation.Style(app: request.context.appName)
             return ["App: \(request.context.appName ?? "unknown")", "Style: \(style.instruction)",
@@ -479,6 +488,26 @@ public enum Prompt {
         "new line", "new paragraph".
         - When a word sounds like one in "Screen words", spell it that way.
         - Write in the style given. Add nothing else.
+        """
+
+    /// fn+⌃ writing (text only): the user's spoken request carried out, the result typed into
+    /// their app in place of the text it reworks, or at the caret.
+    public static let writingSystem = """
+        You write text for the user, which ClickBait then types into the app they're using.
+
+        Reply with ONLY one JSON object: {"text": "..."}
+        - "text" is exactly what should be typed: no greeting to me, no comments, no quotes \
+        around it, no "Here is…".
+        - With "Text to rework": do the request to that text (point form, shorter, more \
+        formal, another language…) and return the whole new version. Keep its facts; add none.
+        - Without it: write what's asked (a reply, a message, a prompt), using "On screen" for \
+        context, such as the email being replied to. Write as the user, in the first person. \
+        A reply comes from the person who received that message, not its sender: never claim \
+        the sender's words, experiences or details as the user's own.
+        - Match the style given. Point form: one point per line, each starting with "• ". \
+        Plain text otherwise, no markdown.
+        - At most about 200 words unless the request asks for more.
+        - Never invent names, numbers, dates or promises that aren't in the request or on screen.
         """
 
     /// A finished background answer's card (text only, ~1 s): what the user might ask next.

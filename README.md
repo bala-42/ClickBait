@@ -87,7 +87,7 @@ complete and copies it into place without going online.
 | Hold **⌥⌘**, circle or box something | Explains it; on an unlabelled picture it tours the parts with "~" best-guess labels |
 | Double-tap **⌥⌘**, or **⌥⌘** + right-click | Opens a chat to type into |
 | Hold **⌃⌥** while an answer is still coming | Sends it to the dock (top right, up to 3) and listens to your next question |
-| Hold **fn + ⌃** and speak | Dictation: types what you said where you're typing |
+| Hold **fn + ⌃** and speak | Dictation: types what you said where you're typing; or, for a request ("reply to this email", "give it to me in point form", anything said over selected text), writes it for you there. Start with "type" to always type your words |
 | **Esc** | Stops whatever it's doing (a voice recording too) |
 
 Anything still working after a second, or when you click away, switch apps or ask again, goes to the

@@ -41,6 +41,17 @@ extension AskCoordinator {
 
     /// Dictation's tidy-up: one short text-only request (`Prompt.dictationSystem`). Nil if it's
     /// slower than `Dictation.tidyLimit` or fails; the caller then uses the raw words.
+    /// fn+⌃ writing: the request carried out by the local model; nil when it couldn't (never
+    /// the raw request, which isn't text to type).
+    func writeDictation(_ instruction: String, subject: String?, screen: String?, app: String?) async -> String? {
+        var ask = AskRequest(question: "", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                             context: ScreenContext(appName: app), selectedText: nil)
+        ask.writeInstruction = instruction
+        ask.writeSubject = subject
+        ask.writeScreen = screen?.isEmpty == false ? screen : nil
+        return DictationWriting.parse(await Self.reply(from: settings.makeProvider(), to: ask, within: .seconds(30)))
+    }
+
     func tidyDictation(_ heard: String, app: String?, screenWords: String) async -> String? {
         var ask = AskRequest(question: "", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
                              context: ScreenContext(appName: app), selectedText: nil)

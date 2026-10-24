@@ -79,6 +79,11 @@ public struct AskRequest: Sendable {
     /// fn+⌃ dictation's tidy-up (`Prompt.dictationSystem`, text only): what Whisper heard.
     /// `screenWords` holds the spelling hints, `context.appName` the app it's for.
     public var dictation: String?
+    /// fn+⌃ writing (`DictationWriting`, `Prompt.writingSystem`): the request as said, the text
+    /// it works on (a selection, the draft, the last result) and the window's text for context.
+    public var writeInstruction: String?
+    public var writeSubject: String?
+    public var writeScreen: String?
     /// For that step: words read on this Mac near the pointer (never sent anywhere but Ollama),
     /// and the chat's earlier question for a follow-up like "look it up".
     public var screenWords: String?

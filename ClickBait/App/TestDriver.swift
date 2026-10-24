@@ -72,6 +72,7 @@ final class TestDriver {
             case "walkthroughs": await walkthroughs()
             case "pointing": await pointing("where is control center")
             case "world": await world()
+            case "writing": await writing()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -336,6 +337,22 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// fn+⌃ writing's model step: point form from a paragraph, and a reply from an email on
+    /// screen (the spoken part needs a voice; this checks what's written).
+    private func writing() async {
+        let paragraph = "We met on Tuesday to plan the launch. Priya will finish the landing page by Friday, Sam is "
+            + "booking the photographer, and we agreed to send the newsletter on the 3rd."
+        let points = await hooks.coordinator.writeDictation("give it to me in point form", subject: paragraph, screen: nil, app: "Notes")
+        let lines = points?.split(separator: "\n").filter { $0.hasPrefix("•") } ?? []
+        note("  - point form: \"\((points ?? "").prefix(220))\"")
+        check(lines.count >= 2 && points?.contains("Priya") == true, "\"give it to me in point form\" gives points, keeping the facts")
+        let email = "From: Blu Revolution\nI was one of the first to try ClickBait, a fun week project. Thanks for the update!"
+        let reply = await hooks.coordinator.writeDictation("reply to this email, thank them and ask what they use it for",
+                                                           subject: nil, screen: email, app: "Mail")
+        note("  - reply: \"\((reply ?? "").prefix(260))\"")
+        check((reply?.count ?? 0) > 40 && reply?.lowercased().contains("thank") == true, "\"reply to this email\" writes a reply")
     }
 
     /// A "where is" question points at the thing (no walkthrough).

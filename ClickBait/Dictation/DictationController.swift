@@ -17,6 +17,8 @@ final class DictationController {
     private var app: NSRunningApplication?
     private var work: Task<Void, Never>?
     private var recording = false
+    /// What fn+⌃ writing put in last, where and when: "give it to me in point form" reworks it.
+    private var lastWritten: (text: String, pid: pid_t, at: Date)?
 
     init(coordinator: AskCoordinator, overlay: OverlayController) {
         self.coordinator = coordinator
@@ -74,9 +76,25 @@ final class DictationController {
             Log.ask.notice("Dictation: nothing heard")
             return
         }
+        // A request ("reply to this email", "give it to me in point form", anything said over a
+        // selection) is written by the model; anything else is typed, as before.
+        let pid = app?.processIdentifier
+        let recent = lastWritten.flatMap { last -> String? in
+            guard last.pid == pid, Date().timeIntervalSince(last.at) < 300,
+                  target.fieldText?.contains(last.text) == true else { return nil }
+            return last.text
+        }
+        let plan = DictationWriting.plan(heard: heard, hasSelection: target.selectedText != nil, hasLastResult: recent != nil,
+                                         fieldHasText: !(target.fieldText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if case .write(let instruction, let subject) = plan {
+            await writeForUser(instruction, subject: subject, target: target, recent: recent, started: started)
+            return
+        }
+        let spoken: String
+        if case .type(let words) = plan { spoken = words } else { spoken = heard }
         let heardAt = ContinuousClock.now
-        let tidied = await coordinator.tidyDictation(heard, app: app?.localizedName, screenWords: hints)
-        let text = Dictation.joined(Dictation.parseTidy(tidied, raw: heard), after: target.textBeforeCaret)
+        let tidied = await coordinator.tidyDictation(spoken, app: app?.localizedName, screenWords: hints)
+        let text = Dictation.joined(Dictation.parseTidy(tidied, raw: spoken), after: target.textBeforeCaret)
         let sameApp = app != nil && NSWorkspace.shared.frontmostApplication?.processIdentifier == app?.processIdentifier
         let delivery = Dictation.delivery(role: target.role, subrole: target.subrole, editable: target.editable, sameApp: sameApp)
         overlay.setDictating(false)
@@ -91,6 +109,47 @@ final class DictationController {
             (heard in \(String(describing: heardAt - started), privacy: .public), \
             tidied \(tidied == nil ? "no (raw)" : "yes", privacy: .public) in \(String(describing: ContinuousClock.now - heardAt), privacy: .public))
             """)
+    }
+
+    /// Writes what was asked for and puts it in: over the selection, the last result or the draft
+    /// it reworks (selected first, so the paste replaces it), or at the caret. ⌘Z undoes it.
+    private func writeForUser(_ instruction: String, subject: DictationWriting.Subject, target: DictationTarget,
+                              recent: String?, started: ContinuousClock.Instant) async {
+        overlay.setDictating(false)
+        overlay.showWorking("writing…")
+        let reworked: String? = switch subject {
+        case .selection: target.selectedText
+        case .lastResult: recent
+        case .field: target.fieldText
+        case .screen: nil
+        }
+        guard let written = await coordinator.writeDictation(instruction, subject: reworked, screen: target.windowText,
+                                                             app: app?.localizedName) else {
+            overlay.show(.error("Couldn't write that. Try again, or start with \"type\" to type your words."))
+            Log.ask.notice("Dictation: writing failed (\(subject.rawValue, privacy: .public))")
+            return
+        }
+        let pid = app?.processIdentifier
+        let sameApp = app != nil && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+        let delivery = Dictation.delivery(role: target.role, subrole: target.subrole, editable: target.editable, sameApp: sameApp)
+        // The selection is already selected; the last result or the draft get selected now.
+        var replacing = subject == .selection
+        if delivery == .paste, subject == .lastResult || subject == .field {
+            let text = subject == .lastResult ? recent : nil
+            replacing = await Task.detached(priority: .userInitiated) { AXInspector.selectInFocusedField(text, pid: pid) }.value
+        }
+        overlay.clearAction()
+        switch delivery {
+        case .paste:
+            Clipboard.paste(replacing ? written : Dictation.joined(written, after: target.textBeforeCaret))
+            if let pid { lastWritten = (written, pid, Date()) }
+            overlay.showDone("written ✓ · ⌘Z to undo")
+        case .copyOnly:
+            Clipboard.copy(written)
+            overlay.showDone("written · ⌘V to paste")
+        }
+        let mode = replacing ? "replacing" : "at the caret"
+        Log.ask.notice("Dictation: wrote \(written.count, privacy: .public) characters (\(subject.rawValue, privacy: .public), \(mode, privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
     }
 
     private func drop(reason: String) {
