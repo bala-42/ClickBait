@@ -18,6 +18,8 @@ struct NotchBean: View {
     var awake = false
     /// Its face while played with in space (`SpaceToyPlay`), over the resting one.
     var toyFace: (mood: Bean.Mood, eyes: Bean.EyePair)?
+    /// On screen: hidden (the notch folded), its clock stops, as nothing of it is drawn.
+    var shown = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vitals = MacVitals()
     @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
@@ -33,7 +35,7 @@ struct NotchBean: View {
     var body: some View {
         let felt = mood == .idle ? vitals.felt : nil
         let base = felt?.mood ?? mood
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion || !shown)) { timeline in
             let now = timeline.date
             let dozing = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter
             // Petted while resting: chevron eyes and a blush (`warm`), never a state's colour.

@@ -19,7 +19,7 @@ enum CursorVisibility {
     private typealias VisibleFunction = @convention(c) (Int32) -> Bool
     private typealias SeedFunction = @convention(c) () -> Int32
 
-    private static let functions: (connection: ConnectionFunction, visible: VisibleFunction, seed: SeedFunction?)? = {
+    nonisolated private static let functions: (connection: ConnectionFunction, visible: VisibleFunction, seed: SeedFunction?)? = {
         guard let skyLight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
               let connection = dlsym(skyLight, "SLSMainConnectionID"),
               let visible = dlsym(skyLight, "SLSCursorIsVisible")
@@ -36,10 +36,19 @@ enum CursorVisibility {
 
     static var isAvailable: Bool { functions != nil }
 
-    static func isVisible() -> Bool? {
+    /// The window server's answer: shown or hidden, and the cursor's seed (it changes with the
+    /// cursor image). Both are round trips to the window server, so this runs off the main
+    /// thread (`OverlayController`'s poller): inside the companion's frames they stalled it
+    /// whenever the window server was busy (stall trap, 2026-10-24).
+    nonisolated static func systemState() -> (shown: Bool, seed: Int32?)? {
         guard let functions else { return nil }
-        guard functions.visible(functions.connection()) else { return false }
-        return !isCursorImageTransparent(seed: functions.seed?())
+        return (functions.visible(functions.connection()), functions.seed?())
+    }
+
+    /// Visible for the user, from `systemState()`: shown, and not a see-through cursor image
+    /// (checked here on the main thread, only when the seed changes).
+    static func isVisible(_ state: (shown: Bool, seed: Int32?)) -> Bool {
+        state.shown && !isCursorImageTransparent(seed: state.seed)
     }
 
     /// Re-examines the cursor image only when it changes (or every call if the seed

@@ -378,6 +378,9 @@ final class OverlayController {
     private var lastMouse: CGPoint?
     private var lastFrame: CFTimeInterval?
     private var lastVisibilityCheck: CFTimeInterval = 0
+    /// The window server's latest pointer state, from `cursorPoll` (off the main thread).
+    private var cursorState: (shown: Bool, seed: Int32?)?
+    private var cursorPoll: Task<Void, Never>?
     private var displayLink: CADisplayLink?
     private lazy var frameTarget = FrameTarget(controller: self)
     private var hiddenByTyping = false
@@ -400,6 +403,19 @@ final class OverlayController {
             displayLink = link
         }
         Log.app.notice("Cursor visibility: \(CursorVisibility.isAvailable ? "system-wide" : "typing only", privacy: .public)")
+        // Asked 20 times a second, as before, but in the background; the main thread hears
+        // only when the answer changes.
+        cursorPoll = Task.detached(priority: .userInitiated) { [weak self] in
+            var last: (shown: Bool, seed: Int32?)?
+            while !Task.isCancelled {
+                let state = CursorVisibility.systemState()
+                if state?.shown != last?.shown || state?.seed != last?.seed {
+                    last = state
+                    await MainActor.run { self?.cursorState = state }
+                }
+                try? await Task.sleep(for: .milliseconds(Int(Self.visibilityInterval * 1000)))
+            }
+        }
     }
 
     fileprivate func frame(_ link: CADisplayLink) {
@@ -488,7 +504,7 @@ final class OverlayController {
     private var lastSystemHidden = false
 
     private func updateVisibility() {
-        let systemHidden = CursorVisibility.isVisible() == false
+        let systemHidden = cursorState.map { !CursorVisibility.isVisible($0) } ?? false
         if systemHidden != lastSystemHidden {
             lastSystemHidden = systemHidden
             Log.app.notice("System cursor \(systemHidden ? "hidden" : "shown", privacy: .public)")
