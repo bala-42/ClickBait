@@ -79,6 +79,15 @@ struct MacGuideTests {
         #expect(LabelMatcher.similarity("Control Center", "Control Centre") == 1)
     }
 
+    @Test func theAppInFrontDecidesEverydayWords() throws {
+        #expect(try #require(MacGuide.plan(for: "show me my downloads", app: "Google Chrome")).steps.first?.app == "Google Chrome")
+        #expect(try #require(MacGuide.plan(for: "show me my downloads", app: "Safari")).steps.first?.app == "Safari")
+        #expect(try #require(MacGuide.plan(for: "show me my downloads", app: "Notes")).steps.first?.app == "Finder")
+        #expect(try #require(MacGuide.plan(for: "show my downloads in finder", app: "Google Chrome")).steps.first?.app == "Finder")
+        #expect(try #require(MacGuide.plan(for: "how do I see my history", app: "Google Chrome")).steps.last?.target == "Show Full History")
+        #expect(try #require(MacGuide.plan(for: "clear my history in safari", app: "Google Chrome")).steps.first?.app == "Safari")
+    }
+
     @Test func everyEntryIsUsable() {
         for entry in MacGuide.entries {
             #expect(!entry.phrases.isEmpty && !entry.steps.isEmpty)

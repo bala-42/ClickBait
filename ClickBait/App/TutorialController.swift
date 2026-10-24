@@ -745,7 +745,8 @@ final class TutorialController {
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, at: Self.appKitPoint(title),
                                                                           ignoreClickBait: ignoreClickBait) else { return reported }
         let read = await ScreenText.find(path[path.count - 1], in: below, of: capture)
-        Log.ask.notice("Tutorial: the open menu's item was reported away from its menu; \(read != nil ? "found it on screen" : "not found on screen", privacy: .public)")
+        let why = reported == nil ? "not given by Accessibility" : "reported away from its menu"
+        Log.ask.notice("Tutorial: the open menu's item was \(why, privacy: .public); \(read != nil ? "found it on screen" : "not found on screen", privacy: .public)")
         return read ?? reported
     }
 

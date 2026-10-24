@@ -186,6 +186,9 @@ enum AppLocator {
                 apps[url.deletingPathExtension().lastPathComponent] = apps[url.deletingPathExtension().lastPathComponent] ?? url
             }
         }
+        // Finder lives in CoreServices, outside these folders: without it a walkthrough with a
+        // Finder step never switched there (it looked for Finder's Go menu in Chrome, 2026-10-25).
+        apps["Finder"] = apps["Finder"] ?? URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
         return apps
     }
 

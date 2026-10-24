@@ -42,20 +42,25 @@ public enum MacGuide {
         ImpliedPointer.normalized(text).split(separator: " ").filter { !filler.contains(String($0)) }.joined(separator: " ")
     }
 
+    /// The entry for a request: an app the request names first ("…in Finder"), then the app in
+    /// front ("my downloads" in Chrome is Chrome's, not Finder's: 2026-10-25), then any; the
+    /// longest matching phrase within that.
     static func entry(for request: String, app: String? = nil) -> Entry? {
         let spoken = " " + plain(request) + " "
         let front = app?.lowercased()
-        var best: (length: Int, here: Bool, entry: Entry)?
+        var matches: [(length: Int, entry: Entry)] = []
         for entry in entries {
-            let here = entry.app?.lowercased() == front
-            for phrase in entry.phrases.map(plain) where !phrase.isEmpty && spoken.contains(" " + phrase + " ") {
-                guard let current = best else { best = (phrase.count, here, entry); continue }
-                if phrase.count > current.length || (phrase.count == current.length && here && !current.here) {
-                    best = (phrase.count, here, entry)
-                }
-            }
+            let longest = entry.phrases.map(plain).filter { !$0.isEmpty && spoken.contains(" " + $0 + " ") }.map(\.count).max()
+            if let longest { matches.append((longest, entry)) }
         }
-        return best?.entry
+        func names(_ entry: Entry) -> [String] {
+            guard let app = entry.app?.lowercased() else { return [] }
+            return app == "google chrome" ? ["google chrome", "chrome"] : [app]
+        }
+        let named = matches.filter { names($0.entry).contains { spoken.contains(" " + $0 + " ") } }
+        let here = matches.filter { $0.entry.app?.lowercased() == front }
+        let pool = !named.isEmpty ? named : !here.isEmpty ? here : matches
+        return pool.max { $0.length < $1.length }?.entry
     }
 
     /// What the planner should know for this request: entries sharing its words (in `app`
@@ -70,12 +75,14 @@ public enum MacGuide {
             let bonus = entry.app?.lowercased() == lowerApp ? 1 : 0
             return (shared * 2 + bonus, "\(entry.app ?? "Any app"): \(entry.phrases[0]) — \(path)")
         }
-        var lines = scored.sorted { $0.0 > $1.0 }.map(\.1)
         let spoken = " " + ImpliedPointer.normalized(request) + " "
-        for (names, notes) in placeNotes where names.contains(where: { $0 == lowerApp || spoken.contains(" " + $0 + " ") }) {
-            lines += notes
+        var notes: [String] = []
+        for (names, lines) in placeNotes where names.contains(where: { $0 == lowerApp || spoken.contains(" " + $0 + " ") }) {
+            notes += lines
         }
-        return Array(lines.prefix(limit))
+        // The place's layout always fits; the matching entries take the rest of the room.
+        notes = Array(notes.prefix(limit / 2))
+        return Array(scored.sorted { $0.0 > $1.0 }.map(\.1).prefix(limit - notes.count)) + notes
     }
 
     // MARK: - The guide
@@ -155,13 +162,13 @@ public enum MacGuide {
     ]
 
     static let safari: [Entry] = [
-        Entry(phrases: ["safari history", "clear safari history", "clear history in safari"], app: "Safari",
+        Entry(phrases: ["clear safari history", "clear history in safari", "clear history", "clear browsing history"], app: "Safari",
               steps: [("History", "Open the History menu"), ("Clear History…", "Choose Clear History…")]),
         Entry(phrases: ["safari private window", "private window", "private browsing"], app: "Safari",
               steps: [("File", "Open the File menu"), ("New Private Window", "Choose New Private Window")]),
         Entry(phrases: ["safari extensions"], app: "Safari",
               steps: [("Safari", "Open the Safari menu"), ("Settings…", "Choose Settings…"), ("Extensions", "Click Extensions")]),
-        Entry(phrases: ["safari downloads"], app: "Safari",
+        Entry(phrases: ["safari downloads", "downloads", "my downloads", "find my downloads", "open downloads", "see my downloads"], app: "Safari",
               steps: [("View", "Open the View menu"), ("Show Downloads", "Choose Show Downloads")]),
         Entry(phrases: ["safari search engine", "change search engine", "default search engine"], app: "Safari",
               steps: [("Safari", "Open the Safari menu"), ("Settings…", "Choose Settings…"), ("Search", "Click Search")]),
@@ -169,12 +176,14 @@ public enum MacGuide {
               steps: [("View", "Open the View menu"), ("Show Reader", "Choose Show Reader")]),
         Entry(phrases: ["reopen closed tab", "reopen the last tab", "undo close tab"], app: "Safari",
               steps: [("History", "Open the History menu"), ("Reopen Last Closed Tab", "Choose Reopen Last Closed Tab")]),
-        Entry(phrases: ["safari bookmarks", "show bookmarks"], app: "Safari",
+        Entry(phrases: ["safari history", "history", "my history", "browsing history", "see my history"], app: "Safari",
+              steps: [("History", "Open the History menu"), ("Show All History", "Choose Show All History")]),
+        Entry(phrases: ["safari bookmarks", "show bookmarks", "bookmarks", "my bookmarks"], app: "Safari",
               steps: [("Bookmarks", "Open the Bookmarks menu"), ("Show Bookmarks", "Choose Show Bookmarks")]),
     ]
 
     static let chrome: [Entry] = [
-        Entry(phrases: ["chrome history", "clear chrome history", "delete browsing data", "clear browsing data"], app: "Google Chrome",
+        Entry(phrases: ["clear chrome history", "delete browsing data", "clear browsing data", "clear history", "clear browsing history"], app: "Google Chrome",
               steps: [("Chrome", "Open the Chrome menu"), ("Delete browsing data…", "Choose Delete browsing data…")]),
         Entry(phrases: ["incognito", "incognito window", "private window", "private browsing"], app: "Google Chrome",
               steps: [("File", "Open the File menu"), ("New Incognito window", "Choose New Incognito window")]),
@@ -182,11 +191,11 @@ public enum MacGuide {
               steps: [("File", "Open the File menu"), ("Re-open Closed Tab", "Choose Re-open Closed Tab")]),
         Entry(phrases: ["chrome extensions"], app: "Google Chrome",
               steps: [("Window", "Open the Window menu"), ("Extensions", "Choose Extensions")]),
-        Entry(phrases: ["chrome downloads"], app: "Google Chrome",
+        Entry(phrases: ["chrome downloads", "downloads", "my downloads", "find my downloads", "open downloads", "see my downloads"], app: "Google Chrome",
               steps: [("Window", "Open the Window menu"), ("Downloads", "Choose Downloads")]),
-        Entry(phrases: ["chrome bookmarks", "bookmark manager"], app: "Google Chrome",
+        Entry(phrases: ["chrome bookmarks", "bookmark manager", "bookmarks", "my bookmarks"], app: "Google Chrome",
               steps: [("Bookmarks", "Open the Bookmarks menu"), ("Open bookmark manager", "Choose Open bookmark manager")]),
-        Entry(phrases: ["full history", "chrome full history"], app: "Google Chrome",
+        Entry(phrases: ["full history", "chrome full history", "chrome history", "history", "my history", "browsing history", "see my history"], app: "Google Chrome",
               steps: [("History", "Open the History menu"), ("Show Full History", "Choose Show Full History")]),
     ]
 

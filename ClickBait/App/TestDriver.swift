@@ -73,6 +73,7 @@ final class TestDriver {
             case "pointing": await pointing("where is control center")
             case "world": await world()
             case "writing": await writing()
+            case "downloads": await chromeDownloads()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -337,6 +338,16 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// "Show me my downloads" with Chrome in front: Chrome's own steps (it once planned Finder's
+    /// and looked for Finder's Go menu in Chrome, 2026-10-25). Closes the tab it opens.
+    private func chromeDownloads() async {
+        activate("com.google.Chrome")
+        try? await Task.sleep(for: .milliseconds(800))
+        await walkthrough("how do I see my downloads", name: "chrome-downloads")
+        try? await Task.sleep(for: .milliseconds(800))
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.google.Chrome" { key(13, flags: .maskCommand) }  // ⌘W
     }
 
     /// fn+⌃ writing's model step: point form from a paragraph, and a reply from an email on
