@@ -9,7 +9,8 @@ public enum ImpliedPointer {
     ]
 
     public static func isLocating(_ question: String) -> Bool {
-        let lower = question.lowercased()
+        // ClickBait's own name holds "click": "ClickBait, who was Ada Lovelace?" isn't pointing.
+        let lower = question.lowercased().replacingOccurrences(of: "clickbait", with: " ")
         return locatingPhrases.contains { lower.contains($0) }
     }
 

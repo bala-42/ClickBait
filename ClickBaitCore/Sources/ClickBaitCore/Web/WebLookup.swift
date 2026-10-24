@@ -12,6 +12,19 @@ public enum WebLookup {
         case error
         /// An API or documentation question.
         case docs
+        /// General knowledge about a person, place, thing or event ("who is Steve Jobs") while
+        /// Internet Mode is on: checked on Wikipedia (user's ask, 2026-10-24).
+        case world
+    }
+
+    /// "Who is…", "what was…", "when did…", "tell me about…": encyclopaedia questions.
+    static let encyclopedic = ["who", "what is", "what was", "what are", "what were", "when was", "when did",
+                               "when is", "about", "define"]
+
+    public static func isEncyclopedic(_ question: String) -> Bool {
+        guard ScreenNeed.isAboutTheWorld(question) else { return false }
+        let text = ScreenNeed.withoutLeadIns(ImpliedPointer.normalized(question))
+        return encyclopedic.contains { text == $0 || text.hasPrefix($0 + " ") }
     }
 
     /// Why this question should be looked up, or nil to answer locally.
@@ -23,6 +36,7 @@ public enum WebLookup {
         if matches(text, recentWords) { return .recent }
         if matches(text, errorWords) || (asksAbout(text) && looksLikeAnError(selectedText ?? "")) { return .error }
         if matches(text, docsWords) || matches(question, codeSymbol) { return .docs }
+        if isEncyclopedic(question) { return .world }
         return nil
     }
 

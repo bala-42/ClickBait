@@ -25,7 +25,7 @@ struct ScreenNeedTests {
     @Test func selectionsSnipsAndFollowUpsKeepIt() {
         #expect(!ScreenNeed.isAboutTheWorld("why is the sky blue", selectedText: "Rayleigh scattering"))
         #expect(!ScreenNeed.isAboutTheWorld("why is the sky blue", snipped: true))
-        #expect(!ScreenNeed.isAboutTheWorld("why is the sky blue", followUp: true))
+        #expect(!ScreenNeed.isAboutTheWorld("why is he so famous", followUp: true))  // leans on the last answer; one with its own subject stands alone (2026-10-24)
     }
 
     @Test func aTextOnlyAskSaysSo() {

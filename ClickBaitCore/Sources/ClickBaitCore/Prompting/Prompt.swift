@@ -13,7 +13,9 @@ public enum Prompt {
         something in an app that isn't on screen ("Why is the M4 faster than an i7?", "How do I \
         VLOOKUP in Excel?"): answer from your own knowledge in "speech", clearly and correctly, \
         in up to 4 sentences. "pointers" stays empty. The screenshot is only background here: \
-        never say the screen doesn't show the answer, and never tell the user to search.
+        never say the screen doesn't show the answer, and never tell the user to search. A \
+        well-known person, place, thing or event ("who is Steve Jobs?") is general knowledge: \
+        answer it, whatever the screen shows; never reply that you can't tell.
         - QUESTIONS ABOUT THE SCREEN — where something is, what to click, how to do something \
         in the app that IS open, "show me": point at it and say it in a few friendly words \
         (at most 6), naming the thing. Example: "where's the share button?" → {"speech": \

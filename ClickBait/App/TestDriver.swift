@@ -71,6 +71,7 @@ final class TestDriver {
             case "dock": await dock()
             case "walkthroughs": await walkthroughs()
             case "pointing": await pointing("where is control center")
+            case "world": await world()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -321,6 +322,20 @@ final class TestDriver {
         }
         let stalls = hooks.overlay.debugStalls - stallsBefore
         check(!hooks.tutorial.isActive && clicked > 0, "\"\(question)\": finished after \(clicked) click(s), \(stalls) stall(s)")
+    }
+
+    /// A general-knowledge question gets an answer, not "can't tell you" (user's Steve Jobs
+    /// question, 2026-10-24), with Notes or whatever's in front on screen.
+    private func world() async {
+        let start = Date()
+        ask("hey, can you tell me who Steve Jobs is?")
+        let answered = await wait(40) {
+            !self.hooks.coordinator.isBusy && self.hooks.chat.model.messages.last?.role == .assistant
+                && !(self.hooks.chat.model.messages.last?.text.isEmpty ?? true)
+        }
+        let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
+        note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
+        check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
     }
 
     /// A "where is" question points at the thing (no walkthrough).

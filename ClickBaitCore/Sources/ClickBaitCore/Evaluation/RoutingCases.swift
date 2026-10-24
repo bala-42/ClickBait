@@ -65,5 +65,6 @@ public enum RoutingCases {
         .init(question: "write a snake game in python", expected: .answer),
         .init(question: "what does this button do", expected: .answer),
         .init(question: "how many calories are in a banana", expected: .answer),
+        .init(question: "hey can you tell me who steve jobs is", expected: .answer),
     ]
 }
