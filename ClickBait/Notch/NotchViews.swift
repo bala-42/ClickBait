@@ -189,8 +189,10 @@ struct NotchView: View {
         .clipShape(shape)
         // One bean, always there, so it springs from the peek into the open card and back.
         .overlay(alignment: .topLeading) {
-            NotchBean(mood: model.greeting ? .hello : model.mood(), size: place.size, awake: open)
-                .modifier(SpaceFloat(on: place.floats))
+            NotchBean(mood: model.greeting ? .hello : model.mood(), size: place.size, awake: open,
+                      toyFace: place.floats ? SpaceToyPlay.shared.face : nil)
+                .modifier(SpaceFloat(on: place.floats && !SpaceToyPlay.shared.toy.isMoving))
+                .modifier(SpaceToyHandle(on: place.floats, radius: place.size / 2))
                 .position(x: ear + place.x, y: place.y)
                 .opacity(place.visible ? 1 : 0)
                 .allowsHitTesting(place.visible)

@@ -16,6 +16,8 @@ struct NotchBean: View {
     var badge = true
     /// The notch is open: being looked at wakes it (it only dozes off unwatched).
     var awake = false
+    /// Its face while played with in space (`SpaceToyPlay`), over the resting one.
+    var toyFace: (mood: Bean.Mood, eyes: Bean.EyePair)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vitals = MacVitals()
     @State private var eyes = Bean.eyes(for: .idle, avoiding: nil)
@@ -36,8 +38,9 @@ struct NotchBean: View {
             let dozing = base == .idle && now.timeIntervalSince(idleSince) > Bean.sleepAfter
             // Petted while resting: chevron eyes and a blush (`warm`), never a state's colour.
             let beaming = petted && NotchBean.isResting(base)
-            let shown: Bean.Mood = beaming ? .warm : dozing ? .sleepy : base
-            let face = beaming ? .both(.chevron) : dozing ? Bean.eyePairs(for: .sleepy)[0] : eyes
+            let toy = NotchBean.isResting(base) ? toyFace : nil
+            let shown: Bean.Mood = toy?.mood ?? (beaming ? .warm : dozing ? .sleepy : base)
+            let face = toy?.eyes ?? (beaming ? .both(.chevron) : dozing ? Bean.eyePairs(for: .sleepy)[0] : eyes)
             BeanFace(mood: shown, eyes: face, size: size,
                      time: reduceMotion ? 0 : now.timeIntervalSinceReferenceDate,
                      look: reduceMotion ? .zero : gaze.look(at: NSEvent.mouseLocation), badge: badge)

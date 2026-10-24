@@ -5,6 +5,8 @@ import SwiftUI
 /// streaks. Every frame is a function of the clock; Reduce Motion holds the stars still.
 struct SpaceScene: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The bean being flung: the stars streak away from where it heads (a little hyperspace).
+    @State private var play = SpaceToyPlay.shared
 
     /// A star: its direction from the centre, speed, where in its flight it starts, size.
     private struct Star {
@@ -30,8 +32,9 @@ struct SpaceScene: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
             let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
+            let velocity = reduceMotion ? .zero : CGVector(dx: play.toy.velocity.x, dy: play.toy.velocity.y)
             Canvas { context, size in
-                draw(in: &context, size: size, time: time)
+                draw(in: &context, size: size, time: time, fling: velocity)
             }
         }
         .background(RadialGradient(colors: [Color(hex: 0x141B3A), Color(hex: 0x080A16), Color(hex: 0x040509)],
@@ -57,10 +60,13 @@ struct SpaceScene: View {
         return 0.05 * time + 0.9 * (cycles * span / 2 + within)
     }
 
-    private func draw(in context: inout GraphicsContext, size: CGSize, time: Double) {
-        let centre = CGPoint(x: size.width / 2, y: size.height / 2)
+    private func draw(in context: inout GraphicsContext, size: CGSize, time: Double, fling: CGVector) {
+        // A fling warps the stars as hard as it's fast, flying from a point ahead of it.
+        let speed = hypot(fling.dx, fling.dy)
+        let lead = min(30, speed * 0.03) / max(1, speed)
+        let centre = CGPoint(x: size.width / 2 + fling.dx * lead, y: size.height / 2 + fling.dy * lead)
         let reach = hypot(size.width, size.height) / 2
-        let warp = Self.warp(at: time)
+        let warp = max(Self.warp(at: time), min(1, speed / 900))
         let travelled = Self.distance(at: time)
         for star in Self.stars {
             // 0 at the centre, 1 at the edge; squared so stars speed up as they come closer.
