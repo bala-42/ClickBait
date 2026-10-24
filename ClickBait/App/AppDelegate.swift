@@ -94,7 +94,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusBar = statusBar
         statusBar.onToggleNotch = { [weak self] in self?.notch.setEnabled($0) }
         notch.model.menuBar = statusBar
-        notch.model.voiceStart = { [weak self] in self?.coordinator.startCardRecording() ?? "ClickBait isn't ready." }
+        // Nil is success: never `?? reason` (it turned every start into "isn't ready" while the
+        // microphone recorded on, with no stop button: 2026-10-24, as the dock's once did).
+        notch.model.voiceStart = { [weak self] in
+            guard let self else { return "ClickBait isn't ready." }
+            return coordinator.startCardRecording()
+        }
         notch.model.voiceFinish = { [weak self] in
             guard let self else { return .failure(AskCoordinator.CardVoiceError(message: "ClickBait isn't ready.")) }
             return await coordinator.finishCardRecording()
