@@ -60,6 +60,25 @@ struct MacGuideTests {
         #expect(MenuOutline.path(to: "Print", in: lines) == nil)
     }
 
+    @Test func fillerWordsDontMatter() throws {
+        let plan = try #require(MacGuide.plan(for: "how do I clear my history in safari", app: "Safari"))
+        #expect(plan.steps.map(\.target) == ["History", "Clear History…"])
+        #expect(MacGuide.plan(for: "show me the path bar in finder")?.steps.first?.app == "Finder")
+    }
+
+    @Test func togglesKnowTheirOtherSide() {
+        #expect(TutorialPlan.opposite(of: "Show Path Bar") == "Hide Path Bar")
+        #expect(TutorialPlan.opposite(of: "Hide Status Bar") == "Show Status Bar")
+        #expect(TutorialPlan.opposite(of: "Turn On Do Not Disturb") == "Turn Off Do Not Disturb")
+        #expect(TutorialPlan.opposite(of: "Clear History…") == nil)
+    }
+
+    @Test func britishAndAmericanSpellingsMatch() {
+        let centre = ScreenElement(role: "AXMenuBarItem", label: "Control Centre", frame: Rect(x: 1400, y: 0, width: 30, height: 24))
+        #expect(InstantAnswer.uniqueElement(named: "control center", in: [centre]) != nil)
+        #expect(LabelMatcher.similarity("Control Center", "Control Centre") == 1)
+    }
+
     @Test func everyEntryIsUsable() {
         for entry in MacGuide.entries {
             #expect(!entry.phrases.isEmpty && !entry.steps.isEmpty)

@@ -184,6 +184,19 @@ public struct TutorialPlan: Equatable, Sendable {
     public static let appleMenuNames: Set = ["apple", "apple menu", "", "apple logo"]
 
     /// "System Settings…" → "System Settings".
+    /// The other side of a toggle ("Show Path Bar" → "Hide Path Bar"): when a step isn't there
+    /// but this is, the task is already done. Nil when the target isn't a toggle.
+    public static func opposite(of target: String) -> String? {
+        let pairs = [("Show ", "Hide "), ("Hide ", "Show "), ("Turn On ", "Turn Off "), ("Turn Off ", "Turn On "),
+                     ("Enable ", "Disable "), ("Disable ", "Enable "), ("Start ", "Stop "), ("Stop ", "Start ")]
+        for (from, to) in pairs where target.lowercased().hasPrefix(from.lowercased()) {
+            let rest = target.dropFirst(from.count)
+            let lead = target.first?.isUppercase == true ? to : to.lowercased()
+            return lead + rest
+        }
+        return nil
+    }
+
     public static func withoutEllipsis(_ target: String) -> String {
         var name = target.trimmingCharacters(in: .whitespaces)
         for suffix in ["…", "..."] where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }

@@ -120,6 +120,8 @@ final class TutorialController {
         menuSearched = []
         menuOpened = false
         switchedFor = []
+        titleChecked = [:]
+        oppositeChecked = []
         needsContinuation = false
         continuations = continues ? 0 : Self.maxContinuations
         isActive = true
@@ -283,9 +285,30 @@ final class TutorialController {
         // A near-exact visible match wins; a looser one ("History" button for "Clear
         // History…") only if the target isn't an item in the app's menus.
         var visible = StepMatcher.find(step.target, in: elements, minimum: 0.95)
+        // A menu's own title ("History", "File", "Safari"): from the menu bar, exactly. Never a
+        // loose match: "Safari" found "Safari ▸ Hide Safari" (test drive, 2026-10-24).
+        if visible == nil, await isMenuTitle(step.target, pid: pid) {
+            let target = step.target
+            if let title = await Task.detached(priority: .userInitiated, operation: { AXInspector.menuBarItemFrame(target, pid: pid) }).value {
+                if loggedTarget != index {
+                    loggedTarget = index
+                    Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at a menu title, from the menu bar")
+                }
+                point(at: title, label: instruction, menu: false)
+                await checkForCompletion()
+                return
+            }
+            // The menu bar won't say where: read it off the screen (below), never a loose item.
+            if let frame = await fallbackFrame(for: step.target) {
+                point(at: frame, label: instruction, menu: false)
+                await checkForCompletion()
+                return
+            }
+        }
         // Loose still means nearly the same name ("Night Shift" for "Night Shift…"); a
         // different thing that merely shares a word is never pointed at in its place.
-        if visible == nil, let loose = StepMatcher.find(step.target, in: elements, minimum: 0.85) {
+        let isTitle = await isMenuTitle(step.target, pid: pid)
+        if visible == nil, !isTitle, let loose = StepMatcher.find(step.target, in: elements, minimum: 0.85) {
             if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
                 AXInspector.menuPath(to: step.target, frontmostPID: pid)
             }).value, !alreadyChosen(path) {
@@ -313,7 +336,7 @@ final class TutorialController {
             return
         }
         // Inside a closed menu? Point at the menu to open first.
-        if menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
+        if !isTitle, menuSearched.insert(index).inserted, let path = await Task.detached(priority: .userInitiated, operation: {
             AXInspector.menuPath(to: step.target, frontmostPID: pid)
         }).value, !alreadyChosen(path) {
             menuPaths[index] = path
@@ -323,9 +346,7 @@ final class TutorialController {
             if insertMenuSteps(path) { return }
         }
         // The menu holding it is open (the user just clicked it): point at the item.
-        if menuOpened || menuPaths[index]?.first == openedMenu, let path = menuPaths[index], let frame = await Task.detached(priority: .userInitiated, operation: {
-            AXInspector.openMenuItemFrame(path, frontmostPID: pid)
-        }).value {
+        if menuOpened || menuPaths[index]?.first == openedMenu, let path = menuPaths[index], let frame = await openMenuItem(path, pid: pid) {
             if loggedTarget != index {
                 loggedTarget = index
                 Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) points at an item in the open menu: \(path.joined(separator: " ▸ "), privacy: .public) at \(Int(frame.x), privacy: .public),\(Int(frame.y), privacy: .public) \(Int(frame.width), privacy: .public)×\(Int(frame.height), privacy: .public)")
@@ -355,6 +376,21 @@ final class TutorialController {
             point(at: frame, label: instruction, menu: false)
             await checkForCompletion()
             return
+        }
+
+        // "Show Path Bar" isn't there but "Hide Path Bar" is: it's already done. Say so and finish,
+        // rather than "can't see it" (test drive, 2026-10-24).
+        if let other = TutorialPlan.opposite(of: TutorialPlan.withoutEllipsis(step.target)), oppositeChecked.insert(step.target).inserted {
+            let inMenus = await Task.detached(priority: .userInitiated) { AXInspector.menuPath(to: other, frontmostPID: pid) }.value?.last
+                .map { TutorialPlan.withoutEllipsis($0).caseInsensitiveCompare(other) == .orderedSame } == true
+            let present = StepMatcher.find(other, in: elements, minimum: 0.95) != nil || inMenus
+            if present {
+                Log.ask.notice("Tutorial: step \(self.index + 1, privacy: .public) is already done (its other side is showing)")
+                overlay.tutorialHint("already done ✓")
+                try? await Task.sleep(for: .seconds(1.2))
+                finish()
+                return
+            }
         }
 
         // Nowhere to point. Give it a moment (menus redraw, windows animate) before
@@ -678,6 +714,47 @@ final class TutorialController {
         overlay.isGuideFlying || clickedStepAt.map { Date().timeIntervalSince($0) < 1.2 } ?? false
     }
 
+    /// Targets whose toggle's other side was looked for (once each, per walkthrough).
+    private var oppositeChecked: Set<String> = []
+    /// Whether each target is a menu title of the app in front (per walkthrough).
+    private var titleChecked: [String: Bool] = [:]
+
+    private func isMenuTitle(_ target: String, pid: pid_t?) async -> Bool {
+        if let known = titleChecked[target] { return known }
+        let name = TutorialPlan.withoutEllipsis(target)
+        let title = await Task.detached(priority: .userInitiated) {
+            MenuMemory.outline(pid: pid).contains { $0.lowercased().hasPrefix(name.lowercased() + " ▸ ") }
+        }.value
+        titleChecked[target] = title
+        return title
+    }
+
+    /// An item in the open menu, checked against its menu's title: it must be on the same
+    /// display, just below it. On a second display it was reported 949 pt off (your log,
+    /// 2026-10-24); then it's read off the screen under the title instead.
+    private func openMenuItem(_ path: [String], pid: pid_t?) async -> Rect? {
+        let reported = await Task.detached(priority: .userInitiated) { AXInspector.openMenuItemFrame(path, frontmostPID: pid) }.value
+        let first = path[0]
+        guard let title = await Task.detached(priority: .userInitiated, operation: { AXInspector.menuBarItemFrame(first, pid: pid) }).value else {
+            return reported
+        }
+        if let reported, reported.y >= title.y, reported.y - title.maxY < 900, reported.x > title.x - 60, reported.x < title.x + 600 {
+            return reported
+        }
+        let below = Rect(x: title.x - 20, y: title.maxY, width: 560, height: 900)
+        guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, at: Self.appKitPoint(title),
+                                                                          ignoreClickBait: ignoreClickBait) else { return reported }
+        let read = await ScreenText.find(path[path.count - 1], in: below, of: capture)
+        Log.ask.notice("Tutorial: the open menu's item was reported away from its menu; \(read != nil ? "found it on screen" : "not found on screen", privacy: .public)")
+        return read ?? reported
+    }
+
+    /// A Quartz point as AppKit's (y up from the primary display's bottom).
+    private static func appKitPoint(_ rect: Rect) -> NSPoint {
+        let primary = NSScreen.screens.first?.frame.height ?? 0
+        return NSPoint(x: rect.x + rect.width / 2, y: primary - (rect.y + rect.height / 2))
+    }
+
     /// When the screen was last read for this step, and what it found.
     private var screenTextTried: (index: Int, at: Date, frame: Rect?)?
 
@@ -693,9 +770,17 @@ final class TutorialController {
         }
         // Reading the screen takes a moment: at most every 1.5 s per step, the answer kept between.
         if let tried = screenTextTried, tried.index == index, Date().timeIntervalSince(tried.at) < 1.5 { return tried.frame }
+        // The display the app's window is on (its menu bar is there), not the pointer's.
+        let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let window = await Task.detached(priority: .userInitiated) { pid.flatMap { AXInspector.focusedWindowFrameOnScreen(pid: $0) } }.value
         var frame: Rect?
-        if let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, ignoreClickBait: ignoreClickBait) {
-            frame = await ScreenText.find(target, in: display, of: capture)
+        if let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, at: window.map(Self.appKitPoint),
+                                                                      ignoreClickBait: ignoreClickBait) {
+            let shown = capture.displayFrame
+            let primary = NSScreen.screens.first?.frame.height ?? shown.height
+            let region = Rect(x: shown.minX, y: primary - shown.maxY, width: shown.width, height: shown.height)
+            frame = await ScreenText.find(target, in: region, of: capture)
+            if frame == nil { Log.ask.notice("Tutorial: \"\(target, privacy: .private)\" not found by reading the screen either") }
         }
         screenTextTried = (index, Date(), frame)
         return frame

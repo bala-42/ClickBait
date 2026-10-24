@@ -33,13 +33,22 @@ public enum MacGuide {
         return TutorialPlan(intro: "Here's how\(place).", steps: steps)
     }
 
+    /// Words that don't change the task ("clear **my** history"), left out on both sides when
+    /// matching: "clear my history in safari" missed "clear history in safari" and went to the
+    /// model, which planned "Safari ▸ Hide Safari" (test drive, 2026-10-24).
+    static let filler: Set = ["my", "the", "your", "a", "an", "all", "this", "these", "please"]
+
+    static func plain(_ text: String) -> String {
+        ImpliedPointer.normalized(text).split(separator: " ").filter { !filler.contains(String($0)) }.joined(separator: " ")
+    }
+
     static func entry(for request: String, app: String? = nil) -> Entry? {
-        let spoken = " " + ImpliedPointer.normalized(request) + " "
+        let spoken = " " + plain(request) + " "
         let front = app?.lowercased()
         var best: (length: Int, here: Bool, entry: Entry)?
         for entry in entries {
             let here = entry.app?.lowercased() == front
-            for phrase in entry.phrases where spoken.contains(" " + phrase + " ") {
+            for phrase in entry.phrases.map(plain) where !phrase.isEmpty && spoken.contains(" " + phrase + " ") {
                 guard let current = best else { best = (phrase.count, here, entry); continue }
                 if phrase.count > current.length || (phrase.count == current.length && here && !current.here) {
                     best = (phrase.count, here, entry)

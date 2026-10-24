@@ -155,7 +155,21 @@ public enum LabelMatcher {
         let lowered = text.lowercased().replacingOccurrences(of: "…", with: " ")
         let cleaned = String(lowered.unicodeScalars.map { $0.properties.isAlphabetic || $0.properties.numericType != nil ? Character($0) : " " })
         let words = cleaned.split(separator: " ").filter { !droppingFiller || !fillerWords.contains(String($0)) }
-        return words.joined(separator: " ")
+        return words.map { britishToAmerican[String($0)] ?? String($0) }.joined(separator: " ")
+    }
+
+    /// One spelling for both: macOS in British English (en-GB, en-SG, en-AU) says "Control
+    /// Centre", "Minimise", "Colour"; people and the model often write the other one.
+    public static let britishToAmerican = [
+        "centre": "center", "centres": "centers", "colour": "color", "colours": "colors", "favourite": "favorite",
+        "favourites": "favorites", "minimise": "minimize", "maximise": "maximize", "organise": "organize",
+        "customise": "customize", "personalise": "personalize", "synchronise": "synchronize", "licence": "license",
+        "grey": "gray", "dialogue": "dialog", "behaviour": "behavior", "optimise": "optimize", "cancelled": "canceled",
+    ]
+
+    /// `ImpliedPointer.normalized` text with British spellings made American (for comparing names).
+    public static func sameSpelling(_ normalized: String) -> String {
+        normalized.split(separator: " ").map { britishToAmerican[String($0)] ?? String($0) }.joined(separator: " ")
     }
 
     /// 1 − Levenshtein distance / longer length.

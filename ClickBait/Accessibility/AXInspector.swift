@@ -497,6 +497,13 @@ enum AXInspector {
         return lines
     }
 
+    /// Where a menu's title is in the app's menu bar ("History"), named exactly (case aside).
+    static func menuBarItemFrame(_ title: String, pid: pid_t?) -> Rect? {
+        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+        let wanted = title.lowercased()
+        return bar.children(kAXChildrenAttribute).first { $0.name.lowercased() == wanted }?.frame
+    }
+
     /// The menu bar's right side: Control Center, Wi‑Fi, Battery, the clock and the other
     /// system status items (Control Center's and SystemUIServer's), left to right.
     static func menuExtras() -> [ScreenElement] {

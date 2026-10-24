@@ -460,7 +460,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         coordinator.onStopped = { [weak self] in
-            guard let self, chat.isOpen, chat.model.isBusy else { return }
+            guard let self, chat.model.isBusy else { return }
+            // Stopped (Esc): the chat waits no longer, even parked out of sight (left busy, it
+            // ignored the next question: test drive, 2026-10-24).
+            guard chat.isOpen else { chat.model.isBusy = false; return }
             chat.model.setAssistant(chat.model.messages.last?.role == .assistant ? (chat.model.messages.last?.text ?? "") + " …(stopped)" : "Stopped.")
             chat.model.isBusy = false
             chat.untuck()

@@ -115,8 +115,14 @@ extension AskCoordinator {
         var switchedApp = false
         if !wordsOnly, snip == nil, selectedText == nil, history.isEmpty, flow.jobID == nil, TutorialQuestion.isLocatingRequest(question) {
             let apps = AppLocator.installed()
+            // A menu bar item that's also an app's name (Control Center): point at the item, never
+            // open the app (it opened macOS's Control Center app: test drive, 2026-10-24).
+            let barNames = await Task.detached(priority: .userInitiated) {
+                Set(AXInspector.menuExtras().map { LabelMatcher.sameSpelling(ImpliedPointer.normalized($0.label)) })
+            }.value
             if let named = TutorialQuestion.locatingApp(in: question, apps: Array(apps.keys)),
                named.caseInsensitiveCompare(context.appName ?? "") != .orderedSame,
+               !barNames.contains(LabelMatcher.sameSpelling(ImpliedPointer.normalized(named))),
                let ready = await openForTutorial(named, url: apps[named]) {
                 let screenshot = ready.1
                 capture = ready.0

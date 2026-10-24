@@ -48,8 +48,8 @@ public enum InstantAnswer {
     /// The one element named exactly `target`; nil when there's none, or more than one
     /// that differ in place (two "Share" buttons: ask the model).
     public static func uniqueElement(named target: String, in elements: [ScreenElement]) -> ScreenElement? {
-        let wanted = ImpliedPointer.normalized(target)
-        let matches = elements.filter { ImpliedPointer.normalized($0.label) == wanted }
+        let wanted = LabelMatcher.sameSpelling(ImpliedPointer.normalized(target))
+        let matches = elements.filter { LabelMatcher.sameSpelling(ImpliedPointer.normalized($0.label)) == wanted }
         guard let first = matches.first else { return nil }
         let samePlace = matches.allSatisfy { abs($0.frame.x - first.frame.x) < 4 && abs($0.frame.y - first.frame.y) < 4 }
         return samePlace ? first : nil
@@ -58,10 +58,10 @@ public enum InstantAnswer {
     /// No exact name, but one element clearly fits: every word of the target is in its
     /// name ("sidebar" → "Show Sidebar") and no other element's name has them all.
     public static func closeElement(named target: String, in elements: [ScreenElement]) -> ScreenElement? {
-        let words = Set(ImpliedPointer.normalized(target).split(separator: " ").map(String.init))
+        let words = Set(LabelMatcher.sameSpelling(ImpliedPointer.normalized(target)).split(separator: " ").map(String.init))
         guard !words.isEmpty, words.allSatisfy({ $0.count >= 3 }) else { return nil }
         let matches = elements.filter { element in
-            let name = Set(ImpliedPointer.normalized(element.label).split(separator: " ").map(String.init))
+            let name = Set(LabelMatcher.sameSpelling(ImpliedPointer.normalized(element.label)).split(separator: " ").map(String.init))
             return words.isSubset(of: name) && name.count <= words.count + 2
         }
         guard let first = matches.first else { return nil }

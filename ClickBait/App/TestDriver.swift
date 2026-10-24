@@ -47,7 +47,7 @@ final class TestDriver {
         guard let spec = env["CLICKBAIT_TEST_DRIVE"] else { return }
         let folder = URL(fileURLWithPath: env["CLICKBAIT_TEST_DRIVE_OUT"] ?? NSTemporaryDirectory() + "ClickBaitDrive")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let all = ["handle", "tabs", "bean", "keys", "voice", "stutter", "dock", "walkthroughs", "safari"]
+        let all = ["handle", "tabs", "bean", "keys", "voice", "stutter", "dock", "walkthroughs", "pointing", "safari"]
         let wanted = spec == "all" ? all : spec.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))  // the speech model and the notch settle
@@ -69,6 +69,7 @@ final class TestDriver {
             case "stutter": await stutter()
             case "dock": await dock()
             case "walkthroughs": await walkthroughs()
+            case "pointing": await pointing("where is control center")
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -221,8 +222,11 @@ final class TestDriver {
     private func walkthroughs() async {
         activate("com.apple.finder")
         await walkthrough("how do I show the status bar in finder", name: "finder-status-bar")
+        // Asked again, it's already on: it should say so and finish.
+        await walkthrough("how do I show the status bar in finder", name: "finder-already-on")
+        activate("com.apple.finder")
+        try? await Task.sleep(for: .milliseconds(400))
         key(44, flags: .maskCommand)  // ⌘/: the status bar back off, as it was
-        await pointing("where is control center")
     }
 
     /// Safari, restarted so ClickBait can learn its menus: a private window (closed after) and
@@ -271,6 +275,7 @@ final class TestDriver {
             let step = hooks.tutorial.debugStep
             guard await wait(12, { self.hooks.tutorial.debugStep.target != nil || !self.hooks.tutorial.isActive }) else {
                 check(false, "step \(step.index + 1) (\(step.label ?? "?")): nothing pointed at")
+                await shot("\(name)-stuck")
                 key(53)
                 break
             }
