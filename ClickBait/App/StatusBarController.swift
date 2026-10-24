@@ -304,8 +304,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc func openAbout() {
         NSApp.activate()
-        NSApp.orderFrontStandardAboutPanel(nil)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: Self.credits])
     }
+
+    /// The licence and the bundled font's credit (its OFL licence asks for the credit).
+    static let credits: NSAttributedString = {
+        let text = """
+            ClickBait is free software under the GNU AGPL-3.0.
+            Runs on your Mac with a local model; nothing leaves it except Internet Mode lookups.
+
+            Volume HUD lettering: Press Start 2P, © 2012 The Press Start 2P Project Authors (cody@zone38.net), \
+            licensed under the SIL Open Font License 1.1.
+            """
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        return NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style,
+        ])
+    }()
 
     @objc func quit() { NSApp.terminate(nil) }
 
