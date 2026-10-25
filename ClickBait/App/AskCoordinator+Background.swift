@@ -84,6 +84,7 @@ extension AskCoordinator {
         flow.task = task
         flow.jobID = job.id
         flow.sentAway = true
+        flow.modelTurn.sendToBackground()
         backgroundJobs.setStage(flow.stage, for: job.id)
         flow.conversation = conversation
         flow.snipMemory = snipMemory

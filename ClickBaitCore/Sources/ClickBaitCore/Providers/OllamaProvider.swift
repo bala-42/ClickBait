@@ -84,6 +84,11 @@ public struct OllamaProvider: LLMProvider {
     public func stream(_ request: AskRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                // Your question first: a dock answer waits to start while one is waiting
+                // (`ModelTurns`); a foreground one counts itself until it's done.
+                let background = request.turn?.isBackground ?? false
+                if background { await ModelTurns.waitForTurn() } else { ModelTurns.enter() }
+                defer { if !background { ModelTurns.leave() } }
                 do {
                     let lines = try await HTTPStreaming.lines(
                         for: try makeChatRequest(request),

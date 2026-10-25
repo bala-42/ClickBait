@@ -119,6 +119,9 @@ public struct AskRequest: Sendable {
     /// A follow-up on an unchanged screen: no new screenshot, the first question's (in the
     /// history) still shows it (`Conversation.historyReusingScreen`).
     public var sameScreen = false
+    /// Whose turn it is with the model: a background (dock) answer gives way (`ModelTurns`).
+    /// Nil: foreground.
+    public var turn: ModelTurn?
     /// What the user asked ClickBait to remember, as the prompt block (`Memory.block`), or nil.
     public var remembered: String?
     /// When it was asked: today's date for the prompt (`DateFacts`).

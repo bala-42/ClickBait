@@ -48,6 +48,9 @@ final class AnswerRun {
 @MainActor
 final class QuestionFlow {
     let work: PeelRule.Work
+    /// Its place with the model: flipped to background when it goes to the dock, so a new
+    /// question gets answered first (`ModelTurns`).
+    let modelTurn = ModelTurn()
     var phase: PeelRule.Phase
     var kind: PeelRule.Kind = .unknown
     /// What it's doing before the answer starts, for its tile if it's sent away (C6).

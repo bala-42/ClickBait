@@ -192,12 +192,21 @@ struct AgentAnswerBody: View {
         }
     }
 
-    private var content: some View {
+    private var content: some View { AgentAnswerText(text: text) }
+}
+
+/// A card's answer: its words (inline markdown: bold, italics, `code`, links, as in the
+/// chat) and its code blocks. Follow-up answers in the card's mini-chat use it too, so they
+/// read like the first answer (they were smaller, greyer and unformatted; user's report,
+/// 2026-10-25).
+struct AgentAnswerText: View {
+    let text: String
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(MessageFormat.segments(text).enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .text(let prose):
-                    // Inline markdown (bold, italics, `code`, links), as in the chat.
                     Text((try? AttributedString(markdown: prose, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
                         ?? AttributedString(prose))
                         .font(.system(size: 13, weight: .medium))
@@ -541,16 +550,25 @@ private struct FollowUpThread: View {
         if answering { proxy.scrollTo("live", anchor: .bottom) } else if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
     }
 
-    private func bubble(_ text: String, fromUser: Bool) -> some View {
+    @ViewBuilder private func bubble(_ text: String, fromUser: Bool) -> some View {
+        if fromUser { question(text) } else {
+            AgentAnswerText(text: text)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("ClickBait: " + text)
+        }
+    }
+
+    /// What was asked: small, in a light bubble on the right.
+    private func question(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12))
-            .foregroundStyle(fromUser ? AgentDockStyle.title : AgentDockStyle.secondary)
+            .foregroundStyle(AgentDockStyle.title)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 8).padding(.vertical, 5)
-            .background(Color.white.opacity(fromUser ? 0.1 : 0.04), in: RoundedRectangle(cornerRadius: 8))
-            .frame(maxWidth: .infinity, alignment: fromUser ? .trailing : .leading)
-            .accessibilityLabel((fromUser ? "You: " : "ClickBait: ") + text)
+            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityLabel("You: " + text)
     }
 }
 

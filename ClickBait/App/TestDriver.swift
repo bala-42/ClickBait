@@ -423,7 +423,10 @@ final class TestDriver {
         let finished = await wait(180) { status() != "working" }
         let answer = hooks.backgroundJobs.entries.first(where: { $0.id == job })?.job.answer ?? ""
         note("  - background task: \(status()), \(answer.count) characters")
-        check(finished && status() == "done" && answer.contains("def "), "the background task still finishes with its code")
+        try? answer.write(to: out.appending(path: "busydock-answer.md"), atomically: true, encoding: .utf8)
+        // A whole, closed code block (not every program has a `def`).
+        check(finished && status() == "done" && answer.components(separatedBy: "```").count >= 3 && answer.count > 800,
+              "the background task still finishes with its code")
         await shot("busydock")
     }
 
