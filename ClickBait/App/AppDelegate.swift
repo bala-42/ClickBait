@@ -356,8 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.chat.focus()
             self?.chat.untuck()
         }
-        // The chat belongs to the app it was summoned in: away while another app is in
-        // front, back (where it was) when that app is.
+        // The chat stays up across apps until it's closed with ✕ or Esc (user's ask,
+        // 2026-10-25): it used to hide while another app was in front. It goes along with the
+        // app in front (as for a walkthrough), so a follow-up is about what's in front now.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] note in
@@ -366,12 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if app.processIdentifier != ProcessInfo.processInfo.processIdentifier { MenuMemory.learn(pid: app.processIdentifier) }
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // A walkthrough switching apps takes the chat (its checklist) along.
-                if self.tutorial.isActive || self.overlay.isTutoring || self.coordinator.isOpeningAppForTutorial {
-                    self.chat.adopt(app)
-                } else {
-                    self.chat.appActivated(app)
-                }
+                self.chat.adopt(app)
             }
         }
         // Two pills: "answer's ready in Safari" rides with the companion; below it, where

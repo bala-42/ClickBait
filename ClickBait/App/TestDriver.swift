@@ -79,6 +79,7 @@ final class TestDriver {
             case "snip": await snipExplains()
             case "motion": await notchMotion()
             case "setup": await setupSteps()
+            case "shelf": await shelfStays()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -343,6 +344,21 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// The shelf stays open with the pointer away; only ✕ (here Esc) folds it.
+    private func shelfStays() async {
+        let opened = await openByHand()
+        note("  - opened: \(opened), state \(hooks.notch.model.state)")
+        hooks.notch.model.tab = .shelf
+        if let screen = NSScreen.main { move(to: quartz(CGPoint(x: screen.frame.midX, y: screen.frame.midY))) }
+        try? await Task.sleep(for: .seconds(2))
+        note("  - after 2 s away: state \(hooks.notch.model.state), tab \(hooks.notch.model.tab)")
+        check(hooks.notch.model.state == .expanded, "the shelf stays open 2 s after the pointer leaves")
+        hooks.notch.debugClose()
+        try? await Task.sleep(for: .seconds(0.6))
+        check(hooks.notch.model.state != .expanded, "Esc folds it")
+        hooks.notch.model.tab = .home
     }
 
     /// Opens the setup window and goes through every step by its own buttons, a screenshot

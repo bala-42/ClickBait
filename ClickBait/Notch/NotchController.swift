@@ -104,7 +104,9 @@ final class NotchController {
         var showsKeys = false
 
         /// Typing, in Settings, the mirror or a conversation: only Esc, ✕ or a click elsewhere folds it.
-        var holdsOpen: Bool { editing || tab == .settings || tab == .mirror || showsChat }
+        /// Open until ✕ or Esc, not folded when the pointer leaves: the shelf too (user's ask,
+        /// 2026-10-25), so files can be dragged in and out at leisure.
+        var holdsOpen: Bool { editing || tab == .settings || tab == .mirror || tab == .shelf || showsChat }
         let note: Note
         init(note: Note) { self.note = note }
     }

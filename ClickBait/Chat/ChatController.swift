@@ -213,21 +213,6 @@ final class ChatController {
         }
     }
 
-    /// Called when an app comes to the front.
-    func appActivated(_ app: NSRunningApplication) {
-        guard let panel, app.processIdentifier != getpid(), homePID != nil else { return }
-        if app.processIdentifier == homePID {
-            guard isAway else { return }
-            trace("back home (\(app.localizedName ?? "?")): \(model.isTucked ? "still tucked" : "shown") at \(Int(panel.frame.minX)),\(Int(panel.frame.maxY))")
-            isAway = false
-            if !model.isTucked { showWhenSettled(panel) }
-            onBackHome?()
-        } else if !isAway {
-            trace("away: \(app.localizedName ?? "?") in front, home is \(homeName ?? "?")")
-            isAway = true
-            panel.orderOut(nil)
-        }
-    }
     /// Tucked on purpose (the reply was said by a pill or the pointer): it stays away, its
     /// conversation kept, until a long answer, a double tap or a new chat brings it back.
     private(set) var isParked = false
