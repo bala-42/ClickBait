@@ -158,6 +158,9 @@ struct SettingsView: View {
                           isOn: $settings.notchBrightnessHUD)
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Spotify covers always", "Download album art even with Internet Mode off.", isOn: $settings.spotifyArtworkAlways)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("YouTube thumbnails always", "Download the playing video's thumbnail even with Internet Mode off.",
+                          isOn: $settings.youtubeThumbnailsAlways)
             }
             SettingsGroup("Your things") {
                 LinkRow("Remembered", "What you asked ClickBait to remember.") { MemoryStore.shared.reveal() }

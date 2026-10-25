@@ -230,14 +230,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     /// The menu bar shows the companion's triangle, white like the other icons, tilted as on
-    /// screen (user's ask, 2026-10-25); Internet Mode shows in the menu and to VoiceOver.
+    /// screen (user's ask, 2026-10-25), with a small 🌐 beside it while Internet Mode is on
+    /// (it's off at every launch, which hid YouTube thumbnails unnoticed).
     /// Changes only here, when the switch is toggled — never per state (per-state
     /// status-item changes stalled the companion; spec decision 2).
     private func showInternetMode() {
         let on = settings.internet.isOn
         if statusItem.button?.image == nil {
-            statusItem.button?.title = ""
             statusItem.button?.image = Self.triangleIcon
+            statusItem.button?.imagePosition = .imageLeft
+        }
+        let title = on ? "🌐" : ""
+        if statusItem.button?.title != title {
+            statusItem.button?.title = title
+            statusItem.button?.font = NSFont.systemFont(ofSize: 10)
         }
         statusItem.button?.setAccessibilityLabel(on ? "ClickBait, Internet Mode on" : "ClickBait, Internet Mode off")
         internetItem.title = on ? "Internet: on 🌐" : "Internet: off 🔒"

@@ -16,6 +16,7 @@ final class AppSettings {
         static let morningCards = "settings.morningCards"
         static let morningCardsShown = "settings.morningCardsShown"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
+        static let youtubeThumbnailsAlways = "settings.youtubeThumbnailsAlways"
         static let blocklist = "settings.blocklist"
         static let keepDebugCaptures = "settings.keepDebugCaptures"
         static let ignoreNotchInCaptures = "settings.ignoreNotchInCaptures"
@@ -141,6 +142,12 @@ final class AppSettings {
         didSet { defaults.set(spotifyArtworkAlways, forKey: Key.spotifyArtworkAlways) }
     }
 
+    /// The playing YouTube video's thumbnail even with Internet Mode off (only the image, from
+    /// YouTube's image server), like Spotify's covers.
+    var youtubeThumbnailsAlways: Bool {
+        didSet { defaults.set(youtubeThumbnailsAlways, forKey: Key.youtubeThumbnailsAlways) }
+    }
+
     /// The notch panel's quick note: on this Mac only.
     var notchNote: String {
         didSet { defaults.set(notchNote, forKey: Key.notchNote) }
@@ -171,6 +178,7 @@ final class AppSettings {
         // Off unless chosen: covers come from Spotify's servers, so only with Internet Mode
         // (user's rule, 2026-10-23, keeping "nothing leaves your Mac").
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? false
+        youtubeThumbnailsAlways = defaults.object(forKey: Key.youtubeThumbnailsAlways) as? Bool ?? false
         LegacyCloudSettings.remove(from: defaults)
     }
 

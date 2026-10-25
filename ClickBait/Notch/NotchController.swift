@@ -147,7 +147,10 @@ final class NotchController {
             guard let settings else { return false }
             return settings.spotifyArtworkAlways || settings.internet.isOn
         }
-        music.youtubeArtworkAllowed = { [weak settings] in settings?.internet.isOn ?? false }
+        music.youtubeArtworkAllowed = { [weak settings] in
+            guard let settings else { return false }
+            return settings.youtubeThumbnailsAlways || settings.internet.isOn
+        }
         music.onChange = { [weak self] in self?.musicChanged() }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                  object: nil, queue: .main) { [weak self] _ in
