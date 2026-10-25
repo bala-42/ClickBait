@@ -451,7 +451,9 @@ extension AskCoordinator {
         }
 
         let seconds = Double(samples.count) / AudioRecorder.sampleRate
-        let audio = AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        let audio = await Task.detached(priority: .userInitiated) {
+            AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        }.value
         Log.ask.notice("""
             Audio level: peak \(audio.peak, format: .fixed(precision: 3), privacy: .public), \
             rms \(audio.rms, format: .fixed(precision: 4), privacy: .public), gain \(audio.gain, format: .fixed(precision: 1), privacy: .public)x\

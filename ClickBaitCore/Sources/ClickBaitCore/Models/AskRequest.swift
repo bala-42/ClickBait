@@ -116,6 +116,9 @@ public struct AskRequest: Sendable {
     public var snipMarked: Rect?
     /// "Tell me more" on a snip's card: explain it in depth this time, not in 2–4 sentences.
     public var detailed = false
+    /// A follow-up on an unchanged screen: no new screenshot, the first question's (in the
+    /// history) still shows it (`Conversation.historyReusingScreen`).
+    public var sameScreen = false
     /// What the user asked ClickBait to remember, as the prompt block (`Memory.block`), or nil.
     public var remembered: String?
     /// When it was asked: today's date for the prompt (`DateFacts`).

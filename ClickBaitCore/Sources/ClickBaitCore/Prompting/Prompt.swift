@@ -419,6 +419,8 @@ public enum Prompt {
         }
         var lines = [request.snip != nil
             ? "The close-up is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."
+            : request.sameScreen
+            ? "The screenshot (with the first message) is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."
             : request.screenshotJPEG.isEmpty
             ? "No screenshot this time: the question isn't about the screen."
             : "The screenshot is \(request.screenshotWidth)×\(request.screenshotHeight) pixels."]
@@ -438,7 +440,9 @@ public enum Prompt {
                 lines.append("Follow-up about the same part of the screen as before (the same close-up image).")
                 lines.append("Answer this new question directly; don't describe the image again unless asked.")
             } else {
-                lines.append("Follow-up in the same conversation (the screenshot shows the screen now).")
+                lines.append(request.sameScreen
+                    ? "Follow-up in the same conversation. The screen hasn't changed: the screenshot with the first message shows it now."
+                    : "Follow-up in the same conversation (the screenshot shows the screen now).")
             }
             lines.append("The user said: \(request.question)")
             return lines.joined(separator: "\n")

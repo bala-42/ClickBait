@@ -337,7 +337,9 @@ final class NotchController {
         }
         let primary = Self.screen ?? screens[0]
         model.notch = Self.notch(on: primary)
-        topTaken = Self.appOwnsTop(of: primary)
+        // The window list only matters for the music wings (off since 2026-10-25); read on
+        // every placement, on the main thread, it froze it up to 249 ms (stall trap).
+        topTaken = wantsActivity && Self.appOwnsTop(of: primary)
         let activity = wantsActivity && !topTaken
         if model.activity != activity { model.activity = activity }
         let connectedIDs = Set(screens.compactMap(Self.displayID))

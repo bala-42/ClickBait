@@ -325,7 +325,11 @@ public struct OllamaProvider: LLMProvider {
             "keep_alive": Self.keepAlive,
             "options": options(for: ask),
             "messages": [["role": "system", "content": Prompt.system(for: ask)]]
-                + ask.history.map { ["role": $0.role.rawValue, "content": $0.content] as [String: Any] }
+                + ask.history.map { turn -> [String: Any] in
+                    var message: [String: Any] = ["role": turn.role.rawValue, "content": turn.content]
+                    if !turn.images.isEmpty { message["images"] = turn.images.map { $0.base64EncodedString() } }
+                    return message
+                }
                 + [message],
         ]
         if !ask.codeAnswer { body["format"] = schema(for: ask) ?? "json" }  // Markdown, see `CodeAnswer`

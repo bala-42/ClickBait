@@ -80,6 +80,8 @@ final class TestDriver {
             case "motion": await notchMotion()
             case "setup": await setupSteps()
             case "shelf": await shelfStays()
+            case "busydock": await busyDock()
+            case "followup": await followUps()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -98,7 +100,8 @@ final class TestDriver {
         move(to: quartz(CGPoint(x: screen.frame.midX, y: screen.frame.midY)))
         let hidden = await wait(2) { !self.hooks.notch.model.nearNotch }
         check(hidden, "away from the notch: handle hidden")
-        move(to: quartz(CGPoint(x: panel.midX, y: screen.frame.maxY - 70)))
+        // Just under the handle, on its own display (`NSScreen.main` follows the key window).
+        move(to: quartz(CGPoint(x: panel.midX, y: panel.minY - 20)))
         let shown = await wait(2) { self.hooks.notch.model.nearNotch }
         check(shown, "near the notch: handle shown")
         await shot("handle-near")
@@ -344,6 +347,84 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// A follow-up on an unchanged screen reuses the first screenshot and is answered; after
+    /// the screen changes, a new one is sent. Times each answer.
+    private func followUps() async {
+        activate("com.apple.finder")
+        // The pointer on the main display: screenshots are of the display under it, and
+        // Finder's new window opens there.
+        if let screen = NSScreen.screens.first { move(to: quartz(CGPoint(x: screen.frame.midX, y: screen.frame.midY))) }
+        try? await Task.sleep(for: .seconds(1))
+        func answer(_ question: String, followUp: Bool) async -> (String, Int) {
+            let start = Date(), count = hooks.chat.model.messages.count
+            if followUp {
+                hooks.chat.model.draft = question
+                hooks.chat.model.send()
+                note("  - asking \"\(question)\" (follow-up)")
+            } else {
+                ask(question)
+            }
+            _ = await wait(60) {
+                !self.hooks.coordinator.isBusy && self.hooks.chat.model.messages.count > count + 1
+                    && self.hooks.chat.model.messages.last?.role == .assistant && !(self.hooks.chat.model.messages.last?.text.isEmpty ?? true)
+            }
+            let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            note("  - \(ms) ms: \"\(reply.prefix(120))\"")
+            return (reply, ms)
+        }
+        let (first, _) = await answer("describe what is on my screen right now", followUp: false)
+        check(!first.isEmpty, "the first question is answered")
+        let (same, _) = await answer("what else can you see in it?", followUp: true)
+        check(!same.isEmpty, "a follow-up on the unchanged screen is answered")
+        key(45, flags: .maskCommand)  // ⌘N: a new Finder window, so the screen changes
+        try? await Task.sleep(for: .seconds(1.5))
+        let (changed, _) = await answer("and what is in the window in front now?", followUp: true)
+        check(!changed.isEmpty, "a follow-up after the screen changed is answered")
+        key(13, flags: .maskCommand)  // ⌘W: that window again
+    }
+
+    /// ClickBait works as usual while a background task runs in the dock: a question is
+    /// answered, pointing points, the notch opens, and the task still finishes.
+    private func busyDock() async {
+        activate("com.apple.finder")
+        let before = Set(hooks.backgroundJobs.entries.map(\.id))
+        ask("write a snake game in python")
+        guard await wait(10, { self.hooks.backgroundJobs.entries.contains { !before.contains($0.id) } }),
+              let job = hooks.backgroundJobs.entries.first(where: { !before.contains($0.id) })?.id else {
+            return check(false, "the code question goes to the dock")
+        }
+        func status() -> String {
+            switch hooks.backgroundJobs.entries.first(where: { $0.id == job })?.job.status {
+            case .working?: "working"
+            case .done?: "done"
+            case nil: "gone"
+            default: "failed or stopped"
+            }
+        }
+        check(status() == "working", "a background task is working in the dock")
+        try? await Task.sleep(for: .seconds(1))
+
+        let asked = Date()
+        await world()
+        note("  - background task while answering: \(status()), answered in \(Int(Date().timeIntervalSince(asked))) s")
+
+        activate("com.apple.finder")
+        try? await Task.sleep(for: .seconds(1))
+        await pointing("where is control center")
+        hooks.overlay.endGuide()
+        note("  - background task after pointing: \(status())")
+
+        check(await openByHand(), "the notch opens while the dock is busy")
+        hooks.notch.debugClose()
+
+        let finished = await wait(180) { status() != "working" }
+        let answer = hooks.backgroundJobs.entries.first(where: { $0.id == job })?.job.answer ?? ""
+        note("  - background task: \(status()), \(answer.count) characters")
+        check(finished && status() == "done" && answer.contains("def "), "the background task still finishes with its code")
+        await shot("busydock")
     }
 
     /// The shelf stays open with the pointer away; only ✕ (here Esc) folds it.

@@ -22,7 +22,11 @@ extension AskCoordinator {
     /// words as Whisper's spelling hints. Dictation stays on until `endDictation()`.
     func finishDictation(prompt: String) async -> Result<String, CardVoiceError> {
         guard isDictating else { return .failure(CardVoiceError(message: "The recording had already stopped.")) }
-        let audio = AudioConditioner.condition(recorder.stop(), sampleRate: AudioRecorder.sampleRate)
+        let samples = recorder.stop()
+        // Off the main thread: on a long recording it froze it ~110 ms (stall trap, 2026-10-25).
+        let audio = await Task.detached(priority: .userInitiated) {
+            AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        }.value
         guard !audio.isSilent else { return .success("") }
         do {
             return .success(try await speech.transcribe(audio.samples, prompt: prompt))

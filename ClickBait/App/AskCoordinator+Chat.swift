@@ -446,7 +446,9 @@ extension AskCoordinator {
         guard isCardRecording else { return .failure(CardVoiceError(message: "The recording had already stopped.")) }
         let samples = recorder.stop()
         isCardRecording = false
-        let audio = AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        let audio = await Task.detached(priority: .userInitiated) {
+            AudioConditioner.condition(samples, sampleRate: AudioRecorder.sampleRate)
+        }.value
         guard !audio.isSilent else {
             Log.ask.notice("Card voice: silent")
             return .success("")

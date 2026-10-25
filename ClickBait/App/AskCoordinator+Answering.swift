@@ -345,7 +345,22 @@ extension AskCoordinator {
                 request.elements = []
                 Log.ask.notice("About the world, not the screen: asking without the screenshot")
             }
-            setStage(request.screenshotJPEG.isEmpty ? .thinking : .readingScreen, of: flow)
+            // A follow-up on an unchanged screen: the first question's screenshot, which Ollama
+            // has already read, instead of a new one (~1.3 s sooner). Any change: a new one.
+            if !queued, snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty {
+                let fresh = ScreenChange.thumbnail(of: capture.image)
+                let differing = conversation?.screen.map { first in zip(first.thumbnail, fresh).filter { abs(Int($0) - Int($1)) > ScreenChange.tolerance }.count }
+                Log.ask.notice("Follow-up screen: first kept \(self.conversation?.screen != nil, privacy: .public), \(differing ?? -1, privacy: .public) thumbnail pixels differ")
+            }
+            if !queued, snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty,
+               let first = conversation?.screen, first.width == screenshot.width, first.height == screenshot.height,
+               ScreenChange.same(first.thumbnail, ScreenChange.thumbnail(of: capture.image)) {
+                request.screenshotJPEG = Data()
+                request.sameScreen = true
+                request.history = conversation?.historyReusingScreen ?? history
+                Log.ask.notice("Follow-up on an unchanged screen: reusing the first screenshot")
+            }
+            setStage(request.screenshotJPEG.isEmpty && !request.sameScreen ? .thinking : .readingScreen, of: flow)
             Log.ask.notice("""
                 Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))
@@ -561,6 +576,10 @@ extension AskCoordinator {
         }
         run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                 code: parsed.response.code, language: parsed.response.language)
+        if snip == nil, !request.screenshotJPEG.isEmpty {
+            run.conversation.remember(.init(jpeg: request.screenshotJPEG, width: screenshot.width, height: screenshot.height,
+                                            thumbnail: ScreenChange.thumbnail(of: capture.image)))
+        }
         run.recordTurn = nil  // recorded: a peel from here on must not add it again
         if answerFlowID == answerID { conversation = run.conversation }
         // The answer lives in the chat bubble now; the companion goes back to its arrowhead.
@@ -1115,5 +1134,20 @@ extension AskCoordinator {
             guard !Task.isCancelled, let self, case .error = self.state else { return }
             self.state = .idle
         }
+    }
+}
+
+extension ScreenChange {
+    /// A small grey copy of the screen to compare (`same`).
+    static func thumbnail(of image: CGImage) -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: width * height)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                          bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        return pixels
     }
 }
