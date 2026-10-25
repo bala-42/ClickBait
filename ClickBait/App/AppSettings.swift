@@ -20,6 +20,7 @@ final class AppSettings {
         static let keepDebugCaptures = "settings.keepDebugCaptures"
         static let ignoreNotchInCaptures = "settings.ignoreNotchInCaptures"
         static let speechModel = "settings.speechModel"
+        static let fillerWords = "settings.fillerWords"
         static let ollamaModel = "settings.ollamaModel"
         static let ollamaFastModel = "settings.ollamaFastModel"
         static let speakAnswers = "settings.speakAnswers"
@@ -49,6 +50,11 @@ final class AppSettings {
 
     var speechModel: SpeechModel {
         didSet { defaults.set(speechModel.rawValue, forKey: Key.speechModel) }
+    }
+
+    /// The user's own filler words and phrases, comma-separated, taken out of dictation.
+    var fillerWords: String {
+        didSet { defaults.set(fillerWords, forKey: Key.fillerWords) }
     }
 
     var ollamaModel: String {
@@ -145,6 +151,7 @@ final class AppSettings {
         blocklist = Self.load(AppBlocklist.self, from: defaults, forKey: Key.blocklist) ?? .defaults
         keepDebugCaptures = defaults.bool(forKey: Key.keepDebugCaptures)
         speechModel = defaults.string(forKey: Key.speechModel).flatMap(SpeechModel.init(rawValue:)) ?? .default
+        fillerWords = defaults.string(forKey: Key.fillerWords) ?? ""
         ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
         ollamaFastModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaFastModel)) ?? OllamaProvider.defaultFastModel
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true

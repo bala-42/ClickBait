@@ -80,6 +80,51 @@ public enum Dictation {
         "copy", "paste", "undo", "redo", "select", "all", "find", "print", "today", "inbox", "this", "that", "with",
     ]
 
+    /// Sounds that are never words: removed anywhere.
+    static let hesitations: Set<String> = ["um", "umm", "ummm", "uh", "uhh", "uhm", "er", "erm", "hmm", "hm", "mm", "mmm", "ah", "eh"]
+    /// Words that open a dictation as filler ("yeah, umm, hi, just send it").
+    static let openers: Set<String> = ["yeah", "yea", "yep", "so", "hi", "hey", "just", "okay", "ok", "well", "like",
+                                       "right", "alright", "anyway", "basically", "actually", "and"]
+
+    /// The words with filler taken out, before the tidy-up (user's ask, 2026-10-25):
+    /// hesitations ("um", "erm") anywhere; at the start, a run of filler openers ("yeah, umm,
+    /// hi, just") when it has a hesitation or two or more openers. A single opener stays
+    /// ("Yeah, sounds good", "So I think…"). `extra`: the user's own words, removed anywhere.
+    public static func withoutFillers(_ text: String, extra: [String] = []) -> String {
+        let extras = extra.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        func bare(_ word: Substring) -> String { word.lowercased().trimmingCharacters(in: .punctuationCharacters) }
+        var words = text.split(separator: " ", omittingEmptySubsequences: true)
+        // The user's words and phrases, anywhere.
+        for phrase in extras {
+            let parts = phrase.split(separator: " ").map(String.init)
+            var i = 0
+            while i + parts.count <= words.count {
+                if words[i..<i + parts.count].map(bare) == parts { words.removeSubrange(i..<i + parts.count) } else { i += 1 }
+            }
+        }
+        var kept: [Substring] = []
+        for word in words {
+            guard hesitations.contains(bare(word)) else { kept.append(word); continue }
+            // "tests, erm, pass": the comma around it goes too.
+            if word.hasSuffix(","), let last = kept.last, last.hasSuffix(",") { kept[kept.count - 1] = last.dropLast() }
+        }
+        words = kept
+        // The opening run, counted on the original words so "yeah, umm, so" counts the "umm".
+        let original = text.split(separator: " ", omittingEmptySubsequences: true)
+        let lead = original.prefix { openers.contains(bare($0)) || hesitations.contains(bare($0)) }
+        let leadOpeners = lead.filter { openers.contains(bare($0)) }.count
+        if lead.count < original.count, leadOpeners > 0, leadOpeners >= 2 || lead.count > leadOpeners {
+            while let first = words.first, openers.contains(bare(first)), words.count > 1 { words.removeFirst() }
+        }
+        var result = words.joined(separator: " ")
+        // A comma left in front, and a lowercase start where a capital was taken away.
+        while let first = result.first, ",;.".contains(first) { result = String(result.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        if result != text, let first = result.first, first.isLowercase, text.first?.isUppercase == true {
+            result = first.uppercased() + result.dropFirst()
+        }
+        return result.isEmpty ? text : result
+    }
+
     /// How long the tidy-up may take before the raw text is used: 3 s, plus 1 s per 150
     /// characters heard (a long dictation takes longer to rewrite).
     public static func tidyLimit(for raw: String) -> Duration {

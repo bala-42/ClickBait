@@ -34,6 +34,12 @@ struct SpeechModelSection: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            TextField("Your filler words", text: $settings.fillerWords, prompt: Text("e.g. kind of, you see"))
+            Text("Dictation already drops \"um\", \"erm\" and openers like \"yeah, so, hi, just\". Add your own here, separated by commas.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

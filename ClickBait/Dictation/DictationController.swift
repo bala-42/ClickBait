@@ -91,7 +91,10 @@ final class DictationController {
             return
         }
         let spoken: String
-        if case .type(let words) = plan { spoken = words } else { spoken = heard }
+        // Filler out first, so the tidy-up isn't thrown away as "too much shorter" than what was
+        // heard; "type…" keeps every word (a real opening "Yeah, …").
+        let own = coordinator.settings.fillerWords.split(separator: ",").map(String.init)
+        if case .type(let words) = plan { spoken = words } else { spoken = Dictation.withoutFillers(heard, extra: own) }
         let heardAt = ContinuousClock.now
         let tidied = await coordinator.tidyDictation(spoken, app: app?.localizedName, screenWords: hints)
         let text = Dictation.joined(Dictation.parseTidy(tidied, raw: spoken), after: target.textBeforeCaret)
