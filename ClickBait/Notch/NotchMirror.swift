@@ -4,7 +4,7 @@ import ClickBaitCore
 import SwiftUI
 
 @MainActor
-private final class CameraMirrorModel: ObservableObject {
+final class CameraMirrorModel: ObservableObject {
     enum State {
         case starting
         case denied
@@ -74,6 +74,18 @@ private final class CameraMirrorModel: ObservableObject {
             return false
         }
     }
+
+    /// The ✕ on a photo: gone from the strip and its temporary file deleted. A copy already
+    /// saved to Pictures or dragged out stays (user's ask, 2026-10-25: instant, no undo).
+    func delete(_ shot: Shot) {
+        shots.removeAll { $0.id == shot.id }
+        try? FileManager.default.removeItem(at: shot.file)
+    }
+
+    #if DEBUG
+    /// For tests: a photo in the strip without the camera.
+    func debugAdd(_ shot: Shot) { shots.insert(shot, at: 0) }
+    #endif
 
     /// Copies every shot to ~/Pictures/ClickBait and shows them in Finder.
     func saveAll() {
@@ -304,11 +316,7 @@ struct PhotoBooth: View {
     @ViewBuilder private func shotTile(_ shot: CameraMirrorModel.Shot?) -> some View {
         let tile = RoundedRectangle(cornerRadius: 8, style: .continuous)
         if let shot {
-            Image(nsImage: shot.image).resizable().scaledToFill()
-                .frame(width: 84, height: 47).clipShape(tile)
-                .onDrag { NSItemProvider(contentsOf: shot.file) ?? NSItemProvider() }
-                .help("Drag the photo out")
-                .accessibilityLabel("Photo, drag to save it somewhere")
+            ShotTile(shot: shot, tile: tile) { camera.delete(shot) }
         } else {
             tile.stroke(NotchPalette.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 .frame(width: 84, height: 47)
@@ -337,5 +345,37 @@ struct PhotoBooth: View {
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 24)
+    }
+}
+
+/// A photo in the strip: drag it out, or its ✕ (on hover) deletes it.
+private struct ShotTile: View {
+    let shot: CameraMirrorModel.Shot
+    let tile: RoundedRectangle
+    let onDelete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Image(nsImage: shot.image).resizable().scaledToFill()
+            .frame(width: 84, height: 47).clipShape(tile)
+            .onDrag { NSItemProvider(contentsOf: shot.file) ?? NSItemProvider() }
+            .help("Drag the photo out")
+            .accessibilityLabel("Photo, drag to save it somewhere")
+            .overlay(alignment: .topTrailing) {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 16, height: 16)
+                        .background(Color.black.opacity(0.7), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .padding(3)
+                .opacity(hovering ? 1 : 0)
+                .accessibilityLabel("Delete photo")
+            }
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
