@@ -81,6 +81,17 @@ struct OnboardingView: View {
     @State private var step: OnboardingStep?
     @State private var hello: String?
 
+    /// `startAt`: a step to open on (renders); nil, where setup left off.
+    init(permissions: PermissionsManager, settings: AppSettings, speech: SpeechModelManager, model: ModelSetupChecker,
+         startAt: OnboardingStep? = nil, onDone: @escaping () -> Void) {
+        self.permissions = permissions
+        self.settings = settings
+        self.speech = speech
+        self.model = model
+        self.onDone = onDone
+        _step = State(initialValue: startAt)
+    }
+
     private var done: Set<OnboardingStep> {
         var done: Set<OnboardingStep> = []
         if permissions.status(of: .microphone) == .granted { done.insert(.microphone) }
