@@ -294,8 +294,10 @@ struct SettingsView: View {
                     Divider().overlay(SettingsLook.hairline)
                     LinkRow("Reveal last capture", "Opens it in Finder.") { menu?.revealLastCapture() }
                 }
+                #if DEBUG
                 Divider().overlay(SettingsLook.hairline)
                 ButtonRow("Test capsule", "Runs a local background job.", button: "Run") { menu?.runDebugCapsuleTest() }
+                #endif
             }
         }
     }

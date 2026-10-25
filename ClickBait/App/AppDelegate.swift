@@ -831,11 +831,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    #if DEBUG
-    /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
-    /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
-    /// others down. Logged "Bench: …" per phase for the main-thread sampler.
-    /// "Saved" / "Remembered" in the chat's header for a moment.
+    /// "Saved" / "Remembered" in the chat's header for a moment. (Was inside `#if DEBUG`, so
+    /// Release builds didn't compile.)
     private func flashKept(_ note: String) {
         chat.model.keptNote = note
         Task { @MainActor [weak self] in
@@ -843,6 +840,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.chat.model.keptNote = nil
         }
     }
+
+    #if DEBUG
+    /// The background dock with no model (`CLICKBAIT_BENCH_DOCK=1`): three tiles (two
+    /// working, one done) for 8 s, a running card streaming for 6 s, then three peels into the top slot, each sliding the
+    /// others down. Logged "Bench: …" per phase for the main-thread sampler.
 
     #if DEBUG
     /// `CLICKBAIT_TEST_GUIDANCE` (=<folder> also renders it): a labelled highlight and an armed,
