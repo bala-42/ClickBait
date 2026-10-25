@@ -1207,7 +1207,11 @@ private struct ShelfView: View {
     @Bindable var note: NotchController.Note
     let onEditing: (Bool) -> Void
     @State private var targeted = false
-    @FocusState private var noteFocused: Bool
+    @State private var noteFocused = false
+    /// A word in the note's header for a moment ("copied", "sent to Notes"), and what Clear
+    /// took, for its undo.
+    @State private var noteStatus: String?
+    @State private var cleared: String?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1281,25 +1285,33 @@ private struct ShelfView: View {
 
     private var noteCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Note").font(.system(size: 12, weight: .semibold))
-                Spacer(minLength: 4)
-                NotchHeaderIcon(symbol: "list.bullet", label: "Add bullet", action: appendBullet)
+            HStack(spacing: 8) {
+                if let cleared {
+                    Button("cleared · undo") { note.textView?.replaceAll(with: cleared); self.cleared = nil }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(NotchPalette.highlight)
+                } else {
+                    Text(noteStatus ?? "Note").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(noteStatus == nil ? NotchPalette.text : NotchPalette.highlight)
+                }
+                Spacer(minLength: 2)
+                NotchHeaderIcon(symbol: "list.bullet", label: "Bullet this line") { onCaret(NoteEditing.toggleBullet) }
+                NotchHeaderIcon(symbol: "checklist", label: "Checkbox on this line") { onCaret(NoteEditing.toggleCheckbox) }
+                NotchHeaderIcon(symbol: "doc.on.doc", label: "Copy the note", action: copyNote)
+                NotchHeaderIcon(symbol: "note.text.badge.plus", label: "Send to Notes", action: sendToNotes)
+                NotchHeaderIcon(symbol: "trash", label: "Clear the note", action: clearNote)
             }
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $note.text)
-                    .font(.system(size: 13))
-                    .foregroundColor(NotchPalette.text)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .tint(NotchPalette.highlight)
-                    .focused($noteFocused)
-                    .accessibilityLabel("Quick note")
+                NoteTextView(note: note) { focused in
+                    noteFocused = focused
+                    onEditing(focused)
+                }
                 if note.text.isEmpty {
                     Text("Write a note…")
                         .font(.system(size: 13))
                         .foregroundStyle(NotchPalette.tertiary)
-                        .padding(.leading, 5)
+                        .padding(.leading, 5).padding(.top, 2)
                         .allowsHitTesting(false)
                 }
             }
@@ -1310,14 +1322,55 @@ private struct ShelfView: View {
         .overlay(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous)
             .strokeBorder(NotchPalette.highlight.opacity(noteFocused ? 0.5 : 0), lineWidth: 1))
         .animation(.easeOut(duration: 0.14), value: noteFocused)
-        .onChange(of: noteFocused) { _, now in onEditing(now) }
     }
 
-    private func appendBullet() {
-        if note.text.isEmpty || note.text.hasSuffix("\n") {
-            note.text += "• "
-        } else {
-            note.text += "\n• "
+    /// A list button: acts on the line the caret is on (the end, if the note isn't being typed in).
+    private func onCaret(_ edit: (String, Int) -> NoteEditing.Edit) {
+        guard let box = note.textView else { return }
+        let caret = box.window?.firstResponder === box ? box.selectedRange().location : (note.text as NSString).length
+        box.apply(edit(note.text, caret))
+        box.window?.makeFirstResponder(box)
+    }
+
+    private func copyNote() {
+        guard !note.text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(note.text, forType: .string)
+        flash("copied")
+    }
+
+    private func sendToNotes() {
+        let text = note.text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        flash("sending…")
+        Task { @MainActor in
+            do {
+                _ = try await ActionExecutor.run(.makeNote(text))
+                flash("sent to Notes")
+            } catch {
+                flash("couldn't reach Notes")
+            }
+        }
+    }
+
+    /// Clear, with a few seconds to undo (⌘Z works too).
+    private func clearNote() {
+        guard !note.text.isEmpty else { return }
+        let was = note.text
+        note.textView?.replaceAll(with: "")
+        if note.textView == nil { note.text = "" }
+        cleared = was
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            if cleared == was { cleared = nil }
+        }
+    }
+
+    private func flash(_ words: String) {
+        noteStatus = words
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if noteStatus == words { noteStatus = nil }
         }
     }
 

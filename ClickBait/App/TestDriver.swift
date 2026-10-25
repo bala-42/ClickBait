@@ -85,6 +85,7 @@ final class TestDriver {
             case "cardfollowup": await cardFollowUp()
             case "tellmore": await tellMore()
             case "sniptellmore": await snipTellMore()
+            case "note": await noteLists()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -365,6 +366,52 @@ final class TestDriver {
         note("  - elaborate: \"\(more.prefix(140))\"")
         check(more.localizedCaseInsensitiveContains("jobs") || more.localizedCaseInsensitiveContains("apple"),
               "\"elaborate\" carries on about Steve Jobs")
+    }
+
+    /// The shelf note's lists with real keys and clicks: Return carries a bullet on and ends
+    /// it on an empty one, Tab indents, a click ticks ☐, Clear undoes. Puts the note back.
+    private func noteLists() async {
+        guard await openByHand() else { return check(false, "notch opens") }
+        hooks.notch.model.tab = .shelf
+        try? await Task.sleep(for: .seconds(0.8))
+        let note = hooks.notch.model.note
+        let saved = note.text
+        guard let box = note.textView, let window = box.window else { return check(false, "the note's text view is there") }
+        let frame = window.convertToScreen(box.convert(box.bounds, to: nil))
+        await click(at: quartz(CGPoint(x: frame.midX, y: frame.maxY - 10)))
+        try? await Task.sleep(for: .milliseconds(300))
+        check(window.firstResponder === box, "a click puts the cursor in the note")
+        box.replaceAll(with: "• milk")
+        box.setSelectedRange(NSRange(location: 6, length: 0))
+        key(36)  // Return
+        try? await Task.sleep(for: .milliseconds(200))
+        check(note.text == "• milk\n• ", "Return carries the bullet on (\(note.text.debugDescription))")
+        key(48)  // Tab
+        try? await Task.sleep(for: .milliseconds(200))
+        check(note.text == "• milk\n    • ", "Tab indents it")
+        key(36)
+        try? await Task.sleep(for: .milliseconds(200))
+        check(note.text == "• milk\n    ", "Return on an empty bullet ends the list")
+        box.replaceAll(with: "☐ water plants")
+        try? await Task.sleep(for: .milliseconds(200))
+        if let layout = box.layoutManager, let container = box.textContainer {
+            let glyph = layout.glyphRange(forCharacterRange: NSRange(location: 0, length: 1), actualCharacterRange: nil)
+            let rect = layout.boundingRect(forGlyphRange: glyph, in: container).offsetBy(dx: box.textContainerOrigin.x, dy: box.textContainerOrigin.y)
+            let onScreen = window.convertToScreen(box.convert(rect, to: nil))
+            await click(at: quartz(CGPoint(x: onScreen.midX, y: onScreen.midY)))
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+        check(note.text == "☑ water plants", "a click ticks the box (\(note.text.debugDescription))")
+        await shot("note")
+        if let clear = await element("Clear the note") { await click(at: CGPoint(x: clear.midX, y: clear.midY)) }
+        try? await Task.sleep(for: .milliseconds(400))
+        let emptied = note.text.isEmpty
+        if let undo = await element("cleared · undo") { await click(at: CGPoint(x: undo.midX, y: undo.midY)) }
+        try? await Task.sleep(for: .milliseconds(400))
+        check(emptied && note.text == "☑ water plants", "Clear empties it and undo brings it back")
+        box.replaceAll(with: saved)
+        hooks.notch.debugClose()
+        hooks.notch.model.tab = .home
     }
 
     /// A snip of a test page, then "tell me more" on it: both answers saved

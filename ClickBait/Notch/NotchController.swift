@@ -36,6 +36,14 @@ final class NotchController {
     @MainActor @Observable
     final class Note {
         var text: String { didSet { save(text) } }
+        /// Its text view while the shelf shows (`NoteTextView`): the bullet and checkbox
+        /// buttons act on its caret, dictation types into it.
+        @ObservationIgnored weak var textView: NoteTextBox?
+        /// The note has the cursor: dictation goes into it.
+        var isTyping: Bool {
+            guard let textView, let window = textView.window else { return false }
+            return window.isKeyWindow && window.firstResponder === textView
+        }
         @ObservationIgnored private let save: (String) -> Void
         init(text: String, save: @escaping (String) -> Void) {
             self.text = text

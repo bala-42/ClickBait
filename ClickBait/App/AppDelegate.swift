@@ -124,6 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !Self.isHostingTests else { return }
         NSApp.mainMenu = Self.mainMenu()
+        dictation.noteTarget = { [weak self] in
+            guard let note = self?.notch.model.note, note.isTyping else { return nil }
+            return note.textView
+        }
         NSApp.servicesProvider = servicesProvider
         NSUpdateDynamicServices()
         #if DEBUG

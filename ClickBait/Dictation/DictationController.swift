@@ -61,6 +61,10 @@ final class DictationController {
         }
     }
 
+    /// The shelf note when it has the cursor: dictation types into it (the notch takes the
+    /// keyboard without becoming the app in front, so the app behind would get it).
+    var noteTarget: () -> NoteTextBox? = { nil }
+
     private func write(started: ContinuousClock.Instant) async {
         let target = await targetTask?.value ?? DictationTarget()
         let hints = Dictation.hints(windowTitle: target.windowTitle, labels: target.labels, textBeforeCaret: target.textBeforeCaret)
@@ -86,7 +90,8 @@ final class DictationController {
         }
         let plan = DictationWriting.plan(heard: heard, hasSelection: target.selectedText != nil, hasLastResult: recent != nil,
                                          fieldHasText: !(target.fieldText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        if case .write(let instruction, let subject) = plan {
+        let note = noteTarget()
+        if note == nil, case .write(let instruction, let subject) = plan {
             await writeForUser(instruction, subject: subject, target: target, recent: recent, started: started)
             return
         }
@@ -97,6 +102,13 @@ final class DictationController {
         if case .type(let words) = plan { spoken = words } else { spoken = Dictation.withoutFillers(heard, extra: own) }
         let heardAt = ContinuousClock.now
         let tidied = await coordinator.tidyDictation(spoken, app: app?.localizedName, screenWords: hints)
+        if let note {
+            overlay.setDictating(false)
+            let before = (note.string as NSString).substring(to: min(note.selectedRange().location, (note.string as NSString).length))
+            note.insertAtCaret(Dictation.joined(Dictation.parseTidy(tidied, raw: spoken), after: before))
+            Log.ask.notice("Dictation: typed into the shelf note")
+            return
+        }
         let text = Dictation.joined(Dictation.parseTidy(tidied, raw: spoken), after: target.textBeforeCaret)
         let sameApp = app != nil && NSWorkspace.shared.frontmostApplication?.processIdentifier == app?.processIdentifier
         let delivery = Dictation.delivery(role: target.role, subrole: target.subrole, editable: target.editable, sameApp: sameApp)
