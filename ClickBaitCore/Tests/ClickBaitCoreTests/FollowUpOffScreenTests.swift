@@ -15,4 +15,13 @@ struct FollowUpOffScreenTests {
             #expect(ScreenNeed.followUpNeedsScreen(question), "\(question)")
         }
     }
+
+    @Test func askingForMoreIsAboutTheLastAnswer() {
+        for question in ["tell me more", "elaborate", "go on", "can you explain more?", "tell me more about it", "more details please"] {
+            #expect(ScreenNeed.asksForMore(question), "\(question)")
+        }
+        for question in ["what is a palindrome", "where is the more button", "who is Steve Jobs"] {
+            #expect(!ScreenNeed.asksForMore(question) || ScreenNeed.followUpNeedsScreen(question), "\(question)")
+        }
+    }
 }

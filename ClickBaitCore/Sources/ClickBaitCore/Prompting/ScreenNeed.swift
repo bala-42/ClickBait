@@ -56,6 +56,17 @@ public enum ScreenNeed {
             || ImpliedPointer.normalized(question).contains("on my screen") || ImpliedPointer.normalized(question).contains("on screen")
     }
 
+    /// "tell me more", "elaborate", "go on": about the last answer, never the screen. Given a
+    /// screenshot, "tell me more" about a palindrome function described a weather widget
+    /// (test drive, 2026-10-25).
+    public static func asksForMore(_ question: String) -> Bool {
+        let text = ImpliedPointer.normalized(question)
+        return moreAsks.contains { text == $0 || text.hasPrefix($0 + " ") || text.hasSuffix(" " + $0) || text.contains(" " + $0 + " ") }
+    }
+
+    static let moreAsks = ["tell me more", "more", "elaborate", "go on", "continue", "keep going", "expand", "expand on that",
+                           "explain more", "explain further", "more detail", "more details", "in more detail", "say more", "go deeper"]
+
     static let followUpScreenWords: Set<String> = [
         "screen", "window", "windows", "page", "tab", "tabs", "app", "button", "buttons", "menu", "click", "here",
         "highlighted", "selected", "selection", "see", "showing", "shown", "open", "visible", "look", "icon", "toolbar",

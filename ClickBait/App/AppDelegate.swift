@@ -245,6 +245,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         capsules.onSuggestion = { [weak self] id, text in
             guard let self else { return }
             let pending = backgroundJobs.entries.first(where: { $0.id == id })?.walkthrough
+            // A follow-up chip ("tell me more", a suggested question) carries on in this card's
+            // own conversation, its answer in the mini-chat: it used to go back to the window,
+            // ask in the main chat and, slow, land in the dock as a new task (user's report,
+            // 2026-10-25). The walkthrough and the parts tour still need the window.
+            if text != PeelRule.walkthroughResumePrompt, text != PeelRule.suggestedPartsPrompt {
+                coordinator.nextTypedIsDetailed = text == PeelRule.tellMorePrompt
+                capsules.followUp(id, .tap(.text))
+                capsules.followUp(id, .draft(text))
+                capsules.followUp(id, .submit)
+                return
+            }
             goThere(id) { [weak self] in
                 guard let self else { return }
                 // Its walkthrough was planned in the dock: start it now, back where it was asked.

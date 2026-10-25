@@ -83,6 +83,7 @@ final class TestDriver {
             case "busydock": await busyDock()
             case "followup": await followUps()
             case "cardfollowup": await cardFollowUp()
+            case "tellmore": await tellMore()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -363,6 +364,31 @@ final class TestDriver {
         note("  - elaborate: \"\(more.prefix(140))\"")
         check(more.localizedCaseInsensitiveContains("jobs") || more.localizedCaseInsensitiveContains("apple"),
               "\"elaborate\" carries on about Steve Jobs")
+    }
+
+    /// "tell me more" on a done card carries on in that card (no new task); the longer
+    /// answer lands in its mini-chat.
+    private func tellMore() async {
+        activate("com.apple.finder")
+        let before = Set(hooks.backgroundJobs.entries.map(\.id))
+        ask("write a python function that checks for palindromes")
+        guard await wait(15, { self.hooks.backgroundJobs.entries.contains { !before.contains($0.id) } }),
+              let id = hooks.backgroundJobs.entries.first(where: { !before.contains($0.id) })?.id else {
+            return check(false, "the question goes to the dock")
+        }
+        func entry() -> BackgroundJobs.Entry? { hooks.backgroundJobs.entries.first { $0.id == id } }
+        func done() -> Bool { if case .done? = entry()?.job.status { true } else { false } }
+        guard await wait(90, { done() }) else { return check(false, "the dock answer finishes") }
+        let jobs = hooks.backgroundJobs.entries.count
+        hooks.capsules.onSuggestion?(id, PeelRule.tellMorePrompt)
+        try? await Task.sleep(for: .seconds(1.5))
+        guard await wait(120, { done() }), let after = entry() else { return check(false, "tell me more finishes") }
+        let answers = after.chatMessages.filter { $0.role == .assistant }.map(\.text)
+        note("  - tiles \(jobs) → \(hooks.backgroundJobs.entries.count); card answers \(answers.count); more: \"\(answers.last?.prefix(100) ?? "")\"")
+        check(hooks.backgroundJobs.entries.count == jobs, "tell me more makes no new task")
+        check(answers.count == 2 && (answers.last?.count ?? 0) > (answers.first?.count ?? 0) / 2,
+              "its answer carries on in the same card")
+        check(answers.last?.localizedCaseInsensitiveContains("palindrome") == true, "and it's about the palindrome function, not the screen")
     }
 
     /// A follow-up asked in a done dock card: its answer shows once (in the mini-chat), the

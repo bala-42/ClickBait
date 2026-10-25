@@ -349,11 +349,12 @@ extension AskCoordinator {
             }
             // The conversation so far wasn't about the screen ("who is Steve Jobs?"), and the
             // follow-up doesn't name it ("elaborate"): no screenshot, or it described the screen.
-            if snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty,
-               (queued ? flow.conversation : conversation)?.lastOffScreen == true, !ScreenNeed.followUpNeedsScreen(question) {
+            // "tell me more" is about the last answer whatever it was about.
+            if snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty, !ScreenNeed.followUpNeedsScreen(question),
+               (queued ? flow.conversation : conversation)?.lastOffScreen == true || request.detailed || ScreenNeed.asksForMore(question) {
                 request.screenshotJPEG = Data()
                 request.elements = []
-                Log.ask.notice("Follow-up to an answer about the world: asking without the screenshot")
+                Log.ask.notice("Follow-up about the last answer, not the screen: asking without the screenshot")
             }
             // A follow-up on an unchanged screen: the first question's screenshot, which Ollama
             // has already read, instead of a new one (~1.3 s sooner). Any change: a new one.
