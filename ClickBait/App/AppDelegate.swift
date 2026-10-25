@@ -244,7 +244,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TestDriver.runIfRequested { [unowned self] in
             TestDriver.Hooks(notch: notch, coordinator: coordinator, overlay: overlay, tutorial: tutorial,
                              backgroundJobs: backgroundJobs, chat: chat, capsules: capsules,
-                             goThere: { [weak self] id in self?.capsules.onGoThere?(id) })
+                             goThere: { [weak self] id in self?.capsules.onGoThere?(id) },
+                             openSetup: { [weak self] in self?.onboardingWindow.show() })
         }
         #endif
         runRouteBenchIfRequested()

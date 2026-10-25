@@ -18,8 +18,13 @@ final class ModelSetupChecker {
     }
 
     private(set) var state: State = .checking
+    /// Downloading the model from setup (`OllamaSetup.pull`): how far, 0…1, while it runs.
+    private(set) var downloading = false
+    private(set) var downloaded: Double?
+    private(set) var downloadProblem: String?
     private let settings: AppSettings
     private var polling: Task<Void, Never>?
+    private var download: Task<Void, Never>?
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -52,64 +57,34 @@ final class ModelSetupChecker {
         }
     }
 
+    var model: String { settings.ollamaModel.trimmingCharacters(in: .whitespaces) }
+
+    /// Starts (or resumes) the model download; it carries on while setup moves on or closes.
+    func startDownload() {
+        guard download == nil else { return }
+        downloading = true
+        downloadProblem = nil
+        let model = model
+        download = Task { [weak self] in
+            do {
+                try await OllamaSetup.pull(model) { [weak self] progress in
+                    Task { @MainActor in
+                        if let fraction = progress.fraction { self?.downloaded = fraction }
+                    }
+                }
+                await self?.check()
+            } catch OllamaSetup.PullError.failed(let reason) {
+                self?.downloadProblem = reason
+            } catch {
+                self?.downloadProblem = "Ollama stopped answering. Open Ollama and try again."
+            }
+            self?.downloading = false
+            self?.download = nil
+        }
+    }
+
     func stopPolling() {
         polling?.cancel()
         polling = nil
-    }
-}
-
-/// The onboarding's "AI model" section: what to do until Ollama and the model are ready.
-struct ModelSetupSection: View {
-    let checker: ModelSetupChecker
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("AI model").font(.headline)
-                Spacer()
-                status
-            }
-            switch checker.state {
-            case .checking:
-                EmptyView()
-            case .ready:
-                Text("Ollama is running with \(OllamaProvider.defaultModel). Answers stay on this Mac.")
-                    .font(.callout).foregroundStyle(.secondary)
-            case .noOllama:
-                Text("ClickBait answers with Ollama, which runs AI models on your Mac. Install it, open it, then come back here.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Get Ollama…") { NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!) }
-            case .missingModel(let model):
-                Text("Ollama is running. Download the model (about 6.6 GB) by running this in Terminal:")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Text("ollama pull \(model)")
-                        .font(.system(.callout, design: .monospaced))
-                        .textSelection(.enabled)
-                    Spacer()
-                    Button(copied ? "Copied" : "Copy") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("ollama pull \(model)", forType: .string)
-                        copied = true
-                    }
-                }
-                .padding(8)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            }
-        }
-    }
-
-    @ViewBuilder private var status: some View {
-        switch checker.state {
-        case .checking:
-            ProgressView().controlSize(.small)
-        case .ready:
-            Label("Ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-        case .noOllama, .missingModel:
-            Label("Needed", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
-        }
     }
 }

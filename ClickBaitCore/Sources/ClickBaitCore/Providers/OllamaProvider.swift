@@ -14,7 +14,7 @@ public struct OllamaProvider: LLMProvider {
 
     /// Models stay loaded while ClickBait runs (user's decision, 2026-10-04): no 3–5 s
     /// reload after a break. `unload()` lets them go when ClickBait quits.
-    static let keepAlive = -1
+    public static let keepAlive = -1
 
     /// Frees both models (ClickBait is quitting). Waits at most `within`.
     public func unload(within limit: TimeInterval = 1.5) {
@@ -189,7 +189,7 @@ public struct OllamaProvider: LLMProvider {
 
     /// The screenshot alone is ~1,400 tokens and the element list can add ~2,000; Ollama's
     /// default of 4,096 overflowed (an error, or worse, the instructions silently cut).
-    static let contextTokens = 8192
+    public static let contextTokens = 8192
     /// Replies are a few sentences plus maybe some code. A cap stops a runaway reply
     /// (one ran to 10,000 characters and 2 minutes) from blocking the next question; 800
     /// cut whole programs ("write a snake game") off mid-JSON, so the code was lost.

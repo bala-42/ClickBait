@@ -26,6 +26,7 @@ final class TestDriver {
         let chat: ChatController
         let capsules: CapsuleController
         let goThere: (UUID) -> Void
+        let openSetup: () -> Void
     }
 
     private let hooks: Hooks
@@ -77,6 +78,7 @@ final class TestDriver {
             case "mictest": await microphoneTest()
             case "snip": await snipExplains()
             case "motion": await notchMotion()
+            case "setup": await setupSteps()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -341,6 +343,29 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// Opens the setup window and goes through every step by its own buttons, a screenshot
+    /// each ("setup-1-welcome.png" …), ending with Done.
+    private func setupSteps() async {
+        hooks.openSetup()
+        try? await Task.sleep(for: .seconds(1))
+        let names = ["welcome", "microphone", "accessibility", "screen-recording", "model", "speech", "ready"]
+        for (index, name) in names.enumerated() {
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.title == "Welcome to ClickBait" }) {
+                move(to: quartz(CGPoint(x: window.frame.midX, y: window.frame.midY)))
+            }
+            try? await Task.sleep(for: .seconds(name == "ready" ? 6 : 0.8))
+            await shot("setup-\(index + 1)-\(name)")
+            var button: CGRect?
+            for label in ["let's set it up", "continue", "skip for now", "done"] where button == nil {
+                button = await element(label)
+            }
+            guard let button else { return check(false, "setup: a way on from \(name)") }
+            await click(at: CGPoint(x: button.midX, y: button.midY))
+        }
+        try? await Task.sleep(for: .seconds(0.6))
+        check(!NSApp.windows.contains { $0.isVisible && $0.title == "Welcome to ClickBait" }, "setup: went through all 7 steps and closed")
     }
 
     /// Opens and folds the notch by hand five times; the frame probe logs each motion

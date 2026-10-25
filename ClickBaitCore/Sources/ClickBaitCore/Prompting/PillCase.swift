@@ -14,6 +14,7 @@ public enum PillCase {
         "Mac", "Dock", "Spotlight", "Siri", "AirDrop", "iCloud", "Apple", "Wi-Fi", "Bluetooth", "Trash",
         "Control", "Centre", "Center", "Mission", "Launchpad", "Firefox", "Arc", "Zoom", "Word", "Excel", "Pages",
         "Numbers", "Keynote", "FaceTime", "WhatsApp", "Telegram", "Discord", "Notion", "Figma", "GitHub",
+        "Ollama", "Gemma", "Option", "Command", "Accessibility", "Microphone", "Screen", "Recording", "Camera",
     ]
 
     public static func lowered(_ text: String, names: Set<String> = []) -> String {

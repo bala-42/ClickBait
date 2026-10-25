@@ -229,15 +229,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         onToggleNotch?(on)
     }
 
-    /// The title is text and changes only here, when the switch is toggled — never per
-    /// state (per-state status-item changes stalled the companion; spec decision 2).
+    /// The menu bar shows the companion's triangle, white like the other icons, tilted as on
+    /// screen (user's ask, 2026-10-25); Internet Mode shows in the menu and to VoiceOver.
+    /// Changes only here, when the switch is toggled — never per state (per-state
+    /// status-item changes stalled the companion; spec decision 2).
     private func showInternetMode() {
         let on = settings.internet.isOn
-        let title = on ? "🌐 ClickBait" : "🔒 ClickBait"
-        if statusItem.button?.title != title {
-            statusItem.button?.title = title
-            statusItem.button?.setAccessibilityLabel(on ? "ClickBait, Internet Mode on" : "ClickBait, Internet Mode off")
+        if statusItem.button?.image == nil {
+            statusItem.button?.title = ""
+            statusItem.button?.image = Self.triangleIcon
         }
+        statusItem.button?.setAccessibilityLabel(on ? "ClickBait, Internet Mode on" : "ClickBait, Internet Mode off")
         internetItem.title = on ? "Internet: on 🌐" : "Internet: off 🔒"
         internetItem.state = on ? .on : .off
         recentMenu.removeAllItems()
@@ -315,12 +317,31 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
             Volume HUD lettering: Press Start 2P, © 2012 The Press Start 2P Project Authors (cody@zone38.net), \
             licensed under the SIL Open Font License 1.1.
+            App icon background: the Hubble Ultra Deep Field. Image: NASA, ESA, and S. Beckwith (STScI).
             """
         let style = NSMutableParagraphStyle()
         style.alignment = .center
         return NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style,
         ])
+    }()
+
+    /// The companion's triangle (`EquilateralTriangle`) at its resting tilt, as a template
+    /// image so macOS draws it white or black to match the menu bar.
+    static let triangleIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
+            let side: CGFloat = 13
+            let shape = EquilateralTriangle().path(in: CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side))
+            let turn = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+                .rotated(by: CompanionTriangle.restingAngle * .pi / 180)
+                .translatedBy(x: -rect.midX, y: -rect.midY)
+            NSColor.black.setFill()
+            NSBezierPath(cgPath: shape.applying(turn).cgPath).fill()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "ClickBait"
+        return image
     }()
 
     @objc func quit() { NSApp.terminate(nil) }
