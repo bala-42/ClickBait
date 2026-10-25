@@ -233,14 +233,32 @@ extension View {
     /// would otherwise lay a long label out on one line, or cut it off.
     func wrapped(_ text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold,
                  alignment: HorizontalAlignment = .leading) -> some View {
-        let font = NSFont.systemFont(ofSize: size, weight: weight)
-        let widest = text.split(whereSeparator: \.isNewline)
-            .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }
-            .max() ?? 0
-        return self
+        self
             .multilineTextAlignment(alignment == .center ? .center : .leading)
-            .frame(width: min(ceil(widest) + 2, maxWidth), alignment: Alignment(horizontal: alignment, vertical: .center))
+            .frame(width: TextWrap.width(text, maxWidth: maxWidth, font: NSFont.systemFont(ofSize: size, weight: weight)))
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// How text wraps at a width, as SwiftUI breaks it: the pill is as wide as its widest real
+/// line. Wrapped text was given the whole `maxWidth`, and lines break at words, so the
+/// right side of a wrapped pill was up to 46 pt of empty fill (user's report, 2026-10-25).
+/// The same lines break the same way at this narrower width (each still fits; the next
+/// word still didn't). The 2 pt slack is split both sides (the frame centres the text).
+enum TextWrap {
+    static func lines(_ text: String, maxWidth: CGFloat, font: NSFont) -> [CTLine] {
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let setter = CTFramesetterCreateWithAttributedString(attributed)
+        let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0),
+                                             CGPath(rect: CGRect(x: 0, y: 0, width: min(maxWidth, 100_000), height: 10_000), transform: nil), nil)
+        return CTFrameGetLines(frame) as? [CTLine] ?? []
+    }
+
+    static func width(_ text: String, maxWidth: CGFloat, font: NSFont) -> CGFloat {
+        let widest = lines(text, maxWidth: maxWidth, font: font)
+            .map { CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil)) - CGFloat(CTLineGetTrailingWhitespaceWidth($0)) }
+            .max() ?? 0
+        return min(ceil(widest) + 2, maxWidth)
     }
 }
 
@@ -250,16 +268,11 @@ extension View {
 /// vs 5 pt below, 2026-10-06), and wrapped text likewise (user's report, 2026-10-14). Lines
 /// are broken at the same width `wrapped` gives the text.
 enum InkCentring {
-    static func offset(for text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold) -> CGFloat {
+    static func offset(for text: String, maxWidth: CGFloat, size: CGFloat = 12, weight: NSFont.Weight = .semibold,
+                       scale: CGFloat = 2) -> CGFloat {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
-        let attributed = NSAttributedString(string: text, attributes: [.font: font])
-        let widest = text.split(whereSeparator: \.isNewline)
-            .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
-        let width = min(ceil(widest) + 2, maxWidth)
-        let setter = CTFramesetterCreateWithAttributedString(attributed)
-        let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0),
-                                             CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 10_000), transform: nil), nil)
-        guard let lines = CTFrameGetLines(frame) as? [CTLine], let first = lines.first, let last = lines.last else { return 0 }
+        let lines = TextWrap.lines(text, maxWidth: TextWrap.width(text, maxWidth: maxWidth, font: font), font: font)
+        guard let first = lines.first, let last = lines.last else { return 0 }
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
         CTLineGetTypographicBounds(first, &ascent, &descent, &leading)
         let top = CTLineGetBoundsWithOptions(first, .useGlyphPathBounds)
@@ -269,7 +282,10 @@ enum InkCentring {
         // the extra below the baseline.
         let lineHeight = (ascent + descent + leading).rounded(.up)
         let above = ascent - top.maxY, below = lineHeight - ascent + bottom.minY
-        return -((above - below) / 2 * 2).rounded() / 2  // whole pixels on a 2× screen: crisp text
+        // Whole pixels of the screen it's on: crisp text. On a 1× display a half-point nudge
+        // was drawn rounded the wrong way, the letters 1–2 pt low (measured, 2026-10-25).
+        let scale = max(scale, 1)
+        return -((above - below) / 2 * scale).rounded() / scale
     }
 }
 
@@ -278,7 +294,19 @@ extension View {
     /// (`InkCentring`), one line or wrapped.
     func inkCentred(_ text: String, maxWidth: CGFloat = .greatestFiniteMagnitude, size: CGFloat = 12,
                     weight: NSFont.Weight = .semibold) -> some View {
-        offset(y: InkCentring.offset(for: text, maxWidth: maxWidth, size: size, weight: weight))
+        modifier(InkCentred(text: text, maxWidth: maxWidth, size: size, weight: weight))
+    }
+}
+
+private struct InkCentred: ViewModifier {
+    let text: String
+    let maxWidth: CGFloat
+    let size: CGFloat
+    let weight: NSFont.Weight
+    @Environment(\.displayScale) private var scale
+
+    func body(content: Content) -> some View {
+        content.offset(y: InkCentring.offset(for: text, maxWidth: maxWidth, size: size, weight: weight, scale: scale))
     }
 }
 
