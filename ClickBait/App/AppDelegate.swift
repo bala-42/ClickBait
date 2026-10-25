@@ -632,17 +632,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Pointing, or a few friendly words: the companion says it; the chat isn't needed.
             let short = PillText.fits(response.speech, code: response.code)
             let pillSays = short || !pointers.isEmpty
-            // The answer is in: the chat waits no longer, open or parked out of sight (a pointing
-            // answer parks it first, and left busy it ignored the next question: test drive).
-            chat.model.isBusy = false
             if chat.isOpen {
-                chat.model.setAssistant(response.displayText)  // final text, with any code as a block
+                // Final text, with any code as a block, over the streamed one: while still busy
+                // (set not busy first, it was added again below the streamed copy: the answer
+                // showed twice, user's report 2026-10-25).
+                chat.model.setAssistant(response.displayText)
                 if !pillSays {
                     chat.untuck()
                 } else if chat.isTucked {
                     chat.park()  // kept in the conversation; a double tap brings it back
                 }
             }
+            // The answer is in: the chat waits no longer, open or parked out of sight (a pointing
+            // answer parks it first, and left busy it ignored the next question: test drive).
+            chat.model.isBusy = false
             // Already pointing (instantly, before the model): don't start over. The reply's
             // own few words label the pointer when they fit ("Share's up here!").
             if !pointers.isEmpty {

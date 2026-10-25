@@ -18,6 +18,16 @@ struct AXSnapshot: Sendable {
 /// hung app can't stall ClickBait. Without Accessibility permission everything
 /// returns empty and ClickBait simply doesn't snap.
 enum AXInspector {
+    /// An app's accessibility root. ClickBait's own, asked off the main thread, is an
+    /// element that answers nothing: AppKit builds its menus and text fields on the asking
+    /// thread, and off the main thread that threw (NSMenu assertion) and left SwiftUI's lock
+    /// held, freezing ClickBait for good. Since it became a regular app it's often the app in
+    /// front when a question is asked (deadlock, 2026-10-25).
+    nonisolated static func appElement(_ pid: pid_t) -> AXUIElement {
+        if pid == getpid(), !Thread.isMainThread { return AXUIElementCreateApplication(0) }
+        return AXUIElementCreateApplication(pid)
+    }
+
     private static let timeout: Float = 0.15
 
     static var isTrusted: Bool { AXIsProcessTrusted() }
@@ -29,7 +39,7 @@ enum AXInspector {
         var result = AXSnapshot()
 
         if let pid = frontmostPID {
-            let app = element(AXUIElementCreateApplication(pid))
+            let app = element(appElement(pid))
             if let window = app.element(kAXFocusedWindowAttribute) {
                 result.windowTitle = window.string(kAXTitleAttribute)
                 result.windowFrame = window.frame
@@ -39,7 +49,7 @@ enum AXInspector {
         let systemWide = element(AXUIElementCreateSystemWide())
         // Some apps only answer "what's focused" when asked directly.
         let focused = systemWide.element(kAXFocusedUIElementAttribute)
-            ?? frontmostPID.flatMap { element(AXUIElementCreateApplication($0)).element(kAXFocusedUIElementAttribute) }
+            ?? frontmostPID.flatMap { element(appElement($0)).element(kAXFocusedUIElementAttribute) }
         if let focused {
             let role = focused.string(kAXRoleAttribute) ?? "element"
             let name = focused.name
@@ -72,7 +82,7 @@ enum AXInspector {
     /// on the Mac, and the app forgets it when it quits.
     static func requestAccessibilityTree(pid: pid_t?) {
         guard isTrusted, let pid else { return }
-        let app = AXUIElementCreateApplication(pid)
+        let app = appElement(pid)
         AXUIElementSetMessagingTimeout(app, timeout)
         let result = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         if result == .success, requestedTrees.withLock({ $0.insert(pid).inserted }) {
@@ -97,7 +107,7 @@ enum AXInspector {
     /// budget.
     static func frame(ofElement id: String, pid: pid_t, budget: TimeInterval = 0.2) -> Rect? {
         guard isTrusted else { return nil }
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else { return nil }
         let wanted = id.lowercased()
         let deadline = Date().addingTimeInterval(budget)
@@ -123,7 +133,7 @@ enum AXInspector {
                                 limit: Int = 150) -> [ScreenElement] {
         guard isTrusted, let pid else { return [] }
         let deadline = Date().addingTimeInterval(budget)
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         let menuBar = app.element(kAXMenuBarAttribute)
 
         var roots: [AXElement] = app.children(kAXChildrenAttribute).filter { $0.string(kAXRoleAttribute) == "AXMenu" }
@@ -170,7 +180,7 @@ enum AXInspector {
     static func pageAddress(frontmostPID pid: pid_t?, trace: inout String) -> (address: String, title: String?)? {
         guard isTrusted, let pid else { trace = "no access"; return nil }
         requestAccessibilityTree(pid: pid)  // Chromium builds its page tree only when asked
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         for attempt in 0..<2 {
             guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute) else {
                 trace = "no window"
@@ -220,7 +230,7 @@ enum AXInspector {
     /// name it differently, and the name a model guesses rarely matches.
     static func addressBarFrame(frontmostPID pid: pid_t?) -> Rect? {
         guard isTrusted, let pid else { return nil }
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute),
               let windowFrame = window.frame else { return nil }
         let deadline = Date().addingTimeInterval(0.4)
@@ -253,7 +263,7 @@ enum AXInspector {
     /// Presses the first tab (front window first) whose name `matches`, and raises its window.
     static func selectTab(browserPID pid: pid_t, where matches: (String) -> Bool) -> Bool {
         guard isTrusted else { return false }
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         let deadline = Date().addingTimeInterval(0.5)
         for window in app.children(kAXWindowsAttribute) {
             var queue = [window][...]
@@ -286,7 +296,7 @@ enum AXInspector {
     /// land on. Its title is the page shown (a browser's active tab).
     static func window(at point: Point, pid: pid_t) -> (title: String?, frame: Rect)? {
         guard isTrusted else { return nil }
-        for window in element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute) {
+        for window in element(appElement(pid)).children(kAXWindowsAttribute) {
             guard window.bool(kAXMinimizedAttribute) != true, let frame = window.frame,
                   point.x >= frame.minX, point.x <= frame.maxX, point.y >= frame.minY, point.y <= frame.maxY else { continue }
             return (window.string(kAXTitleAttribute), frame)
@@ -297,7 +307,7 @@ enum AXInspector {
     @discardableResult
     static func raiseHomeWindow(pid: pid_t, title: String?, frame: Rect?) -> HomeReturn {
         guard isTrusted, title != nil || frame != nil else { return .none }
-        let windows = element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute)
+        let windows = element(appElement(pid)).children(kAXWindowsAttribute)
         let described = windows.map { (title: $0.string(kAXTitleAttribute), frame: $0.frame) }
         let index = HomeWindow.best(described, title: title, frame: frame)
         // No window shows it now: it's a tab that's no longer in front (or windows stacked
@@ -320,7 +330,7 @@ enum AXInspector {
     /// `AXSelectedTextRange` and `AXBoundsForRange` — exact and instant, no model. Nil when
     /// nothing focused takes text or the app doesn't report the caret's place.
     static func caretRect(pid: pid_t) -> Rect? {
-        guard isTrusted, let focused = element(AXUIElementCreateApplication(pid)).element(kAXFocusedUIElementAttribute),
+        guard isTrusted, let focused = element(appElement(pid)).element(kAXFocusedUIElementAttribute),
               let selection = focused.attribute(kAXSelectedTextRangeAttribute), CFGetTypeID(selection) == AXValueGetTypeID()
         else { return nil }
         var cfRange = CFRange()
@@ -346,13 +356,13 @@ enum AXInspector {
     /// The app's focused window on the current desktop (Quartz), for placing the chat.
     static func focusedWindowFrameOnScreen(pid: pid_t) -> Rect? {
         guard isTrusted else { return nil }
-        return element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute)?.frame
+        return element(appElement(pid)).element(kAXFocusedWindowAttribute)?.frame
     }
 
     #if DEBUG
     /// For the "go there!" check (`CLICKBAIT_TEST_GOTHERE`): the focused window on the current desktop.
     static func focusedWindowTitle(pid: pid_t) -> String? {
-        element(AXUIElementCreateApplication(pid)).element(kAXFocusedWindowAttribute)?.string(kAXTitleAttribute)
+        element(appElement(pid)).element(kAXFocusedWindowAttribute)?.string(kAXTitleAttribute)
     }
 
     #endif
@@ -362,7 +372,7 @@ enum AXInspector {
     /// this isn't, and it switches to the app's Space.
     static func bringToFront(pid: pid_t) {
         guard isTrusted else { return }
-        AXUIElementSetAttributeValue(element(AXUIElementCreateApplication(pid)).ref,
+        AXUIElementSetAttributeValue(element(appElement(pid)).ref,
                                      kAXFrontmostAttribute as CFString, kCFBooleanTrue)
     }
 
@@ -423,7 +433,7 @@ enum AXInspector {
     /// ["View", "Show Path Bar"], or ["Format", "Font", "Bold"] for a submenu. Lets a
     /// tutorial point at the menu to open when the model skipped that step.
     static func menuPath(to label: String, frontmostPID pid: pid_t?, budget: TimeInterval = 0.4) -> [String]? {
-        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+        guard isTrusted, let pid, let bar = element(appElement(pid)).element(kAXMenuBarAttribute) else { return nil }
         let deadline = Date().addingTimeInterval(budget)
         var best: (path: [String], score: Double)?
 
@@ -461,7 +471,7 @@ enum AXInspector {
     /// menu-bar menu mid-tracking. Nil when the item has no frame on screen.
     static func openMenuItemFrame(_ path: [String], frontmostPID pid: pid_t?) -> Rect? {
         guard isTrusted, let pid, path.count >= 2,
-              let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+              let bar = element(appElement(pid)).element(kAXMenuBarAttribute) else { return nil }
         var item = bar.children(kAXChildrenAttribute).first { $0.name == path[0] }
         for title in path.dropFirst() {
             guard let menu = item?.children(kAXChildrenAttribute).first(where: { $0.string(kAXRoleAttribute) == "AXMenu" }) else { return nil }
@@ -474,7 +484,7 @@ enum AXInspector {
     /// The frontmost app's menus as "History ▸ Clear History…" lines (two levels, no
     /// Apple menu), for planning tutorials with the app's real item names.
     static func menuOutline(frontmostPID pid: pid_t?, limit: Int = 160, budget: TimeInterval = 0.5) -> [String] {
-        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return [] }
+        guard isTrusted, let pid, let bar = element(appElement(pid)).element(kAXMenuBarAttribute) else { return [] }
         let deadline = Date().addingTimeInterval(budget)
         var lines: [String] = []
         for top in bar.children(kAXChildrenAttribute) {
@@ -503,7 +513,7 @@ enum AXInspector {
         guard isTrusted, let pid else { return "" }
         let deadline = Date().addingTimeInterval(budget)
         var parts: [String] = []
-        var stack = element(AXUIElementCreateApplication(pid)).children(kAXWindowsAttribute)
+        var stack = element(appElement(pid)).children(kAXWindowsAttribute)
         while let item = stack.popLast(), Date() < deadline, parts.joined().count < 800 {
             guard let frame = item.frame, frame.maxX >= region.minX, frame.minX <= region.maxX,
                   frame.maxY >= region.minY, frame.minY <= region.maxY else { continue }
@@ -520,7 +530,7 @@ enum AXInspector {
 
     /// Where a menu's title is in the app's menu bar ("History"), named exactly (case aside).
     static func menuBarItemFrame(_ title: String, pid: pid_t?) -> Rect? {
-        guard isTrusted, let pid, let bar = element(AXUIElementCreateApplication(pid)).element(kAXMenuBarAttribute) else { return nil }
+        guard isTrusted, let pid, let bar = element(appElement(pid)).element(kAXMenuBarAttribute) else { return nil }
         let wanted = title.lowercased()
         return bar.children(kAXChildrenAttribute).first { $0.name.lowercased() == wanted }?.frame
     }
@@ -531,7 +541,7 @@ enum AXInspector {
         guard isTrusted else { return [] }
         let owners = ["com.apple.controlcenter", "com.apple.systemuiserver"]
         let items = owners.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }.flatMap { app in
-            element(AXUIElementCreateApplication(app.processIdentifier)).element(kAXExtrasMenuBarAttribute)?
+            element(appElement(app.processIdentifier)).element(kAXExtrasMenuBarAttribute)?
                 .children(kAXChildrenAttribute).compactMap { item in
                     item.frame.map { ScreenElement(role: "AXMenuBarItem", label: item.name, frame: $0) }
                 } ?? []
@@ -546,7 +556,7 @@ enum AXInspector {
     /// Displayed names aren't used — extensions can be hidden and headers look like names.
     static func finderItemURLs(at points: [Point], finderPID pid: pid_t) -> [URL] {
         guard isTrusted else { return [] }
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         var urls: [URL] = []
         var seen = Set<String>()
         for point in points {
@@ -596,7 +606,7 @@ enum AXInspector {
         var probe = Probe()
         guard isTrusted else { return ([], probe) }
         let systemWide = element(AXUIElementCreateSystemWide())
-        let frontmostApp = frontmostPID.map { element(AXUIElementCreateApplication($0)) }
+        let frontmostApp = frontmostPID.map { element(appElement($0)) }
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
         var samples = [point]
@@ -782,7 +792,7 @@ extension AXInspector {
     static func dictationTarget(pid: pid_t?) -> DictationTarget {
         guard isTrusted, let pid else { return DictationTarget() }
         var target = DictationTarget()
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         let window = app.element(kAXFocusedWindowAttribute)
         target.windowTitle = window?.string(kAXTitleAttribute)
         if let focused = element(AXUIElementCreateSystemWide()).element(kAXFocusedUIElementAttribute)
@@ -841,7 +851,7 @@ extension AXInspector {
     /// what's pasted next replaces it. False when the field won't say or won't take a selection.
     static func selectInFocusedField(_ text: String?, pid: pid_t?) -> Bool {
         guard isTrusted, let pid else { return false }
-        let app = element(AXUIElementCreateApplication(pid))
+        let app = element(appElement(pid))
         guard let focused = element(AXUIElementCreateSystemWide()).element(kAXFocusedUIElementAttribute)
                 ?? app.element(kAXFocusedUIElementAttribute),
               let value = focused.attribute(kAXValueAttribute) as? String else { return false }

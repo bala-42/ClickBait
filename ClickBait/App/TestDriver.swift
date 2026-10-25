@@ -348,6 +348,9 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+        try? await Task.sleep(for: .seconds(1))
+        let answers = hooks.chat.model.messages.filter { $0.role == .assistant }.count
+        check(answers == 1, "the answer shows once in the chat (\(answers))")
     }
 
     /// A follow-up asked in a done dock card: its answer shows once (in the mini-chat), the

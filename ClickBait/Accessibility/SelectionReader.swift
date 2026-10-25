@@ -37,7 +37,7 @@ enum SelectionReader {
     /// Whether the app's ⌘C menu item (Edit ▸ Copy, found by its shortcut) is enabled: nil
     /// if it has no such item Accessibility can read (then ⌘C is tried as before).
     nonisolated static func copyIsEnabled(pid: pid_t) -> Bool? {
-        let app = AXUIElementCreateApplication(pid)
+        let app = AXInspector.appElement(pid)
         AXUIElementSetMessagingTimeout(app, 0.25)
         func children(_ element: AXUIElement) -> [AXUIElement] {
             var value: CFTypeRef?
