@@ -82,6 +82,7 @@ final class TestDriver {
             case "shelf": await shelfStays()
             case "busydock": await busyDock()
             case "followup": await followUps()
+            case "cardfollowup": await cardFollowUp()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -347,6 +348,33 @@ final class TestDriver {
         let reply = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
         note("  - reply after \(Int(Date().timeIntervalSince(start))) s: \"\(reply.prefix(160))\"")
         check(answered && reply.localizedCaseInsensitiveContains("apple"), "\"who is Steve Jobs\" is answered (mentions Apple)")
+    }
+
+    /// A follow-up asked in a done dock card: its answer shows once (in the mini-chat), the
+    /// card's top keeps the first question and answer.
+    private func cardFollowUp() async {
+        activate("com.apple.finder")
+        let before = Set(hooks.backgroundJobs.entries.map(\.id))
+        ask("write a python function that reverses a string")
+        guard await wait(15, { self.hooks.backgroundJobs.entries.contains { !before.contains($0.id) } }),
+              let id = hooks.backgroundJobs.entries.first(where: { !before.contains($0.id) })?.id else {
+            return check(false, "the code question goes to the dock")
+        }
+        func entry() -> BackgroundJobs.Entry? { hooks.backgroundJobs.entries.first { $0.id == id } }
+        func done() -> Bool { if case .done? = entry()?.job.status { true } else { false } }
+        guard await wait(90, { done() }) else { return check(false, "the dock answer finishes") }
+        let firstAnswer = entry()?.job.answer ?? ""
+        if let problem = hooks.coordinator.askInBackground("now make it handle None", jobID: id) {
+            return check(false, "follow-up asked in the card (\(problem))")
+        }
+        try? await Task.sleep(for: .seconds(1))
+        guard await wait(90, { done() }), let after = entry() else { return check(false, "the follow-up finishes") }
+        let top = CapsuleView.top(of: after.job, messages: after.chatMessages)
+        let answers = after.chatMessages.filter { $0.role == .assistant }.map(\.text)
+        note("  - top: \"\(top.question)\" / \(top.answer.prefix(60))…; chat answers: \(answers.count)")
+        check(top.question.contains("reverses") && top.answer.prefix(40) == firstAnswer.prefix(40),
+              "the card's top keeps the first question and answer")
+        check(answers.count == 2 && answers.last == after.job.answer, "the follow-up's answer is in the mini-chat, once")
     }
 
     /// A follow-up on an unchanged screen reuses the first screenshot and is answered; after

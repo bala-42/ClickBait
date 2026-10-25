@@ -126,7 +126,8 @@ struct CapsuleView: View {
                              footer: presentation.followUp.isOpen ? miniChat(id, answering: true) : nil,
                              onStop: { onStop(id) })
         case .done(let summary):
-            AgentDoneCard(title: job.question, summary: summary, answer: job.answer, suggestions: presentation.entry.offeredSuggestions,
+            let top = Self.top(of: job, messages: presentation.entry.chatMessages)
+            AgentDoneCard(title: top.question, summary: summary, answer: top.answer, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
                           goLabel: job.kind == .walkthrough ? PeelRule.walkthroughResumePrompt : "go there!",
                           onClose: { onDismiss(id) },
@@ -142,6 +143,17 @@ struct CapsuleView: View {
         case .stopped:
             EmptyView()
         }
+    }
+
+    /// The card's top: its first question and answer. A follow-up retitles the job and
+    /// replaces its answer, but the follow-up shows in the mini-chat below, so the top kept
+    /// the first one; otherwise the follow-up's answer showed twice (user's report, 2026-10-25).
+    static func top(of job: BackgroundJob, messages: [ChatModel.Message]) -> (question: String, answer: String) {
+        let messages = messages.filter { $0.role != .error }
+        guard let first = messages.firstIndex(where: { $0.role == .assistant }),
+              messages.dropFirst(first + 1).contains(where: { $0.role == .assistant }) else { return (job.question, job.answer) }
+        let question = messages[..<first].last { $0.role == .user }?.text
+        return (question.flatMap { $0.isEmpty ? nil : $0 } ?? job.question, messages[first].text)
     }
 
     /// The open mini-chat: the follow-ups after the card's first question and answer.
