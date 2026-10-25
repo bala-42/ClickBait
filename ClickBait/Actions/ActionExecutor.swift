@@ -177,6 +177,9 @@ enum AppLocator {
         ].map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
+    /// One-word app names, for pills' small letters (`PillCase`): read once.
+    static let pillNames: Set<String> = Set(installed().keys.filter { !$0.contains(" ") })
+
     /// Installed apps by name ("System Settings" → its URL).
     static func installed() -> [String: URL] {
         var apps: [String: URL] = [:]

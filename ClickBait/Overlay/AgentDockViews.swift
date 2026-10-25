@@ -320,7 +320,8 @@ struct AgentDoneCard: View {
     }
 
     private func pill(_ text: String, symbol: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let text = PillCase.lowered(text, names: AppLocator.pillNames)
+        return Button(action: action) {
             HStack(spacing: 4) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .medium)) }
                 Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)

@@ -183,10 +183,11 @@ struct TinyPill: View {
                 Image(systemName: symbol)
                     .font(.system(size: 10, weight: .bold))
             }
-            Text(text)
+            let shown = PillCase.lowered(text, names: AppLocator.pillNames)
+            Text(shown)
                 .font(.system(size: 12, weight: .semibold))
-                .wrapped(text, maxWidth: 270)
-                .inkCentred(text, maxWidth: 270)
+                .wrapped(shown, maxWidth: 270)
+                .inkCentred(shown, maxWidth: 270)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
@@ -356,7 +357,8 @@ private struct GuidePill: View {
     /// Starts where the pop starts (set here, not in the task, so no first frame shows the
     /// pill full size); with Reduce Motion, already settled.
     init(label: String, tone: CompanionTone, style: Style, target: String?) {
-        self.label = label
+        // A pointed-at control's name stays as it is ("Share"); instructions go small letters.
+        self.label = style == .point ? label : PillCase.lowered(label, names: AppLocator.pillNames)
         self.tone = tone
         self.style = style
         self.target = target
