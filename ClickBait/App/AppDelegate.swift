@@ -51,8 +51,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let delegate = AppDelegate()
         shared = delegate
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        // A regular app (user's ask, 2026-10-25): in the Dock while it runs, ⌘-Tab, its own
+        // menus when in front. It was a menu-bar-only accessory.
+        app.setActivationPolicy(.regular)
         app.run()
+    }
+
+    /// Clicking ClickBait in the Dock: its window (setup, or "you're set" with the shortcuts).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        onboardingWindow.show()
+        return false
+    }
+
+    // The app menu's actions (the application passes them to its delegate).
+    @objc func showAbout() { statusBar?.openAbout() }
+    @objc func showSetup() { onboardingWindow.show() }
+
+    /// The menus a regular app has when in front: ClickBait's, Edit (so ⌘C, ⌘V and ⌘A work in
+    /// its text fields) and Window.
+    private static func mainMenu() -> NSMenu {
+        let main = NSMenu()
+        func menu(_ title: String, _ items: [NSMenuItem]) {
+            let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let submenu = NSMenu(title: title)
+            items.forEach(submenu.addItem)
+            holder.submenu = submenu
+            main.addItem(holder)
+        }
+        func item(_ title: String, _ action: Selector, _ key: String, _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            return item
+        }
+        menu("ClickBait", [
+            item("About ClickBait", #selector(AppDelegate.showAbout), ""),
+            item("Setup and Permissions…", #selector(AppDelegate.showSetup), ","),
+            .separator(),
+            item("Hide ClickBait", #selector(NSApplication.hide(_:)), "h"),
+            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Show All", #selector(NSApplication.unhideAllApplications(_:)), ""),
+            .separator(),
+            item("Quit ClickBait", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        menu("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "z", [.command, .shift]),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ])
+        menu("Window", [
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Close", #selector(NSWindow.performClose(_:)), "w"),
+        ])
+        return main
     }
 
     /// Hosting the UI smoke tests (ClickBaitTests): nothing starts, and a running ClickBait is
@@ -69,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !Self.isHostingTests else { return }
+        NSApp.mainMenu = Self.mainMenu()
         NSApp.servicesProvider = servicesProvider
         NSUpdateDynamicServices()
         #if DEBUG
