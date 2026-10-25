@@ -351,6 +351,18 @@ final class TestDriver {
         try? await Task.sleep(for: .seconds(1))
         let answers = hooks.chat.model.messages.filter { $0.role == .assistant }.count
         check(answers == 1, "the answer shows once in the chat (\(answers))")
+        // "elaborate" is about Steve Jobs, not whatever is on screen (user's report).
+        let count = hooks.chat.model.messages.count
+        hooks.chat.model.draft = "elaborate"
+        hooks.chat.model.send()
+        _ = await wait(40) {
+            !self.hooks.coordinator.isBusy && self.hooks.chat.model.messages.count > count + 1
+                && self.hooks.chat.model.messages.last?.role == .assistant && !(self.hooks.chat.model.messages.last?.text.isEmpty ?? true)
+        }
+        let more = hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""
+        note("  - elaborate: \"\(more.prefix(140))\"")
+        check(more.localizedCaseInsensitiveContains("jobs") || more.localizedCaseInsensitiveContains("apple"),
+              "\"elaborate\" carries on about Steve Jobs")
     }
 
     /// A follow-up asked in a done dock card: its answer shows once (in the mini-chat), the

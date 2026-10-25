@@ -45,6 +45,23 @@ public enum ScreenNeed {
         "setting", "settings", "toolbar", "sidebar", "field", "box", "link", "where", "point", "find",
     ]
 
+    /// A follow-up in a conversation that wasn't about the screen ("who is Steve Jobs?" →
+    /// "elaborate") stays off it unless it names the screen: given a screenshot, "elaborate"
+    /// described System Settings instead (user's report, 2026-10-25). "This" and "that"
+    /// don't count here: in a follow-up they mean the last answer.
+    public static func followUpNeedsScreen(_ question: String) -> Bool {
+        if ImpliedPointer.isLocating(question) { return true }
+        let words = Set(ImpliedPointer.normalized(question).split(separator: " ").map(String.init))
+        return !words.isDisjoint(with: followUpScreenWords)
+            || ImpliedPointer.normalized(question).contains("on my screen") || ImpliedPointer.normalized(question).contains("on screen")
+    }
+
+    static let followUpScreenWords: Set<String> = [
+        "screen", "window", "windows", "page", "tab", "tabs", "app", "button", "buttons", "menu", "click", "here",
+        "highlighted", "selected", "selection", "see", "showing", "shown", "open", "visible", "look", "icon", "toolbar",
+        "sidebar", "field", "error", "pointer", "cursor", "display",
+    ]
+
     /// True only for a plain question about the world, with nothing selected, snipped or said before.
     public static func isAboutTheWorld(_ question: String, selectedText: String? = nil, snipped: Bool = false,
                                        followUp: Bool = false) -> Bool {

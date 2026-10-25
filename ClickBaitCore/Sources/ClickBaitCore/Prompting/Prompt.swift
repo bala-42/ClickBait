@@ -442,7 +442,11 @@ public enum Prompt {
             } else {
                 lines.append(request.sameScreen
                     ? "Follow-up in the same conversation. The screen hasn't changed: the screenshot with the first message shows it now."
+                    : request.screenshotJPEG.isEmpty
+                    ? "Follow-up in the same conversation: it's about the earlier answer, not the screen."
                     : "Follow-up in the same conversation (the screenshot shows the screen now).")
+                // A chat is a conversation (user's rule, 2026-10-25): the reply carries it on.
+                lines.append("Answer it as part of this conversation, carrying on from what was said. Use the screen only if this message asks about it.")
             }
             lines.append("The user said: \(request.question)")
             return lines.joined(separator: "\n")

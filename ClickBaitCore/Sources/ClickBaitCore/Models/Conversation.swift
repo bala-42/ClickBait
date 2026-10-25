@@ -63,6 +63,9 @@ public struct Conversation: Equatable, Sendable {
         }
     }
     public private(set) var screen: Screen?
+    /// The last answer was given without the screen (a question about the world): a
+    /// follow-up that doesn't name the screen stays off it too (`ScreenNeed.followUpNeedsScreen`).
+    public var lastOffScreen = false
 
     public init() {}
 

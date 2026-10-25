@@ -347,6 +347,14 @@ extension AskCoordinator {
                 request.elements = []
                 Log.ask.notice("About the world, not the screen: asking without the screenshot")
             }
+            // The conversation so far wasn't about the screen ("who is Steve Jobs?"), and the
+            // follow-up doesn't name it ("elaborate"): no screenshot, or it described the screen.
+            if snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty,
+               (queued ? flow.conversation : conversation)?.lastOffScreen == true, !ScreenNeed.followUpNeedsScreen(question) {
+                request.screenshotJPEG = Data()
+                request.elements = []
+                Log.ask.notice("Follow-up to an answer about the world: asking without the screenshot")
+            }
             // A follow-up on an unchanged screen: the first question's screenshot, which Ollama
             // has already read, instead of a new one (~1.3 s sooner). Any change: a new one.
             if !queued, snip == nil, !history.isEmpty, !request.screenshotJPEG.isEmpty {
@@ -578,6 +586,7 @@ extension AskCoordinator {
         }
         run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                 code: parsed.response.code, language: parsed.response.language)
+        run.conversation.lastOffScreen = snip == nil && request.screenshotJPEG.isEmpty && !request.sameScreen
         if snip == nil, !request.screenshotJPEG.isEmpty {
             run.conversation.remember(.init(jpeg: request.screenshotJPEG, width: screenshot.width, height: screenshot.height,
                                             thumbnail: ScreenChange.thumbnail(of: capture.image)))
