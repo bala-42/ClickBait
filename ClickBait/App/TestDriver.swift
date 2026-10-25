@@ -84,6 +84,7 @@ final class TestDriver {
             case "followup": await followUps()
             case "cardfollowup": await cardFollowUp()
             case "tellmore": await tellMore()
+            case "sniptellmore": await snipTellMore()
             case "safari": await safari()
             default: note("(unknown check \(name))")
             }
@@ -364,6 +365,52 @@ final class TestDriver {
         note("  - elaborate: \"\(more.prefix(140))\"")
         check(more.localizedCaseInsensitiveContains("jobs") || more.localizedCaseInsensitiveContains("apple"),
               "\"elaborate\" carries on about Steve Jobs")
+    }
+
+    /// A snip of a test page, then "tell me more" on it: both answers saved
+    /// (snip-tellmore.md) to read for coherence. Needs CLICKBAIT_TEST_SNIP_PAGE with a
+    /// "Photosynthesis" heading.
+    private func snipTellMore() async {
+        guard let page = ProcessInfo.processInfo.environment["CLICKBAIT_TEST_SNIP_PAGE"],
+              let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else { return note("- (skipped)") }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        _ = try? await NSWorkspace.shared.open([URL(fileURLWithPath: page)], withApplicationAt: chrome, configuration: configuration)
+        var heading: CGRect?
+        for _ in 0..<20 where heading == nil {
+            try? await Task.sleep(for: .milliseconds(500))
+            if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { heading = Self.find("Photosynthesis", prefix: true, pid: pid) }
+        }
+        guard let heading else { return check(false, "the test page's heading found") }
+        try? await Task.sleep(for: .milliseconds(500))
+        let before = Set(hooks.backgroundJobs.entries.map(\.id))
+        hooks.coordinator.snip(.boxed, region: Rect(x: heading.minX - 8, y: heading.minY - 8, width: 420, height: 200), path: [])
+        // To the dock if slow, else answered in the chat.
+        _ = await wait(60) {
+            self.hooks.backgroundJobs.entries.contains { !before.contains($0.id) && { if case .done = $0.job.status { true } else { false } }($0) }
+                || (!self.hooks.coordinator.isBusy && self.hooks.chat.model.messages.last?.role == .assistant)
+        }
+        var lines: [String] = []
+        if let entry = hooks.backgroundJobs.entries.first(where: { !before.contains($0.id) }) {
+            let id = entry.id
+            lines.append("EXPLANATION (dock):\n" + entry.job.answer)
+            hooks.capsules.onSuggestion?(id, PeelRule.tellMorePrompt)
+            try? await Task.sleep(for: .seconds(1.5))
+            _ = await wait(120) { if case .done? = self.hooks.backgroundJobs.entries.first(where: { $0.id == id })?.job.status { true } else { false } }
+            let answers = hooks.backgroundJobs.entries.first { $0.id == id }?.chatMessages.filter { $0.role == .assistant }.map(\.text) ?? []
+            lines.append("TELL ME MORE:\n" + (answers.last ?? ""))
+        } else {
+            lines.append("EXPLANATION (chat):\n" + (hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""))
+            let count = hooks.chat.model.messages.count
+            hooks.coordinator.nextTypedIsDetailed = true
+            hooks.chat.model.draft = PeelRule.tellMorePrompt
+            hooks.chat.model.send()
+            _ = await wait(120) { !self.hooks.coordinator.isBusy && self.hooks.chat.model.messages.count > count + 1 }
+            lines.append("TELL ME MORE:\n" + (hooks.chat.model.messages.last(where: { $0.role == .assistant })?.text ?? ""))
+        }
+        try? lines.joined(separator: "\n\n").write(to: out.appending(path: "snip-tellmore.md"), atomically: true, encoding: .utf8)
+        check(lines.count == 2, "a snip and its tell me more both answered (snip-tellmore.md)")
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.google.Chrome" { key(13, flags: .maskCommand) }
     }
 
     /// "tell me more" on a done card carries on in that card (no new task); the longer

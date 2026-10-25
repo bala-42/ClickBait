@@ -219,6 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         backgroundJobs.onDone = { [weak self] _ in
             guard let self else { return }
             SoundCues.play(.done, enabled: settings.soundCues)
+            // The dock comes out to show it (a follow-up in a card too, which had no pill),
+            // then folds away again when left alone (user's ask, 2026-10-25).
+            capsules.summon()
         }
         backgroundJobs.onChange = { [weak self] entries in
             self?.capsules.sync(entries)
