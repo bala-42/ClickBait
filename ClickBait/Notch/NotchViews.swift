@@ -468,6 +468,7 @@ private struct OpenNotch: View {
             .accessibilityLabel(model.tab == .home ? cheer : "Back to Home: \(cheer)")
             Spacer()
             HStack(spacing: 14) {
+                InternetSwitch(internet: settings.internet)
                 NotchHeaderIcon(symbol: model.showsKeys ? "info.circle.fill" : "info.circle", label: "Shortcuts", on: model.showsKeys) {
                     model.showsKeys.toggle()
                 }
@@ -1409,5 +1410,54 @@ private struct ShelfView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(url.lastPathComponent)
         .accessibilityHint(selected ? "Selected for a group drag. Click to deselect, or drag this file individually." : "Click to select for a group drag, or drag this file individually.")
+    }
+}
+
+/// Internet Mode in the notch's header (user's ask, 2026-10-25): a sliding Aqua switch,
+/// "local" with a lock or "online" with a globe, light blue when online and a dimmer
+/// grey-blue when local, so the state shows at a glance. Same switch as the menu bar's.
+struct InternetSwitch: View {
+    let internet: InternetMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let width: CGFloat = 76
+    static let height: CGFloat = 22
+    private static let onTop = Color(red: 0.82, green: 0.92, blue: 0.99)
+    private static let onBottom = Color(red: 0.61, green: 0.79, blue: 0.92)
+    private static let offTop = Color(red: 0.52, green: 0.58, blue: 0.64)
+    private static let offBottom = Color(red: 0.38, green: 0.44, blue: 0.50)
+    private static let rim = Color(red: 0.36, green: 0.57, blue: 0.73)
+
+    var body: some View {
+        let on = internet.isOn
+        Button { internet.toggle() } label: {
+            ZStack(alignment: on ? .trailing : .leading) {
+                Capsule()
+                    .fill(LinearGradient(colors: on ? [Self.onTop, Self.onBottom] : [Self.offTop, Self.offBottom],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.04)],
+                                                           startPoint: .top, endPoint: .center)).padding(1))
+                    .overlay(Capsule().strokeBorder(Self.rim.opacity(on ? 0.6 : 0.35), lineWidth: 0.7))
+                Text(on ? "online" : "local")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.black.opacity(on ? 0.85 : 0.75))
+                    .frame(maxWidth: .infinity)
+                    .padding(on ? .trailing : .leading, Self.height - 2)
+                Circle()
+                    .fill(LinearGradient(colors: [.white, Color(white: 0.88)], startPoint: .top, endPoint: .bottom))
+                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+                    .overlay(Image(systemName: on ? "globe" : "lock.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.black))
+                    .frame(width: Self.height - 4, height: Self.height - 4)
+                    .padding(2)
+            }
+            .frame(width: Self.width, height: Self.height)
+            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.75), value: on)
+        }
+        .buttonStyle(.plain)
+        .help(on ? "Online: lookups and thumbnails can go online. Click for local only." : "Local: nothing leaves this Mac. Click to go online.")
+        .accessibilityLabel("Internet Mode")
+        .accessibilityValue(on ? "on" : "off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
