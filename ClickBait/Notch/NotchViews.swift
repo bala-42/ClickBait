@@ -1413,9 +1413,9 @@ private struct ShelfView: View {
     }
 }
 
-/// Internet Mode in the notch's header (user's ask, 2026-10-25): a sliding Aqua switch,
-/// "local" with a lock or "online" with a globe, light blue when online and a dimmer
-/// grey-blue when local, so the state shows at a glance. Same switch as the menu bar's.
+/// Internet Mode in the notch's header (user's ask, 2026-10-25): a sliding Aqua switch in
+/// light blue both ways (user's choice), "local" with a lock on the left or "online" with a
+/// globe on the right. Same switch as the menu bar's.
 struct InternetSwitch: View {
     let internet: InternetMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1424,8 +1424,6 @@ struct InternetSwitch: View {
     static let height: CGFloat = 22
     private static let onTop = Color(red: 0.82, green: 0.92, blue: 0.99)
     private static let onBottom = Color(red: 0.61, green: 0.79, blue: 0.92)
-    private static let offTop = Color(red: 0.52, green: 0.58, blue: 0.64)
-    private static let offBottom = Color(red: 0.38, green: 0.44, blue: 0.50)
     private static let rim = Color(red: 0.36, green: 0.57, blue: 0.73)
 
     var body: some View {
@@ -1433,14 +1431,13 @@ struct InternetSwitch: View {
         Button { internet.toggle() } label: {
             ZStack(alignment: on ? .trailing : .leading) {
                 Capsule()
-                    .fill(LinearGradient(colors: on ? [Self.onTop, Self.onBottom] : [Self.offTop, Self.offBottom],
-                                         startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: [Self.onTop, Self.onBottom], startPoint: .top, endPoint: .bottom))
                     .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.04)],
                                                            startPoint: .top, endPoint: .center)).padding(1))
-                    .overlay(Capsule().strokeBorder(Self.rim.opacity(on ? 0.6 : 0.35), lineWidth: 0.7))
+                    .overlay(Capsule().strokeBorder(Self.rim.opacity(0.6), lineWidth: 0.7))
                 Text(on ? "online" : "local")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(on ? 0.85 : 0.75))
+                    .foregroundStyle(Color.black.opacity(0.85))
                     .frame(maxWidth: .infinity)
                     .padding(on ? .trailing : .leading, Self.height - 2)
                 Circle()
