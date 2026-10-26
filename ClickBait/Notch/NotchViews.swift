@@ -227,6 +227,12 @@ struct NotchView: View {
                       toyFace: place.floats ? SpaceToyPlay.shared.face : nil, shown: place.visible)
                 .modifier(SpaceFloat(on: place.floats && !SpaceToyPlay.shared.toy.isMoving))
                 .modifier(SpaceToyHandle(on: place.floats, radius: place.size / 2))
+                // Standing in for a video's missing thumbnail on Home: clicking it goes there too.
+                .modifier(OpenOnTap(on: open && model.tab == .home && music.hasTrack && music.isPlaying && music.artwork == nil,
+                                    label: "Open \(music.sourceName ?? "the player")") {
+                    music.openPlayer()
+                    onCollapse()
+                })
                 .position(x: ear + place.x, y: place.y)
                 .opacity(place.visible ? 1 : 0)
                 .allowsHitTesting(place.visible)
@@ -410,7 +416,7 @@ private struct OpenNotch: View {
                     AskCard(model: model)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .shelf: ShelfView(shelf: shelf, note: model.note, onEditing: { model.editing = $0 }).transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .music: MusicPanel(music: music).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .music: MusicPanel(music: music, onOpen: { music.openPlayer(); onCollapse() }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings, .mirror: EmptyView()
                 }
             }
@@ -488,7 +494,7 @@ private struct OpenNotch: View {
 
     private var home: some View {
         HStack(spacing: 10) {
-            FocusCard(music: music, mood: model.mood(), health: model.health)
+            FocusCard(music: music, mood: model.mood(), health: model.health, onOpen: { music.openPlayer(); onCollapse() })
                 .frame(width: 322)
                 .notchCard(wash: FocusCard.wash(for: model.mood()))
             // Laid out as the Windows logo's four squares, each square keeping its colour (user's
@@ -516,6 +522,8 @@ private struct FocusCard: View {
     let mood: Bean.Mood
     /// Shown instead of "ready" while nothing is going on and something isn't ready (`HealthLadder`).
     let health: HealthLadder.Item?
+    /// The cover clicked: to the player or the video's tab, and the notch folds (user's ask, 2026-10-26).
+    let onOpen: () -> Void
 
     /// The cover, in the card's points.
     nonisolated static let coverSize: CGFloat = 66
@@ -583,11 +591,11 @@ private struct FocusCard: View {
                     .frame(width: Self.coverSize, height: Self.coverSize)
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
-                    .onTapGesture { music.openPlayer() }
+                    .onTapGesture { onOpen() }
                     .accessibilityElement()
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel("Open \(music.sourceName ?? "the player")")
-                    .accessibilityAction { music.openPlayer() }
+                    .accessibilityAction { onOpen() }
                     .help("Open \(music.sourceName ?? "the player")")
                     .position(Self.coverCentre)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -786,6 +794,8 @@ private struct KeysCard: View {
 /// — the one playing marked; clicking another opens it (YouTube: its tab, else the site).
 private struct MusicPanel: View {
     let music: MusicBridge
+    /// The cover clicked: to the player or the video's tab, and the notch folds.
+    let onOpen: () -> Void
 
     var body: some View {
         let accent = NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.bubblegum)
@@ -795,11 +805,11 @@ private struct MusicPanel: View {
                     .frame(width: 76, height: 76)
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
-                    .onTapGesture { music.openPlayer() }
+                    .onTapGesture { onOpen() }
                     .accessibilityElement()
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel("Open \(music.sourceName ?? "the player")")
-                    .accessibilityAction { music.openPlayer() }
+                    .accessibilityAction { onOpen() }
                 VStack(alignment: .leading, spacing: 3) {
                     MarqueeText(text: music.hasTrack ? music.title : "Nothing playing", font: .system(size: 14, weight: .semibold))
                     Text(music.hasTrack ? music.artist : "Pick a player on the right")
@@ -1456,5 +1466,24 @@ struct InternetSwitch: View {
         .accessibilityLabel("Internet Mode")
         .accessibilityValue(on ? "on" : "off")
         .accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// A tap that does `action`, only while `on` (the bean standing in for a cover).
+private struct OpenOnTap: ViewModifier {
+    let on: Bool
+    let label: String
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .onTapGesture(perform: action)
+                .help(label)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: Text(label), action)
+        } else {
+            content
+        }
     }
 }
