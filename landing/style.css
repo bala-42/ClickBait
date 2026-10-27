@@ -120,6 +120,9 @@ h2 { font-size: clamp(30px, 4.4vw, 56px); }
 .t8 { right: 22%; bottom: 10%; width: 150px; aspect-ratio: 404 / 80; }
 .kao { font: 500 15px var(--aqua); color: #2c2d30; }
 .k1 { left: 24%; top: 33%; }
+.pic { margin: 0; } .pic img { display: block; width: 100%; height: auto; }
+.sp1 { left: 33.6%; top: 7.5%; width: clamp(124px, 10.8vw, 164px); } /* a still window, always the same picture */
+.pic .tb span { left: 54px; right: 4px; text-align: left; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* a narrow window: the title starts after the lights */
 .k2 { right: 27%; top: 30%; }
 .k3 { right: 25%; bottom: 31%; }
 .sticker { font: 700 13px var(--aqua); padding: 6px 12px; border-radius: 8px; transform: rotate(var(--r)); box-shadow: 0 3px 8px -3px rgba(0,0,0,0.3); }
@@ -516,7 +519,7 @@ main > section { position: relative; }
 /* ---------- Tablet ---------- */
 @media (max-width: 1000px) {
   .menu-left a:not(.app) { display: none; }
-  .t5, .t6, .t8, .k1, .k3, .f1, .f2, .h3, .h4, .t2, .t4 { display: none; }
+  .t5, .t6, .t8, .k1, .k3, .f1, .f2, .h3, .h4, .t2, .t4, .sp1 { display: none; }
   .h1 { left: -3%; top: auto; bottom: 4%; } .h2 { right: -3%; top: 9%; }
   .strip { flex-direction: column; } .strip .tv-slot { margin: 0 !important; }
     .t1 { left: -4%; top: 10%; } .t2 { right: -3%; top: 9%; }
