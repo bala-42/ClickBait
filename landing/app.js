@@ -22,7 +22,7 @@
     pos.x += vel.x; pos.y += vel.y;
     if (away && !away.there && Math.hypot(to.x - pos.x, to.y - pos.y) < 3) { away.there = true; away.arrived(); }
     companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
-    companion.classList.toggle("flip", pos.x + 30 + pillWidth > innerWidth - 12); // near the right edge, the pill opens to the left
+    companion.classList.toggle("flip", !!away || pos.x + 30 + pillWidth > innerWidth - 12); // near the right edge, the pill opens to the left
     if (Math.abs(vel.x) + Math.abs(vel.y) > 0.05) requestAnimationFrame(step); else running = false;
   }
   addEventListener("pointermove", (event) => {
@@ -49,15 +49,15 @@
   let backTimer = 0;
   function pointAt(x, y, words, colour, ms, back = null) {
     clearTimeout(backTimer);
-    pill.textContent = words; pillWidth = pill.offsetWidth; companion.classList.add("on", "talking");
+    pill.textContent = words; pillWidth = pill.offsetWidth; companion.classList.add("on", "talking", "aiming");
     hoverColour = colour; recolour();
-    away = { x: x + 2, y: y + 2, there: false, arrived: () => { backTimer = setTimeout(() => comeBack(back), ms); } };
+    away = { x: x - 21, y: y - 11, there: false, arrived: () => { backTimer = setTimeout(() => comeBack(back), ms); } };
     if (reduce) { pos = { x: away.x, y: away.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; away.there = true; away.arrived(); } else go();
   }
   function comeBack(colour = null) {
     clearTimeout(backTimer);
     if (!away) return;
-    away = null; companion.classList.remove("talking"); hoverColour = colour; recolour();
+    away = null; companion.classList.remove("talking", "aiming"); hoverColour = colour; recolour();
     if (reduce) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; } else go();
   }
 
@@ -696,10 +696,10 @@
       viewer.querySelector(".vclose").focus();
       if (what === "photo") photo.decode().catch(() => {}).then(() => {
         clearTimeout(peek);
-        peek = setTimeout(() => { // once the window has settled: the jaw of the face that made all this
+        peek = setTimeout(() => { // once the window has settled: the left edge of the face that made all this
           if (viewer.hidden || photo.hidden) return;
           const r = photo.getBoundingClientRect();
-          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.494, "my creator", "#722F37", 800, colours.azure); // wine red out, azure back
+          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.46, "my creator", "#9B1B48", 800, colours.azure); // wine red out, azure back
         }, 600);
       });
     };
