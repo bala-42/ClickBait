@@ -470,6 +470,18 @@
         pill.style.setProperty("--qx", `${right ? x + 26 : x - pill.offsetWidth - 6}px`); pill.style.setProperty("--qy", `${y + 22}px`);
       }
     };
+    if (root.dataset.demo === "orders") { // the window holds its tallest step, so a pill dropping to its own line never moves the page
+      const ol = root.querySelector(".ord"), lis = [...ol.children];
+      const fit = () => {
+        const lit = lis.map((li) => li.classList.contains("on"));
+        ol.style.minHeight = "";
+        let tallest = 0;
+        lis.forEach((li) => { lis.forEach((x) => x.classList.toggle("on", x === li)); tallest = Math.max(tallest, ol.offsetHeight); });
+        lis.forEach((li, k) => li.classList.toggle("on", lit[k]));
+        ol.style.minHeight = `${tallest}px`;
+      };
+      fit(); document.fonts?.ready.then(fit); addEventListener("resize", fit);
+    }
     const tick = () => { show(steps[i], i); timer = setTimeout(tick, steps[i].ms); i = (i + 1) % steps.length; };
     if (reduce) { const still = { walk: 2, point: 3, chat: 4, explain: 3, circle: 2, orders: 2, dictate: 6 }[root.dataset.demo]; show(steps[still], still); return; } // one telling moment, held
     show(steps[0], 0);
