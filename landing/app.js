@@ -212,6 +212,9 @@
 
   // Hero windows play on their own, muted; every other window waits for the pointer. Pointing at any window
   // opens it up a little (full title showing) and brings its sound in; leaving settles it back.
+  // A tab in the background gives up its players (and the music pauses), so a page left open in
+  // another tab never holds the Mac's video decoders; coming back starts the visible ones again.
+  const tvSyncs = [];
   document.querySelectorAll(".tv-slot").forEach((slot) => {
     const auto = !!slot.closest(".hero");
     let item = takeNext(), yt = null, at = 6, hovering = false, onScreen = false, starting = false, stuck = 0, nudged = false, showing = 0;
@@ -303,10 +306,13 @@
       if (e.pointerType === "touch") { hovering ? leave() : enter(); return; } // no hover on phones: a tap does it
       if (hovering) { say(); loud(true); } // the click itself unlocks sound
     });
-    new IntersectionObserver(([entry]) => {
-      onScreen = entry.isIntersecting;
+    let inView = false;
+    const sync = () => {
+      onScreen = inView && !document.hidden;
       if (onScreen) start(); else { if (hovering) leave(); stop(); }
-    }, { rootMargin: "150px" }).observe(tv);
+    };
+    tvSyncs.push(sync);
+    new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; sync(); }, { rootMargin: "150px" }).observe(tv);
   });
 
   // ---- The player: it plays right here, and you can drag it anywhere ----
@@ -318,7 +324,7 @@
     ["Like a Boss", "The Lonely Island", ["LECMbSipNu0", "NisCkxU544c"]],
   ];
   let attempt = 0, failedInARow = 0;
-  let index = Math.floor(Math.random() * tracks.length), music;
+  let index = Math.floor(Math.random() * tracks.length), music, pausedForTab = false;
   const player = document.querySelector(".player"), screen = player.querySelector(".pl-screen");
   const title = player.querySelector(".track-title"), artist = player.querySelector(".track-artist"), playButton = player.querySelector(".play");
   function setPlaying(on) {
@@ -605,6 +611,12 @@
     s.el.addEventListener("keydown", (e) => { if (e.key === "ArrowUp") { e.preventDefault(); step(1); } if (e.key === "ArrowDown") { e.preventDefault(); step(-1); } });
   });
   if (ntShow) { ntSize(); ntChoose(0); }
+
+  document.addEventListener("visibilitychange", () => {
+    tvSyncs.forEach((sync) => sync());
+    if (document.hidden) { pausedForTab = player.classList.contains("playing"); if (pausedForTab) music.pauseVideo(); }
+    else if (pausedForTab) { pausedForTab = false; music.playVideo(); } // the song picks up where it was
+  });
 
   // ---- The menu bar clock: Singapore time ----
   const clock = document.getElementById("sgtime");
