@@ -122,7 +122,7 @@ h2 { font-size: clamp(30px, 4.4vw, 56px); }
 .k1 { left: 24%; top: 33%; }
 .pic { margin: 0; } .pic img { display: block; width: 100%; height: auto; }
 .sp1 { left: 33.6%; top: 7.5%; width: clamp(124px, 10.8vw, 164px); } /* a still window, always the same picture */
-.pic .tb span { left: 54px; right: 4px; text-align: left; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* a narrow window: the title starts after the lights */
+.pic .tb span, .gifwin .tb span { left: 54px; right: 4px; text-align: left; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* a narrow window: the title starts after the lights */
 .k2 { right: 27%; top: 30%; }
 .k3 { right: 25%; bottom: 31%; }
 .sticker { font: 700 13px var(--aqua); padding: 6px 12px; border-radius: 8px; transform: rotate(var(--r)); box-shadow: 0 3px 8px -3px rgba(0,0,0,0.3); }
@@ -165,6 +165,9 @@ main > section { position: relative; }
 .way { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: center; padding-block: 56px; }
 .way.flip { grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); }
 .way.flip .way-copy { order: 2; }
+.way { position: relative; }
+.gifwin { position: absolute; right: 1%; bottom: -46px; width: clamp(160px, 13vw, 200px); z-index: 2; } /* a little GIF window tucked under the dictation copy */
+.gifwin video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: #111; }
 .way-copy { display: grid; gap: 12px; max-width: 360px; }
 .way h3 { font-size: 22px; letter-spacing: -0.025em; }
 .way-copy > p:last-child { color: #55575c; font-size: 14.5px; }

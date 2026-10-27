@@ -620,6 +620,12 @@
     else if (pausedForTab) { pausedForTab = false; music.playVideo(); } // the song picks up where it was
   });
 
+  // ---- The GIF window: plays only while on screen, and holds still for reduced motion ----
+  document.querySelectorAll(".gifwin video").forEach((v) => {
+    if (reduce) { v.removeAttribute("autoplay"); v.pause(); return; }
+    new IntersectionObserver(([e]) => { if (e.isIntersecting && !document.hidden) v.play().catch(() => {}); else v.pause(); }).observe(v);
+  });
+
   // ---- The menu bar clock: Singapore time ----
   const clock = document.getElementById("sgtime");
   const tick = () => { clock.textContent = new Intl.DateTimeFormat("en-SG", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Singapore" }).format(new Date()).toLowerCase(); };
