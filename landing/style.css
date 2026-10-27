@@ -218,14 +218,17 @@ main > section { position: relative; }
 .dt { position: relative; height: 300px; padding: 26px 26px 0; background: #fcfcfb; font: 500 16.5px/1.5 var(--aqua); color: var(--ink); text-align: left; } /* dictating: a note the words land in */
 .dt-mark { position: absolute; right: 40px; top: 196px; width: 1px; height: 1px; }
 .dt-raw { margin: 0; max-width: 88%; transition: opacity 250ms ease; }
-.dt-raw .dw, .dt-raw .um, .dt-raw .dot { opacity: 0; transition: opacity 160ms ease; }
-.dt-raw .um { display: inline-block; white-space: pre; max-width: 5em; overflow: hidden; vertical-align: bottom; transition: opacity 260ms ease, max-width 380ms ease, color 200ms ease; }
-.demo[data-step="1"] .dt-raw .dw, .demo[data-step="1"] .dt-raw .um { opacity: 1; transition-delay: calc(var(--k) * 105ms); } /* the words arrive as they're said */
-.demo[data-step="2"] .dt-raw .dw, .demo[data-step="3"] .dt-raw .dw, .demo[data-step="4"] .dt-raw .dw, .demo[data-step="5"] .dt-raw .dw { opacity: 1; }
-.demo[data-step="2"] .dt-raw .um { opacity: 0; max-width: 0; color: var(--c); transition-delay: 450ms; } /* the ums tint, then drop out and the gaps close */
+.dt-raw .dw, .dt-raw .um, .dt-raw .dot { display: inline-block; white-space: pre; max-width: 0; overflow: hidden; vertical-align: bottom; opacity: 0; transition: opacity 160ms ease, max-width 0s, background-color 200ms ease; } /* no room taken until said, so the caret follows the words */
+.demo[data-step="1"] .dt-raw .dw, .demo[data-step="1"] .dt-raw .um { max-width: 8em; opacity: 1; transition-delay: calc(var(--k) * 105ms); } /* the words arrive as they're said */
+.demo[data-step="2"] .dt-raw .dw, .demo[data-step="3"] .dt-raw .dw, .demo[data-step="4"] .dt-raw .dw, .demo[data-step="5"] .dt-raw .dw { max-width: 8em; opacity: 1; }
+.demo[data-step="2"] .dt-raw .um { max-width: 8em; opacity: 0; color: var(--c); transition: color 200ms ease, opacity 260ms ease 450ms, max-width 380ms ease 450ms; } /* the ums tint, then drop out and the gaps close */
 .demo[data-step="3"] .dt-raw .um, .demo[data-step="4"] .dt-raw .um, .demo[data-step="5"] .dt-raw .um { max-width: 0; }
-.demo[data-step="2"] .dt-raw .dot, .demo[data-step="3"] .dt-raw .dot, .demo[data-step="4"] .dt-raw .dot, .demo[data-step="5"] .dt-raw .dot { opacity: 1; transition-delay: 700ms; }
-.dt-caret { display: inline-block; width: 1.5px; height: 1.1em; margin-left: 2px; vertical-align: -0.15em; background: var(--c); animation: caret 1s steps(1) infinite; }
+.demo[data-step="2"] .dt-raw .dot { max-width: 1em; opacity: 1; transition-delay: 800ms; }
+.demo[data-step="3"] .dt-raw .dot, .demo[data-step="4"] .dt-raw .dot, .demo[data-step="5"] .dt-raw .dot { max-width: 1em; opacity: 1; }
+.demo[data-step="4"] .dt-raw .dw, .demo[data-step="4"] .dt-raw .dot, .demo[data-step="5"] .dt-raw .dw, .demo[data-step="5"] .dt-raw .dot { background-color: color-mix(in srgb, var(--c) 24%, transparent); } /* selected, for point form */
+.demo[data-step="4"] .dt-caret, .demo[data-step="5"] .dt-caret { visibility: hidden; }
+.demo[data-step="1"] .dt-caret { animation: none; } /* solid while the words come in, like a real caret */
+.dt-caret { display: inline-block; width: 1.5px; height: 1.2em; margin-left: 1px; vertical-align: bottom; background: var(--c); animation: caret 1s steps(1) infinite; }
 .demo[data-step="6"] .dt-raw { opacity: 0; }
 .dt-pts { position: absolute; left: 26px; right: 26px; top: 26px; margin: 0; padding-left: 1.1em; display: grid; gap: 6px; opacity: 0; transform: translateY(4px); transition: opacity 300ms ease, transform 300ms ease; }
 .dt-pts li::marker { color: var(--c); }
