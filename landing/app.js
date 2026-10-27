@@ -11,6 +11,7 @@
   // ---- The companion: a rounded triangle hanging off the pointer on a spring ----
   const companion = document.querySelector(".companion");
   const pill = companion.querySelector(".cpill");
+  let pillWidth = 0;
   let target = { x: -100, y: -100 }, pos = { x: -100, y: -100 }, vel = { x: 0, y: 0 }, running = false;
   const offset = { x: 18, y: 22 };
   function step() {
@@ -19,6 +20,7 @@
     vel.y = (vel.y + (target.y + offset.y - pos.y) * k) * damping;
     pos.x += vel.x; pos.y += vel.y;
     companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+    companion.classList.toggle("flip", pos.x + 30 + pillWidth > innerWidth - 12); // near the right edge, the pill opens to the left
     if (Math.abs(vel.x) + Math.abs(vel.y) > 0.05) requestAnimationFrame(step); else running = false;
   }
   addEventListener("pointermove", (event) => {
@@ -40,7 +42,7 @@
 
   // Its pills: a few words beside it over things with something to say.
   document.querySelectorAll("[data-pill]").forEach((el) => {
-    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; companion.classList.add("talking"); });
+    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; pillWidth = pill.offsetWidth; companion.classList.add("talking"); });
     el.addEventListener("pointerleave", () => companion.classList.remove("talking"));
   });
 
@@ -288,6 +290,7 @@
     };
     const say = () => {
       pill.textContent = mayPlaySound() ? (notes[item.id] || "shh, it's the good part") : "click once, then i'll talk";
+      pillWidth = pill.offsetWidth;
       companion.classList.add("talking");
     };
     const enter = () => {
