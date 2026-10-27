@@ -199,8 +199,8 @@ main > section { position: relative; }
 .way.flip .way-copy { order: 2; }
 .way.three { grid-template-columns: minmax(0, 6fr) minmax(0, 4fr) minmax(0, 2.3fr); gap: clamp(28px, 4vw, 56px); } /* the chat, its words, and a little GIF window on the right */
 .way.three .giftile { order: 3; align-self: center; }
-.way.lead-pic { grid-template-columns: minmax(0, 2.3fr) minmax(0, 4.6fr) minmax(0, 4fr); gap: clamp(28px, 4vw, 64px); } /* a small still on the left, then the window, then the words */
-.way.lead-pic .truman { order: 0; width: min(100%, 210px); justify-self: center; align-self: center; }
+.way.lead-pic { grid-template-columns: auto minmax(0, 4.2fr) minmax(0, 4fr); gap: clamp(28px, 4vw, 64px); } /* Truman's column is just Truman, so the window in the middle sits evenly between it and the words */ /* a small still on the left, then the window, then the words */
+.way.lead-pic .truman { order: 0; width: clamp(240px, 19vw, 290px); align-self: center; margin-left: calc(-1 * min(3vw, 56px)); } /* big enough to read the subtitle, out towards the margin */
 .way.lead-pic > figure.big { order: 1; }
 /* a bare GIF far right of the circle row, out in the page's side margin: only where that margin is wide enough */
 .gifbare { position: absolute; top: 4%; right: calc((100% - 100vw) / 2 + 3vw); width: clamp(140px, 10vw, 190px); height: auto; aspect-ratio: 240 / 298; object-fit: cover; border-radius: 10px; box-shadow: 0 14px 30px -12px rgba(0,0,0,0.35); display: none; z-index: 2; }
