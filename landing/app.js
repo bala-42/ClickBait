@@ -200,7 +200,7 @@
 
   // ---- Little televisions all over the desktop: muted, and loud only while you hover ----
   const notes = {
-    "RLtaA9fFNXU": "are you watching closely?", "07-QBnEkgXU": "meet me in montauk", "-tkows0DK9o": "a 100 is 100.",
+    "RLtaA9fFNXU": "are you watching closely?", "07-QBnEkgXU": "meet me in montauk", "-tkows0DK9o": "one sun. one moon. one super star.",
     "jcBG6U5iX8Y": "two boys, one whistle, zero chill", "14oNcFxiVaQ": "the diner scene lives rent free", "2ilzidi_J8Q": "funny how?",
     "eZHsmb4ezEk": "i believe in america", "T5IligQP7Fo": "you talkin' to me?", "q9AJ0ITDL30": "ilaiyaraaja. that's it. that's the note.",
     "fyybq67IF60": "thalaivar has entered the chat", "qgv9VBoK8po": "congrats on kavya, bro", "NisCkxU544c": "like a boss, obviously",
