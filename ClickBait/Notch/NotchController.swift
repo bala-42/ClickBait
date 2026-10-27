@@ -743,9 +743,7 @@ final class NotchController {
         window.isReleasedWhenClosed = false
         window.contentView = host
         host.layoutSubtreeIfNeeded()
-        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
-        host.cacheDisplay(in: host.bounds, to: rep)
-        return rep
+        return host.sharpRep()
     }
 
     func debugRender(to folder: String) {
@@ -820,4 +818,18 @@ final class NotchController {
         return "taken \(taken), volume \(before.volume) → \(after?.volume ?? -1), restored \(SystemVolume.read().map { abs($0.volume - before.volume) < 0.001 } ?? false)"
     }
     #endif
+}
+
+extension NSView {
+    /// The view drawn at `scale` × its points: offscreen windows draw at 1× otherwise, which
+    /// looks soft once the picture is shown anywhere bigger than its points (renders, the site).
+    func sharpRep(scale: CGFloat = 3) -> NSBitmapImageRep? {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(bounds.width * scale),
+                                         pixelsHigh: Int(bounds.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = bounds.size
+        cacheDisplay(in: bounds, to: rep)
+        return rep
+    }
 }

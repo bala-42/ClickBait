@@ -52,7 +52,7 @@ struct NotchSmokeTests {
         for (name, eyes) in [("sleep", Bean.EyePair.both(.z)), ("sleep-wink", Bean.EyePair(.dash(), .z))] {
             let renderer = ImageRenderer(content: BeanFace(mood: .sleepy, eyes: eyes, size: 76, badge: false)
                 .padding(20).background(Color.black))
-            renderer.scale = 2
+            renderer.scale = 3
             let image = try #require(renderer.nsImage, "\(name)")
             try image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) }?
                 .representation(using: .png, properties: [:])?.write(to: folder.appending(path: "\(name).png"))

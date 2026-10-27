@@ -25,8 +25,7 @@ struct CardFollowUpRenderTests {
         let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = view
         view.layoutSubtreeIfNeeded()
-        let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: rep)
+        let rep = try #require(view.sharpRep())
         let folder = FileManager.default.temporaryDirectory.appending(path: "ClickBaitTests-notch")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "card-followup.png"))

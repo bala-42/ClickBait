@@ -22,8 +22,7 @@ struct InternetSwitchRenderTests {
         let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
-        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: rep)
+        let rep = try #require(host.sharpRep())
         let folder = FileManager.default.temporaryDirectory.appending(path: "ClickBaitTests-notch")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "internet-switch.png"))

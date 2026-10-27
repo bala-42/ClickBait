@@ -23,8 +23,7 @@ struct SetupRenderTests {
             window.contentView = host
             window.appearance = NSAppearance(named: .darkAqua)
             host.layoutSubtreeIfNeeded()
-            let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: rep)
+            let rep = try #require(host.sharpRep())
             try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "\(index + 1)-\(step).png"))
         }
     }
