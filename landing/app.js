@@ -621,10 +621,33 @@
   });
 
   // ---- The GIF window: plays only while on screen, and holds still for reduced motion ----
-  document.querySelectorAll(".gifwin video, .giftile video").forEach((v) => {
+  document.querySelectorAll(".gifwin video, .giftile video, .luffy video").forEach((v) => {
     if (reduce) { v.removeAttribute("autoplay"); v.pause(); return; }
     new IntersectionObserver(([e]) => { if (e.isIntersecting && !document.hidden) v.play().catch(() => {}); else v.pause(); }).observe(v);
   });
+
+  // ---- Luffy: drag him anywhere in the hero; a click (no drag) makes him bounce ----
+  const luffy = document.querySelector(".luffy");
+  if (luffy) {
+    const boing = () => { luffy.classList.remove("boing"); void luffy.offsetWidth; luffy.classList.add("boing"); };
+    luffy.addEventListener("pointerdown", (e) => {
+      const box = luffy.getBoundingClientRect(), home = luffy.offsetParent.getBoundingClientRect(), start = { x: e.clientX, y: e.clientY };
+      const from = { x: box.left - home.left, y: box.top - home.top };
+      let moved = false;
+      luffy.setPointerCapture(e.pointerId);
+      const move = (m) => {
+        const dx = m.clientX - start.x, dy = m.clientY - start.y;
+        if (!moved && Math.hypot(dx, dy) < 4) return;
+        moved = true; luffy.classList.add("dragging");
+        const x = Math.min(Math.max(0, from.x + dx), home.width - box.width), y = Math.min(Math.max(0, from.y + dy), home.height - box.height);
+        Object.assign(luffy.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
+      };
+      const up = () => { luffy.removeEventListener("pointermove", move); luffy.classList.remove("dragging"); if (!moved) boing(); };
+      luffy.addEventListener("pointermove", move);
+      luffy.addEventListener("pointerup", up, { once: true });
+    });
+    luffy.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); boing(); } });
+  }
 
   // ---- The menu bar clock: Singapore time ----
   const clock = document.getElementById("sgtime");
