@@ -129,7 +129,8 @@ h2 { font-size: clamp(30px, 4.4vw, 56px); }
 .dicon.dfile { left: 54%; top: 75%; } .dicon.dbin { left: calc(54% + 96px); top: 75%; } /* side by side */
 .dicon { animation: none; }
 .dicon { display: grid; justify-items: center; gap: 5px; width: 82px; padding: 6px 2px 4px; border: 0; border-radius: 8px; background: none; cursor: pointer; touch-action: none; font: 500 11px var(--aqua); color: #2c2d30; }
-.dicon svg { width: 46px; height: auto; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.18)); }
+.dicon svg { width: 52px; height: 50px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.22)); }
+.dicon.dbin svg { width: 44px; height: 50px; }
 .dicon span { max-width: 100%; padding: 1px 5px; border-radius: 4px; text-align: center; line-height: 1.25; overflow-wrap: anywhere; } /* long names wrap, like Finder */
 .dicon:hover span, .dicon:focus-visible span { background: var(--azure); color: white; }
 .dicon:focus-visible { outline: none; }
