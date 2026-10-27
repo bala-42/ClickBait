@@ -199,7 +199,7 @@
   // ---- Little televisions all over the desktop: muted, and loud only while you hover ----
   const notes = {
     "RLtaA9fFNXU": "are you watching closely?", "07-QBnEkgXU": "meet me in montauk", "-tkows0DK9o": "a 100 is 100.",
-    "jcBG6U5iX8Y": "karthik subbaraj, but make it eerie", "14oNcFxiVaQ": "the diner scene lives rent free", "2ilzidi_J8Q": "funny how?",
+    "jcBG6U5iX8Y": "two boys, one whistle, zero chill", "14oNcFxiVaQ": "the diner scene lives rent free", "2ilzidi_J8Q": "funny how?",
     "eZHsmb4ezEk": "i believe in america", "T5IligQP7Fo": "you talkin' to me?", "q9AJ0ITDL30": "ilaiyaraaja. that's it. that's the note.",
     "fyybq67IF60": "thalaivar has entered the chat", "qgv9VBoK8po": "anirudh, volume up", "NisCkxU544c": "like a boss, obviously",
     "2yJgwwDcgV8": "nyan nyan nyan nyan", "RcoGzT9QrTI": "screw you guys", "UV4c_PY-UgE": "wubba lubba dub dub",
