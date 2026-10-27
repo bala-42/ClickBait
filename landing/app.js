@@ -14,11 +14,13 @@
   let pillWidth = 0;
   let target = { x: -100, y: -100 }, pos = { x: -100, y: -100 }, vel = { x: 0, y: 0 }, running = false;
   const offset = { x: 18, y: 22 };
+  let away = null; // somewhere it has gone off to point at, instead of the pointer
   function step() {
-    const k = 0.09, damping = 0.78;
-    vel.x = (vel.x + (target.x + offset.x - pos.x) * k) * damping;
-    vel.y = (vel.y + (target.y + offset.y - pos.y) * k) * damping;
+    const k = 0.09, damping = 0.78, to = away || { x: target.x + offset.x, y: target.y + offset.y };
+    vel.x = (vel.x + (to.x - pos.x) * k) * damping;
+    vel.y = (vel.y + (to.y - pos.y) * k) * damping;
     pos.x += vel.x; pos.y += vel.y;
+    if (away && !away.there && Math.hypot(to.x - pos.x, to.y - pos.y) < 3) { away.there = true; away.arrived(); }
     companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
     companion.classList.toggle("flip", pos.x + 30 + pillWidth > innerWidth - 12); // near the right edge, the pill opens to the left
     if (Math.abs(vel.x) + Math.abs(vel.y) > 0.05) requestAnimationFrame(step); else running = false;
@@ -27,9 +29,10 @@
     if (event.pointerType !== "mouse") return;
     target = { x: event.clientX, y: event.clientY };
     companion.classList.add("on");
-    if (reduce) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; return; }
-    if (!running) { running = true; requestAnimationFrame(step); }
+    if (reduce) { if (!away) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; } return; }
+    go();
   });
+  const go = () => { if (!running) { running = true; requestAnimationFrame(step); } };
   document.addEventListener("pointerleave", () => companion.classList.remove("on"));
 
   // Its colour: the innermost coloured thing at the middle of the screen.
@@ -40,6 +43,22 @@
     const middle = innerHeight / 2;
     const here = coloured.find((s) => { const r = s.getBoundingClientRect(); return r.top <= middle && r.bottom >= middle; });
     if (here) companion.style.setProperty("--c", colours[here.dataset.colour]);
+  }
+
+  // It can peel off the pointer to point at something, say a few words in a colour, and come back.
+  let backTimer = 0;
+  function pointAt(x, y, words, colour, ms, back = null) {
+    clearTimeout(backTimer);
+    pill.textContent = words; pillWidth = pill.offsetWidth; companion.classList.add("on", "talking");
+    hoverColour = colour; recolour();
+    away = { x: x + 2, y: y + 2, there: false, arrived: () => { backTimer = setTimeout(() => comeBack(back), ms); } };
+    if (reduce) { pos = { x: away.x, y: away.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; away.there = true; away.arrived(); } else go();
+  }
+  function comeBack(colour = null) {
+    clearTimeout(backTimer);
+    if (!away) return;
+    away = null; companion.classList.remove("talking"); hoverColour = colour; recolour();
+    if (reduce) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; } else go();
   }
 
   // Its pills: a few words beside it over things with something to say.
@@ -660,8 +679,9 @@
   const viewer = document.querySelector(".viewer");
   if (viewer) {
     const title = viewer.querySelector("#viewer-title"), photo = viewer.querySelector(".vphoto"), bin = viewer.querySelector(".vbin");
-    let opener = null;
+    let opener = null, peek = 0;
     const close = () => {
+      clearTimeout(peek); comeBack(); hoverColour = null; recolour();
       viewer.hidden = true;
       bin.querySelectorAll("video").forEach((v) => { v.pause(); v.removeAttribute("src"); v.load(); }); // nothing keeps decoding once it's shut
       opener?.focus();
@@ -674,6 +694,14 @@
       if (what === "bin") bin.querySelectorAll("video").forEach((v) => { v.src = v.dataset.src; if (!reduce) v.play().catch(() => {}); });
       viewer.hidden = false;
       viewer.querySelector(".vclose").focus();
+      if (what === "photo") photo.decode().catch(() => {}).then(() => {
+        clearTimeout(peek);
+        peek = setTimeout(() => { // once the window has settled: the jaw of the face that made all this
+          if (viewer.hidden || photo.hidden) return;
+          const r = photo.getBoundingClientRect();
+          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.494, "my creator", "#722F37", 800, colours.azure); // wine red out, azure back
+        }, 600);
+      });
     };
     viewer.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", close));
     viewer.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
