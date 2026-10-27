@@ -4,6 +4,8 @@
 // no files); the clock. Everything reads without it.
 (() => {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Smooth scrolling: the wheel and the menu's links glide. Touch keeps its own scrolling; reduced motion gets none.
+  const lenis = !reduce && window.Lenis ? new Lenis({ autoRaf: true, anchors: { offset: -40 }, syncTouch: false }) : null;
   const colours = { azure: "#007FFF", pumpkin: "#FF7518", lavender: "#B57EDC", strawberry: "#FA385C", shamrock: "#009E61" };
 
   // ---- The companion: a rounded triangle hanging off the pointer on a spring ----
@@ -91,7 +93,7 @@
     });
   }
   function glide() {
-    ringShown += (ringGoal - ringShown) * (reduce ? 1 : 0.12); // eases each frame, so a jumpy wheel still turns smoothly
+    ringShown += (ringGoal - ringShown) * (reduce || lenis ? 1 : 0.12); // eases each frame, unless Lenis already glides the scroll
     if (Math.abs(ringGoal - ringShown) < 0.0005) ringShown = ringGoal;
     drawRing(ringShown);
     ringGliding = ringShown !== ringGoal;
