@@ -189,8 +189,9 @@
   // ---- The cabinet ----
   const david = document.querySelector(".david");
   const popDavid = () => { if (david.classList.contains("popped")) return; david.classList.add("popped"); pop(); setTimeout(() => david.classList.remove("popped"), 1800); };
-  david.addEventListener("pointerenter", popDavid);
-  david.addEventListener("click", popDavid);
+  const gum = david.querySelector(".gum"); // only the bubble itself pops it
+  gum.addEventListener("click", popDavid);
+  gum.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); popDavid(); } });
   const jersey = document.querySelector(".jersey");
   jersey.addEventListener("click", () => { jersey.classList.remove("hit"); void jersey.offsetWidth; jersey.classList.add("hit"); });
 

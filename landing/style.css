@@ -447,7 +447,8 @@ main > section { position: relative; }
 .dfolder .folder-icon { width: 70px; height: 54px; transition: transform 160ms ease; }
 .dfolder:hover .folder-icon { transform: translateY(-3px) scale(1.04); }
 .dfolder:hover { background: rgba(0,127,255,0.08); }
-.david { cursor: pointer; }
+.david { cursor: default; }
+.gum { cursor: pointer; } .gum:hover { filter: brightness(1.06); } .gum:focus-visible { outline: 2px solid #ff6fae; outline-offset: 3px; }
 .david-frame { position: relative; aspect-ratio: 1; overflow: hidden; }
 .david-frame img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 14%; }
 .gum { position: absolute; left: 37.5%; top: 34.5%; width: 13%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffd1e6, #ff6fae 60%, #e64a91); transition: transform 300ms cubic-bezier(.3,1.6,.5,1), opacity 200ms ease; }
