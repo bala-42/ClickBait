@@ -215,7 +215,12 @@ main > section { position: relative; }
 .way-copy > p:last-child { color: #55575c; font-size: 14.5px; }
 .way .big { width: 100%; }
 .way .big.narrow { width: min(100%, 380px); justify-self: center; }
-.way .big.narrow img[src*=sleep] { width: 100%; max-height: 300px; object-fit: contain; background: #0b0c0e; }
+.wave { height: 300px; display: grid; place-items: center; background: radial-gradient(closest-side, rgba(0,158,97,0.16), transparent) #0b0c0e; } /* listening: a voice coming in, in shamrock */
+.wave > div { display: flex; align-items: center; gap: 5px; height: 60%; animation: phrase 3.6s ease-in-out infinite; }
+.wave i { width: 6px; height: 100%; border-radius: 3px; background: #009E61; box-shadow: 0 0 10px rgba(0,158,97,0.6); transform: scaleY(0.12); animation: talk var(--d) ease-in-out var(--dl) infinite alternate; }
+@keyframes talk { to { transform: scaleY(var(--h)); } }
+@keyframes phrase { 0%, 100% { transform: scaleY(0.25); } 12%, 40% { transform: scaleY(1); } 48%, 54% { transform: scaleY(0.3); } 62%, 86% { transform: scaleY(0.9); } } /* words, a breath, words, a pause */
+@media (prefers-reduced-motion: reduce) { .wave > div, .wave i { animation: none; } .wave i { transform: scaleY(var(--h)); } }
 .way .big img { width: 100%; }
 .bubble { justify-self: start; margin-bottom: 8px; padding: 9px 16px; border-radius: 18px; font: 500 15px var(--aqua); color: #0d2b4f; background: linear-gradient(#e5f2ff, #c4e0ff); box-shadow: inset 0 1px 0 white, 0 0 0 1px rgba(0,100,220,0.25), 0 4px 10px -4px rgba(0,90,200,0.35); position: relative; }
 .bubble::after { content: ""; position: absolute; left: 18px; bottom: -6px; width: 12px; height: 12px; background: #c4e0ff; transform: rotate(45deg); box-shadow: 1px 1px 0 rgba(0,100,220,0.2); }
