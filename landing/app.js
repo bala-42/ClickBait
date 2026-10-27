@@ -34,7 +34,9 @@
 
   // Its colour: the innermost coloured thing at the middle of the screen.
   const coloured = [...document.querySelectorAll("[data-colour]")].reverse();
+  let hoverColour = null; // something under the pointer with its own colour wins over the section's
   function recolour() {
+    if (hoverColour) { companion.style.setProperty("--c", hoverColour); return; }
     const middle = innerHeight / 2;
     const here = coloured.find((s) => { const r = s.getBoundingClientRect(); return r.top <= middle && r.bottom >= middle; });
     if (here) companion.style.setProperty("--c", colours[here.dataset.colour]);
@@ -42,8 +44,8 @@
 
   // Its pills: a few words beside it over things with something to say.
   document.querySelectorAll("[data-pill]").forEach((el) => {
-    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; pillWidth = pill.offsetWidth; companion.classList.add("talking"); });
-    el.addEventListener("pointerleave", () => companion.classList.remove("talking"));
+    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; pillWidth = pill.offsetWidth; companion.classList.add("talking"); if (el.dataset.pillColour) { hoverColour = el.dataset.pillColour; recolour(); } });
+    el.addEventListener("pointerleave", () => { companion.classList.remove("talking"); if (el.dataset.pillColour) { hoverColour = null; recolour(); } });
   });
 
   // ---- The hero's windows: pick one up and put it somewhere else ----
