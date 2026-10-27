@@ -429,6 +429,15 @@
     chat: [
       { ms: 900 }, { keys: true, ms: 160 }, { ms: 140, step: 2 }, { keys: true, ms: 160, step: 2 }, { ms: 3200, step: 3 }, { ms: 600, step: 4 },
     ],
+    dictate: [ // hold fn⌃ and talk: bars while held, the spin while it writes, then point form
+      { at: ".dt-mark", ms: 1100, step: 0 },
+      { at: ".dt-mark", keys: true, listen: true, ms: 3000, step: 1 },
+      { at: ".dt-mark", spin: true, ms: 1400, step: 2 },
+      { at: ".dt-mark", ms: 1400, step: 3 },
+      { at: ".dt-mark", keys: true, listen: true, pill: "give it to me in point form", ms: 2000, step: 4 },
+      { at: ".dt-mark", spin: true, ms: 1100, step: 5 },
+      { at: ".dt-mark", ms: 3200, step: 6 },
+    ],
     explain: [
       { ms: 900 }, { ms: 900 }, { keys: true, ms: 220, step: 2 }, { ms: 3200, step: 3 }, { ms: 500, step: 4 },
     ],
@@ -445,7 +454,7 @@
       root.dataset.step = s.step ?? n;
       if (root.dataset.demo === "orders") root.querySelectorAll(".ord li").forEach((li, k) => li.classList.toggle("on", k === root.dataset.step * 1));
       root.classList.toggle("press", !!s.keys);
-      root.classList.toggle("spin", !!s.spin);
+      root.classList.toggle("spin", !!s.spin); root.classList.toggle("listen", !!s.listen);
       if (s.tone) root.style.setProperty("--c", `var(--${s.tone})`);
       if (!pointer) return;
       const target = s.at && root.querySelector(s.at), sv = s.pt && root.querySelector(".sv");
@@ -453,7 +462,7 @@
       if (sv) { const o = offsetIn(sv, root), k = sv.offsetWidth / 400; x = o.x + (s.pt[0] + s.pt[2] * 0.6) * k; y = o.y + (s.pt[1] + s.pt[2] * 0.6) * k; } // a spot on the picture, in its own units
       else if (target) { const o = offsetIn(target, root); x = o.x + target.offsetWidth * (s.ax ?? 0.55); y = o.y + target.offsetHeight * 0.55; }
       else { const h = home(); x = h.x + 16; y = h.y + 2; } // tucked by the cursor
-      pointer.style.setProperty("--px", `${x}px`); pointer.style.setProperty("--py", `${y}px`);
+      root.style.setProperty("--px", `${x}px`); root.style.setProperty("--py", `${y}px`); // the triangle and its bars both sit here
       pill.classList.toggle("on", !!(s.pill || s.html));
       if (s.pill || s.html) {
         if (s.html) pill.innerHTML = s.html; else pill.textContent = s.pill;
@@ -462,7 +471,7 @@
       }
     };
     const tick = () => { show(steps[i], i); timer = setTimeout(tick, steps[i].ms); i = (i + 1) % steps.length; };
-    if (reduce) { const still = { walk: 2, point: 3, chat: 4, explain: 3, circle: 2, orders: 2 }[root.dataset.demo]; show(steps[still], still); return; } // one telling moment, held
+    if (reduce) { const still = { walk: 2, point: 3, chat: 4, explain: 3, circle: 2, orders: 2, dictate: 6 }[root.dataset.demo]; show(steps[still], still); return; } // one telling moment, held
     show(steps[0], 0);
     new IntersectionObserver(([e]) => { clearTimeout(timer); if (e.isIntersecting) { i = 0; tick(); } }, { threshold: 0.3 }).observe(root);
   });

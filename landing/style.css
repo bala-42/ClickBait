@@ -215,12 +215,27 @@ main > section { position: relative; }
 .way-copy > p:last-child { color: #55575c; font-size: 14.5px; }
 .way .big { width: 100%; }
 .way .big.narrow { width: min(100%, 380px); justify-self: center; }
-.wave { height: 300px; display: grid; place-items: center; background: radial-gradient(closest-side, rgba(0,158,97,0.16), transparent) #0b0c0e; } /* listening: a voice coming in, in shamrock */
-.wave > div { display: flex; align-items: center; gap: 5px; height: 60%; animation: phrase 3.6s ease-in-out infinite; }
-.wave i { width: 6px; height: 100%; border-radius: 3px; background: #009E61; box-shadow: 0 0 10px rgba(0,158,97,0.6); transform: scaleY(0.12); animation: talk var(--d) ease-in-out var(--dl) infinite alternate; }
-@keyframes talk { to { transform: scaleY(var(--h)); } }
-@keyframes phrase { 0%, 100% { transform: scaleY(0.25); } 12%, 40% { transform: scaleY(1); } 48%, 54% { transform: scaleY(0.3); } 62%, 86% { transform: scaleY(0.9); } } /* words, a breath, words, a pause */
-@media (prefers-reduced-motion: reduce) { .wave > div, .wave i { animation: none; } .wave i { transform: scaleY(var(--h)); } }
+.dt { position: relative; height: 300px; padding: 26px 26px 0; background: #fcfcfb; font: 500 16.5px/1.5 var(--aqua); color: var(--ink); text-align: left; } /* dictating: a note the words land in */
+.dt-mark { position: absolute; right: 40px; top: 196px; width: 1px; height: 1px; }
+.dt-raw { margin: 0; max-width: 88%; transition: opacity 250ms ease; }
+.dt-raw .dw, .dt-raw .um, .dt-raw .dot { opacity: 0; transition: opacity 160ms ease; }
+.dt-raw .um { display: inline-block; white-space: pre; max-width: 5em; overflow: hidden; vertical-align: bottom; transition: opacity 260ms ease, max-width 380ms ease, color 200ms ease; }
+.demo[data-step="1"] .dt-raw .dw, .demo[data-step="1"] .dt-raw .um { opacity: 1; transition-delay: calc(var(--k) * 105ms); } /* the words arrive as they're said */
+.demo[data-step="2"] .dt-raw .dw, .demo[data-step="3"] .dt-raw .dw, .demo[data-step="4"] .dt-raw .dw, .demo[data-step="5"] .dt-raw .dw { opacity: 1; }
+.demo[data-step="2"] .dt-raw .um { opacity: 0; max-width: 0; color: var(--c); transition-delay: 450ms; } /* the ums tint, then drop out and the gaps close */
+.demo[data-step="3"] .dt-raw .um, .demo[data-step="4"] .dt-raw .um, .demo[data-step="5"] .dt-raw .um { max-width: 0; }
+.demo[data-step="2"] .dt-raw .dot, .demo[data-step="3"] .dt-raw .dot, .demo[data-step="4"] .dt-raw .dot, .demo[data-step="5"] .dt-raw .dot { opacity: 1; transition-delay: 700ms; }
+.dt-caret { display: inline-block; width: 1.5px; height: 1.1em; margin-left: 2px; vertical-align: -0.15em; background: var(--c); animation: caret 1s steps(1) infinite; }
+.demo[data-step="6"] .dt-raw { opacity: 0; }
+.dt-pts { position: absolute; left: 26px; right: 26px; top: 26px; margin: 0; padding-left: 1.1em; display: grid; gap: 6px; opacity: 0; transform: translateY(4px); transition: opacity 300ms ease, transform 300ms ease; }
+.dt-pts li::marker { color: var(--c); }
+.demo[data-step="6"] .dt-pts { opacity: 1; transform: none; }
+.demo[data-demo="dictate"] .keys { left: 20px; bottom: 18px; }
+.dt-bars { position: absolute; left: 0; top: 0; z-index: 3; display: flex; gap: 2px; align-items: center; height: 18px; transform: translate(var(--px, 0), var(--py, 0)) translate(-2px, -6px); opacity: 0; transition: opacity 180ms ease; filter: drop-shadow(0 0 4px var(--c)); } /* the app's ListeningWaveform: five bars, its colour */
+.dt-bars i { width: 2.5px; height: 30%; border-radius: 2px; background: var(--c); animation: wave 520ms ease-in-out infinite alternate; }
+.dt-bars i:nth-child(2) { animation-delay: -180ms; } .dt-bars i:nth-child(3) { animation-delay: -360ms; } .dt-bars i:nth-child(4) { animation-delay: -90ms; } .dt-bars i:nth-child(5) { animation-delay: -270ms; }
+.demo.listen .dt-bars { opacity: 1; } .demo.listen .pointer { opacity: 0; }
+.demo .pointer { transition: transform 620ms cubic-bezier(.3,1.35,.5,1), opacity 180ms ease; }
 .way .big img { width: 100%; }
 .bubble { justify-self: start; margin-bottom: 8px; padding: 9px 16px; border-radius: 18px; font: 500 15px var(--aqua); color: #0d2b4f; background: linear-gradient(#e5f2ff, #c4e0ff); box-shadow: inset 0 1px 0 white, 0 0 0 1px rgba(0,100,220,0.25), 0 4px 10px -4px rgba(0,90,200,0.35); position: relative; }
 .bubble::after { content: ""; position: absolute; left: 18px; bottom: -6px; width: 12px; height: 12px; background: #c4e0ff; transform: rotate(45deg); box-shadow: 1px 1px 0 rgba(0,100,220,0.2); }
