@@ -125,6 +125,26 @@ h2 { font-size: clamp(30px, 4.4vw, 56px); }
 .t8 { right: 22%; bottom: 10%; width: 150px; aspect-ratio: 404 / 80; }
 .kao { font: 500 15px var(--aqua); color: #2c2d30; }
 .k1 { left: 24%; top: 33%; }
+/* the desktop's two icons: a file to open and the bin, side by side */
+.dicon.dfile { left: 54%; top: 75%; } .dicon.dbin { left: calc(54% + 96px); top: 75%; } /* side by side */
+.dicon { animation: none; }
+.dicon { display: grid; justify-items: center; gap: 5px; width: 82px; padding: 6px 2px 4px; border: 0; border-radius: 8px; background: none; cursor: pointer; touch-action: none; font: 500 11px var(--aqua); color: #2c2d30; }
+.dicon svg { width: 46px; height: auto; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.18)); }
+.dicon span { max-width: 100%; padding: 1px 5px; border-radius: 4px; text-align: center; line-height: 1.25; overflow-wrap: anywhere; } /* long names wrap, like Finder */
+.dicon:hover span, .dicon:focus-visible span { background: var(--azure); color: white; }
+.dicon:focus-visible { outline: none; }
+.dicon.dragging { cursor: grabbing; }
+/* the viewer: what a desktop icon opens, over a dimmed, blurred page */
+.viewer[hidden], .viewer [hidden] { display: none !important; } /* hidden means hidden, whatever display says */
+.viewer { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 48px 16px; }
+.viewer-dim { position: absolute; inset: 0; background: rgba(240,240,242,0.55); -webkit-backdrop-filter: blur(10px) saturate(0.8); backdrop-filter: blur(10px) saturate(0.8); }
+.viewer-win { position: relative; --r: 0deg; max-height: 100%; display: flex; flex-direction: column; animation: vopen 260ms cubic-bezier(.3,1.3,.5,1); }
+@keyframes vopen { from { opacity: 0; transform: scale(0.94); } }
+.vclose { width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: radial-gradient(circle at 50% 30%, #ff9f98, #ec4b3f 60%); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.3); }
+.viewer-body { overflow: auto; min-height: 0; }
+.vphoto { display: block; height: min(78vh, 1264px); width: auto; max-width: 100%; }
+.vbin { width: min(88vw, 900px); display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; padding: 8px; background: #0b0c0e; }
+.vbin video { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: #1a1b1e; }
 .pic { margin: 0; } .pic img { display: block; width: 100%; height: auto; }
 .sp1 { left: 33.6%; top: 7.5%; width: clamp(124px, 10.8vw, 164px); } /* a still window, always the same picture */
 .pic .tb span, .gifwin .tb span, .giftile .tb span { left: 54px; right: 4px; text-align: left; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* a narrow window: the title starts after the lights */
@@ -530,7 +550,7 @@ main > section { position: relative; }
 /* ---------- Tablet ---------- */
 @media (max-width: 1000px) {
   .menu-left a:not(.app) { display: none; }
-  .t5, .t6, .t8, .k1, .k3, .f1, .f2, .h3, .h4, .t2, .t4, .sp1 { display: none; }
+  .t5, .t6, .t8, .k1, .k3, .f1, .f2, .h3, .h4, .t2, .t4, .sp1, .dicon { display: none; }
   .h1 { left: -3%; top: auto; bottom: 4%; } .h2 { right: -3%; top: 9%; }
   .strip { flex-direction: column; } .strip .tv-slot { margin: 0 !important; }
     .t1 { left: -4%; top: 10%; } .t2 { right: -3%; top: 9%; }

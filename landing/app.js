@@ -626,27 +626,52 @@
     new IntersectionObserver(([e]) => { if (e.isIntersecting && !document.hidden) v.play().catch(() => {}); else v.pause(); }).observe(v);
   });
 
-  // ---- Luffy: drag him anywhere in the hero; a click (no drag) makes him bounce ----
-  const luffy = document.querySelector(".luffy");
-  if (luffy) {
-    const boing = () => { luffy.classList.remove("boing"); void luffy.offsetWidth; luffy.classList.add("boing"); };
-    luffy.addEventListener("pointerdown", (e) => {
-      const box = luffy.getBoundingClientRect(), home = luffy.offsetParent.getBoundingClientRect(), start = { x: e.clientX, y: e.clientY };
+  // ---- Things you can drag around the hero; a click (no drag) does their thing ----
+  function draggable(el, onTap) {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const box = el.getBoundingClientRect(), home = el.offsetParent.getBoundingClientRect(), start = { x: e.clientX, y: e.clientY };
       const from = { x: box.left - home.left, y: box.top - home.top };
       let moved = false;
-      luffy.setPointerCapture(e.pointerId);
+      el.setPointerCapture(e.pointerId);
       const move = (m) => {
         const dx = m.clientX - start.x, dy = m.clientY - start.y;
         if (!moved && Math.hypot(dx, dy) < 4) return;
-        moved = true; luffy.classList.add("dragging");
+        moved = true; el.classList.add("dragging");
         const x = Math.min(Math.max(0, from.x + dx), home.width - box.width), y = Math.min(Math.max(0, from.y + dy), home.height - box.height);
-        Object.assign(luffy.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
+        Object.assign(el.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
       };
-      const up = () => { luffy.removeEventListener("pointermove", move); luffy.classList.remove("dragging"); if (!moved) boing(); };
-      luffy.addEventListener("pointermove", move);
-      luffy.addEventListener("pointerup", up, { once: true });
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", () => { el.removeEventListener("pointermove", move); el.classList.remove("dragging"); if (!moved) onTap(); }, { once: true });
     });
-    luffy.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); boing(); } });
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTap(); } });
+  }
+  // Luffy bounces
+  const luffy = document.querySelector(".luffy");
+  if (luffy) draggable(luffy, () => { luffy.classList.remove("boing"); void luffy.offsetWidth; luffy.classList.add("boing"); });
+
+  // The file and the bin open in a window over the page. The photo and the GIFs only load once opened.
+  const viewer = document.querySelector(".viewer");
+  if (viewer) {
+    const title = viewer.querySelector("#viewer-title"), photo = viewer.querySelector(".vphoto"), bin = viewer.querySelector(".vbin");
+    let opener = null;
+    const close = () => {
+      viewer.hidden = true;
+      bin.querySelectorAll("video").forEach((v) => { v.pause(); v.removeAttribute("src"); v.load(); }); // nothing keeps decoding once it's shut
+      opener?.focus();
+    };
+    const open = (what, from) => {
+      opener = from;
+      photo.hidden = what !== "photo"; bin.hidden = what !== "bin";
+      title.textContent = what === "photo" ? "moorthy-gang.png" : "bin";
+      if (what === "photo" && !photo.src) photo.src = "assets/moorthy-gang.jpg";
+      if (what === "bin") bin.querySelectorAll("video").forEach((v) => { v.src = v.dataset.src; if (!reduce) v.play().catch(() => {}); });
+      viewer.hidden = false;
+      viewer.querySelector(".vclose").focus();
+    };
+    viewer.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", close));
+    viewer.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    document.querySelectorAll(".dicon").forEach((icon) => draggable(icon, () => open(icon.dataset.open, icon)));
   }
 
   // ---- The menu bar clock: Singapore time ----
