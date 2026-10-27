@@ -192,7 +192,7 @@
   const folders = {
     films: { title: "films i'd rewatch", items: [["The Prestige", "trailer", "RLtaA9fFNXU"], ["Eternal Sunshine of the Spotless Mind", "trailer", "07-QBnEkgXU"], ["Baashha (1995)", "a scene", "-tkows0DK9o"], ["Dorothy, Karthik Subbaraj", "trailer", "jcBG6U5iX8Y"]] },
     crime: { title: "crime classics", items: [["Heat (1995)", "trailer", "14oNcFxiVaQ"], ["Goodfellas", "trailer", "2ilzidi_J8Q"], ["The Godfather", "trailer", "eZHsmb4ezEk"], ["Taxi Driver", "trailer", "T5IligQP7Fo"]] },
-    tamil: { title: "tamil cinema", items: [["Thenpandi Cheemayile, Nayagan", "song", "q9AJ0ITDL30"], ["Annamalai", "a scene", "fyybq67IF60"], ["Bloody Sweet, Anirudh", "song", "qN3wfuPYTI4"]] },
+    tamil: { title: "tamil cinema", items: [["Thenpandi Cheemayile, Nayagan", "song", "q9AJ0ITDL30"], ["Annamalai", "a scene", "fyybq67IF60"], ["Bloody Valentine, Anirudh", "song", "qgv9VBoK8po"]] },
     internet: { title: "internet artefacts", items: [["Like a Boss", "the original", "NisCkxU544c", "NBfy3pznTUKTN4nM4C"], ["Nyan Cat", "the original", "2yJgwwDcgV8", "ktW8FqKodoPUk"], ["South Park", "a clip", "RcoGzT9QrTI", "xTiTnKKeB9WDVpdnoc"], ["Rick and Morty", "a clip", "UV4c_PY-UgE", "3ov9jZcnT6S547u036"]] },
   };
 
@@ -201,7 +201,7 @@
     "RLtaA9fFNXU": "are you watching closely?", "07-QBnEkgXU": "meet me in montauk", "-tkows0DK9o": "a 100 is 100.",
     "jcBG6U5iX8Y": "karthik subbaraj, but make it eerie", "14oNcFxiVaQ": "the diner scene lives rent free", "2ilzidi_J8Q": "funny how?",
     "eZHsmb4ezEk": "i believe in america", "T5IligQP7Fo": "you talkin' to me?", "q9AJ0ITDL30": "ilaiyaraaja. that's it. that's the note.",
-    "fyybq67IF60": "thalaivar has entered the chat", "qN3wfuPYTI4": "anirudh, volume up", "NisCkxU544c": "like a boss, obviously",
+    "fyybq67IF60": "thalaivar has entered the chat", "qgv9VBoK8po": "anirudh, volume up", "NisCkxU544c": "like a boss, obviously",
     "2yJgwwDcgV8": "nyan nyan nyan nyan", "RcoGzT9QrTI": "screw you guys", "UV4c_PY-UgE": "wubba lubba dub dub",
   };
   const pool = Object.values(folders).flatMap((f) => f.items.filter(([, , id]) => id).map(([name, , id]) => ({ name, id })));
