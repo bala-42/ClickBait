@@ -699,7 +699,7 @@
         peek = setTimeout(() => { // once the window has settled: the left edge of the face that made all this
           if (viewer.hidden || photo.hidden) return;
           const r = photo.getBoundingClientRect();
-          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.46, "my creator", "#9B1B48", 1000, colours.azure); // wine red out, azure back
+          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.46, "my creator", "#66023C", 1000, colours.azure); // Tyrian purple out, azure back
         }, 600);
       });
     };
