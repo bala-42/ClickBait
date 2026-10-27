@@ -200,7 +200,7 @@ main > section { position: relative; }
 .way.three .giftile { order: 3; align-self: center; }
 .way.lead-pic { grid-template-columns: auto minmax(0, 4.2fr) minmax(0, 4fr); gap: clamp(28px, 4vw, 64px); } /* Truman's column is just Truman, so the window in the middle sits evenly between it and the words */ /* a small still on the left, then the window, then the words */
 .way.lead-pic { --shift: clamp(0px, calc((100vw - 1240px) / 2 + 40px - 6vw), 380px); } /* how far out into the left margin there is room to go */
-.way.lead-pic .truman { order: 0; width: clamp(240px, 19vw, 290px); align-self: center; position: relative; left: calc(-1 * var(--shift)); }
+.way.lead-pic .truman { order: 0; width: clamp(210px, 16vw, 250px); align-self: center; position: relative; left: calc(-1 * var(--shift)); top: clamp(60px, 7vw, 130px); } /* a touch smaller, sitting lower than the window beside it */
 .way.lead-pic > figure.big { position: relative; left: calc(-0.5 * var(--shift)); } /* half as far, so the gaps either side stay even */ /* big enough to read the subtitle, out towards the margin */
 .way.lead-pic > figure.big { order: 1; }
 /* a bare GIF far right of the circle row, out in the page's side margin: only where that margin is wide enough */
