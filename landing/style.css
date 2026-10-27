@@ -163,10 +163,9 @@ h2 { font-size: clamp(30px, 4.4vw, 56px); }
 .ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }
 /* the hero's two buttons, classic Aqua: a glossy blue pill outlined in dark blue, and a glossy white one outlined in grey */
 .ctas .jelly, .ctas .ghost { height: 44px; padding: 0 26px; font: 500 16px var(--aqua); color: #0e1630; }
-.ctas .jelly { background: linear-gradient(rgba(255,255,255,0.4), rgba(255,255,255,0.04) 50%, rgba(255,255,255,0) 51%), linear-gradient(#d1ebfc, #9cc9eb); box-shadow: inset 0 1px 1px rgba(255,255,255,0.85), 0 0 0 1.5px #5c91ba, 0 4px 10px -3px rgba(60,120,170,0.35); } /* the app's own Aqua light blue: its local/online switch */
+.end .jelly, .ctas .jelly { height: 44px; padding: 0 26px; font: 500 16px var(--aqua); } /* one download button, hero and footer alike */
 .ctas .ghost { background: linear-gradient(#ffffff 0%, #fbfbfb 45%, #ececec 52%, #f4f4f4 82%, #ffffff 100%); box-shadow: inset 0 1px 1px #fff, inset 0 -2px 4px rgba(255,255,255,0.8), 0 0 0 1.5px #8d8f94, 0 3px 8px -3px rgba(0,0,0,0.25); }
 .ctas .ghost:hover { filter: brightness(1.02); transform: translateY(-1px); }
-.ctas .jelly svg { width: 15px; }
 .fine { font: 500 11.5px var(--aqua); color: var(--muted); }
 
 /* ---------- Little televisions: muted until you hover ---------- */
@@ -515,7 +514,7 @@ main > section { position: relative; }
 .end .bait s { text-decoration-color: #fff; }
 .end .giant { color: #fff; text-shadow: 0 4px 30px rgba(0,0,0,0.6); }
 .end > p:not(.bait) { font-size: 17px; max-width: 34ch; text-shadow: 0 1px 8px #000, 0 0 2px #000; }
-.end .jelly { background: linear-gradient(#e3f3ff, #a9d6ff 48%, #6cb8ff 52%, #b9e3ff); color: #0b2340; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 4px rgba(255,255,255,0.5), 0 0 0 1px #3c7fc4, 0 6px 16px -4px rgba(60,140,230,0.6); } /* the light blue Aqua button */
+.end .jelly, .ctas .jelly { background: linear-gradient(#e3f3ff, #a9d6ff 48%, #6cb8ff 52%, #b9e3ff); color: #0b2340; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 4px rgba(255,255,255,0.5), 0 0 0 1px #3c7fc4, 0 6px 16px -4px rgba(60,140,230,0.6); } /* the light blue Aqua button */
 
 /* ---------- Footer ---------- */
 .foot { padding: 48px var(--gutter) 28px; overflow: hidden; }
