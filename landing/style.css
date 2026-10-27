@@ -426,6 +426,10 @@ main > section { position: relative; }
 .ord span { font: 600 11.5px var(--aqua); padding: 3px 9px; border-radius: 999px; background: var(--shamrock); color: white; opacity: 0; transform: translateY(3px); transition: opacity 220ms ease, transform 220ms ease; }
 .ord li.on { color: var(--ink); }
 .ord li.on span { opacity: 1; transform: none; }
+.ord q::before { content: ""; display: inline-block; width: 0.6em; height: 0.86em; margin-right: 0.38em; vertical-align: -0.06em; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Crect x='3.5' y='0.5' width='7' height='12' rx='3.5'/%3E%3Cpath d='M1.2 9.2a5.8 5.8 0 0 0 11.6 0' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'/%3E%3Cpath d='M7 15.2v3.4M4.2 19.1h5.6' stroke='black' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Crect x='3.5' y='0.5' width='7' height='12' rx='3.5'/%3E%3Cpath d='M1.2 9.2a5.8 5.8 0 0 0 11.6 0' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'/%3E%3Cpath d='M7 15.2v3.4M4.2 19.1h5.6' stroke='black' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; } /* said aloud: a mic in the line's own colour, grey until it's heard */
+.ord li:not(.on) span { display: none; } /* an unlit line keeps no room for its pill, so the gaps stay even */
+.ord span { transition-behavior: allow-discrete; }
+@starting-style { .ord li.on span { opacity: 0; transform: translateY(3px); } }
 
 /* double-tap ⌥⌘ and type */
 .ch-stage { position: relative; aspect-ratio: 700 / 430; background: #f3f2ef; }
