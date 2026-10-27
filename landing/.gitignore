@@ -1,0 +1,6 @@
+.old/
+*.dmg
+.vercel
+.taste-skill/
+.inspect.txt
+.sheet.md

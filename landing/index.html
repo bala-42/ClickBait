@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>clickbait — a little triangle that lives by your cursor</title>
+<meta name="description" content="ClickBait lives by your cursor. Hold a key, ask out loud, and it answers, points at what to click or walks you through it. Everything runs on your Mac.">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Yellowtail&family=Press+Start+2P&family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=20261027x">
+</head>
+<body>
+
+<a class="skip" href="#main">skip to the page</a>
+
+<!-- The menu bar: the page is a Mac desktop -->
+<header class="menubar">
+  <nav class="menu-left" aria-label="Sections">
+    <a class="app" href="#top" data-pill="that's me!">clickbait</a>
+    <a href="#ways">ways to ask</a>
+    <a href="#colours">colours</a>
+    <a href="#setup">setup</a>
+    <a href="#faq">faq</a>
+  </nav>
+  <a class="menu-logo" href="#top" aria-label="ClickBait, back to the top">
+    <svg viewBox="0 0 100 100" aria-hidden="true"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg>
+  </a>
+  <div class="menu-right">
+    <span class="glyphs" aria-hidden="true">
+      <svg viewBox="0 0 20 14"><path d="M10 13 7 9.5a4.5 4.5 0 0 1 6 0Zm-5-6a7.5 7.5 0 0 1 10 0l-1.5 1.6a5.5 5.5 0 0 0-7 0ZM2 4a11.5 11.5 0 0 1 16 0l-1.5 1.6a9.5 9.5 0 0 0-13 0Z"/></svg>
+      <svg viewBox="0 0 26 13"><rect x="1" y="1" width="21" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="3" y="3" width="14" height="7" rx="1.5"/><rect x="23" y="4.5" width="2" height="4" rx="1"/></svg>
+    </span>
+    <span class="clock" id="sgtime">sg</span>
+    <a class="get" href="ClickBait-0.1.0.dmg" download data-pill="ooh, yes please">get clickbait</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- Hero: a wordmark on the desktop, the app's own windows and scraps drifting round it -->
+<section class="hero" id="top" data-colour="azure">
+  <div class="drift">
+    <div class="tv-slot t1"></div>
+    <div class="tv-slot t2"></div>
+    <div class="tv-slot t3"></div>
+    <div class="tv-slot t4"></div>
+    <figure class="tile t5" style="--r:-12deg"><img src="assets/ui/sleep.png" alt="" width="263" height="228"></figure>
+    <figure class="tile t6" style="--r:9deg"><img src="assets/florence-italy-michelangelo-s-david.jpg" alt="" width="400" height="400"></figure>
+    <figure class="tile t7" style="--r:14deg"><img src="assets/icon.png" alt="" width="256" height="256"></figure>
+    <figure class="tile t8" style="--r:-8deg"><img src="assets/ui/sky-30.png" alt="" width="404" height="80"></figure>
+    <div class="tv-slot h1"></div><div class="tv-slot h2"></div><div class="tv-slot h3"></div><div class="tv-slot h4"></div>
+    <span class="kao k1" aria-hidden="true">^ ω ^</span>
+    <span class="kao k2" aria-hidden="true">(¬‿¬)</span>
+    <span class="kao k3" aria-hidden="true">{ ^_^ }</span>
+    <span class="sticker s1" style="--r:-7deg">no account!</span>
+    <span class="sticker s2" style="--r:6deg">made on a Mac</span>
+    <span class="sticker s3" style="--r:-3deg">runs on your Mac</span>
+    <span class="folder-icon f1" aria-hidden="true"></span>
+    <span class="folder-icon f2" aria-hidden="true"></span>
+  </div>
+
+  <div class="hero-copy">
+    <h1>clickbait</h1>
+    <p class="lead">a little triangle that lives by your cursor</p>
+    <div class="ctas">
+      <a class="jelly" href="ClickBait-0.1.0.dmg" download data-pill="go on, click it">
+        <svg viewBox="0 0 14 17" aria-hidden="true"><path d="M11.6 9c0-2 1.7-3 1.8-3-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.8-3.1.8-.7 0-1.6-.8-2.7-.7C3.2 4.5 1.9 5.3 1.2 6.6c-1.5 2.6-.4 6.4 1 8.5.7 1 1.5 2.1 2.6 2.1 1 0 1.4-.7 2.7-.7 1.2 0 1.6.7 2.7.7 1.1 0 1.8-1 2.5-2 .8-1.2 1.1-2.3 1.1-2.4 0 0-2.2-.8-2.2-3.8ZM9.6 3c.6-.7 1-1.7.9-2.7-.9 0-1.9.6-2.5 1.3-.5.6-1 1.6-.9 2.6 1 .1 1.9-.5 2.5-1.2Z"/></svg>
+        download for mac
+      </a>
+      <a class="ghost" href="#ways" data-pill="you know you want to">see what it does</a>
+    </div>
+    <p class="fine">free · macOS on Apple silicon · 6.8 MB</p>
+  </div>
+</section>
+
+<!-- Five ways: small words beside a big window -->
+<section class="ways" id="ways" data-colour="azure">
+  <div class="ways-head">
+    <p class="bait"><s>doctors hate these 6 keyboard shortcuts</s></p>
+    <h2>six ways to ask</h2>
+  </div>
+
+  <article class="way" data-colour="azure">
+    <div class="way-copy">
+      <p class="bubble" data-type="where's the share button?"><span>where's the share button?</span></p>
+      <h3>hold ⌃⌥ and say it</h3>
+      <p>"where's the share button?" "what does this error mean?" let go, and the triangle answers by your cursor, or flies off and points at the thing.</p>
+    </div>
+    <figure class="w big demo" data-demo="point" role="img" aria-label="Holding Control and Option, someone asks how to share; the triangle listens and thinks in orange, then turns blue and glides to Share saying Share’s up here" style="--r:-1.5deg; --c: var(--azure)"><div class="tb"><i></i><i></i><i></i><span>Pages</span></div>
+      <div class="pg-bar"><span>Insert</span><span>Table</span><span>Chart</span><span>Text</span><span>Shape</span><span>Media</span><span class="pg-share">Share</span></div>
+      <div class="pg-doc"><b>Trip notes</b><i></i><i></i><i class="short"></i><i></i><i class="short"></i></div>
+      <div class="keys"><kbd>⌃</kbd><kbd>⌥</kbd></div>
+      <svg class="cur" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 L5 19 L9.2 15.2 L12 21.5 L14.6 20.4 L11.9 14.2 L17.6 14.2 Z"/></svg><svg class="pointer" viewBox="0 0 100 100" aria-hidden="true"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><span class="pill"></span></figure>
+  </article>
+
+  <article class="way flip" data-colour="pumpkin">
+    <div class="way-copy">
+      <p class="bubble" data-type="write a palindrome check in python"><span>write a palindrome check in python</span></p>
+      <h3>double-tap ⌥⌘ and type</h3>
+      <p>no mouse needed: tap ⌥⌘ twice and a chat opens to type in. follow up and it carries the conversation on; code comes back in a block you can copy.</p>
+    </div>
+    <figure class="w big demo" data-demo="chat" role="img" aria-label="Option and Command tapped twice; ClickBait's chat slides in with Python code and a copy button" style="--r:1.5deg; --c: var(--pumpkin)"><div class="tb"><i></i><i></i><i></i><span>chat</span></div>
+      <div class="ch-stage"><div class="keys"><kbd>⌥</kbd><kbd>⌘</kbd></div><img src="assets/ui/chat.png" alt="" width="700" height="430" loading="lazy"></div></figure>
+  </article>
+
+  <article class="way" data-colour="strawberry">
+    <div class="way-copy">
+      <p class="bubble" data-type="what does range do here?"><span>what does range do here?</span></p>
+      <h3>highlight it, tap ⌥⌘</h3>
+      <p>a word you don't know, an error, a line of code. highlight it and tap ⌥⌘, or hold ⌥⌘ and circle anything on screen. it explains it in a card and answers follow-ups there.</p>
+    </div>
+    <figure class="w big narrow demo" data-demo="explain" role="img" aria-label="The word range is highlighted in some Python, Option and Command are tapped, and a card explains the loop" style="--r:-2deg; --c: var(--strawberry)"><div class="tb"><i></i><i></i><i></i><span>loop.py</span></div>
+      <pre class="ex-code"><code>total = 0
+for i in <mark>range</mark>(10):
+    total += i
+print(total)</code></pre>
+      <div class="keys"><kbd>⌥</kbd><kbd>⌘</kbd></div>
+      <img class="ex-card" src="assets/ui/card-followup.png" alt="" width="360" height="321" loading="lazy">
+      <svg class="cur" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 L5 19 L9.2 15.2 L12 21.5 L14.6 20.4 L11.9 14.2 L17.6 14.2 Z"/></svg></figure>
+  </article>
+
+  <article class="way flip" data-colour="strawberry">
+    <div class="way-copy">
+      <p class="bubble" data-type="what's this?"><span>what's this?</span></p>
+      <h3>hold ⌥⌘ and circle it</h3>
+      <p>draw round a chart, a diagram or a photo. on a picture with no labels it tours the parts with red <b>~ name</b> pills. the ~ is honesty: the names are its best guess.</p>
+    </div>
+    <figure class="w big demo" data-demo="circle" role="img" aria-label="A red loop is drawn round a picture of the solar system, then the red triangle tours the planets: jupiter, saturn, earth, neptune" style="--r:1.5deg; --c: var(--strawberry)"><div class="tb"><i></i><i></i><i></i><span>solar-system.png</span></div>
+      <div class="sv"><svg class="solar" viewBox="0 0 400 250" aria-hidden="true"><defs><radialGradient id="sun" cx="0" cy="250" r="120" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff4c2"/><stop offset="0.4" stop-color="#ffb347"/><stop offset="0.62" stop-color="#ff6a1f"/><stop offset="0.75" stop-color="#ff5a1f" stop-opacity="0.35"/><stop offset="1" stop-color="#ff5a1f" stop-opacity="0"/></radialGradient></defs><rect width="400" height="250" fill="#0b0b14"/><circle cx="0" cy="0" r="0.3" fill="#fff" opacity="0.25"/><circle cx="97" cy="53" r="0.6" fill="#fff" opacity="0.35"/><circle cx="194" cy="106" r="0.9" fill="#fff" opacity="0.45"/><circle cx="291" cy="159" r="0.3" fill="#fff" opacity="0.55"/><circle cx="388" cy="212" r="0.6" fill="#fff" opacity="0.25"/><circle cx="85" cy="15" r="0.9" fill="#fff" opacity="0.35"/><circle cx="182" cy="68" r="0.3" fill="#fff" opacity="0.45"/><circle cx="279" cy="121" r="0.6" fill="#fff" opacity="0.55"/><circle cx="376" cy="174" r="0.9" fill="#fff" opacity="0.25"/><circle cx="73" cy="227" r="0.3" fill="#fff" opacity="0.35"/><circle cx="170" cy="30" r="0.6" fill="#fff" opacity="0.45"/><circle cx="267" cy="83" r="0.9" fill="#fff" opacity="0.55"/><circle cx="364" cy="136" r="0.3" fill="#fff" opacity="0.25"/><circle cx="61" cy="189" r="0.6" fill="#fff" opacity="0.35"/><circle cx="158" cy="242" r="0.9" fill="#fff" opacity="0.45"/><circle cx="255" cy="45" r="0.3" fill="#fff" opacity="0.55"/><circle cx="352" cy="98" r="0.6" fill="#fff" opacity="0.25"/><circle cx="49" cy="151" r="0.9" fill="#fff" opacity="0.35"/><circle cx="146" cy="204" r="0.3" fill="#fff" opacity="0.45"/><circle cx="243" cy="7" r="0.6" fill="#fff" opacity="0.55"/><circle cx="340" cy="60" r="0.9" fill="#fff" opacity="0.25"/><circle cx="37" cy="113" r="0.3" fill="#fff" opacity="0.35"/><circle cx="134" cy="166" r="0.6" fill="#fff" opacity="0.45"/><circle cx="231" cy="219" r="0.9" fill="#fff" opacity="0.55"/><circle cx="328" cy="22" r="0.3" fill="#fff" opacity="0.25"/><circle cx="25" cy="75" r="0.6" fill="#fff" opacity="0.35"/><circle cx="122" cy="128" r="0.9" fill="#fff" opacity="0.45"/><circle cx="219" cy="181" r="0.3" fill="#fff" opacity="0.55"/><circle cx="316" cy="234" r="0.6" fill="#fff" opacity="0.25"/><circle cx="13" cy="37" r="0.9" fill="#fff" opacity="0.35"/><circle cx="110" cy="90" r="0.3" fill="#fff" opacity="0.45"/><circle cx="207" cy="143" r="0.6" fill="#fff" opacity="0.55"/><circle cx="304" cy="196" r="0.9" fill="#fff" opacity="0.25"/><circle cx="1" cy="249" r="0.3" fill="#fff" opacity="0.35"/><circle cx="98" cy="52" r="0.6" fill="#fff" opacity="0.45"/><circle cx="195" cy="105" r="0.9" fill="#fff" opacity="0.55"/><circle cx="292" cy="158" r="0.3" fill="#fff" opacity="0.25"/><circle cx="389" cy="211" r="0.6" fill="#fff" opacity="0.35"/><circle cx="86" cy="14" r="0.9" fill="#fff" opacity="0.45"/><circle cx="183" cy="67" r="0.3" fill="#fff" opacity="0.55"/><circle cx="0" cy="250" r="120" fill="url(#sun)"/><circle cx="0" cy="250" r="115.4" fill="none" stroke="#fff" stroke-opacity="0.070"/><circle cx="0" cy="250" r="152.0" fill="none" stroke="#fff" stroke-opacity="0.075"/><circle cx="0" cy="250" r="193.1" fill="none" stroke="#fff" stroke-opacity="0.080"/><circle cx="0" cy="250" r="231.9" fill="none" stroke="#fff" stroke-opacity="0.085"/><circle cx="0" cy="250" r="272.8" fill="none" stroke="#fff" stroke-opacity="0.090"/><circle cx="0" cy="250" r="339.0" fill="none" stroke="#fff" stroke-opacity="0.095"/><circle cx="0" cy="250" r="386.5" fill="none" stroke="#fff" stroke-opacity="0.100"/><circle cx="0" cy="250" r="423.3" fill="none" stroke="#fff" stroke-opacity="0.105"/><circle cx="96" cy="186" r="5" fill="#b9a99a"/><circle cx="128" cy="168" r="8" fill="#e0b27a"/><circle cx="164" cy="148" r="9" fill="#4f8fe0"/><circle cx="196" cy="126" r="7" fill="#d0603e"/><circle cx="246" cy="132" r="20" fill="#d9a36f"/><circle cx="302" cy="96" r="14" fill="#e8cf96"/><ellipse cx="302" cy="96" rx="26.6" ry="7.0" fill="none" stroke="#e8cf96" stroke-opacity="0.7" stroke-width="2.5" transform="rotate(-18 302 96)"/><circle cx="342" cy="70" r="11" fill="#8fd3df"/><circle cx="372" cy="48" r="10" fill="#4d6fe0"/><path class="loop" pathLength="1" d="M72 214 C 46 150, 160 52, 290 26 C 380 8, 410 40, 392 82 C 368 140, 260 178, 160 208 C 120 220, 84 228, 74 214 C 70 206, 74 199, 82 196"/></svg></div><svg class="pointer" viewBox="0 0 100 100" aria-hidden="true"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><span class="pill"></span></figure>
+  </article>
+
+  <article class="way flip" data-colour="shamrock">
+    <div class="way-copy">
+      <p class="bubble" data-type="give it to me in point form"><span>give it to me in point form</span></p>
+      <h3>hold fn⌃ and talk</h3>
+      <p>your words land in whatever you're typing in, tidied, with the ums taken out. say "give it to me in point form" and it rewrites your draft.</p>
+    </div>
+    <figure class="w big narrow" style="--r:2deg"><div class="tb"><i></i><i></i><i></i><span>listening</span></div><img src="assets/ui/sleep.png" alt="ClickBait's bean, eyes closed, waiting" width="263" height="228" loading="lazy"></figure>
+  </article>
+
+  <article class="way" data-colour="shamrock">
+    <div class="way-copy">
+      <p class="bubble" data-type="dark mode on"><span>dark mode on</span></p>
+      <h3>just say it</h3>
+      <p>open an app, make a note, set a reminder, turn the volume down, make a folder. your Mac does as it's told, and anything that deletes, quits or shuts down asks first.</p>
+    </div>
+    <figure class="w big narrow demo" data-demo="orders" role="img" aria-label="Spoken orders and what ClickBait did: open Safari, opened Safari; dark mode on, it's dark now; and more" style="--r:2deg; --c: var(--shamrock)"><div class="tb"><i></i><i></i><i></i><span>said and done</span></div>
+      <ol class="ord"><li><q>open Safari</q><span>opened Safari</span></li><li><q>make a note: call the plumber</q><span>added a note</span></li><li><q>dark mode on</q><span>it's dark now</span></li><li><q>volume to thirty</q><span>volume 30%</span></li><li><q>remind me to stretch at four</q><span>added to Reminders, 4:00 PM</span></li><li><q>new folder called receipts</q><span>made "receipts"</span></li></ol></figure>
+  </article>
+</section>
+
+<!-- More of the desktop's little televisions, scattered between sections -->
+<div class="strip"><div class="tv-slot"></div><figure class="w david strip-thing" style="--r:-3deg" data-pill="pop it">
+      <div class="tb"><i></i><i></i><i></i><span>david.jpg</span></div>
+      <div class="david-frame">
+        <img src="assets/david-accademia.jpg" alt="The head of Michelangelo's David in the Galleria dell'Accademia, Florence, blowing a pink bubble" width="1200" height="1200" loading="lazy">
+        <span class="gum" aria-hidden="true"></span>
+        <span class="bala" role="img" lang="ta" aria-label="பாலா"></span>
+      </div>
+    </figure><div class="tv-slot"></div></div>
+
+<!-- A ring of its own screens turning round one quiet line -->
+<section class="field" id="colours" data-colour="pumpkin">
+  <div class="field-art">
+    <picture>
+      <source type="image/webp" srcset="assets/bosch-3600.webp 3600w, assets/bosch-7200.webp 7200w" sizes="320vw">
+      <img class="pan" src="assets/bosch-3600.webp" alt="Hieronymus Bosch's Garden of Earthly Delights; each colour moves the view to a different part of it" width="7200" height="4098" decoding="async">
+    </picture>
+  </div>
+  <div class="field-inner">
+    <p class="bait"><s>number 4 will shock you</s></p>
+    <h2 class="giant">five colours,<br>one triangle</h2>
+    <div class="field-row">
+      <svg viewBox="0 0 100 100" class="big-triangle" aria-hidden="true"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg>
+      <div>
+        <div class="swatches" role="tablist" aria-label="ClickBait's colours">
+          <button role="tab" data-swatch="#007FFF" data-name="azure" data-says="following your cursor, or pointing at what you asked about.">azure</button>
+          <button role="tab" data-swatch="#FF7518" data-name="pumpkin" data-says="all ears while you talk, then thinking it over like a tiny cog.">pumpkin</button>
+          <button role="tab" data-swatch="#B57EDC" data-name="lavender" data-says="walking you through it, one click at a time, waiting for each.">lavender</button>
+          <button role="tab" data-swatch="#FA385C" data-name="strawberry" data-says="circling what you drew, or something needs you. it'll wait.">strawberry</button>
+          <button role="tab" data-swatch="#009E61" data-name="shamrock" data-says="doing what you asked, then done. it did the thing.">shamrock</button>
+        </div>
+        <p class="says" aria-live="polite"><b class="says-name">azure</b> <span class="says-text">following your cursor, or pointing at what you asked about.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ring-stage" id="private" data-colour="azure">
+  <div class="ring-pin">
+    <div class="ring" aria-hidden="true"></div>
+    <div class="ring-copy">
+      <p class="bait"><s>they don't want you to know this</s></p>
+      <h2>everything stays on your Mac</h2>
+      <p>it thinks with Gemma, a model that runs on your Mac, and starts every day on <b>local</b>. flip the switch in the notch to <b>online</b> to look things up. flip it back and it's yours alone.</p>
+      <img class="switch" src="assets/ui/internet-switch.png" alt="The notch's switch: local and online" width="288" height="54" loading="lazy">
+      <ul class="facts">
+        <li>no account</li><li>no telemetry</li><li>hidden from screen sharing</li><li>never reads password managers</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- The whole screen turns the colour you pick -->
+
+
+<!-- Walkthroughs: a little Safari window it points through -->
+<section class="walk" id="walk" data-colour="lavender">
+  <div class="walk-copy">
+    <p class="bait"><s>you won't believe how easy this is</s></p>
+    <h2>it walks you through it</h2>
+    <p>ask "show me how to clear my history in Safari". it plans the steps, takes you to the right window and points at each click, waiting for you before the next. it stops before anything that deletes.</p>
+  </div>
+  <div class="w safari demo" data-demo="walk" role="img" aria-label="The lavender triangle points at History, then Clear History…, then the Clear History button, then shows a tick" style="--r:1.5deg; --c: var(--lavender)">
+    <div class="tb"><i></i><i></i><i></i><span>Safari</span></div>
+    <div class="sf-bar"><b>Safari</b><span>File</span><span>Edit</span><span>View</span><span class="sf-history">History</span><span>Bookmarks</span></div>
+    <div class="sf-page"><i></i><i></i><i class="short"></i><i></i><i class="short"></i><i></i></div>
+    <div class="menu">
+      <ul>
+        <li><span>Show All History</span><kbd>⌘Y</kbd></li>
+        <li><span>Back</span><kbd>⌘[</kbd></li>
+        <li><span>Forward</span><kbd>⌘]</kbd></li>
+        <li class="hot"><span>Clear History…</span></li>
+      </ul>
+    </div>
+    <div class="sf-dialog"><b>Clear all history?</b><p>This removes your browsing history on this Mac.</p><div><span class="sf-btn">Cancel</span><span class="sf-btn sf-clear">Clear History</span></div></div>
+    <svg class="cur" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 L5 19 L9.2 15.2 L12 21.5 L14.6 20.4 L11.9 14.2 L17.6 14.2 Z"/></svg><svg class="pointer" viewBox="0 0 100 100" aria-hidden="true"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><span class="pill"></span>
+  </div>
+</section>
+
+<!-- More of the desktop's little televisions, scattered between sections -->
+<div class="strip"><div class="tv-slot"></div><div class="tv-slot"></div></div>
+
+<!-- What you say, big and grey, one at a time in ink -->
+<section class="notch-sec" id="notch" data-colour="lavender">
+  <div class="notch-head">
+    <p class="bait"><s>apple doesn't want you to see this</s></p>
+    <h2>it lives in your notch</h2>
+    <p>point at the top of your screen and it slides down. tap through what's in it. these are the app's own screens.</p>
+  </div>
+  <div class="nt-tabs" role="tablist" aria-label="What the notch does"><button role="tab" id="nt-tab-home" aria-controls="nt-panel" aria-selected="true" tabindex="0" data-tab="home">Home</button><button role="tab" id="nt-tab-ask" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="ask">Ask</button><button role="tab" id="nt-tab-shelf" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="shelf">Shelf</button><button role="tab" id="nt-tab-mirror" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="mirror">Mirror</button><button role="tab" id="nt-tab-music" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="music">Music</button><button role="tab" id="nt-tab-volume" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="volume">Volume</button><button role="tab" id="nt-tab-brightness" aria-controls="nt-panel" aria-selected="false" tabindex="-1" data-tab="brightness">Brightness</button></div>
+  <figure class="w nt-show" id="nt-panel" role="tabpanel" aria-labelledby="nt-tab-home" style="--r:-0.5deg"><div class="tb"><i></i><i></i><i></i><span>the notch</span></div>
+    <div class="nt-stage">
+      <div class="nt-pane on" data-tab="home" data-h="190"><img src="assets/notch/home.webp" alt="" width="2100" height="570" decoding="async"><div class="nt-space"><canvas aria-hidden="true"></canvas><svg class="nt-bean" viewBox="0 0 100 77" aria-hidden="true"><defs><radialGradient id="pearl" cx="0.42" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffffff"/><stop offset="0.6" stop-color="#eceef3"/><stop offset="1" stop-color="#c9ccd6"/></radialGradient></defs><path d="M100.0,38.5 L99.9,44.8 L99.4,49.0 L98.7,52.6 L97.7,55.9 L96.5,58.8 L94.9,61.5 L93.1,64.0 L91.0,66.3 L88.7,68.3 L86.0,70.1 L83.1,71.7 L79.9,73.1 L76.4,74.3 L72.6,75.3 L68.4,76.0 L63.7,76.6 L58.2,76.9 L50.0,77.0 L41.8,76.9 L36.3,76.6 L31.6,76.0 L27.4,75.3 L23.6,74.3 L20.1,73.1 L16.9,71.7 L14.0,70.1 L11.3,68.3 L9.0,66.3 L6.9,64.0 L5.1,61.5 L3.5,58.8 L2.3,55.9 L1.3,52.6 L0.6,49.0 L0.1,44.8 L0.0,38.5 L0.1,32.2 L0.6,28.0 L1.3,24.4 L2.3,21.1 L3.5,18.2 L5.1,15.5 L6.9,13.0 L9.0,10.7 L11.3,8.7 L14.0,6.9 L16.9,5.3 L20.1,3.9 L23.6,2.7 L27.4,1.7 L31.6,1.0 L36.3,0.4 L41.8,0.1 L50.0,0.0 L58.2,0.1 L63.7,0.4 L68.4,1.0 L72.6,1.7 L76.4,2.7 L79.9,3.9 L83.1,5.3 L86.0,6.9 L88.7,8.7 L91.0,10.7 L93.1,13.0 L94.9,15.5 L96.5,18.2 L97.7,21.1 L98.7,24.4 L99.4,28.0 L99.9,32.2 Z" fill="url(#pearl)"/><rect class="eye" x="33" y="22" width="10" height="30" rx="5"/><rect class="eye" x="57" y="22" width="10" height="30" rx="5"/></svg></div></div>
+      <div class="nt-pane" data-tab="ask" data-h="190"><img src="assets/notch/ask.webp" alt="" width="2100" height="570" loading="lazy" decoding="async"></div>
+      <div class="nt-pane" data-tab="shelf" data-h="206"><img src="assets/notch/shelf.webp" alt="" width="2100" height="618" loading="lazy" decoding="async"></div>
+      <div class="nt-pane" data-tab="mirror" data-h="320"><div class="mi-island">
+          <div class="mi-head"><span class="mi-bean"><i></i><i></i></span><b>Mirror</b><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></div>
+          <div class="mi-row"><div class="mi-view">yo a** up in here!</div>
+            <div class="mi-ctl"><span class="mi-shutter"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <div class="mi-shots"><i></i><i></i><i></i><i></i></div><span class="mi-save">Save to Pictures</span></div></div>
+        </div></div>
+      <div class="nt-pane" data-tab="music" data-h="190"><img src="assets/notch/home.webp" alt="" width="2100" height="570" loading="lazy" decoding="async"><div class="mu-cards">
+          <div class="mu-left"><i class="mu-cover"></i><div class="mu-info"><b>Green Light</b><span>Lorde</span>
+            <div class="mu-time"><em>2:57</em><i><b></b></i><em>-0:56</em></div>
+            <div class="mu-ctl"><svg viewBox="0 0 24 24"><path d="M3 7h3l9 10h4M3 17h3l3-3.4M14 7h5M17 4l3 3-3 3M17 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><svg viewBox="0 0 24 24"><path d="M11 6v12l-8-6zM20 6v12l-8-6z"/></svg><span class="mu-play"><svg viewBox="0 0 24 24"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg></span><svg viewBox="0 0 24 24"><path d="M4 6v12l8-6zM13 6v12l8-6z"/></svg><svg viewBox="0 0 24 24"><path d="M5 9a4 4 0 0 1 4-4h9M15 2l3 3-3 3M19 15a4 4 0 0 1-4 4H6M9 22l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div></div>
+          <div class="mu-right"><p><i></i>Apple Music</p><p class="on"><i></i>Spotify</p><p><i></i>YouTube</p></div>
+        </div></div>
+      <div class="nt-pane hud" data-tab="volume" data-h="118" data-kind="volume"><div class="hud-isl"><canvas aria-hidden="true"></canvas><div class="hud-row"><span class="hud-icon"></span><span class="hud-pct"></span></div></div>
+        <div class="hud-ctl" role="group" aria-label="Volume"><button data-act="down" aria-label="Volume down">−</button><button data-act="up" aria-label="Volume up">+</button><button data-act="mute" aria-pressed="false">mute</button></div></div>
+      <div class="nt-pane hud" data-tab="brightness" data-h="118" data-kind="brightness"><div class="hud-isl"><canvas aria-hidden="true"></canvas><div class="hud-row"><span class="hud-icon"></span><span class="hud-pct"></span></div></div>
+        <div class="hud-ctl" role="group" aria-label="Brightness"><button data-act="down" aria-label="Brightness down">−</button><button data-act="up" aria-label="Brightness up">+</button></div></div>
+    </div></figure>
+  <div class="nt-says" aria-live="polite"><p data-tab="home">Home: the bean floats in hyperspace while nothing plays (when music plays, its cover takes the card), next to four pills: Ask, Shelf, Mirror and Music. Up top, the local and online switch, the keys, settings and close.</p><p data-tab="ask" hidden>Ask: type a question beside the bean and press Return. It goes to ClickBait's chat, the same one as double-tapping ⌥⌘, and the notch folds away.</p><p data-tab="shelf" hidden>Shelf: drop up to 12 files to keep them handy (drag one out to use it, right-click to show it in Finder), send them with AirDrop, or jot a quick note with lists and checkboxes.</p><p data-tab="mirror" hidden>Mirror: a photo booth with your camera, mirrored. A 3-2-1 countdown and a flash, and the last four shots to drag out or save to Pictures. Unsaved shots are deleted when it closes.</p><p data-tab="music" hidden>Music: the cover big with its controls, and Apple Music, Spotify and YouTube down the side, the one playing marked. Click another to switch to it.</p><p data-tab="volume" hidden>Volume: the volume keys play a Pac-Man level. Turn it up and he chomps right, the pellets behind him turning green; mute it and he greys out, the ghosts turning blue. try it with − and +.</p><p data-tab="brightness" hidden>Brightness: a pixel sky that travels through the day with your screen's brightness, from stars and the moon at night to the sun at noon. try it with − and +.</p></div>
+</section>
+
+<!-- Setup: a note pinned to the desktop -->
+<section class="setup" id="setup" data-colour="shamrock">
+  <div class="setup-copy">
+    <p class="bait"><s>set up in 5 minutes (not really)</s></p>
+    <h2>setting up</h2>
+    <p>about fifteen minutes, most of it a download you can walk away from. a setup window takes you through each step.</p>
+    <figure class="w setup-shot" style="--r:2deg"><div class="tb"><i></i><i></i><i></i><span>ClickBait setup</span></div><img src="assets/ui/setup-ready.png" alt="ClickBait's setup window saying it's ready" width="520" height="480" loading="lazy"></figure>
+  </div>
+  <div class="w note" style="--r:-1deg">
+    <div class="tb yellow"><i></i><i></i><i></i><span>setup.txt</span></div>
+    <table class="slip">
+      <tbody>
+        <tr><th scope="row">drag to Applications, open it</th><td>10 s</td></tr>
+        <tr><th scope="row">Privacy &amp; Security: Open Anyway</th><td>20 s</td></tr>
+        <tr><th scope="row">microphone</th><td>5 s</td></tr>
+        <tr><th scope="row">Accessibility and Screen Recording</th><td>1 min</td></tr>
+        <tr><th scope="row">Ollama, then Gemma (6.6 GB)</th><td>10 min</td></tr>
+        <tr><th scope="row">speech model</th><td>2 min</td></tr>
+        <tr class="done"><th scope="row"><mark>you're set</mark></th><td><mark>≈ 15 min</mark></td></tr>
+      </tbody>
+    </table>
+    <p class="small">needs a Mac with Apple silicon (M1 or newer) and about 12 GB free. 16 GB of memory is comfortable.</p>
+  </div>
+</section>
+
+<!-- More of the desktop's little televisions, scattered between sections -->
+<div class="strip"><div class="tv-slot"></div><button class="jersey strip-thing" data-pill="42 is the answer. go git it!" aria-label="A Yankees pinstripe jersey, number 42. Hover for a shout-out to Jackie Robinson.">
+      <img src="assets/jersey-42.png" alt="" width="721" height="800" loading="lazy">
+      <svg class="jackie" viewBox="0 0 420 220" aria-hidden="true">
+        <text x="30" y="150" class="script">Jackie</text>
+        <g class="streak">
+          <path d="M40 196 L330 62" stroke="#fff" stroke-width="15" stroke-linecap="round"/>
+          <path d="M20 182 L318 44" stroke="#fff" stroke-width="15" stroke-linecap="round"/>
+          <path d="M40 196 L330 62" stroke="#e4002b" stroke-width="6" stroke-linecap="round"/>
+          <path d="M20 182 L318 44" stroke="#e4002b" stroke-width="6" stroke-linecap="round"/>
+        </g>
+        <g class="shot"><g transform="translate(352 46) rotate(65)">
+          <path d="M0 -38 L19 16 Q21 21 16 21 L-16 21 Q-21 21 -19 16 Z" fill="#e4002b" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>
+        </g></g>
+      </svg>
+      <span class="tag">answer to the ultimate question of life, the universe, and everything</span>
+    </button><div class="tv-slot"></div></div>
+
+<!-- FAQ: a quiet list -->
+<section class="faq" id="faq" data-colour="pumpkin">
+  <p class="bait"><s>faqs they don't want you to read</s></p>
+  <h2>frequently asked questions</h2>
+  <p class="sub">still wondering? ask clickbait. it answers questions about itself too.</p>
+  <div class="qs">
+    <details><summary>does anything leave my Mac?</summary><p>not while it's on local, which is how it starts every day. on online, only web lookups and video thumbnails go out, and only when you ask.</p></details>
+    <details><summary>which Mac do i need?</summary><p>Apple silicon (M1 or newer) and about 12 GB free. 16 GB of memory is comfortable; 8 GB works, more slowly.</p></details>
+    <details><summary>macOS says it can't be opened</summary><p>it isn't notarised by Apple yet. open System Settings, go to Privacy &amp; Security, scroll down and click Open Anyway. you only do this once.</p></details>
+    <details><summary>what is Ollama?</summary><p>a free app that runs AI models on your own Mac. setup gets it and downloads Gemma for you, with a progress bar.</p></details>
+    <details><summary>can it break things?</summary><p>it asks before anything that deletes, quits or shuts down, and a walkthrough stops before the button that would clear or erase.</p></details>
+    <details><summary>what does it cost?</summary><p>nothing, while it's early.</p></details>
+  </div>
+</section>
+
+<!-- End: one line, one button -->
+<section class="end" data-colour="azure">
+  <p class="bait"><s>last chance!!!</s></p>
+  <h2 class="giant">say hello</h2>
+  <p>download, drag it in, and say hello. it says hello back.</p>
+  <a class="jelly" href="ClickBait-0.1.0.dmg" download data-pill="ooh, yes please">download for mac</a>
+</section>
+
+</main>
+
+<footer class="foot" data-colour="azure">
+  <div class="foot-row">
+    <p>made by hand, by bala, on a Mac. <span class="muted">singapore</span></p>
+  </div>
+  <div class="mark" aria-hidden="true">
+    <p class="wordmark">clickbait</p>
+    <div class="mark-tris"><svg viewBox="0 0 100 100" style="--t: var(--azure)"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><svg viewBox="0 0 100 100" style="--t: var(--pumpkin)"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><svg viewBox="0 0 100 100" style="--t: var(--lavender)"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><svg viewBox="0 0 100 100" style="--t: var(--strawberry)"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg><svg viewBox="0 0 100 100" style="--t: var(--shamrock)"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg></div>
+  </div>
+  <p class="credit">behind the colours: "The Garden of Earthly Delights", Hieronymus Bosch, c. 1490–1510, Museo del Prado, Madrid; public domain, via Wikimedia Commons.</p>
+  <p class="credit">image of David: "Michelangelo David crop", the original in the Galleria dell'Accademia, Florence, by George M. Groutas, CC BY 2.0, via Wikimedia Commons. Hubble Ultra Deep Field: NASA, ESA, S. Beckwith (STScI) and the HUDF Team, CC BY 4.0. ClickBait is not affiliated with Apple, any film studio, label or team.</p>
+</footer>
+
+<!-- The player: drag it anywhere; the tracklist links out to Spotify -->
+<aside class="player w" aria-label="On repeat" data-ui>
+  <div class="tb grab"><i></i><i></i><i></i><span>on repeat</span></div>
+  <div class="player-body">
+    <div class="pl-screen"><div id="pl-yt"></div></div>
+    <p class="track"><span class="track-title">Enter Sandman</span><span class="track-artist">Metallica</span></p>
+    <div class="player-controls">
+      <button class="prev" aria-label="Previous track">◀◀</button>
+      <button class="play" aria-label="Play">▶</button>
+      <button class="next" aria-label="Next track">▶▶</button>
+    </div>
+  </div>
+</aside>
+
+<!-- The companion: a spring behind the pointer -->
+<div class="companion" aria-hidden="true">
+  <svg viewBox="0 0 100 100"><path d="M43.50 15.06 A7.50 7.50 0 0 1 56.50 15.06 L83.50 61.84 A7.50 7.50 0 0 1 77.01 73.09 L22.99 73.09 A7.50 7.50 0 0 1 16.50 61.84 Z"/></svg>
+  <span class="cpill"></span>
+</div>
+
+<script src="app.js?v=20261027u"></script>
+</body>
+</html>
