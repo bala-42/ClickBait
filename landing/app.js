@@ -66,8 +66,8 @@
 
   // Its pills: a few words beside it over things with something to say.
   document.querySelectorAll("[data-pill]").forEach((el) => {
-    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; pillWidth = pill.offsetWidth; companion.classList.add("talking"); if (el.dataset.pillColour) { hoverColour = el.dataset.pillColour; recolour(); } });
-    el.addEventListener("pointerleave", () => { companion.classList.remove("talking"); if (el.dataset.pillColour) { hoverColour = null; recolour(); } });
+    el.addEventListener("pointerenter", () => { pill.textContent = el.dataset.pill; pillWidth = pill.offsetWidth; companion.classList.add("talking"); if (el.dataset.pillColour) { hoverColour = el.dataset.pillColour; recolour(); } if (el.dataset.pillLook) companion.classList.add(el.dataset.pillLook); });
+    el.addEventListener("pointerleave", () => { companion.classList.remove("talking"); if (el.dataset.pillColour) { hoverColour = null; recolour(); } if (el.dataset.pillLook) companion.classList.remove(el.dataset.pillLook); });
   });
 
   // ---- The hero's windows: pick one up and put it somewhere else ----

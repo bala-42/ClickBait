@@ -580,6 +580,9 @@ main > section { position: relative; }
 .companion.flip .cpill { left: auto; right: 30px; transform-origin: right center; }
 .companion.ishtar .cpill { background: #112656; color: #F2C14E; box-shadow: 0 0 0 1.5px #EDF2FB; } /* the Ishtar Gate: lapis wall, golden lettering, white edging */
 .companion.ishtar path { stroke: #EDF2FB; stroke-width: 5px; paint-order: stroke; }
+.companion.mono .cpill { box-shadow: 0 0 0 1.5px #fff; } /* black and white, like an old press photo: white edges keep it clear over the GIF */
+.companion.mono path { stroke: #fff; stroke-width: 6px; paint-order: stroke; }
+.companion.mono svg { filter: none; }
 @media (hover: none) { .companion { display: none; } }
 
 /* ---------- Entrances ---------- */
