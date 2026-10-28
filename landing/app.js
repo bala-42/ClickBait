@@ -361,6 +361,7 @@
     ["Master of Puppets", "Metallica", ["E0ozmU9cJDg", "Mt5MCfJ5tZQ"]], ["Bad", "Michael Jackson", ["-DlMoJ2V6uk"]], ["Express Yourself", "N.W.A.", ["md4ujXhHzLs"]], ["I Will Survive", "Gloria Gaynor", ["nXMPx4DDVWM", "tB-c_rWj1H8"]],
     ["Cut Off the Lights", "Nyck Caution", ["C8Hrli_iE_Y"]], ["Hollaback Girl", "Gwen Stefani", ["_jAAixDgHhM", "Kgjkth6BRRY"]], ["SexyBack", "Justin Timberlake", ["gfWQ1r6IQrY", "3gOHvDP_vCs"]],
     ["Jai Ho", "A.R. Rahman", ["2R3XstG35sE", "xwwAVRyNmgQ"]], ["Sei Yedhavathu Sei (Interlude)", "Yuvan Shankar Raja", ["S3QQ0aQMDjU"]], ["Made in India", "Alisha Chinai", ["LFv-Pew3h90", "IvloHsmi_vg"]],
+    ["Hukum", "Anirudh Ravichander", ["DsjRNPrvq6U"]], ["Rocky Road to Dublin", "Ludwig Göransson", ["dYcUz4vv5NU"]],
   ];
   let attempt = 0, failedInARow = 0;
   let index = Math.floor(Math.random() * tracks.length), music, pausedForTab = false;
