@@ -349,7 +349,7 @@ main > section { position: relative; }
 /* it lives in your notch: its own section, the demo full width, four captions lit in step */
 .notch-sec { padding: 80px var(--gutter); max-width: 1120px; margin: 0 auto; display: grid; gap: clamp(20px, 3vw, 32px); }
 .notch-head { display: grid; gap: 14px; max-width: 46ch; }
-.notch-head .bait s { text-decoration-color: var(--lavender); }
+.notch-head .bait s { text-decoration-color: var(--ink); } /* black, like the companion over this section */
 .notch-head > p:last-child { color: #55575c; }
 .nt-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 @media (max-width: 640px) { .nt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); } .nt-tabs::-webkit-scrollbar { display: none; } .nt-tabs button { flex: none; } } /* phones: one scrolling row of tabs */
