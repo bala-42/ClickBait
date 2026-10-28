@@ -367,7 +367,7 @@ main > section { position: relative; }
 /* Home: the bean in hyperspace, drawn over the render's left card, exactly where it sits */
 .nt-space { position: absolute; left: 5.76%; top: 21.75%; width: 45.91%; height: 52.29%; border-radius: calc(var(--pt) * 14); overflow: hidden; background: radial-gradient(circle calc(var(--pt) * 200) at 50% 50%, #141b3a, #080a16 70%, #040509); }
 .nt-space canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.nt-bean { position: absolute; left: 50%; top: 50%; width: calc(var(--pt) * 76); translate: -50% -50%; overflow: visible; cursor: pointer; filter: drop-shadow(0 0 calc(var(--pt) * 6) rgba(255,255,255,0.25)); } /* the app's bean (NotchBean): breathes, blinks, watches the pointer, changes face, likes a pet */
+.nt-bean { position: absolute; left: 50%; top: 50%; width: calc(var(--pt) * 76); translate: -50% -50%; overflow: visible; cursor: grab; user-select: none; -webkit-user-drag: none; filter: drop-shadow(0 0 calc(var(--pt) * 6) rgba(255,255,255,0.25)); } /* the app's bean (NotchBean): breathes, blinks, watches the pointer, changes face, likes a pet */
 .bn-jelly { transform-box: view-box; transform-origin: 50px 77px; }
 .bn-jelly.boop { animation: boop 560ms cubic-bezier(.3,.7,.4,1); } /* clicked: hops and squishes */
 .bn-jelly.jiggle { animation: jiggle 420ms ease-out; } /* petted: a jelly wobble */
@@ -378,6 +378,7 @@ main > section { position: relative; }
 @keyframes eyepop { from { transform: scale(0.6); opacity: 0.4; } }
 .bn-blush { fill: #FF8FA3; opacity: 0; transition: opacity 200ms ease; }
 .nt-bean.warm .bn-blush { opacity: 0.8; }
+.nt-bean:active { cursor: grabbing; }
 /* Music: its two cards drawn over the home render's cards */
 .mu-cards { position: absolute; left: 5.76%; top: 21.75%; width: 88.48%; height: 52.29%; display: grid; grid-template-columns: 45.91fr 41.05fr; gap: 1.53%; font-family: var(--aqua); color: white; }
 .mu-left, .mu-right { border-radius: calc(var(--pt) * 14); background: linear-gradient(90deg, #232429, #141518); display: flex; align-items: center; }

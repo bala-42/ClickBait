@@ -552,9 +552,10 @@
   const warpAt = (time) => { const t = (time / CYCLE) % 1, burst = Math.max(0, Math.sin((t - 0.6) / 0.4 * Math.PI)); return t < 0.6 ? 0 : burst * burst; };
   const distanceAt = (time) => { const cycles = Math.floor(time / CYCLE), t = (time - cycles * CYCLE) / CYCLE, span = 0.4 * CYCLE, u = Math.max(0, (t - 0.6) / 0.4);
     return 0.05 * time + 0.9 * (cycles * span / 2 + span * (u / 2 - Math.sin(2 * Math.PI * u) / (4 * Math.PI))); };
-  function drawSpace(time) {
+  function drawSpace(time, fx = 0, fy = 0) { // fx, fy: the thrown bean's velocity, points a second
     const { g, w, h } = fit(space); g.clearRect(0, 0, w, h);
-    const cx = w / 2, cy = h / 2, reach = Math.hypot(w, h) / 2, warp = warpAt(time), travelled = distanceAt(time);
+    const speed = Math.hypot(fx, fy), lead = Math.min(30, speed * 0.03) / Math.max(1, speed); // a fling warps them as hard as it's fast, flying from just ahead of it
+    const cx = w / 2 + fx * lead, cy = h / 2 + fy * lead, reach = Math.hypot(w, h) / 2, warp = Math.max(warpAt(time), Math.min(1, speed / 900)), travelled = distanceAt(time);
     g.lineCap = "round";
     for (const s of stars) {
       const progress = (s.phase + travelled * s.speed) % 1, radius = progress * progress * reach;
@@ -655,9 +656,14 @@
     : e.k === "dash" ? `<rect x="-8.5" y="-3.75" width="17" height="7.5" rx="3.75" transform="rotate(${e.t})"/>`
     : e.k === "dot" ? '<circle r="7.5"/>'
     : '<path d="M-7.5 4.5 L0 -4.5 L7.5 4.5" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>';
-  let beanFace = beanFaces[0], petted = false, mouse = null;
+  let beanFace = beanFaces[0], petted = false, mouse = null, worn = "";
   const beanSlots = bean ? [...bean.querySelectorAll(".bn-eye")] : [], beanEyes = bean?.querySelector(".bn-eyes"), beanBody = bean?.querySelector(".bn-body"), jelly = bean?.querySelector(".bn-jelly");
-  const wear = (pair) => beanSlots.forEach((s, i) => { s.innerHTML = eyeSvg(pair[i]); });
+  const wear = (pair) => { const key = JSON.stringify(pair); if (key === worn) return; worn = key; beanSlots.forEach((s, i) => { s.innerHTML = eyeSvg(pair[i]); }); };
+  // Thrown about (SpaceToy, desktop only): pulled on an elastic, let go it springs home, overshooting;
+  // flicked, it bounces off the card's edges; a hard bounce leaves it dizzy for a moment and spins it once.
+  const toy = { ox: 0, oy: 0, vx: 0, vy: 0, held: false, dizzyUntil: 0, spunAt: -9, last: 0 };
+  const TOY = { stiffness: 170, damping: 7, bounce: 0.7, top: 1400, limit: { x: 123, y: 8 } }; // the card's 161 pt half-width, less the bean's 38
+  const toyFace = (now) => now < toy.dizzyUntil ? [DOT, D(25)] : toy.held ? [P(), P()] : Math.hypot(toy.vx, toy.vy) > 380 ? [CH, CH] : null;
   const jolt = (kind) => { if (reduce) return; jelly.classList.remove("boop", "jiggle"); void jelly.getBoundingClientRect(); jelly.classList.add(kind); };
   if (bean) {
     wear(beanFace);
@@ -667,13 +673,57 @@
     }, 4000 + Math.random() * 4000);
     newFace();
     bean.addEventListener("pointerenter", () => { petted = true; bean.classList.add("warm"); wear([CH, CH]); jolt("jiggle"); });
-    bean.addEventListener("pointerleave", () => { petted = false; bean.classList.remove("warm"); wear(beanFace); });
-    bean.addEventListener("click", () => { petted = true; bean.classList.add("warm"); wear([CH, CH]); jolt("boop"); });
+    bean.addEventListener("pointerleave", () => { if (toy.held) return; petted = false; bean.classList.remove("warm"); wear(beanFace); });
+    let grab = null, dragged = false;
+    bean.addEventListener("click", () => { if (dragged) { dragged = false; return; } petted = true; bean.classList.add("warm"); wear([CH, CH]); jolt("boop"); });
+    if (!reduce) {
+      bean.addEventListener("pointerdown", (e) => {
+        if (e.pointerType !== "mouse") return; // phones: a tap hops it; a drag scrolls the page
+        grab = { x: e.clientX, y: e.clientY, ox: toy.ox, oy: toy.oy, pt: bean.getBoundingClientRect().width / 76, samples: [] };
+        dragged = false; bean.setPointerCapture(e.pointerId);
+      });
+      bean.addEventListener("pointermove", (e) => {
+        if (!grab) return;
+        const tx = (e.clientX - grab.x) / grab.pt, ty = (e.clientY - grab.y) / grab.pt;
+        if (!toy.held) { if (Math.hypot(tx, ty) < 3) return; toy.held = true; dragged = true; toy.vx = toy.vy = 0; jolt("jiggle"); }
+        const elastic = (x, most) => x / (1 + Math.abs(x) / most); // resisting more the further it goes
+        toy.ox = elastic(grab.ox + tx, TOY.limit.x * 1.6); toy.oy = elastic(grab.oy + ty, 30);
+        grab.samples.push({ x: e.clientX / grab.pt, y: e.clientY / grab.pt, t: e.timeStamp }); if (grab.samples.length > 5) grab.samples.shift();
+      });
+      const letGo = () => {
+        if (!grab) return;
+        const s = grab.samples, a = s[0], b = s[s.length - 1]; grab = null;
+        if (!toy.held) return;
+        toy.held = false; jolt("jiggle"); petted = bean.matches(":hover"); // let go somewhere else: no longer petted
+        let vx = 0, vy = 0;
+        if (a && b && b.t > a.t) { vx = (b.x - a.x) / ((b.t - a.t) / 1000); vy = (b.y - a.y) / ((b.t - a.t) / 1000); }
+        const k = Math.min(1, TOY.top / Math.max(1, Math.hypot(vx, vy))); toy.vx = vx * k; toy.vy = vy * k; // a wild flick is capped
+      };
+      bean.addEventListener("pointerup", letGo); bean.addEventListener("pointercancel", letGo);
+    }
     jelly.addEventListener("animationend", () => jelly.classList.remove("boop", "jiggle"));
     addEventListener("pointermove", (e) => { mouse = { x: e.clientX, y: e.clientY }; }, { passive: true });
   }
   function drawBean(now) {
     if (!bean || reduce) return;
+    const dt = Math.min(0.05, Math.max(0, now - (toy.last || now))); toy.last = now;
+    if (!toy.held && dt > 0) { // SpaceToy.step
+      toy.vx += -toy.ox * TOY.stiffness * dt; toy.vy += -toy.oy * TOY.stiffness * dt;
+      const damp = Math.exp(-TOY.damping * dt); toy.vx *= damp; toy.vy *= damp;
+      toy.ox += toy.vx * dt; toy.oy += toy.vy * dt;
+      let hit = 0; // an edge turns it back only while it's heading out
+      if (Math.abs(toy.ox) > TOY.limit.x && toy.ox * toy.vx > 0) { hit = Math.max(hit, Math.abs(toy.vx)); toy.vx = -toy.vx * TOY.bounce; }
+      if (Math.abs(toy.oy) > TOY.limit.y && toy.oy * toy.vy > 0) { hit = Math.max(hit, Math.abs(toy.vy)); toy.vy = -toy.vy * TOY.bounce; }
+      if (Math.hypot(toy.vx, toy.vy) < 2 && Math.hypot(toy.ox, toy.oy) < 0.5) toy.ox = toy.oy = toy.vx = toy.vy = 0;
+      if (hit > 350) { toy.dizzyUntil = now + 1.2; toy.spunAt = now; }
+    }
+    const playing = toyFace(now);
+    bean.classList.toggle("warm", petted || !!playing && !(now < toy.dizzyUntil));
+    wear(playing || (petted ? [CH, CH] : beanFace));
+    const pt = bean.getBoundingClientRect().width / 76, speed = Math.hypot(toy.vx, toy.vy);
+    const stretch = Math.min(0.24, speed / 2600), heading = Math.atan2(toy.vy, toy.vx) * 180 / Math.PI; // jelly: stretched the way it's going
+    const spin = now - toy.spunAt < 0.6 ? (now - toy.spunAt) / 0.6 * 360 : 0, hold = toy.held ? [1.08, 0.92] : [1, 1];
+    bean.style.transform = `translate(${toy.ox * pt}px, ${toy.oy * pt}px) rotate(${spin}deg) rotate(${heading}deg) scale(${1 + stretch}, ${1 - stretch * 0.8}) rotate(${-heading}deg) scale(${hold[0]}, ${hold[1]})`;
     const breath = Math.sin(now * 2.4) * 0.025, blink = now % 4.3 < 0.12;
     beanBody.setAttribute("transform", `translate(50 77) scale(${1 + breath} ${1 - breath}) translate(-50 -77)`);
     let lx = 0, ly = 0;
@@ -688,7 +738,7 @@
     if (ntRaf || !ntShow) return;
     ntRaf = requestAnimationFrame(function loop(ms) {
       ntRaf = 0; const now = ms / 1000, tab = ntTabs[ntAt].dataset.tab;
-      if (tab === "home") { drawSpace(reduce ? 0 : now); drawBean(now); }
+      if (tab === "home") { drawBean(now); drawSpace(reduce ? 0 : now, toy.vx, toy.vy); }
       const s = huds.find((x) => x.kind === tab); if (s) (s.kind === "volume" ? drawVolume : drawSky)(s, now);
       if (ntSeen && (tab === "home" || s) && !reduce) ntRaf = requestAnimationFrame(loop);
     });
