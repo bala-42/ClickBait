@@ -367,10 +367,17 @@ main > section { position: relative; }
 /* Home: the bean in hyperspace, drawn over the render's left card, exactly where it sits */
 .nt-space { position: absolute; left: 5.76%; top: 21.75%; width: 45.91%; height: 52.29%; border-radius: calc(var(--pt) * 14); overflow: hidden; background: radial-gradient(circle calc(var(--pt) * 200) at 50% 50%, #141b3a, #080a16 70%, #040509); }
 .nt-space canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.nt-bean { position: absolute; left: 50%; top: 50%; width: calc(var(--pt) * 76); translate: -50% -50%; filter: drop-shadow(0 0 calc(var(--pt) * 6) rgba(255,255,255,0.16)); animation: beanfloat 3.2s ease-in-out infinite alternate; }
-.nt-bean .eye { fill: #15161a; transform-box: fill-box; transform-origin: 50% 50%; animation: blink 4.6s infinite; }
-@keyframes beanfloat { from { transform: translateY(calc(var(--pt) * -2.5)) rotate(-2deg); } to { transform: translateY(calc(var(--pt) * 2.5)) rotate(2deg); } }
-@keyframes blink { 0%, 94%, 100% { transform: none; } 96% { transform: scaleY(0.12); } }
+.nt-bean { position: absolute; left: 50%; top: 50%; width: calc(var(--pt) * 76); translate: -50% -50%; overflow: visible; cursor: pointer; filter: drop-shadow(0 0 calc(var(--pt) * 6) rgba(255,255,255,0.25)); } /* the app's bean (NotchBean): breathes, blinks, watches the pointer, changes face, likes a pet */
+.bn-jelly { transform-box: view-box; transform-origin: 50px 77px; }
+.bn-jelly.boop { animation: boop 560ms cubic-bezier(.3,.7,.4,1); } /* clicked: hops and squishes */
+.bn-jelly.jiggle { animation: jiggle 420ms ease-out; } /* petted: a jelly wobble */
+@keyframes boop { 18% { transform: translate(0, -12px) scale(1.18, 0.8); } 30% { transform: translate(0, -18px) scale(0.95, 1.06); } 45% { transform: translate(0, -8px) scale(0.92, 1.1); } 75% { transform: translate(0, 1px) scale(1.02, 0.98); } }
+@keyframes jiggle { 25% { transform: scale(1.08, 0.92); } 55% { transform: scale(0.96, 1.05); } }
+.bn-eyes { color: #26272C; fill: #26272C; }
+.bn-eye > * { animation: eyepop 300ms cubic-bezier(.3,1.5,.5,1); } /* a new pair glides in, like the app's spring */
+@keyframes eyepop { from { transform: scale(0.6); opacity: 0.4; } }
+.bn-blush { fill: #FF8FA3; opacity: 0; transition: opacity 200ms ease; }
+.nt-bean.warm .bn-blush { opacity: 0.8; }
 /* Music: its two cards drawn over the home render's cards */
 .mu-cards { position: absolute; left: 5.76%; top: 21.75%; width: 88.48%; height: 52.29%; display: grid; grid-template-columns: 45.91fr 41.05fr; gap: 1.53%; font-family: var(--aqua); color: white; }
 .mu-left, .mu-right { border-radius: calc(var(--pt) * 14); background: linear-gradient(90deg, #232429, #141518); display: flex; align-items: center; }

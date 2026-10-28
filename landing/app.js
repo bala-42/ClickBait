@@ -646,11 +646,49 @@
     const rim = g.createRadialGradient(w / 2, h / 2, h * 0.6, w / 2, h / 2, w * 0.6); rim.addColorStop(0, "rgba(0,0,0,0)"); rim.addColorStop(1, "rgba(0,0,0,0.35)"); g.fillStyle = rim; g.fillRect(0, 0, w, h);
   }
   let ntRaf = 0;
+  // Home's bean, as the app's (NotchBean, Bean.dockFaces): it breathes and blinks, its eyes follow the
+  // pointer, it pulls a new face every 4–8 s, beams and blushes while pointed at, and hops when clicked.
+  const bean = document.querySelector(".nt-bean");
+  const P = (h = 1, t = 0) => ({ k: "pill", h, t }), D = (t = 0) => ({ k: "dash", t }), DOT = { k: "dot" }, CH = { k: "chev" };
+  const beanFaces = [[P(), P()], [CH, CH], [P(), D()], [DOT, DOT], [P(1, 10), P(1, 10)], [CH, P(1, 10)], [P(1.2), P(1.2)], [DOT, P(1.2)]];
+  const eyeSvg = (e) => e.k === "pill" ? `<rect x="-6.25" y="${-15 * e.h}" width="12.5" height="${30 * e.h}" rx="6.25" transform="rotate(${e.t})"/>`
+    : e.k === "dash" ? `<rect x="-8.5" y="-3.75" width="17" height="7.5" rx="3.75" transform="rotate(${e.t})"/>`
+    : e.k === "dot" ? '<circle r="7.5"/>'
+    : '<path d="M-7.5 4.5 L0 -4.5 L7.5 4.5" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>';
+  let beanFace = beanFaces[0], petted = false, mouse = null;
+  const beanSlots = bean ? [...bean.querySelectorAll(".bn-eye")] : [], beanEyes = bean?.querySelector(".bn-eyes"), beanBody = bean?.querySelector(".bn-body"), jelly = bean?.querySelector(".bn-jelly");
+  const wear = (pair) => beanSlots.forEach((s, i) => { s.innerHTML = eyeSvg(pair[i]); });
+  const jolt = (kind) => { if (reduce) return; jelly.classList.remove("boop", "jiggle"); void jelly.getBoundingClientRect(); jelly.classList.add(kind); };
+  if (bean) {
+    wear(beanFace);
+    const newFace = () => setTimeout(() => { // never the face it has on
+      if (!petted) { const free = beanFaces.filter((f) => f !== beanFace); beanFace = free[Math.floor(Math.random() * free.length)]; wear(beanFace); }
+      newFace();
+    }, 4000 + Math.random() * 4000);
+    newFace();
+    bean.addEventListener("pointerenter", () => { petted = true; bean.classList.add("warm"); wear([CH, CH]); jolt("jiggle"); });
+    bean.addEventListener("pointerleave", () => { petted = false; bean.classList.remove("warm"); wear(beanFace); });
+    bean.addEventListener("click", () => { petted = true; bean.classList.add("warm"); wear([CH, CH]); jolt("boop"); });
+    jelly.addEventListener("animationend", () => jelly.classList.remove("boop", "jiggle"));
+    addEventListener("pointermove", (e) => { mouse = { x: e.clientX, y: e.clientY }; }, { passive: true });
+  }
+  function drawBean(now) {
+    if (!bean || reduce) return;
+    const breath = Math.sin(now * 2.4) * 0.025, blink = now % 4.3 < 0.12;
+    beanBody.setAttribute("transform", `translate(50 77) scale(${1 + breath} ${1 - breath}) translate(-50 -77)`);
+    let lx = 0, ly = 0;
+    if (mouse) { // -1…1 each way, full at 160 pt away
+      const r = bean.getBoundingClientRect(), pt = r.width / 76, k = (v) => Math.max(-1, Math.min(1, v / (160 * pt)));
+      lx = k(mouse.x - (r.left + r.width / 2)); ly = k(mouse.y - (r.top + r.height / 2));
+    }
+    beanEyes.setAttribute("transform", `translate(${lx * 6} ${ly * 4})`);
+    beanSlots.forEach((s, i) => s.setAttribute("transform", `translate(${i ? 62 : 38} 38.5) scale(1 ${blink ? 0.12 : 1})`));
+  }
   function ntFrame() { // draws only what's showing, and only while the section is on screen
     if (ntRaf || !ntShow) return;
     ntRaf = requestAnimationFrame(function loop(ms) {
       ntRaf = 0; const now = ms / 1000, tab = ntTabs[ntAt].dataset.tab;
-      if (tab === "home") drawSpace(reduce ? 0 : now);
+      if (tab === "home") { drawSpace(reduce ? 0 : now); drawBean(now); }
       const s = huds.find((x) => x.kind === tab); if (s) (s.kind === "volume" ? drawVolume : drawSky)(s, now);
       if (ntSeen && (tab === "home" || s) && !reduce) ntRaf = requestAnimationFrame(loop);
     });
