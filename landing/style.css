@@ -578,6 +578,8 @@ main > section { position: relative; }
 .companion.talking .cpill { opacity: 1; transform: scale(1); }
 .companion.aiming svg { transform: rotate(90deg); } /* peeled off to point: tip faces right, at the thing */
 .companion.flip .cpill { left: auto; right: 30px; transform-origin: right center; }
+.companion.ishtar .cpill { background: #112656; color: #F2C14E; box-shadow: 0 0 0 1.5px #EDF2FB; } /* the Ishtar Gate: lapis wall, golden lettering, white edging */
+.companion.ishtar path { stroke: #EDF2FB; stroke-width: 5px; paint-order: stroke; }
 @media (hover: none) { .companion { display: none; } }
 
 /* ---------- Entrances ---------- */

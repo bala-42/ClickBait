@@ -28,6 +28,7 @@
   addEventListener("pointermove", (event) => {
     if (event.pointerType !== "mouse") return;
     target = { x: event.clientX, y: event.clientY };
+    if (away && performance.now() >= away.leaveAfter) comeBack(away.back); // looked long enough, and they want their cursor back
     companion.classList.add("on");
     if (reduce) { if (!away) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; } return; }
     go();
@@ -47,16 +48,18 @@
 
   // It can peel off the pointer to point at something, say a few words in a colour, and come back.
   let backTimer = 0;
-  function pointAt(x, y, words, colour, ms, back = null) {
+  // It stays at least `min` ms, then goes back when the mouse moves, or at `max` regardless.
+  function pointAt(x, y, words, colour, { min, max, back = null, look = "" }) {
     clearTimeout(backTimer);
-    pill.textContent = words; pillWidth = pill.offsetWidth; companion.classList.add("on", "talking", "aiming");
+    pill.textContent = words; companion.classList.add("on", "talking", "aiming"); if (look) companion.classList.add(look); pillWidth = pill.offsetWidth;
     hoverColour = colour; recolour();
-    away = { x: x - 21, y: y - 11, there: false, arrived: () => { backTimer = setTimeout(() => comeBack(back), ms); } };
+    away = { x: x - 21, y: y - 11, there: false, look, back, leaveAfter: Infinity, arrived: () => { away.leaveAfter = performance.now() + min; backTimer = setTimeout(() => comeBack(back), max); } };
     if (reduce) { pos = { x: away.x, y: away.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; away.there = true; away.arrived(); } else go();
   }
   function comeBack(colour = null) {
     clearTimeout(backTimer);
     if (!away) return;
+    if (away.look) companion.classList.remove(away.look);
     away = null; companion.classList.remove("talking", "aiming"); hoverColour = colour; recolour();
     if (reduce) { pos = { x: target.x + offset.x, y: target.y + offset.y }; companion.style.transform = `translate(${pos.x}px, ${pos.y}px)`; } else go();
   }
@@ -720,7 +723,7 @@
         peek = setTimeout(() => { // once the window has settled: the left edge of the face that made all this
           if (viewer.hidden || photo.hidden) return;
           const r = photo.getBoundingClientRect();
-          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.46, "my creator", "#66023C", 1000, colours.azure); // Tyrian purple out, azure back
+          pointAt(r.left + r.width * 0.62, r.top + r.height * 0.46, "my creator", "#F2C14E", { min: 2000, max: 4000, back: colours.azure, look: "ishtar" }); // the Ishtar Gate: a gold lion on lapis
         }, 600);
       });
     };
