@@ -223,7 +223,7 @@
     films: { title: "films i'd rewatch", items: [["The Prestige", "trailer", "RLtaA9fFNXU"], ["Eternal Sunshine of the Spotless Mind", "trailer", "07-QBnEkgXU"], ["Baashha (1995)", "a scene", "-tkows0DK9o"], ["Dorothy, Karthik Subbaraj", "trailer", "jcBG6U5iX8Y"]] },
     crime: { title: "crime classics", items: [["Heat (1995)", "trailer", "14oNcFxiVaQ"], ["Goodfellas", "trailer", "2ilzidi_J8Q"], ["The Godfather", "trailer", "eZHsmb4ezEk"], ["Taxi Driver", "trailer", "T5IligQP7Fo"]] },
     tamil: { title: "tamil cinema", items: [["Thenpandi Cheemayile, Nayagan", "song", "q9AJ0ITDL30"], ["Annamalai", "a scene", "fyybq67IF60"], ["Bloody Valentine, Anirudh", "song", "qgv9VBoK8po"]] },
-    internet: { title: "internet artefacts", items: [["Like a Boss", "the original", "NisCkxU544c", "NBfy3pznTUKTN4nM4C"], ["Nyan Cat", "the original", "2yJgwwDcgV8", "ktW8FqKodoPUk"], ["South Park", "a clip", "RcoGzT9QrTI", "xTiTnKKeB9WDVpdnoc"], ["Rick and Morty", "a clip", "UV4c_PY-UgE", "3ov9jZcnT6S547u036"]] },
+    internet: { title: "internet artefacts", items: [["Like a Boss", "the original", "NisCkxU544c", "NBfy3pznTUKTN4nM4C"], ["Nyan Cat", "the original", "2yJgwwDcgV8", "ktW8FqKodoPUk"], ["fire drill", "the office", "gO8N3L_aERg"], ["South Park", "a clip", "RcoGzT9QrTI", "xTiTnKKeB9WDVpdnoc"], ["Rick and Morty", "a clip", "UV4c_PY-UgE", "3ov9jZcnT6S547u036"]] },
   };
 
   // ---- Little televisions all over the desktop: muted, and loud only while you hover ----
@@ -232,12 +232,19 @@
     "jcBG6U5iX8Y": "two boys, one whistle, zero chill", "14oNcFxiVaQ": "the diner scene lives rent free", "2ilzidi_J8Q": "funny how?",
     "eZHsmb4ezEk": "i believe in america", "T5IligQP7Fo": "you talkin' to me?", "q9AJ0ITDL30": "ilaiyaraaja. that's it. that's the note.",
     "fyybq67IF60": "thalaivar has entered the chat", "qgv9VBoK8po": "congrats on kavya, bro", "NisCkxU544c": "like a boss, obviously",
-    "2yJgwwDcgV8": "nyan nyan nyan nyan", "RcoGzT9QrTI": "screw you guys", "UV4c_PY-UgE": "wubba lubba dub dub",
+    "2yJgwwDcgV8": "nyan nyan nyan nyan", "RcoGzT9QrTI": "screw you guys", "UV4c_PY-UgE": "wubba lubba dub dub", "gO8N3L_aERg": "what is the procedure",
   };
   const pool = Object.values(folders).flatMap((f) => f.items.filter(([, , id]) => id).map(([name, , id]) => ({ name, id })));
   for (let i = pool.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [pool[i], pool[k]] = [pool[k], pool[i]]; }
   let nextInPool = 0;
-  const takeNext = () => pool[nextInPool++ % pool.length];
+  const inUse = new Set(); // what the windows are showing right now: no two ever show the same video
+  const takeNext = (current) => {
+    for (let n = 0; n < pool.length; n++) {
+      const p = pool[nextInPool++ % pool.length];
+      if (!inUse.has(p.id)) { if (current) inUse.delete(current.id); inUse.add(p.id); return p; }
+    }
+    return current; // every video is already on screen somewhere: keep this one rather than double up
+  };
   let musicWasPlaying = false;
 
   // Hero windows play on their own, muted; every other window waits for the pointer. Pointing at any window
@@ -267,7 +274,7 @@
       yt.loadVideoById({ videoId: item.id, startSeconds: at });
       watch();
     };
-    const skip = () => { if (!yt) return; item = takeNext(); at = 6; name(); load(); };
+    const skip = () => { if (!yt) return; const next = takeNext(item); if (next === item) return; item = next; at = 6; name(); load(); };
     const watch = () => { // a window that should be playing but hasn't started in 9 s: nudge it once, then move on
       clearTimeout(stuck);
       stuck = setTimeout(() => {
@@ -352,8 +359,8 @@
     // couple fall back to the band's own live upload there; on a real domain the release always plays.
     ["Enter Sandman", "Metallica", ["CHIWNDAwTqQ", "87by1DjfxLw"]], ["Loser", "Tame Impala", ["MX7FSAnRPug"]], ["Under the Bridge", "Red Hot Chili Peppers", ["4UnU3r0M3zg"]],
     ["Master of Puppets", "Metallica", ["E0ozmU9cJDg", "Mt5MCfJ5tZQ"]], ["Bad", "Michael Jackson", ["-DlMoJ2V6uk"]], ["Express Yourself", "N.W.A.", ["md4ujXhHzLs"]], ["I Will Survive", "Gloria Gaynor", ["nXMPx4DDVWM", "tB-c_rWj1H8"]],
-    ["Cut Off the Lights", "Nyck Caution", ["C8Hrli_iE_Y"]], ["Hollaback Girl", "Gwen Stefani", ["_jAAixDgHhM", "Kgjkth6BRRY"]], ["SexyBack", "Justin Timberlake", ["3gOHvDP_vCs"]],
-    ["Jai Ho", "Sukhwinder Singh", ["2R3XstG35sE", "xwwAVRyNmgQ"]], ["Sei Yedhavathu Sei (Interlude)", "Yuvan Shankar Raja", ["S3QQ0aQMDjU"]], ["Made in India", "Alisha Chinai", ["IvloHsmi_vg", "_rGo1s6iEjc"]],
+    ["Cut Off the Lights", "Nyck Caution", ["C8Hrli_iE_Y"]], ["Hollaback Girl", "Gwen Stefani", ["_jAAixDgHhM", "Kgjkth6BRRY"]], ["SexyBack", "Justin Timberlake", ["gfWQ1r6IQrY", "3gOHvDP_vCs"]],
+    ["Jai Ho", "Sukhwinder Singh", ["2R3XstG35sE", "xwwAVRyNmgQ"]], ["Sei Yedhavathu Sei (Interlude)", "Yuvan Shankar Raja", ["S3QQ0aQMDjU"]], ["Made in India", "Alisha Chinai", ["LFv-Pew3h90", "IvloHsmi_vg"]],
   ];
   let attempt = 0, failedInARow = 0;
   let index = Math.floor(Math.random() * tracks.length), music, pausedForTab = false;
