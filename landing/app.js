@@ -768,7 +768,7 @@
   });
 
   // ---- The GIF window: plays only while on screen, and holds still for reduced motion ----
-  document.querySelectorAll(".gifwin video, .giftile video, .luffy video, video.gifbare").forEach((v) => {
+  document.querySelectorAll(".gifwin video, .giftile video, .luffy video, video.gifbare, .frame video").forEach((v) => {
     if (reduce) { v.removeAttribute("autoplay"); v.pause(); return; }
     new IntersectionObserver(([e]) => { if (e.isIntersecting && !document.hidden) v.play().catch(() => {}); else v.pause(); }).observe(v);
   });
