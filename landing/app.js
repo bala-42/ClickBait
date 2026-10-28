@@ -352,7 +352,8 @@
     // couple fall back to the band's own live upload there; on a real domain the release always plays.
     ["Enter Sandman", "Metallica", ["CHIWNDAwTqQ", "87by1DjfxLw"]], ["Loser", "Tame Impala", ["MX7FSAnRPug"]], ["Under the Bridge", "Red Hot Chili Peppers", ["4UnU3r0M3zg"]],
     ["Master of Puppets", "Metallica", ["E0ozmU9cJDg", "Mt5MCfJ5tZQ"]], ["Bad", "Michael Jackson", ["-DlMoJ2V6uk"]], ["Express Yourself", "N.W.A.", ["md4ujXhHzLs"]], ["I Will Survive", "Gloria Gaynor", ["nXMPx4DDVWM", "tB-c_rWj1H8"]],
-    ["Like a Boss", "The Lonely Island", ["LECMbSipNu0", "NisCkxU544c"]],
+    ["Cut Off the Lights", "Nyck Caution", ["C8Hrli_iE_Y"]], ["Hollaback Girl", "Gwen Stefani", ["_jAAixDgHhM", "Kgjkth6BRRY"]], ["SexyBack", "Justin Timberlake", ["3gOHvDP_vCs"]],
+    ["Jai Ho", "Sukhwinder Singh", ["2R3XstG35sE", "xwwAVRyNmgQ"]], ["Sei Yedhavathu Sei (Interlude)", "Yuvan Shankar Raja", ["S3QQ0aQMDjU"]], ["Made in India", "Alisha Chinai", ["IvloHsmi_vg", "_rGo1s6iEjc"]],
   ];
   let attempt = 0, failedInARow = 0;
   let index = Math.floor(Math.random() * tracks.length), music, pausedForTab = false;
