@@ -6,7 +6,7 @@
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   // Smooth scrolling: the wheel and the menu's links glide. Touch keeps its own scrolling; reduced motion gets none.
   const lenis = !reduce && window.Lenis ? new Lenis({ autoRaf: true, anchors: { offset: -40 }, syncTouch: false }) : null;
-  const colours = { azure: "#007FFF", pumpkin: "#FF7518", lavender: "#B57EDC", strawberry: "#FA385C", shamrock: "#009E61" };
+  const colours = { azure: "#007FFF", pumpkin: "#FF7518", lavender: "#B57EDC", strawberry: "#FA385C", shamrock: "#009E61", ink: "#111111" };
 
   // ---- The companion: a rounded triangle hanging off the pointer on a spring ----
   const companion = document.querySelector(".companion");
@@ -40,10 +40,11 @@
   const coloured = [...document.querySelectorAll("[data-colour]")].reverse();
   let hoverColour = null; // something under the pointer with its own colour wins over the section's
   function recolour() {
-    if (hoverColour) { companion.style.setProperty("--c", hoverColour); return; }
+    if (hoverColour) { companion.style.setProperty("--c", hoverColour); companion.classList.remove("ink"); return; }
     const middle = innerHeight / 2;
     const here = coloured.find((s) => { const r = s.getBoundingClientRect(); return r.top <= middle && r.bottom >= middle; });
     if (here) companion.style.setProperty("--c", colours[here.dataset.colour]);
+    companion.classList.toggle("ink", here?.dataset.colour === "ink");
   }
 
   // It can peel off the pointer to point at something, say a few words in a colour, and come back.

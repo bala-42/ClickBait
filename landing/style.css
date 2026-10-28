@@ -351,11 +351,14 @@ main > section { position: relative; }
 .notch-head { display: grid; gap: 14px; max-width: 46ch; }
 .notch-head .bait s { text-decoration-color: var(--lavender); }
 .notch-head > p:last-child { color: #55575c; }
-.nt-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.nt-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 @media (max-width: 640px) { .nt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); } .nt-tabs::-webkit-scrollbar { display: none; } .nt-tabs button { flex: none; } } /* phones: one scrolling row of tabs */
 .nt-tabs button { height: 36px; padding: 0 16px; border-radius: 999px; border: 0; cursor: pointer; font: 600 14px var(--aqua); background: #e7e5e0; color: var(--ink); }
-.nt-tabs button[aria-selected="true"] { background: var(--lavender); color: white; }
-.nt-tabs button:focus-visible { outline: 2px solid var(--lavender); outline-offset: 2px; }
+.nt-tabs button { background: var(--tab); color: white; transition: transform 150ms ease, box-shadow 150ms ease; } /* a rainbow, red to violet; orange and marigold take dark text to stay readable */
+.nt-tabs button:nth-child(1) { --tab: #D62828; } .nt-tabs button:nth-child(2) { --tab: #F77F00; color: var(--ink); } .nt-tabs button:nth-child(3) { --tab: #EAA221; color: var(--ink); }
+.nt-tabs button:nth-child(4) { --tab: #237A35; } .nt-tabs button:nth-child(5) { --tab: #1971C2; } .nt-tabs button:nth-child(6) { --tab: #4B3FC4; } .nt-tabs button:nth-child(7) { --tab: #8E44C9; }
+.nt-tabs button[aria-selected="true"] { box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--ink); transform: scale(1.06); }
+.nt-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: 5px; }
 .nt-show { width: 100%; }
 .nt-stage { --pt: 1.6px; position: relative; height: calc(var(--pt) * 190); background: #1f2938; overflow: hidden; transition: height 380ms cubic-bezier(.3,1.1,.5,1); } /* the renders' own navy; 1pt = the stage's width / 700, the renders' width */
 .nt-pane { position: absolute; inset: 0 0 auto; opacity: 0; transform: scale(0.95); transform-origin: 50% 0; pointer-events: none; transition: opacity 160ms ease-in, transform 160ms ease-in; }
@@ -582,7 +585,8 @@ main > section { position: relative; }
 .companion.ishtar path { stroke: #EDF2FB; stroke-width: 5px; paint-order: stroke; }
 .companion.mono .cpill { box-shadow: 0 0 0 1.5px #fff; } /* black and white, like an old press photo: white edges keep it clear over the GIF */
 .companion.mono path { stroke: #fff; stroke-width: 6px; paint-order: stroke; }
-.companion.mono svg { filter: none; }
+.companion.mono svg, .companion.ink svg { filter: none; }
+.companion.ink .cpill { box-shadow: 0 0 0 1.5px #fff; } .companion.ink path { stroke: #fff; stroke-width: 6px; paint-order: stroke; } /* over the notch: black, white-edged, so it reads on the rainbow and the dark screen */
 @media (hover: none) { .companion { display: none; } }
 
 /* ---------- Entrances ---------- */
