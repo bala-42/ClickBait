@@ -540,6 +540,7 @@ extension AskCoordinator {
     struct WebLookupResult: Sendable {
         var passages: [WebPassage] = []
         var needsScreen = false
+        var query: String?
         /// "Sources: [Wikipedia — Swift](…) · …", for under the answer.
         var credit: String?
     }
@@ -578,6 +579,7 @@ extension AskCoordinator {
         let fallback = WebLookup.directQuery(question).isEmpty ? WebLookup.directQuery(earlier ?? "") : WebLookup.directQuery(question)
         let written = reply.flatMap(WebLookup.query(inReply:))
         let query = QueryScrubber.clean(written ?? fallback, screenNames: screenNames, userWords: question)
+        result.query = query.isEmpty ? nil : query
         let queryTook = ContinuousClock.now - start
 
         // A page the user means ("summarise this page") or named, if it's https.

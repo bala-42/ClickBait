@@ -24,6 +24,7 @@ final class AppSettings {
         static let fillerWords = "settings.fillerWords"
         static let ollamaModel = "settings.ollamaModel"
         static let ollamaFastModel = "settings.ollamaFastModel"
+        static let geminiInternetAnswers = "settings.geminiInternetAnswers"
         static let speakAnswers = "settings.speakAnswers"
         static let voiceIdentifier = "settings.voiceIdentifier"
         static let speechRate = "settings.speechRate"
@@ -65,6 +66,11 @@ final class AppSettings {
     /// Reads orders ("move these to Documents"): a text job where speed matters most.
     var ollamaFastModel: String {
         didSet { defaults.set(ollamaFastModel, forKey: Key.ollamaFastModel) }
+    }
+
+    /// Opt-in cloud answers for text-only web lookups, and only while Internet Mode is on.
+    var geminiInternetAnswers: Bool {
+        didSet { defaults.set(geminiInternetAnswers, forKey: Key.geminiInternetAnswers) }
     }
 
     /// Read answers aloud (on-device system voices).
@@ -110,7 +116,6 @@ final class AppSettings {
     var soundCues: Bool {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
-    /// A hello by the cursor on the first wake of the day or after a long time away.
     /// Morning cards (`MorningBrief`): off until the user turns them on (they read Reminders and Calendar).
     var morningCards: Bool {
         didSet { defaults.set(morningCards, forKey: Key.morningCards) }
@@ -122,6 +127,7 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: Key.morningCardsShown) }
     }
 
+    /// A hello by the cursor whenever the Mac wakes or the user unlocks it.
     var greetings: Bool {
         didSet { defaults.set(greetings, forKey: Key.greetings) }
     }
@@ -161,6 +167,7 @@ final class AppSettings {
         fillerWords = defaults.string(forKey: Key.fillerWords) ?? ""
         ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
         ollamaFastModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaFastModel)) ?? OllamaProvider.defaultFastModel
+        geminiInternetAnswers = defaults.bool(forKey: Key.geminiInternetAnswers)
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true
         voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier)
         speechRate = defaults.object(forKey: Key.speechRate) as? Double ?? Self.defaultSpeechRate
@@ -182,7 +189,7 @@ final class AppSettings {
         LegacyCloudSettings.remove(from: defaults)
     }
 
-    /// Ollama on this Mac: the only provider (no paid keys, 2026-10-10).
+    /// Local Ollama default. Gemini is selected separately and only for opted-in Internet Mode answers.
     func makeProvider() -> OllamaProvider {
         OllamaProvider(model: ollamaModel.trimmingCharacters(in: .whitespaces),
                        fastModel: ollamaFastModel.trimmingCharacters(in: .whitespaces))

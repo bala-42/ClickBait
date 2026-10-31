@@ -176,6 +176,10 @@ struct TinyPill: View {
     let tone: CompanionTone
     /// Problems are Wine (`CompanionTone.problem`), so they never read as one of the states.
     var isProblem = false
+    /// Brief answers are deliberately kept to a single compact line.
+    var singleLine = false
+    /// Answer pills use lowercase text as part of their visual treatment.
+    var lowercase = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -183,10 +187,10 @@ struct TinyPill: View {
                 Image(systemName: symbol)
                     .font(.system(size: 10, weight: .bold))
             }
-            let shown = PillCase.lowered(text, names: AppLocator.pillNames)
+            let shown = lowercase ? text.lowercased() : PillCase.lowered(text, names: AppLocator.pillNames)
             Text(shown)
                 .font(.system(size: 12, weight: .semibold))
-                .wrapped(shown, maxWidth: 270)
+                .modifier(PillTextLayout(text: shown, singleLine: singleLine))
                 .inkCentred(shown, maxWidth: 270)
         }
         .padding(.horizontal, 9)
@@ -195,6 +199,24 @@ struct TinyPill: View {
                            glow: isProblem ? CompanionTone.problem.opacity(Glow.opacity) : tone.color.opacity(Glow.opacity),
                            shape: RoundedRectangle(cornerRadius: Look.Corner.pill, style: .continuous)))
         .padding(.top, 3)
+    }
+}
+
+private struct PillTextLayout: ViewModifier {
+    let text: String
+    let singleLine: Bool
+
+    func body(content: Content) -> some View {
+        if singleLine {
+            content
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: TextWrap.width(text, maxWidth: 270,
+                                             font: NSFont.systemFont(ofSize: 12, weight: .semibold)))
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            content.wrapped(text, maxWidth: 270)
+        }
     }
 }
 
@@ -583,7 +605,7 @@ struct CompanionBubbleView: View {
         case .idle, .listening, .thinking, .explaining:
             EmptyView()
         case .answer(let text):
-            TinyPill(text: text, tone: model.tone)  // a few friendly words, no icon
+            TinyPill(text: text, tone: .idle, singleLine: true, lowercase: true)  // brief replies are lowercase Azure-blue lines
         case .done(let text):
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):
@@ -593,7 +615,7 @@ struct CompanionBubbleView: View {
         case .jobResult(let text, let tone):
             TinyPill(text: text, tone: tone)  // the job's colour, like every other pill
         case .greeting(let text):
-            GreetingPill(text: text, tone: model.tone)
+            GreetingPill(text: text, tone: .idle)  // Azure, regardless of the companion's current state
         }
     }
 }

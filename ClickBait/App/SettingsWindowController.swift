@@ -144,7 +144,7 @@ struct SettingsView: View {
                           isOn: $settings.morningCards)
                     .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
                 Divider().overlay(SettingsLook.hairline)
-                ToggleRow("Greetings", "A hello by the cursor on the first wake of the day.", isOn: $settings.greetings)
+                ToggleRow("Greetings", "A hello by the cursor each time your Mac wakes or you unlock it.", isOn: $settings.greetings)
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Sounds", "A soft sound when a background ClickBait is done or needs your yes.", isOn: $settings.soundCues)
             }
@@ -229,7 +229,7 @@ struct SettingsView: View {
         case .internet:
             SettingsGroup("Internet Mode") {
                 ToggleRow(settings.internet.isOn ? "On 🌐" : "Off 🔒",
-                          "Free lookups when you ask; only search words leave your Mac. Off every time ClickBait starts.",
+                          "Free lookups when you ask. Gemini answers are a separate opt-in. Off every time ClickBait starts.",
                           isOn: Binding(get: { settings.internet.isOn },
                                         set: { if $0 != settings.internet.isOn { settings.internet.toggle() } }))
             }
@@ -592,7 +592,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .commands: "Commands"
         case .voice: "Voice"
         case .speech: "Speech recognition"
-        case .aiModel: "AI model"
+        case .aiModel: "AI model & Google key"
         case .internet: "Internet"
         case .privacy: "Privacy"
         case .debugging: "Debugging"
@@ -622,7 +622,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .commands: "Choose which spoken shortcuts ClickBait can run."
         case .voice: "Choose how ClickBait reads answers aloud."
         case .speech: "Set up on-device speech recognition."
-        case .aiModel: "Configure the local model used for questions and actions."
+        case .aiModel: "Paste your Google AI Studio key and configure Gemini for Internet Mode."
         case .internet: "Optional search sources for Internet Mode."
         case .privacy: "Control which apps ClickBait may inspect."
         case .debugging: "Manage temporary diagnostic captures."

@@ -60,7 +60,7 @@ struct InternetSettingsSection: View {
     @State private var copied = false
 
     var body: some View {
-        Text("Switch Internet Mode on from the menu bar (🔒 → 🌐); it's off every time ClickBait starts. Only search words and page addresses are sent — never your screen, its text, your voice or anyone's name on it — to Wikipedia, Stack Overflow, MDN and Apple's developer docs, and to SearXNG if you run it. The answers still come from the model on this Mac.")
+        Text("Switch Internet Mode on from the menu bar (🔒 → 🌐); it's off every time ClickBait starts. Lookups send cleaned search words and page addresses to the selected search sources. Answers stay on this Mac unless you separately enable Gemini in AI model settings; Gemini receives the cleaned search phrase and retrieved excerpts, never screenshots or screen text.")
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

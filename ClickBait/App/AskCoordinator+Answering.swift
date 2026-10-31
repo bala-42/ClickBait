@@ -332,6 +332,7 @@ extension AskCoordinator {
                 // then answered text-only (faster).
                 let result = await withTaskCancellationHandler { await lookup.value } onCancel: { lookup.cancel() }
                 request.web = result.passages
+                request.webQuery = result.query
                 if result.passages.isEmpty {
                     webNote = "Couldn't reach the web, so this is from what I know."
                 } else {
@@ -372,8 +373,19 @@ extension AskCoordinator {
                 Log.ask.notice("Follow-up on an unchanged screen: reusing the first screenshot")
             }
             setStage(request.screenshotJPEG.isEmpty && !request.sameScreen ? .thinking : .readingScreen, of: flow)
+            let answerProvider: any LLMProvider
+            if settings.internet.isOn, settings.geminiInternetAnswers,
+               let key = GeminiKeyStore.read(),
+               request.screenshotJPEG.isEmpty, request.contextJPEG == nil, request.selectedText == nil,
+               request.history.isEmpty, request.snip == nil,
+               request.webQuery != nil, !request.web.isEmpty {
+                answerProvider = GeminiInternetFallbackProvider(apiKey: key, fallback: provider)
+                Log.ask.notice("Internet answer: trying Gemini with the cleaned query and retrieved excerpts only")
+            } else {
+                answerProvider = provider
+            }
             Log.ask.notice("""
-                Asking \(provider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
+                Asking \(answerProvider.displayName, privacy: .public) with a \(screenshot.width, privacy: .public)x\(screenshot.height, privacy: .public) \
                 JPEG (\(screenshot.jpeg.count / 1024, privacy: .public) KB, downscale \(screenshot.downscale, format: .fixed(precision: 3), privacy: .public))
                 """)
             var text = ""
@@ -404,7 +416,7 @@ extension AskCoordinator {
             // A first snip explanation opens with its subject: with lookups on, it's looked up
             // while the rest streams, ready for naming the marks after the answer.
             var lookingUp = !request.askSubject
-            for try await chunk in provider.stream(request) {
+            for try await chunk in answerProvider.stream(request) {
                 if firstChunkAt == nil { firstChunkAt = .now }
                 text += chunk
                 if !lookingUp, case .foreground = run.destination, let subject = StreamingSubject.subject(in: text) {
@@ -485,9 +497,31 @@ extension AskCoordinator {
             var finalText = parsed.response.displayText + (webCredit.map { "\n\n" + $0 } ?? "")
             // A snip in the dock places its tour there too: it waits for "show me the parts".
             var tourReady = false
+            var hasSnipParts = false
             if snip != nil, let memory = run.snipMemory, let view = memory.view {
-                let named = parsed.response.parts + parsed.response.pointers
-                if !named.isEmpty, await !isLabelled(named, memory: memory, view: view), !Task.isCancelled {
+                var named = parsed.response.parts + parsed.response.pointers
+                // Foreground snips already get a focused parts-only second look when the
+                // explanation omits names. Do the same after auto-peeling; otherwise the
+                // dock answer has no tour to offer even when the close-up has clear parts.
+                if named.isEmpty, history.isEmpty {
+                    var partsRequest = AskRequest(question: parsed.response.speech, screenshotJPEG: memory.closeUp.jpeg,
+                                                  screenshotWidth: memory.closeUp.width, screenshotHeight: memory.closeUp.height,
+                                                  context: request.context)
+                    partsRequest.listParts = true
+                    partsRequest.snipMarked = view.marked
+                    partsRequest.snipWords = request.snipWords
+                    let start = ContinuousClock.now
+                    if let reply = await Self.reply(from: provider, to: partsRequest,
+                                                    within: ProviderOperation.labelTourParts.timeout), !Task.isCancelled {
+                        named = ResponseParser.parse(reply, imageWidth: memory.closeUp.width, imageHeight: memory.closeUp.height,
+                                                     scale: provider.coordinateScale).response.parts
+                        Log.ask.notice("Parts: background second look found \(named.count, privacy: .public) names in \(String(describing: ContinuousClock.now - start), privacy: .public)")
+                    } else {
+                        Log.ask.notice("Parts: background second look unavailable")
+                    }
+                }
+                hasSnipParts = !named.isEmpty
+                if hasSnipParts, await !isLabelled(named, memory: memory, view: view), !Task.isCancelled {
                     let placed = await placeTour(named, explanation: parsed.response.speech, memory: memory, view: view,
                                                  provider: provider)
                     if !placed.tour.isEmpty, !Task.isCancelled {
@@ -502,7 +536,7 @@ extension AskCoordinator {
             guard !Task.isCancelled else { return }
             settleChat(of: run, finalText: finalText)
             backgroundJobs?.setChatMessages(run.chatMessages, for: jobID)
-            if tourReady || (snip != nil && history.isEmpty && !(parsed.response.parts + parsed.response.pointers).isEmpty) {
+            if tourReady || (snip != nil && history.isEmpty && hasSnipParts) {
                 backgroundJobs?.setLeadingSuggestion(PeelRule.suggestedPartsPrompt, for: jobID)
             }
             backgroundJobs?.complete(jobID, answer: finalText, conversation: run.conversation)

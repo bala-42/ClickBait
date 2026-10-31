@@ -41,10 +41,8 @@ final class MorningBrief {
               MorningCards.isDue(now: Date(), lastShown: settings.morningCardsShown) else { return }
         running = true
         defer { running = false }
-        let store = EKEventStore()
         let facts = MemoryStore.shared.memory.notes.suffix(10).reversed().map(\.text)
-        let reminders = await Self.reminders(in: store)
-        let events = Self.events(in: store)
+        let (reminders, events) = await Self.todayItems()
         guard let brief = MorningCards.brief(reminders: reminders, events: events, facts: facts, now: Date()) else {
             Log.app.notice("Morning cards: nothing to go on today")
             settings.morningCardsShown = Date()
@@ -73,7 +71,16 @@ final class MorningBrief {
     }
 
     /// Incomplete reminders due by the end of today, if allowed.
-    private static func reminders(in store: EKEventStore) async -> [MorningCards.Item] {
+    /// These EventKit callbacks may run off-main. Keep the whole EventKit read in nonisolated
+    /// helpers so their completion closures do not inherit MorningBrief's MainActor isolation.
+    nonisolated private static func todayItems() async -> (reminders: [MorningCards.Item], events: [MorningCards.Item]) {
+        let store = EKEventStore()
+        let reminders = await reminders(in: store)
+        let events = events(in: store)
+        return (reminders, events)
+    }
+
+    nonisolated private static func reminders(in store: EKEventStore) async -> [MorningCards.Item] {
         guard EKEventStore.authorizationStatus(for: .reminder) == .fullAccess,
               let end = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) else { return [] }
         let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: end, calendars: nil)
@@ -88,7 +95,7 @@ final class MorningBrief {
     }
 
     /// Today's events, in order, if allowed; all-day ones without a time.
-    private static func events(in store: EKEventStore) -> [MorningCards.Item] {
+    nonisolated private static func events(in store: EKEventStore) -> [MorningCards.Item] {
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
         let start = Calendar.current.startOfDay(for: Date())
         guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return [] }

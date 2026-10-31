@@ -90,6 +90,9 @@ public struct AskRequest: Sendable {
     public var earlierQuestion: String?
     /// What an Internet Mode lookup found, for the answer ("From the web").
     public var web: [WebPassage] = []
+    /// The scrubbed search phrase that produced the passages; cloud answers use this
+    /// instead of the raw question or anything read from the screen.
+    public var webQuery: String?
     /// Plan a tutorial for `question` (`Prompt.tutorialSystem`).
     public var planTutorial = false
     /// The app's menus ("History ▸ Clear History…"), so tutorial plans use real items.

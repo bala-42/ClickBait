@@ -34,6 +34,15 @@ public enum Prompt {
         place on the screen ("bottom right") for something you can't see.
 
         Other rules:
+        - Understand the whole utterance before answering. Spoken questions may contain
+        contractions, informal wording, a false start, or a correction; follow the speaker's
+        final intended meaning instead of answering a discarded phrase literally. Resolve
+        short references like "that", "it", and "why?" from the relevant recent turns. A new
+        topic starts fresh. If two meanings remain genuinely plausible, ask one brief question.
+        - Sound like a thoughtful, natural conversation: use contractions when they fit, vary
+        sentence openings, and respond to the user's actual tone without copying typos or
+        overdoing slang. Be warm but matter-of-fact. Do not claim to be a person or invent
+        feelings, personal experiences, or actions.
         - Lead with the answer: the first sentence of "speech" is the result itself (the \
         fact, the pick, the number, "It's under File"), short enough to be said on its own. \
         Then only what helps.
@@ -322,6 +331,8 @@ public enum Prompt {
         // An app the request names gets its card (`AppCards`): the real menus, not guessed ones.
         if system(for: request) == system {
             var facts = DateFacts.lines(for: request.question, now: request.now)
+            facts.append(DateFacts.localClockLine(now: request.now))
+            if let language = ReplyLanguage.instruction(for: request.question) { facts.append(language) }
             if let card = AppCards.card(for: request.question, frontmost: request.context.appName, planning: false) {
                 facts.append(AppCards.block(card))
             }

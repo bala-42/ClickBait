@@ -34,11 +34,34 @@ public enum DateFacts {
         return lines
     }
 
+    /// The current Mac-local clock and zone for model answers that need relative-time context.
+    public static func localClockLine(now: Date, calendar: Calendar = .current) -> String {
+        let zone = calendar.timeZone
+        return "Mac local time: \(clockText(now, timeZone: zone)); time zone \(zone.identifier) (UTC\(utcOffset(of: zone, at: now))). Use this zone for relative dates and times."
+    }
+
     /// Questions ClickBait answers itself, without the model (under 0.1 s, always right):
     /// "how many days until Christmas?" → "66 days until Christmas!"; "what's the date?",
     /// "what day is it today?" → "It's Tuesday, 20 October." Nil for anything else.
     public static func instantAnswer(_ question: String, now: Date, calendar: Calendar = .current) -> String? {
         let text = ImpliedPointer.normalized(question)
+        if asksLocalTimeZone(text) {
+            let zone = calendar.timeZone
+            let name = zone.localizedName(for: zone.isDaylightSavingTime(for: now) ? .daylightSaving : .standard,
+                                          locale: .current) ?? zone.identifier
+            let abbreviation = zone.abbreviation(for: now).map { " (\($0))" } ?? ""
+            return "This Mac is set to \(name)\(abbreviation), \(zone.identifier), UTC\(utcOffset(of: zone, at: now))."
+        }
+        if asksLocalDateAndTime(text) {
+            let zone = calendar.timeZone
+            let abbreviation = zone.abbreviation(for: now).map { " \($0)" } ?? ""
+            return "It's \(format(now, calendar: calendar)) at \(clockText(now, timeZone: zone))\(abbreviation) (\(zone.identifier), UTC\(utcOffset(of: zone, at: now)))."
+        }
+        if asksLocalTime(text) {
+            let zone = calendar.timeZone
+            let abbreviation = zone.abbreviation(for: now).map { " \($0)" } ?? ""
+            return "It's \(clockText(now, timeZone: zone))\(abbreviation) (\(zone.identifier), UTC\(utcOffset(of: zone, at: now)))."
+        }
         if let count = daysUntil(question, now: now, calendar: calendar) {
             // Only a plain "how many days until X": "plan my trip 3 days before Christmas" isn't one.
             let plain = ["how many days", "days until", "days till", "days to", "days left", "how long until", "how long till"]
@@ -60,6 +83,50 @@ public enum DateFacts {
         formatter.locale = Locale(identifier: "en_GB")
         formatter.dateFormat = "EEEE, d MMMM"
         return "It's \(formatter.string(from: now))."
+    }
+
+    private static func asksLocalTime(_ text: String) -> Bool {
+        let phrases = ["what s the time", "whats the time", "what is the time", "what time is it",
+                       "what time is it now", "what time is it right now", "what is the current time",
+                       "what s the current time", "what s my local time", "what is my local time",
+                       "what time is it here", "current time", "local time", "time here", "time now",
+                       "tell me the time", "do you know the time"]
+        return phrases.contains { text == $0 || text == $0 + " please" || text == $0 + " now" }
+    }
+
+    private static func asksLocalDateAndTime(_ text: String) -> Bool {
+        ["what s the date and time", "what is the date and time", "what s today s date and time",
+         "what is today s date and time", "what is todays date and time", "date and time now"]
+            .contains { text == $0 || text == $0 + " please" }
+    }
+
+    private static func asksLocalTimeZone(_ text: String) -> Bool {
+        let phrases = ["what time zone am i in", "what timezone am i in", "what s my time zone",
+                       "what s my timezone", "what is my time zone", "what is my timezone",
+                       "what is my current time zone", "what is my current timezone",
+                       "what s the time zone", "what is the time zone", "what s the timezone", "what is the timezone",
+                       "what time zone is this mac in", "what timezone is this mac in",
+                       "what time zone is my mac in", "what timezone is my mac in",
+                       "what is the local time zone", "what is the local timezone",
+                       "what time zone is it here", "what timezone is it here",
+                       "current time zone", "current timezone", "local time zone", "local timezone",
+                       "my time zone", "my timezone"]
+        return phrases.contains { text == $0 || text == $0 + " right now" || text == $0 + " please" }
+    }
+
+    private static func clockText(_ date: Date, timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private static func utcOffset(of timeZone: TimeZone, at date: Date) -> String {
+        let seconds = timeZone.secondsFromGMT(for: date)
+        let magnitude = abs(seconds)
+        return String(format: "%@%02d:%02d", seconds < 0 ? "-" : "+", magnitude / 3600, (magnitude % 3600) / 60)
     }
 
     /// "How many days until Christmas?" → Christmas, its next date, and the days to it (today

@@ -111,7 +111,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         internetItem.action = #selector(toggleInternet)
         internetItem.target = self
-        internetItem.toolTip = "Internet Mode: free lookups when you ask (only search words leave your Mac). Off every time ClickBait starts."
+        internetItem.toolTip = "Internet Mode: free lookups when you ask; Gemini answers are a separate opt-in. Off every time ClickBait starts."
         menu.addItem(internetItem)
         menu.addItem(.separator())
         menu.delegate = self
@@ -169,7 +169,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         greetingsItem.action = #selector(toggleGreetings)
         greetingsItem.target = self
         greetingsItem.state = settings.greetings ? .on : .off
-        greetingsItem.toolTip = "A hello by the cursor on the first wake of the day, or after a long time away."
+        greetingsItem.toolTip = "A hello by the cursor each time your Mac wakes or you unlock it."
         menu.addItem(greetingsItem)
         menu.addItem(.separator())
 

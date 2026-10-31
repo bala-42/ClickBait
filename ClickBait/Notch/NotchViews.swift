@@ -662,13 +662,14 @@ private struct FocusCard: View {
 private struct PlayerControls: View {
     let music: MusicBridge
     let accent: Color
+    @Environment(\.notchLive) private var live
 
     var body: some View {
         // YouTube: no shuffle or repeat; its time only when the browser lets ClickBait read it.
         let youtube = music.youtubeTab != nil && music.player == nil
         return VStack(alignment: .leading, spacing: 5) {
             if !youtube || music.duration > 0 {
-                TimelineView(.animation(minimumInterval: 0.5, paused: !music.isPlaying)) { context in
+                TimelineView(.animation(minimumInterval: 0.5, paused: !live || !music.isPlaying)) { context in
                     PlayerProgress(position: music.currentPosition(at: context.date), duration: music.duration,
                                    accent: accent, onSeek: { music.seek(to: $0) })
                 }
@@ -714,6 +715,7 @@ struct MarqueeText: View {
     @State private var boxWidth: CGFloat = 0
     @State private var started = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.notchLive) private var live
 
     private static let gap: CGFloat = 36, speed: CGFloat = 30, rest = 2.0
 
@@ -729,7 +731,9 @@ struct MarqueeText: View {
             }
             .overlay(alignment: .leading) {
                 if runs {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                    // Home and Music stay built while the notch is folded. Don't keep
+                    // animating a clipped title in that retained, invisible panel.
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !live)) { context in
                         let cycle = textWidth + Self.gap
                         let period = Double(cycle / Self.speed) + Self.rest
                         let t = context.date.timeIntervalSince(started).truncatingRemainder(dividingBy: period)
