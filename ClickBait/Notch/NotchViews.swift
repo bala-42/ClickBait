@@ -238,7 +238,11 @@ struct NotchView: View {
                 .allowsHitTesting(place.visible)
         }
         .contentShape(shape)
-        .dropDestination(for: URL.self) { _, _ in false } isTargeted: { if $0, !open { onDragIn() } }
+        // Anything dropped anywhere on the notch goes on the shelf; dragged over the closed
+        // notch, it opens on the shelf (`ShelfDrop`).
+        .onDrop(of: ShelfDrop.types, isTargeted: Binding(get: { false }, set: { if $0, !open { onDragIn() } })) { providers in
+            ShelfDrop.take(providers, into: shelf)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // One curve for the whole motion: growing or tab-changing springs, folding eases out.
         // (Width and height used to always take the opening spring, even while folding.)
@@ -1140,6 +1144,17 @@ private struct Artwork: View {
 
 // MARK: - Shelf
 
+/// Hands its AppKit view to `found`, so AppKit UI (the AirDrop popover) can be pinned to it.
+private struct ViewAnchor: NSViewRepresentable {
+    let found: (NSView) -> Void
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { found(view) }
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) {}
+}
+
 /// The shelf's AirDrop pad. Drop files on it, or click it to send the shelf's selection (all of
 /// the shelf when nothing is selected): macOS's own AirDrop window opens with the people and
 /// devices nearby (`AirDropSender`). The pad says what it will send, then how it went.
@@ -1149,8 +1164,9 @@ private struct AirDropPad: View {
 
     var body: some View {
         let sender = shelf.airDrop
+        let items = AirDropSender.sendable(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
         Button {
-            sender.send(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
+            sender.send(items)
         } label: {
             VStack(spacing: 5) {
                 Image(systemName: symbol(sender.status))
@@ -1159,7 +1175,7 @@ private struct AirDropPad: View {
                     .symbolEffect(.pulse, isActive: targeted || isChoosing(sender.status))
                     .contentTransition(.symbolEffect(.replace))
                 Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
-                Text(subtitle(sender.status))
+                Text(subtitle(sender.status, sending: items.count))
                     .font(.system(size: 10)).foregroundStyle(NotchPalette.secondary)
                     .multilineTextAlignment(.center).lineLimit(2)
                     .padding(.horizontal, 8)
@@ -1177,15 +1193,19 @@ private struct AirDropPad: View {
         }
         .scaleEffect(targeted ? 1.03 : 1)
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: targeted)
+        // Cumulative (user's ask, 2026-11-01): a drop joins the selection, and AirDrop offers
+        // everything selected, the number the pad shows.
         .dropDestination(for: URL.self) { urls, _ in
-            let files = NotchPanel.airDropItems(dropped: urls, shelf: [], selected: [])
+            let files = AirDropSender.sendable(NotchPanel.airDropItems(dropped: urls, shelf: [], selected: []))
             guard !files.isEmpty else { return false }
-            sender.send(files)
+            shelf.select(files)
+            sender.send(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
             return true
         } isTargeted: { targeted = $0 }
+        .background(ViewAnchor { sender.padView = $0 })
         .help("Drop files to AirDrop them, or click to AirDrop the shelf's files")
         .accessibilityLabel("AirDrop")
-        .accessibilityValue(subtitle(sender.status))
+        .accessibilityValue(subtitle(sender.status, sending: items.count))
         .accessibilityHint("Opens the AirDrop window to choose a person or device nearby")
     }
 
@@ -1195,22 +1215,21 @@ private struct AirDropPad: View {
 
     private func symbol(_ status: AirDropSender.Status) -> String {
         switch status {
-        case .sent: "checkmark.circle.fill"
         case .failed: "exclamationmark.triangle.fill"
         case .idle, .choosing: "dot.radiowaves.up.forward"
         }
     }
 
-    private func subtitle(_ status: AirDropSender.Status) -> String {
+    /// `sending`: how many files a click hands over (`AirDropSender.sendable`), the one count shown.
+    private func subtitle(_ status: AirDropSender.Status, sending: Int) -> String {
         switch status {
         case .choosing(let count): return "Choose who gets \(count == 1 ? "it" : "all \(count)")…"
-        case .sent(let count): return count == 1 ? "Sent" : "Sent \(count) files"
         case .failed(let message): return message
         case .idle:
             if targeted { return "Release to AirDrop" }
-            if !shelf.selectedFiles.isEmpty { return "Send \(shelf.selectedFiles.count) selected" }
-            if !shelf.files.isEmpty { return shelf.files.count == 1 ? "Send the file" : "Send all \(shelf.files.count)" }
-            return "Drop files to send"
+            if sending == 0 { return "Drop files to send" }
+            if !shelf.selectedFiles.isEmpty { return "Send \(sending) selected" }
+            return sending == 1 ? "Send the file" : "Send all \(sending)"
         }
     }
 }
@@ -1226,6 +1245,10 @@ private struct ShelfView: View {
     /// A word in the note's header for a moment ("copied", "sent to Notes"), and what Clear
     /// took, for its undo.
     @State private var noteStatus: String?
+    /// The file being renamed from its tile (user's ask, 2026-11-01), and the name being typed.
+    @State private var renaming: URL?
+    @State private var newName = ""
+    @FocusState private var renameFocused: Bool
     @State private var cleared: String?
 
     var body: some View {
@@ -1286,11 +1309,7 @@ private struct ShelfView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            .dropDestination(for: URL.self) { urls, _ in
-                let files = urls.filter(\.isFileURL)
-                shelf.add(files)
-                return !files.isEmpty
-            } isTargeted: { targeted = $0 }
+            .onDrop(of: ShelfDrop.types, isTargeted: $targeted) { ShelfDrop.take($0, into: shelf) }
             .accessibilityLabel(shelf.files.isEmpty ? "Shelf, empty. Drop files here." : "Shelf, \(shelf.files.count) files")
         }
         .padding(10)
@@ -1389,12 +1408,44 @@ private struct ShelfView: View {
         }
     }
 
+    /// From the menu as from a double-click: the notch takes the keyboard (a right-click
+    /// doesn't make it key) and the field is ready to type into at once.
+    private func startRename(_ url: URL) {
+        newName = url.lastPathComponent
+        renaming = url
+        NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.level == WindowLayers.notch }?.makeKey()
+        Task { @MainActor in renameFocused = true }
+    }
+
+    /// Renames the file on disk, in its own folder; a name without an extension keeps the old one.
+    private func finishRename(_ url: URL) {
+        defer { renaming = nil }
+        do {
+            let renamed = try shelf.rename(url, to: newName)
+            if renamed != url { flash("renamed to \(renamed.lastPathComponent)") }
+        } catch {
+            flash("couldn't rename: \(error.localizedDescription)")
+        }
+    }
+
     private func file(_ url: URL) -> some View {
         let selected = shelf.selectedFiles.contains(url)
         return VStack(spacing: 2) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 32, height: 32)
-            Text(url.lastPathComponent).font(.system(size: 9, weight: .medium))
-                .foregroundStyle(NotchPalette.secondary).lineLimit(1).frame(width: 54)
+            if renaming == url {
+                TextField("Name", text: $newName)
+                    .textFieldStyle(.plain).font(.system(size: 9, weight: .medium)).foregroundStyle(NotchPalette.text)
+                    .multilineTextAlignment(.center).frame(width: 54)
+                    .padding(.vertical, 1).background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    .focused($renameFocused)
+                    .onSubmit { finishRename(url) }
+                    .onExitCommand { renaming = nil }
+                    .accessibilityLabel("New name for \(url.lastPathComponent)")
+            } else {
+                Text(url.lastPathComponent).font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(NotchPalette.secondary).lineLimit(1).frame(width: 54)
+                    .onTapGesture(count: 2) { startRename(url) }
+            }
         }
         .frame(width: 58, height: 62)
         .background(selected ? NotchPalette.highlight.opacity(0.16) : Color.white.opacity(0.045),
@@ -1416,6 +1467,7 @@ private struct ShelfView: View {
         }
         .onTapGesture { shelf.toggleSelection(url) }
         .contextMenu {
+            Button("Rename…") { startRename(url) }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             Button(shelf.selectedFiles.contains(url) ? "Deselect" : "Select") { shelf.toggleSelection(url) }
             Button("Remove from shelf", role: .destructive) { shelf.remove(url) }

@@ -311,6 +311,9 @@ final class AskCoordinator {
     @ObservationIgnored var tutorial: TutorialController?
     /// The app the user was in when a tutorial had to open another one ("back to Notes?").
     @ObservationIgnored var tutorialReturnApp: NSRunningApplication?
+    /// Where the user was in that app (its window and, in a browser, its tab), so "Back"
+    /// returns there exactly, as the dock's "go there!" does.
+    @ObservationIgnored var tutorialReturnPlace: (title: String?, frame: Rect?, tab: Task<BrowserTab?, Never>?)?
     /// Setup (opening an app for a tutorial) is over: the green "Opening…" can go.
     @ObservationIgnored var onSetupFinished: (() -> Void)?
     /// A walkthrough is being planned (true: lavender, spinning), or won't happen (false).

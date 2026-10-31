@@ -55,6 +55,7 @@ extension AskCoordinator {
         if wordsOnly { Log.ask.debug("Answering in words only: the walkthrough was declined") }
         // ⌥⌘ explanations and typed follow-ups have no flow yet: this one's, so they can be peeled too.
         let flow = givenFlow ?? adHocFlow(snip: snip != nil)
+        if flow.documentText == nil { flow.documentText = selectedText }
         defer { if givenFlow == nil { end(flow) } }
         // Sent to the background before this run existed: the chat, memory and conversation
         // belong to the next question (or nothing), so this one keeps its own.

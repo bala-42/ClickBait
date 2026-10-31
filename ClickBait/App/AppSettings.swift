@@ -165,7 +165,8 @@ final class AppSettings {
         keepDebugCaptures = defaults.bool(forKey: Key.keepDebugCaptures)
         speechModel = defaults.string(forKey: Key.speechModel).flatMap(SpeechModel.init(rawValue:)) ?? .default
         fillerWords = defaults.string(forKey: Key.fillerWords) ?? ""
-        ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? OllamaProvider.defaultModel
+        // A new install starts on the brain that suits this Mac; a chosen model is kept.
+        ollamaModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaModel)) ?? Brain.recommended(macMemoryGB: MachineFacts.memoryGB).model
         ollamaFastModel = Self.nonEmpty(defaults.string(forKey: Key.ollamaFastModel)) ?? OllamaProvider.defaultFastModel
         geminiInternetAnswers = defaults.bool(forKey: Key.geminiInternetAnswers)
         speakAnswers = defaults.object(forKey: Key.speakAnswers) as? Bool ?? true

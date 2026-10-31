@@ -15,7 +15,9 @@ struct OnboardingTests {
         #expect(OnboardingStep.start(welcomed: false, done: []) == .welcome)
         // Reopened after Screen Recording: straight on to the model.
         #expect(OnboardingStep.start(welcomed: true, done: [.microphone, .accessibility, .screenRecording]) == .model)
-        #expect(OnboardingStep.start(welcomed: true, done: [.microphone, .accessibility, .screenRecording, .model, .speech]) == .ready)
+        #expect(OnboardingStep.start(welcomed: true, done: [.model, .microphone, .accessibility, .screenRecording]) == .speech)
+        #expect(OnboardingStep.start(welcomed: true, done: [.microphone, .accessibility, .screenRecording, .model, .speech, .notch, .hello]) == .ready)
+        #expect(OnboardingStep.welcome.next == .model)
         #expect(OnboardingStep.ready.next == .ready)
     }
 }

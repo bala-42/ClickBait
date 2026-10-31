@@ -117,6 +117,7 @@ extension AskCoordinator {
         if messages.isEmpty || appendingQuestion { messages.append(ChatModel.Message(role: .user, text: run.display)) }
         run.chatMessages = messages
         backgroundJobs.setSnipMemory(run.snipMemory, for: jobID)
+        backgroundJobs.setDocumentText(flow.documentText, for: jobID)
         backgroundJobs.setChatMessages(messages, for: jobID)
         // The window it was asked in, for "go there!" (its context is complete by now), and
         // in a browser its exact tab (read when it was asked; here only if it wasn't).
@@ -516,6 +517,7 @@ extension AskCoordinator {
             return
         }
         flow.heard = transcript
+        NotificationCenter.default.post(name: .clickBaitHeard, object: transcript)  // setup's "say hello"
         if let id = flow.jobID { backgroundJobs?.rename(id, to: transcript) }
         // A day answers a reminder's "when?"; "cancel" drops it; anything else replaces it.
         if pendingReminder != nil {

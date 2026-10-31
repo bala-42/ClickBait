@@ -67,6 +67,8 @@ final class QuestionFlow {
     var homePID: Int32?
     /// In Chrome or Safari: the tab it was asked in, being read from the browser.
     var browserTab: Task<BrowserTab?, Never>?
+    /// The highlighted text (a document's passage, code) it's about, kept for follow-ups.
+    var documentText: String?
     /// The answer's run, once created.
     var run: AnswerRun?
     var task: Task<Void, Never>?

@@ -299,6 +299,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return messages
         }
         coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
+        // Drops on the notch's shelf say how they went in the companion's pill.
+        ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
+        // Setup's last step: a tapped suggestion is asked for real, in the chat.
+        _ = NotificationCenter.default.addObserver(forName: .clickBaitAskFromSetup, object: nil, queue: .main) { [weak self] note in
+            guard let question = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.coordinator.startTypedChat(trigger: "setup")
+                self.chat.model.draft = question
+                self.chat.model.send()
+            }
+        }
         coordinator.onQuickEnding = { [weak self] text, tone, immediate in
             guard let self else { return }
             if immediate {
@@ -613,8 +625,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if message == TutorialController.finishedMessage, let home = coordinator.tutorialReturnApp, !home.isTerminated,
                NSWorkspace.shared.frontmostApplication?.processIdentifier != home.processIdentifier {
                 confirm.show("done! back to \(home.localizedName ?? "where you were")?", at: overlay.companionTopLeft,
-                             confirm: "Back", cancel: "Stay", hint: nil, tone: .tutorial) { back in
-                    if back { home.activate() }
+                             confirm: "Back", cancel: "Stay", hint: nil, tone: .tutorial) { [weak self] back in
+                    guard back, let self else { return }
+                    let place = coordinator.tutorialReturnPlace
+                    Task { @MainActor in
+                        await self.returnTo(home, title: place?.title, frame: place?.frame, tab: await place?.tab?.value)
+                    }
                 }
             }
             if chat.isOpen, let last = chat.model.messages.last(where: { $0.role == .assistant }) {
@@ -841,10 +857,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.app.notice("Go there: its app has quit")
             return
         }
+        await returnTo(homeApp, title: job.homeWindowTitle, frame: job.homeWindowFrame, tab: job.homeTab)
+    }
+
+    /// Back to an exact place: a browser's tab when known, else that app's window by title or
+    /// frame, following it to its desktop. "Go there!" and a walkthrough's "Back" both use it.
+    private func returnTo(_ homeApp: NSRunningApplication, title: String?, frame: Rect?, tab homeTab: BrowserTab?) async {
         let pid = homeApp.processIdentifier
         let spaceChange = SpaceChangeWatch()
         var found = false
-        if let tab = job.homeTab {
+        if let tab = homeTab {
             switch tab.browser {
             case .chrome: found = await Task.detached(priority: .userInitiated) { ChromeTabs.select(tab, pid: pid) }.value
             case .safari: found = (try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name)) == "true"
@@ -853,10 +875,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         var returned = AXInspector.HomeReturn.byTab
         if !found {
-            returned = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
+            returned = AXInspector.raiseHomeWindow(pid: pid, title: title, frame: frame)
             AXInspector.bringToFront(pid: pid)
             homeApp.activate()
-            Log.app.notice("Go there: \(job.homeTab != nil ? "the tab is gone; " : "", privacy: .public)\(returned.rawValue, privacy: .public)")
+            Log.app.notice("Go there: \(homeTab != nil ? "the tab is gone; " : "", privacy: .public)\(returned.rawValue, privacy: .public)")
         }
         // In front, and the desktop switch (if any) over: the chat must open on the new one.
         for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
@@ -867,7 +889,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Its window was on another desktop (accessibility sees only this one's): now that the
         // app's desktop is showing, look again and raise that exact window.
         if returned == .none || returned == .byFrame {
-            let again = AXInspector.raiseHomeWindow(pid: pid, title: job.homeWindowTitle, frame: job.homeWindowFrame)
+            let again = AXInspector.raiseHomeWindow(pid: pid, title: title, frame: frame)
             if again != .none { Log.app.notice("Go there: on its desktop, \(again.rawValue, privacy: .public)") }
         }
         Log.app.notice("""

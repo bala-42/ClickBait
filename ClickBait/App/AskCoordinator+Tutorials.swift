@@ -311,6 +311,7 @@ extension AskCoordinator {
         var screenshot: EncodedScreenshot
         do { screenshot = try await encoding.value } catch { return false }
         tutorialReturnApp = nil
+        tutorialReturnPlace = nil
 
         // "Go to YouTube": an order, not a how-to — ClickBait just does it (green), switching
         // to a tab already showing the site or opening it. "Show me how to open YouTube" (and
@@ -690,7 +691,13 @@ extension AskCoordinator {
                                display: String, installedName: @escaping (String) -> String?, apps: [String: URL],
                                provider: any LLMProvider, tutorial: TutorialController, continues: Bool = true) async -> Bool {
         currentFlow?.walkthrough = true
-        if let startedIn, startedIn.processIdentifier != frontmostPID { tutorialReturnApp = startedIn }
+        if let startedIn, startedIn.processIdentifier != frontmostPID {
+            tutorialReturnApp = startedIn
+            if let flow = currentFlow {
+                if flow.browserTab == nil { readBrowserTab(for: flow, at: nil) }
+                tutorialReturnPlace = (flow.context.windowTitle, flow.context.windowFrame, flow.browserTab)
+            }
+        }
         onSetupFinished?()
 
         if conversation == nil || !chatShown {

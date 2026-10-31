@@ -85,6 +85,7 @@ extension AskCoordinator {
         flow.conversation = job.conversation
         flow.snipMemory = entry.snipMemory
         flow.chatMessages = entry.chatMessages
+        flow.documentText = entry.documentText
         let blocklist = settings.blocklist
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -97,8 +98,10 @@ extension AskCoordinator {
                 return
             }
             let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
-            await respond(question: text, selectedText: nil, capture: capture, encoding: encoding, startedAt: startedAt,
-                          speak: false, display: text, flow: flow)
+            // The text the card is about goes with the follow-up, as its context, not as a new
+            // thing to explain; the screen may have moved on since.
+            await respond(question: text, selectedText: entry.documentText, capture: capture, encoding: encoding, startedAt: startedAt,
+                          speak: false, display: text, flow: flow, highlightIsContext: entry.documentText != nil)
         }
         flow.task = task
         backgroundJobs.reopen(jobID, asking: text, task: task)

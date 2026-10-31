@@ -62,16 +62,19 @@ struct ProviderSettingsSection: View {
         }
 
         Divider().padding(.vertical, 4)
-        Text("Local model (Ollama)")
+        Text("Brain")
             .font(.system(size: 15, weight: .semibold))
-        TextField("Main model", text: $settings.ollamaModel, prompt: Text(OllamaProvider.defaultModel))
+        BrainPicker(settings: settings)
             .onChange(of: settings.ollamaModel) { testResult = nil }
+        DisclosureGroup("Any Ollama model") {
+            TextField("Main model", text: $settings.ollamaModel, prompt: Text(Brain.standard.model))
+        }
         TextField("Quick orders (optional)", text: $settings.ollamaFastModel, prompt: Text("none — the main model"))
             .onChange(of: settings.ollamaFastModel) { testResult = nil }
         Text("""
             Runs on this Mac via Ollama. The main model looks at the screen, points and plans walkthroughs. \
             A second, smaller model can read orders faster, but it stays in memory too: leave it empty \
-            unless your Mac has memory to spare. Install the main one with `ollama pull \(OllamaProvider.defaultModel)`.
+            unless your Mac has memory to spare. Picking a brain above downloads it if needed.
             """)
             .font(.callout)
             .foregroundStyle(.secondary)

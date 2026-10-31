@@ -43,6 +43,15 @@ public enum OllamaSetup {
         }
     }
 
+    /// The models Ollama has, or nil when it isn't running (for the brain cards).
+    public static func installedModels() async -> [String]? {
+        let request = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/tags"), timeoutInterval: 3)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return (json["models"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+    }
+
     /// A one-line hello from the model, or nil: setup's last check. Same context size as
     /// real requests, so the model stays loaded for the first question.
     public static func hello(_ model: String) async -> String? {
@@ -62,8 +71,11 @@ public enum OllamaSetup {
 }
 
 /// The setup window's steps, one at a time (Clicky-style; user's ask, 2026-10-25).
+/// Setup in Taby's order (user's ask, 2026-11-01): hello, the brain first (it downloads while
+/// the rest goes on), the three permissions, the speech model, the notch, saying hello, then
+/// the first question (`ready`).
 public enum OnboardingStep: Int, CaseIterable, Sendable {
-    case welcome, microphone, accessibility, screenRecording, model, speech, ready
+    case welcome, model, microphone, accessibility, screenRecording, speech, notch, hello, ready
 
     /// Where to open: the welcome the first time, then the first step not done yet, so
     /// reopening after Screen Recording carries on instead of starting over.

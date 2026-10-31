@@ -21,13 +21,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         self.permissions = permissions
         self.speech = speech
         model = ModelSetupChecker(settings: settings)
+        // The notch's look, Taby's flow (user's ask, 2026-11-01): a black island hanging from
+        // the top of the screen, the bean in hyperspace on its left, the step on its right.
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: OnboardingView.size.width, height: OnboardingView.size.height),
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Welcome to ClickBait"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        [.miniaturizeButton, .zoomButton].forEach { window.standardWindowButton($0)?.isHidden = true }
+        window.backgroundColor = .black
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         super.init(window: window)
 
@@ -39,7 +46,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             model: model,
             onDone: { [weak self] in self?.close() }
         ))
-        window.center()
+        Self.hang(window)
+    }
+
+    /// Centred at the top of the main screen, just under the menu bar, like the open notch.
+    private static func hang(_ window: NSWindow) {
+        guard let screen = NSScreen.main else { return window.center() }
+        let frame = window.frame
+        window.setFrameOrigin(NSPoint(x: screen.frame.midX - frame.width / 2, y: screen.visibleFrame.maxY - frame.height))
     }
 
     @available(*, unavailable)
@@ -80,6 +94,11 @@ struct OnboardingView: View {
     @AppStorage(OnboardingWindowController.finishedKey) private var finished = false
     @State private var step: OnboardingStep?
     @State private var hello: String?
+    /// The notch has shown itself, and ClickBait has heard the user (the two "try it" steps).
+    @AppStorage("onboarding.notchSeen") private var notchSeen = false
+    @AppStorage("onboarding.heardHello") private var heardHello = false
+    @State private var heard: String?
+    @State private var download = BrainDownload.shared
 
     /// `startAt`: a step to open on (renders); nil, where setup left off.
     init(permissions: PermissionsManager, settings: AppSettings, speech: SpeechModelManager, model: ModelSetupChecker,
@@ -99,29 +118,26 @@ struct OnboardingView: View {
         if permissions.status(of: .screenRecording) == .granted { done.insert(.screenRecording) }
         if model.isReady { done.insert(.model) }
         if speech.isReady { done.insert(.speech) }
+        if notchSeen || !settings.notchPanelEnabled { done.insert(.notch) }
+        if heardHello { done.insert(.hello) }
         return done
     }
 
     var body: some View {
         let current = step ?? OnboardingStep.start(welcomed: welcomed, done: done)
-        VStack(alignment: .leading, spacing: 18) {
-            dots(current)
-            Group {
-                switch current {
-                case .welcome: welcome
-                case .microphone: permission(.microphone)
-                case .accessibility: permission(.accessibility)
-                case .screenRecording: permission(.screenRecording)
-                case .model: modelStep
-                case .speech: speechStep
-                case .ready: ready
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            footer(current)
+        HStack(spacing: 12) {
+            beanCard(current)
+            stepCard(current)
         }
-        .padding(24)
-        .frame(width: 520, height: 480)
+        .padding(EdgeInsets(top: 34, leading: 14, bottom: 14, trailing: 14))
+        .onReceive(NotificationCenter.default.publisher(for: .clickBaitNotchShown)) { _ in notchSeen = true }
+        .onReceive(NotificationCenter.default.publisher(for: .clickBaitHeard)) { note in
+            heard = note.object as? String
+            heardHello = true
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
         .animation(.easeInOut(duration: 0.2), value: current)
         // A permission just granted: on to the next step by itself.
         .onChange(of: done) { old, new in
@@ -131,13 +147,72 @@ struct OnboardingView: View {
         }
     }
 
+    static let size = CGSize(width: 900, height: 520)
+
+    /// The bean in hyperspace, its face for the step: hello, curious through the permissions,
+    /// thinking while its brain downloads, listening for the voice, happy at the end.
+    private func beanCard(_ current: OnboardingStep) -> some View {
+        let mood: Bean.Mood = switch current {
+        case .welcome: .hello
+        case .model: model.isReady ? .happy : .thinking
+        case .speech, .hello: .listening
+        case .ready: .happy
+        default: .idle
+        }
+        return ZStack {
+            SpaceScene()
+            NotchBean(mood: mood, size: 120, badge: false, awake: true)
+        }
+        .frame(width: 290)
+        .frame(maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private func stepCard(_ current: OnboardingStep) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                dots(current)
+                Spacer()
+                // The brain keeps downloading while setup goes on: its progress on every step.
+                if let brain = download.brain, current != .model {
+                    HStack(spacing: 6) {
+                        ProgressView(value: download.fraction ?? 0).frame(width: 60)
+                        Text(small("\(brain.name) \(Int((download.fraction ?? 0) * 100))%")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            ScrollView(showsIndicators: false) {
+                Group {
+                    switch current {
+                    case .welcome: welcome
+                    case .microphone: permission(.microphone)
+                    case .accessibility: permission(.accessibility)
+                    case .screenRecording: permission(.screenRecording)
+                    case .model: modelStep
+                    case .speech: speechStep
+                    case .notch: notchStep
+                    case .hello: helloStep
+                    case .ready: ready
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            footer(current)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.078, green: 0.082, blue: 0.094), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
+    }
+
     // MARK: Steps
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 12) {
             title("Meet ClickBait")
-            line("A helper that lives by your cursor. Hold Control+Option and ask about anything on your screen: it answers, points at what to click, or walks you through it step by step.")
-            line("Everything runs on this Mac. No account, and nothing you say or show leaves it.")
+            line("A little triangle that lives by your cursor. Ask about anything on your screen. It all runs on this Mac.")
             line("Setup takes a few minutes: three permissions and two downloads.")
         }
     }
@@ -168,13 +243,11 @@ struct OnboardingView: View {
 
     private var modelStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            title("The AI model")
-            line("ClickBait thinks with Gemma, a model that runs on your Mac through Ollama, a free app.")
+            title("Choose your brain")
+            line("ClickBait thinks with a model that runs on this Mac through Ollama, a free app. Answers never leave your Mac.")
             switch model.state {
             case .checking:
                 ProgressView().controlSize(.small)
-            case .ready:
-                tick("Gemma is ready")
             case .noOllama:
                 let installed = AppLocator.installed()["Ollama"]
                 line(installed == nil ? "First install Ollama. ClickBait notices when it's running and carries on."
@@ -186,17 +259,11 @@ struct OnboardingView: View {
                     Button(small("Get Ollama")) { NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!) }
                         .controlSize(.large)
                 }
-            case .missingModel:
-                if model.downloading {
-                    ProgressView(value: model.downloaded ?? 0)
-                    line(model.downloaded.map { "Downloading Gemma… \(Int($0 * 100))%. It keeps going while you carry on." }
-                         ?? "Starting the download…")
-                } else {
-                    line("Download Gemma: about 6.6 GB, once. It can download while you finish setup.")
-                    if let problem = model.downloadProblem { line(problem).foregroundStyle(.red) }
-                    Button(small(model.downloadProblem == nil ? "Download Gemma" : "Try again")) { model.startDownload() }
-                        .controlSize(.large)
-                }
+            case .ready, .missingModel:
+                // The four brains with this Mac's memory and disk; picking one downloads it
+                // (it carries on while setup moves on) and switches to it.
+                BrainPicker(settings: settings)
+                if model.state == .ready { tick("your brain is ready") }
             }
         }
     }
@@ -211,8 +278,8 @@ struct OnboardingView: View {
 
     private var ready: some View {
         VStack(alignment: .leading, spacing: 12) {
-            title(done.count == 5 ? "You're set" : "Almost there")
-            if done.count < 5 {
+            title(done.count == 7 ? "Try your first question" : "Almost there")
+            if done.count < 7 {
                 line("Still to do: " + missing.joined(separator: ", ") + ". ClickBait works without them, with less.")
             }
             if let hello { line("“\(hello)”").italic() } else if model.isReady { ProgressView().controlSize(.small) }
@@ -223,7 +290,17 @@ struct OnboardingView: View {
             }
             .padding(12)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-            line("Try it now: hold Control+Option and ask “what's on my screen?”")
+            line("Tap one, and ClickBait asks it for you, right here.")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(["where's the share button?", "what can you do?", "what's on my screen?"], id: \.self) { question in
+                    Button { NotificationCenter.default.post(name: .clickBaitAskFromSetup, object: question) } label: {
+                        Text("“\(question)”").frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.isReady)
+                }
+                if !model.isReady { line(download.brain == nil ? "These work once your brain is ready." : "Your brain is still downloading.") }
+            }
         }
         .task(id: model.isReady) {
             guard model.isReady, hello == nil else { return }
@@ -232,8 +309,37 @@ struct OnboardingView: View {
     }
 
     private var missing: [String] {
-        [(OnboardingStep.microphone, "the microphone"), (.accessibility, "Accessibility"), (.screenRecording, "Screen Recording"),
-         (.model, "the AI model"), (.speech, "the speech model")].filter { !done.contains($0.0) }.map(\.1)
+        [(OnboardingStep.model, "your brain"), (.microphone, "the microphone"), (.accessibility, "Accessibility"),
+         (.screenRecording, "Screen Recording"), (.speech, "the speech model"), (.notch, "the notch"), (.hello, "saying hello")]
+            .filter { !done.contains($0.0) }.map(\.1)
+    }
+
+    /// Point at the top of the screen and the notch peeks; it ticks once it has.
+    private var notchStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("I live in your notch too")
+            line("Point at the top of your screen. I peek out; stay a moment and I open: what's playing, the shelf for files, the mirror, a quick ask.")
+            Toggle(small("Use the notch"), isOn: Binding(get: { settings.notchPanelEnabled }, set: { settings.notchPanelEnabled = $0 }))
+            if notchSeen { tick("you found it") }
+        }
+    }
+
+    /// Hold ⌃⌥ and say hello: ClickBait listens for real, and this ticks once it heard you.
+    private var helloStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Say hello")
+            line("Hold these two keys, say “hello”, let go.")
+            HStack(spacing: 10) {
+                ForEach(["⌃", "⌥"], id: \.self) { key in
+                    Text(key).font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Color(red: 1, green: 0.46, blue: 0.09), in: RoundedRectangle(cornerRadius: 12))
+                }
+                Text(small("Control + Option")).foregroundStyle(.secondary)
+            }
+            if heardHello { tick(heard.map { "heard: “\($0)”" } ?? "I heard you") }
+            else if !speech.isReady { line("The speech model isn't ready yet: go back a step to get it.") }
+        }
     }
 
     // MARK: Pieces
@@ -252,14 +358,14 @@ struct OnboardingView: View {
     private func footer(_ current: OnboardingStep) -> some View {
         HStack {
             if current == .welcome || current == .ready {
-                Toggle(small("Don't show this at launch"), isOn: $suppressAtLaunch).disabled(done.count == 5)
+                Toggle(small("Don't show this at launch"), isOn: $suppressAtLaunch).disabled(done.count == 7)
             } else {
                 Button(small("Back")) { step = current.previous }
             }
             Spacer()
             switch current {
             case .welcome:
-                Button(small("Let's set it up")) { welcomed = true; step = .microphone }.keyboardShortcut(.defaultAction)
+                Button(small("Let's set it up")) { welcomed = true; step = .model }.keyboardShortcut(.defaultAction)
             case .ready:
                 Button(small("Done")) { finished = true; onDone() }.keyboardShortcut(.defaultAction)
             default:
@@ -302,4 +408,13 @@ struct OnboardingView: View {
         try? relaunch.run()
         NSApp.terminate(nil)
     }
+}
+
+extension Notification.Name {
+    /// The notch peeked or opened (setup's notch step ticks).
+    static let clickBaitNotchShown = Notification.Name("ClickBait.notchShown")
+    /// A voice question was heard; its words are the object (setup's "say hello" ticks).
+    static let clickBaitHeard = Notification.Name("ClickBait.heard")
+    /// Setup's last step asks a suggested question for real; the text is the object.
+    static let clickBaitAskFromSetup = Notification.Name("ClickBait.askFromSetup")
 }

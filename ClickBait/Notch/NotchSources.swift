@@ -553,12 +553,36 @@ final class ShelfStore {
         selectedFiles.remove(url)
     }
 
+    /// Renames a shelved file on disk, in its own folder, and keeps its place on the shelf and
+    /// its selection. A name typed without an extension keeps the file's own; slashes and
+    /// colons become dashes; an empty or unchanged name does nothing.
+    @discardableResult
+    func rename(_ url: URL, to typed: String) throws -> URL {
+        var name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        guard !name.isEmpty, name != url.lastPathComponent, let index = files.firstIndex(of: url) else { return url }
+        if (name as NSString).pathExtension.isEmpty, !url.pathExtension.isEmpty { name += "." + url.pathExtension }
+        let target = url.deletingLastPathComponent().appending(path: name)
+        guard !FileManager.default.fileExists(atPath: target.path) else {
+            throw CocoaError(.fileWriteFileExists, userInfo: [NSLocalizedDescriptionKey: "\(name) already exists there"])
+        }
+        try FileManager.default.moveItem(at: url, to: target)
+        files[index] = target
+        if selectedFiles.remove(url) != nil { selectedFiles.insert(target) }
+        return target
+    }
+
     func toggleSelection(_ url: URL) {
         guard files.contains(url) else { return }
         if !selectedFiles.insert(url).inserted { selectedFiles.remove(url) }
     }
 
     func selectAll() { selectedFiles = Set(files) }
+    /// Adds files to the selection (shelving them first), as a drop on the AirDrop pad does.
+    func select(_ urls: [URL]) {
+        add(urls)
+        selectedFiles.formUnion(urls.filter(files.contains))
+    }
     func clearSelection() { selectedFiles.removeAll() }
 }
 
@@ -568,20 +592,45 @@ final class ShelfStore {
 /// people and devices nearby and does the sending. ClickBait never turns AirDrop or Bluetooth
 /// on; when AirDrop can't send, it says so.
 @MainActor @Observable
-final class AirDropSender: NSObject, NSSharingServiceDelegate {
+final class AirDropSender: NSObject, NSSharingServiceDelegate, NSSharingServicePickerDelegate {
     enum Status: Equatable {
         case idle
         /// The AirDrop window is up, waiting for a recipient.
         case choosing(Int)
-        case sent(Int)
         case failed(String)
     }
 
+    /// The window the AirDrop picker belongs to (the open notch), so it opens in front of it,
+    /// not wherever macOS guesses (it opened under the notch or jumped about; user's report,
+    /// 2026-11-01). Set by the notch.
+    @ObservationIgnored var anchor: (() -> NSWindow?)?
+    /// The pad itself: the AirDrop picker drops down from it, just below the notch, Taby-style
+    /// (user's ask, 2026-11-01), listing the people and devices nearby. Set by the pad.
+    @ObservationIgnored weak var padView: NSView?
+    /// The card under the notch that AirDrop's chooser slides into.
+    @ObservationIgnored private var host: NSWindow?
+    @ObservationIgnored private var sheetEnded: NSObjectProtocol?
+    @ObservationIgnored private var hostLabel: NSTextField?
+    /// What the chooser offers now, and since when; a bigger set waiting for it to close.
+    @ObservationIgnored private var offered: [URL] = []
+    @ObservationIgnored private var offeredAt = Date.distantPast
+    @ObservationIgnored private var queued: [URL]?
+    @ObservationIgnored private var watchdog: Task<Void, Never>?
+
+    /// What a send would hand over: real files still on disk, each once. The pad's count, its
+    /// click and a drop on it all use this, so the number shown is the number sent.
+    static func sendable(_ urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter { $0.isFileURL && FileManager.default.fileExists(atPath: $0.path) && seen.insert($0.standardizedFileURL).inserted }
+    }
+
     private(set) var status: Status = .idle
+    @ObservationIgnored private var pickerItems = 0
     @ObservationIgnored private var service: NSSharingService?
     @ObservationIgnored private var resetTask: Task<Void, Never>?
 
     func send(_ urls: [URL]) {
+        let urls = Self.sendable(urls)
         guard !urls.isEmpty else {
             show(.failed("Drop files here, or add some to the shelf first"))
             return
@@ -591,31 +640,209 @@ final class AirDropSender: NSObject, NSSharingServiceDelegate {
             Log.app.notice("AirDrop: not available")
             return
         }
+        // The same set again within a second is one action firing twice (it opened two choosers).
+        if urls == offered, Date().timeIntervalSince(offeredAt) < 1 { return }
+        // More while the chooser is up: it closes and comes back in the same card with
+        // everything (a new card per drop left an empty one; user's report, 2026-11-01).
+        if let host, let sheet = host.attachedSheet {
+            queued = urls
+            offered = urls
+            offeredAt = Date()
+            hostLabel?.stringValue = Self.label(urls.count)
+            host.endSheet(sheet)
+            return
+        }
+        start(urls, with: service)
+    }
+
+    private func start(_ urls: [URL], with service: NSSharingService) {
         service.delegate = self
         self.service = service
-        NSApp.activate()  // ClickBait has no Dock icon: bring the AirDrop window to the front
+        offered = urls
+        offeredAt = Date()
+        // ClickBait's own card hangs just below the notch, Taby-style, and AirDrop's chooser
+        // slides down inside it as a sheet (it floated wherever macOS put it, even on the other
+        // display; user's report, 2026-11-01). The device list itself is Apple's: there's no
+        // public way to draw it ourselves.
+        if host == nil { showHost(count: urls.count) } else { hostLabel?.stringValue = Self.label(urls.count) }
+        watchHost()
         resetTask?.cancel()
         status = .choosing(urls.count)
         service.perform(withItems: urls)
+        // The pad says "choose who gets…" for as long as the card is up; the card's watchdog
+        // and ✕ put it back to its prompt.
         Log.app.notice("AirDrop: \(urls.count, privacy: .public) file(s) offered")
     }
 
-    nonisolated func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
-        let count = items.count
+    nonisolated func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, delegateFor sharingService: NSSharingService) -> (any NSSharingServiceDelegate)? {
+        MainActor.assumeIsolated { self }
+    }
+
+    /// Picked a device (or AirDrop), or closed the popover without one.
+    nonisolated func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?) {
+        let closed = service == nil
         MainActor.assumeIsolated {
-            show(.sent(count))
-            service = nil
-            Log.app.notice("AirDrop: sent")
+            if closed { show(.idle) }
+            Log.app.notice("AirDrop: \(closed ? "closed without sending" : "picked", privacy: .public)")
         }
+    }
+
+    /// macOS calls this when the picker closes, whether or not anyone was picked, and can't
+    /// say if the files arrived (its own window shows that). So no "sent": back to the prompt.
+    nonisolated func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
+        let which = ObjectIdentifier(sharingService)
+        MainActor.assumeIsolated {
+            guard service.map(ObjectIdentifier.init) == which, queued == nil else { return }  // a replaced chooser
+            show(.idle)
+            service = nil
+            closeHost()
+            Log.app.notice("AirDrop: the picker closed")
+        }
+    }
+
+    nonisolated func sharingService(_ sharingService: NSSharingService, sourceWindowForShareItems items: [Any],
+                                    sharingContentScope: UnsafeMutablePointer<NSSharingService.SharingContentScope>) -> NSWindow? {
+        MainActor.assumeIsolated { host ?? anchor?() }
     }
 
     nonisolated func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         let cancelled = (error as NSError).code == NSUserCancelledError
+        let which = ObjectIdentifier(sharingService)
         MainActor.assumeIsolated {
+            guard service.map(ObjectIdentifier.init) == which, queued == nil else { return }  // a replaced chooser
             show(cancelled ? .idle : .failed("AirDrop didn't send: \(error.localizedDescription)"))
             service = nil
+            closeHost()
             Log.app.notice("AirDrop: \(cancelled ? "cancelled" : "failed", privacy: .public)")
         }
+    }
+
+    /// A black card centred under the notch, a small gap below it, the way Taby hangs its
+    /// panels; AirDrop's sheet attaches to its top. Closed when AirDrop reports back.
+    private func showHost(count: Int) {
+        closeHost()
+        // Placed from the pad that was used: its window is the open notch on this display
+        // (the "main" panel could be another display's; the card landed bottom left). The
+        // island ends a card's padding below the pad; the card starts a small gap under it.
+        let size = NSSize(width: 460, height: 340)
+        let screen: NSScreen, top: CGFloat, midX: CGFloat
+        if let pad = padView, let notch = pad.window, let padScreen = notch.screen {
+            let padRect = notch.convertToScreen(pad.convert(pad.bounds, to: nil))
+            screen = padScreen
+            top = padRect.minY - 10 - 10
+            midX = notch.frame.midX
+        } else {
+            screen = NSScreen.main ?? NSScreen.screens[0]
+            top = screen.visibleFrame.maxY - 10
+            midX = screen.frame.midX
+        }
+        let origin = NSPoint(x: min(max(midX - size.width / 2, screen.frame.minX + 8), screen.frame.maxX - size.width - 8),
+                             y: max(top - size.height, screen.visibleFrame.minY))
+        // A panel that never brings ClickBait forward (activating it jumped to the desktop's
+        // Space, away from the app the user was in; user's report, 2026-11-01), opened on the
+        // Space in front, full-screen apps included, like the notch.
+        let window = HostPanel(contentRect: NSRect(origin: origin, size: size),
+                               styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.becomesKeyOnlyIfNeeded = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        [.closeButton, .miniaturizeButton, .zoomButton].forEach { window.standardWindowButton($0)?.isHidden = true }
+        window.isMovable = false
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .black
+        window.level = .floating
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        let label = NSTextField(labelWithString: Self.label(count))
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = NSColor(white: 0.62, alpha: 1)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView?.addSubview(label)
+        if let content = window.contentView {
+            NSLayoutConstraint.activate([label.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+                                         label.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14)])
+        }
+        // ✕, top right: closes the chooser and the card at once (user's ask, 2026-11-01).
+        let close = NSButton(image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close AirDrop")!,
+                             target: self, action: #selector(closeTapped))
+        close.isBordered = false
+        close.contentTintColor = NSColor(white: 0.55, alpha: 1)
+        close.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView?.addSubview(close)
+        if let content = window.contentView {
+            NSLayoutConstraint.activate([close.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
+                                         close.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10)])
+        }
+        host = window
+        hostLabel = label
+        window.setFrameOrigin(origin)  // titled windows get nudged on creation: put it back
+        window.makeKeyAndOrderFront(nil)
+        // AirDrop's sheet gone (sent, cancelled, or nobody picked): the card goes with it,
+        // even when macOS doesn't call back.
+        sheetEnded = NotificationCenter.default.addObserver(forName: NSWindow.didEndSheetNotification, object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sheetDidEnd() }
+        }
+    }
+
+    @objc private func closeTapped() {
+        queued = nil
+        if let host, let sheet = host.attachedSheet { host.endSheet(sheet) }
+        service = nil
+        show(.idle)
+        closeHost()
+        Log.app.notice("AirDrop: closed with ✕")
+    }
+
+    /// The chooser closed: a queued, bigger set opens in the same card, else the card goes.
+    private func sheetDidEnd() {
+        guard let urls = queued else { return closeHost() }
+        queued = nil
+        guard let service = NSSharingService(named: .sendViaAirDrop), service.canPerform(withItems: urls) else { return closeHost() }
+        start(urls, with: service)
+    }
+
+    /// The card never stays empty for long: AirDrop's chooser can close (or never attach)
+    /// without macOS saying so, which left a blank card up (user's report, 2026-11-01). Twice a
+    /// second: no visible chooser in it for 6 s, nothing queued, and the card goes. Generous,
+    /// as the ✕ badge closes it at once (a short wait closed it mid-send).
+    private func watchHost() {
+        watchdog?.cancel()
+        watchdog = Task { @MainActor [weak self] in
+            var emptySince: Date?
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, let host = self.host else { return }
+                // Attached but hidden counts as gone: after Cancel it lingered, invisible.
+                if host.attachedSheet?.isVisible == true || self.queued != nil { emptySince = nil; continue }
+                let since = emptySince ?? Date()
+                emptySince = since
+                if Date().timeIntervalSince(since) >= 6 {
+                    Log.app.notice("AirDrop: the chooser is gone, closing the card")
+                    self.service = nil
+                    self.show(.idle)
+                    self.closeHost()
+                    return
+                }
+            }
+        }
+    }
+
+    private static func label(_ count: Int) -> String { count == 1 ? "airdrop · 1 file" : "airdrop · \(count) files" }
+
+    /// Takes the keyboard for AirDrop's sheet without activating ClickBait.
+    private final class HostPanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+    }
+
+    private func closeHost() {
+        watchdog?.cancel()
+        watchdog = nil
+        sheetEnded.map(NotificationCenter.default.removeObserver)
+        sheetEnded = nil
+        hostLabel = nil
+        queued = nil
+        offered = []
+        host?.orderOut(nil)
+        host = nil
     }
 
     /// A result shows for 4 s, then the pad is back to its prompt.

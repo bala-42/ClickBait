@@ -18,7 +18,7 @@ struct SetupRenderTests {
         for (index, step) in OnboardingStep.allCases.enumerated() {
             let view = OnboardingView(permissions: permissions, settings: settings, speech: speech, model: model, startAt: step, onDone: {})
             let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)))
-            host.frame = CGRect(x: 0, y: 0, width: 520, height: 480)
+            host.frame = CGRect(origin: .zero, size: OnboardingView.size)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.contentView = host
             window.appearance = NSAppearance(named: .darkAqua)

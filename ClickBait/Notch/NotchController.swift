@@ -178,6 +178,8 @@ final class NotchController {
     func start() {
         WindowLayers.check()
         model.onResize = { [weak self] in self?.place() }
+        shelf.airDrop.anchor = { [weak self] in self?.primaryPanel }
+        ShelfDrop.internetOn = { [weak self] in self?.settings.internet.isOn ?? false }
         watchPointer()
         apply(.enabled(settings.notchPanelEnabled))
         // The screen's real shape can arrive after launch; then the hello.
@@ -230,6 +232,7 @@ final class NotchController {
         // Opening from folded: on the display the pointer is on; it stays there until it folds.
         if before == .collapsed || before == .hidden { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
+        if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
         if after != .expanded, model.chatting { model.chatting = false; model.onChatEnd() }

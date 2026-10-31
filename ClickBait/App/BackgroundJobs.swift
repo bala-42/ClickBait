@@ -16,6 +16,9 @@ final class BackgroundJobs {
         var task: Task<Void, Never>?
         var chatMessages: [ChatModel.Message] = []
         var snipMemory: AskCoordinator.SnipMemory?
+        /// The highlighted text the answer was about: follow-ups in the card get it again (they
+        /// were asked with none, so a card about a document lost the document; 2026-11-01).
+        var documentText: String?
         /// A walkthrough planned in the dock: what "show me!" starts.
         var walkthrough: PendingWalkthrough?
         var progress: JobProgress = .uncounted
@@ -161,6 +164,11 @@ final class BackgroundJobs {
     func setWalkthrough(_ walkthrough: PendingWalkthrough, for id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].walkthrough = walkthrough
+    }
+
+    func setDocumentText(_ text: String?, for id: UUID) {
+        guard let text, let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].documentText = text
     }
 
     func setSnipMemory(_ memory: AskCoordinator.SnipMemory?, for id: UUID) {
