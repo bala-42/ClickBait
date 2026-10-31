@@ -317,11 +317,8 @@ private struct MessageRow: View {
     let message: ChatModel.Message
     @Environment(\.colorSchemeContrast) private var contrast
 
-    /// Inline markdown only (bold, italics, `code`, links); line breaks kept.
-    static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
+    /// Tidied markdown blocks plus inline markdown (bold, italics, `code`, links); line breaks kept.
+    static func markdown(_ text: String) -> AttributedString { MessageFormat.attributedProse(text) }
 
     var body: some View {
         switch message.role {

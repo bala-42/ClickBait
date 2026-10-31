@@ -18,6 +18,44 @@ struct MessageFormatTests {
         ])
     }
 
+    @Test func tidiesMarkdownBlocksTheInlineRendererWouldShowRaw() {
+        let raw = """
+            ## Steps
+            - open **Safari**
+              * then History
+
+            ---
+
+
+            1. clear it
+            a **stray bold
+            """
+        #expect(MessageFormat.tidyProse(raw) == """
+            **Steps**
+            • open **Safari**
+                ◦ then History
+
+            1. clear it
+            a stray bold
+            """)
+        #expect(String(MessageFormat.attributedProse("# Hi").characters) == "Hi")
+    }
+
+    @Test func breaksALongParagraphIntoShortOnes() {
+        let wall = "Safari keeps your history in one place. You can clear it from the History menu at the top of the screen. Pick Clear History, then choose how far back to go. All history removes everything. Your bookmarks stay where they are."
+        let shown = MessageFormat.tidyProse(wall)
+        #expect(shown.components(separatedBy: "\n\n").count == 3)
+        #expect(shown.hasPrefix("Safari keeps your history in one place. You can clear it"))
+        #expect(MessageFormat.tidyProse("Short answer. Two sentences only.") == "Short answer. Two sentences only.")
+    }
+
+    @Test func putsAnInlineListOnLines() {
+        let inline = "To share a page in Safari you have a few options that work well together: 1. click the Share button in the toolbar 2. choose AirDrop, Messages or Mail from the menu 3. pick the person or device you want to send it to and confirm."
+        let lines = MessageFormat.tidyProse(inline).components(separatedBy: "\n")
+        #expect(lines.count == 4)
+        #expect(lines[1].hasPrefix("1. click") && lines[3].hasPrefix("3. pick"))
+    }
+
     @Test func plainTextIsOneSegment() {
         #expect(MessageFormat.segments("Click Share.") == [.text("Click Share.")])
         #expect(MessageFormat.segments("") == [])

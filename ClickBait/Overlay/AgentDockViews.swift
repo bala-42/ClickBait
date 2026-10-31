@@ -207,8 +207,7 @@ struct AgentAnswerText: View {
             ForEach(Array(MessageFormat.segments(text).enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .text(let prose):
-                    Text((try? AttributedString(markdown: prose, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                        ?? AttributedString(prose))
+                    Text(MessageFormat.attributedProse(prose))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(AgentDockStyle.title)
                         .lineSpacing(2)
