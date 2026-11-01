@@ -746,7 +746,10 @@ private struct VoiceSettingsSection: View {
 /// battery, the Photos library, "me", and what it all takes on disk.
 struct VisionMemorySection: View {
     @Bindable var settings: AppSettings
-    @State private var stats: (pictures: Int, described: Int, bytes: Int, active: Bool) = (0, 0, 0, false)
+    /// The last numbers shown: the page opens with them, not 0 of 0 while the index answers
+    /// (it can be busy checking folders; user's report, 2026-11-02: "keeps going back to zero").
+    @MainActor private static var lastStats: (pictures: Int, described: Int, bytes: Int, active: Bool) = (0, 0, 0, false)
+    @State private var stats = VisionMemorySection.lastStats
     @State private var confirmDelete = false
 
     private var pausedNote: String? {
@@ -834,6 +837,7 @@ struct VisionMemorySection: View {
 
     private func reload() async {
         stats = await SearchIndex.shared.stats()
+        Self.lastStats = stats
     }
 
     private func refreshSoon() {
