@@ -41,6 +41,14 @@ final class StudioModel {
     }
     /// A cue was picked: the prompter scrolls to it (its character offset).
     var jump: Int?
+    /// The cue list hangs open under the prompter.
+    var cuesOpen = false {
+        didSet { if cuesOpen != oldValue { PrompterController.shared.resize(to: size) } }
+    }
+    /// Where reading is now (a character offset), for marking the current cue.
+    var readingAt = 0
+    /// The voice's loudness now, 0…1 (drives the ring; 0 without voice-following).
+    var level: Double = 0
     var problem: String?
 
     private enum Key {
@@ -93,8 +101,7 @@ final class StudioModel {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = Self.fileTypes
         panel.message = "Choose a script: text, Markdown, Word, RTF, a web page or a PDF."
-        NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runBelowNotch() == .OK, let url = panel.url else { return }
         load(url)
     }
 
@@ -116,6 +123,7 @@ final class StudioModel {
 
     func goTo(_ cue: Script.Cue) {
         jump = cue.start
+        cuesOpen = false
         if !prompting { startPrompting() }
     }
 

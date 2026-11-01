@@ -95,7 +95,8 @@ public enum NotchPanel {
     /// The shelf (files, AirDrop, note) gets taller cards for its file drop.
     public static let shelfSize = (width: 640.0, height: 176.0)
     /// The Mirror photo booth: a 420 × 236 camera beside its shutter and the last four shots.
-    public static let mirrorSize = (width: 640.0, height: 290.0)
+    /// Studio: its header, the Mirror / Prompter switch on a row below the notch, the content.
+    public static let mirrorSize = (width: 640.0, height: 326.0)
     /// The Ask tab once a conversation starts in it: room for the answer and its code.
     public static let chatSize = (width: 640.0, height: 400.0)
     /// Corners: 22 open, 14 for the small island (wings, peek, HUD).

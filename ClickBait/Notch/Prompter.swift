@@ -55,10 +55,18 @@ final class PrompterController {
         return panel
     }
 
-    /// Top-centred on the screen with the notch (the camera), else the main screen.
+    /// The cue list's room under the prompter, when it's open.
+    static func cueListHeight(_ cues: Int) -> CGFloat {
+        CGFloat(min(max(cues, 1), 6)) * 30 + 44
+    }
+
+    /// Top-centred on the screen with the notch (the camera), else the main screen; taller
+    /// by the cue list when it hangs open below.
     private func place(_ panel: NSPanel, size: CGSize? = nil) {
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
-        let size = size ?? StudioModel.shared.size
+        let studio = StudioModel.shared
+        var size = size ?? studio.size
+        if studio.cuesOpen { size.height += 8 + Self.cueListHeight(studio.script.cues.count) }
         let frame = NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height)
         panel.setFrame(frame, display: true)
     }
@@ -91,17 +99,31 @@ struct PrompterView: View {
     }
 
     var body: some View {
+        VStack(spacing: 8) {
+            prompter
+            if studio.cuesOpen {
+                CueList(studio: studio)
+                    .frame(width: min(studio.size.width, 420))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .frame(width: studio.size.width, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: studio.cuesOpen)
+    }
+
+    private var prompter: some View {
         ZStack(alignment: .bottom) {
             Self.shape.fill(Color.black)
-            QuicksilverArc(level: studio.playing ? 0.35 : 0.18, reduceMotion: reduceMotion)
-                .frame(width: studio.size.width * 0.8, height: 70)
-                .offset(y: 34)
+            QuicksilverRing(level: max(studio.level, studio.playing ? 0.25 : 0.1), reduceMotion: reduceMotion)
+                .frame(width: studio.size.width, height: studio.size.height)
                 .clipShape(Self.shape)
                 .allowsHitTesting(false)
             text
-            if hovering { controls.transition(.opacity) }
+            if hovering || studio.cuesOpen { controls.transition(.opacity) }
         }
         .frame(width: studio.size.width, height: studio.size.height)
+        .clipShape(Self.shape)  // the controls' dark band keeps the rounded corners
         .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         .onChange(of: studio.jump) { _, target in
             guard let target else { return }
@@ -136,6 +158,10 @@ struct PrompterView: View {
             .coordinateSpace(name: "script")
             .offset(y: -studio.offset)
             .onChange(of: timeline.date) { _, now in advance(to: now) }
+            .onChange(of: studio.offset) { _, offset in
+                // The line at the top of what's showing is where reading is.
+                studio.readingAt = lines.last(where: { (lineTops[$0.start] ?? 0) <= offset + 8 })?.start ?? 0
+            }
         }
         .onPreferenceChange(LineTops.self) { lineTops = $0 }
         .onPreferenceChange(ContentHeight.self) { contentHeight = $0; studio.maxOffset = max(0, $0 - 20) }
@@ -168,12 +194,19 @@ struct PrompterView: View {
             PrompterButton(symbol: "tortoise.fill", help: "Slower") { studio.speed = max(6, studio.speed - 6) }
             PrompterButton(symbol: "hare.fill", help: "Faster") { studio.speed = min(120, studio.speed + 6) }
             if !studio.script.cues.isEmpty {
-                Menu {
-                    ForEach(studio.script.cues) { cue in Button(cue.title) { studio.goTo(cue) } }
-                } label: {
-                    Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
+                // The cue list hangs below the prompter (like Moody's), not a menu.
+                Button { studio.cuesOpen.toggle() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
+                        Text("Cues").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: studio.cuesOpen ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9).frame(height: 24)
+                    .background(Capsule().fill(studio.cuesOpen ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
+                    .contentShape(Capsule())
                 }
-                .menuStyle(.button).menuIndicator(.hidden).buttonStyle(PrompterButtonStyle()).fixedSize()
+                .buttonStyle(.plain)
                 .help("Jump to a cue")
             }
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
@@ -197,6 +230,9 @@ struct PrompterView: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
+        .padding(.top, 18)
+        // A dark band behind them, so they don't sit on the text.
+        .background(LinearGradient(colors: [.clear, .black.opacity(0.85), .black], startPoint: .top, endPoint: .bottom))
     }
 }
 
@@ -211,38 +247,85 @@ enum Quicksilver {
     static let fill = LinearGradient(colors: [bright, royal, deep], startPoint: .top, endPoint: .bottom)
 }
 
-/// The voice glow, in quicksilver blue (like Moody's ring, built afresh): a bright core,
-/// vibrant royal blue, deep blue at the edges, with a highlight sliding across it like light
-/// on liquid metal. `level` 0…1 (resting, or the voice's loudness with voice-following).
-struct QuicksilverArc: View {
+/// The voice ring, in quicksilver blue (user's ask, 2026-11-01: "the same ring thing that
+/// Moody has", not a plain gradient; built afresh): a ring of light whose top arc rises from
+/// the prompter's bottom edge — a wide soft halo, a bright rim, a faint inner wash — with a
+/// metallic highlight running round it. `level` 0…1: resting, or the voice's loudness; the
+/// ring swells, brightens and its shine runs faster as you speak.
+struct QuicksilverRing: View {
     let level: Double
     let reduceMotion: Bool
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let sweep = reduceMotion ? 0.5 : (sin(t * (0.6 + level * 2)) + 1) / 2
-            // Fades to nothing at its own edge, so no rim shows even unblurred.
-            let glow = EllipticalGradient(stops: [.init(color: Quicksilver.core.opacity(0.95), location: 0),
-                                                  .init(color: Quicksilver.bright.opacity(0.9), location: 0.25),
-                                                  .init(color: Quicksilver.royal.opacity(0.6), location: 0.55),
-                                                  .init(color: Quicksilver.deep.opacity(0.3), location: 0.8),
-                                                  .init(color: .clear, location: 1)],
-                                          center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
-            Ellipse()
-                .fill(glow)
-                .overlay(
-                    Ellipse().fill(LinearGradient(stops: [.init(color: .clear, location: max(0, sweep - 0.18)),
-                                                          .init(color: .white.opacity(0.7), location: sweep),
-                                                          .init(color: .clear, location: min(1, sweep + 0.18))],
-                                                  startPoint: .leading, endPoint: .trailing))
-                        .mask(Ellipse().fill(EllipticalGradient(colors: [.white, .clear], center: .center, endRadiusFraction: 0.5)))
-                        .blendMode(.screen)
-                )
-                .scaleEffect(x: 1, y: 0.6 + level * 0.8, anchor: .bottom)
-                .blur(radius: 14)
-                .opacity(0.25 + level * 0.75)
+        GeometryReader { box in
+            TimelineView(.animation(paused: reduceMotion)) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let spin = reduceMotion ? 0 : t * (25 + level * 140)
+                let diameter = box.size.width * 0.62 * (1 + level * 0.12)
+                // Bright all round (royal blue at its darkest), with two metallic highlights.
+                let rim = AngularGradient(colors: [Quicksilver.royal, Quicksilver.bright, Quicksilver.core, Quicksilver.bright,
+                                                   Quicksilver.royal, Quicksilver.bright, Quicksilver.core, Quicksilver.bright,
+                                                   Quicksilver.royal],
+                                          center: .center, angle: .degrees(spin))
+                ZStack {
+                    // The inner wash: the ring lights what's inside it.
+                    Circle().fill(RadialGradient(colors: [.clear, Quicksilver.royal.opacity(0.05 + level * 0.12)],
+                                                 center: .center, startRadius: diameter * 0.3, endRadius: diameter * 0.5))
+                    // The halo: wide and soft.
+                    Circle().stroke(rim, lineWidth: 14 + level * 18).blur(radius: 14 + level * 10).opacity(0.45 + level * 0.4)
+                    // The rim: thin and bright.
+                    Circle().stroke(rim, lineWidth: 2 + level * 2).blur(radius: 0.5)
+                    Circle().stroke(Quicksilver.core.opacity(0.35 + level * 0.4), lineWidth: 0.8)
+                }
+                .frame(width: diameter, height: diameter)
+                // Its top arc shows above the bottom edge, higher as the voice is louder.
+                .position(x: box.size.width / 2, y: box.size.height + diameter / 2 - (22 + level * 26))
+                .opacity(0.55 + level * 0.45)
+            }
         }
+    }
+}
+
+/// The cues, hanging under the prompter: numbered, the one being read marked in quicksilver
+/// blue; a click jumps there and folds the list.
+private struct CueList: View {
+    @Bindable var studio: StudioModel
+
+    var body: some View {
+        let current = studio.script.cue(at: studio.readingAt)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Cues").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text("\(studio.script.cues.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
+            }
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 2) {
+                    ForEach(Array(studio.script.cues.enumerated()), id: \.element.id) { index, cue in
+                        Button { studio.goTo(cue) } label: {
+                            HStack(spacing: 10) {
+                                Text("\(index + 1)").font(.system(size: 11, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(cue == current ? .white : .white.opacity(0.4))
+                                    .frame(width: 18, alignment: .trailing)
+                                Text(cue.title).font(.system(size: 13, weight: cue == current ? .semibold : .regular))
+                                    .foregroundStyle(.white.opacity(cue == current ? 1 : 0.8)).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).frame(height: 28)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(cue == current ? AnyShapeStyle(Quicksilver.fill.opacity(0.85)) : AnyShapeStyle(Color.clear)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4).padding(.bottom, 6)
+            }
+        }
+        .frame(height: PrompterController.cueListHeight(studio.script.cues.count))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.black))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
 }
 

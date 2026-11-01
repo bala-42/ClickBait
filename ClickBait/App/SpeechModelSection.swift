@@ -94,8 +94,7 @@ struct SpeechModelSection: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.folder, .zip]
-        NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runBelowNotch() == .OK, let url = panel.url else { return }
         speech.importModel(from: url)
     }
 

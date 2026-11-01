@@ -237,8 +237,6 @@ struct PhotoBooth: View {
                 }
                 Text("Studio").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                StudioSwitch(mode: $studio.mode)
-                Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
                 }
@@ -248,6 +246,10 @@ struct PhotoBooth: View {
             .foregroundStyle(NotchPalette.text)
             .padding(.horizontal, 16)
             .frame(height: 26)
+            // Below the notch, centred (in the header it sat under the camera housing: user's
+            // report, 2026-11-01); in reach once the notch has opened.
+            StudioSwitch(mode: $studio.mode)
+                .frame(height: 28)
             if studio.mode == .mirror {
                 HStack(alignment: .top, spacing: 10) {
                     viewfinder.frame(width: 420, height: 236)
