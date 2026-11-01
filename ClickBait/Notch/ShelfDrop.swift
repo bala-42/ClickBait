@@ -120,12 +120,26 @@ enum ShelfDrop {
            let url = try? await fileURL(from: provider), FileManager.default.fileExists(atPath: url.path) {
             return url
         }
-        // A file in the drag (promised, or carried as data): images, PDFs, video, audio, anything
-        // that isn't text or a link.
-        if let type = provider.registeredTypeIdentifiers.compactMap(UTType.init).first(where: {
-            $0.conforms(to: .data) && !$0.conforms(to: .text) && !$0.conforms(to: .url)
-        }) {
-            return try await copy(provider, type: type)
+        // A file in the drag (promised, or carried as data): the picture first, then PDFs,
+        // video, audio, anything that isn't text or a link, each tried until one works. A
+        // browser offers several for one image, and the first was often its own drag type or
+        // a web archive, so web images often added nothing (user's report, 2026-11-01).
+        let offered = provider.registeredTypeIdentifiers.compactMap(UTType.init)
+        let files = offered.filter { $0.conforms(to: .data) && !$0.conforms(to: .text) && !$0.conforms(to: .url) }
+        let rank: (UTType) -> Int = { type in
+            if type.conforms(to: .image) { return 0 }
+            if type.conforms(to: .pdf) || type.conforms(to: .movie) || type.conforms(to: .audio) { return 1 }
+            if type.identifier.hasPrefix("dyn.") || type.identifier.contains("chromium") || type == .webArchive { return 3 }
+            return 2
+        }
+        for type in files.sorted(by: { rank($0) < rank($1) }) {
+            if let url = try? await copy(provider, type: type) { return url }
+            if let url = try? await save(provider, type: type) { return url }  // carried as data, not a file
+        }
+        // Last, the picture itself (an image the browser hands over only as an image object).
+        if provider.canLoadObject(ofClass: NSImage.self), let url = try? await savePicture(provider) { return url }
+        if !files.isEmpty {
+            Log.app.notice("Shelf drop: no file from \(provider.registeredTypeIdentifiers.joined(separator: ", "), privacy: .public)")
         }
         if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
            let link = try? await webURL(from: provider), let scheme = link.scheme?.lowercased(), scheme == "https" || scheme == "http" {
@@ -155,6 +169,42 @@ enum ShelfDrop {
     }
 
     /// The provider writes its file somewhere temporary that's gone once it calls back: copy it out.
+    /// The item's bytes for `type`, written to a file named from the drag.
+    private static func save(_ provider: NSItemProvider, type: UTType) async throws -> URL {
+        let suggested = provider.suggestedName
+        let data: Data = try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+                if let data, !data.isEmpty { continuation.resume(returning: data) } else {
+                    continuation.resume(throwing: error ?? Refusal(message: "couldn't add that"))
+                }
+            }
+        }
+        var name = suggested ?? (type.conforms(to: .image) ? "picture" : "file")
+        if (name as NSString).pathExtension.isEmpty { name += "." + (type.preferredFilenameExtension ?? "dat") }
+        let target = unique(name)
+        try data.write(to: target)
+        return target
+    }
+
+    /// An image object as a PNG file.
+    private static func savePicture(_ provider: NSItemProvider) async throws -> URL {
+        let suggested = provider.suggestedName
+        let png: Data = try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadObject(ofClass: NSImage.self) { object, error in
+                guard let image = object as? NSImage, let tiff = image.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                    continuation.resume(throwing: error ?? Refusal(message: "couldn't add that"))
+                    return
+                }
+                continuation.resume(returning: png)
+            }
+        }
+        let base = suggested.map { ($0 as NSString).deletingPathExtension } ?? "picture"
+        let target = unique(base + ".png")
+        try png.write(to: target)
+        return target
+    }
+
     private static func copy(_ provider: NSItemProvider, type: UTType) async throws -> URL {
         let suggested = provider.suggestedName
         return try await withCheckedThrowingContinuation { continuation in
