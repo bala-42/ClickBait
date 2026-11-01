@@ -58,7 +58,14 @@ final class PrompterController {
 
     /// The cue list's room under the prompter, when it's open.
     static func cueListHeight(_ cues: Int) -> CGFloat {
-        CGFloat(min(max(cues, 1), 6)) * 30 + 44
+        CGFloat(min(max(cues, 1), 6)) * 30 + 16
+    }
+
+    /// Room under the prompter: the cue bar whenever there are cues, and the list when open.
+    static func below(_ studio: StudioModel) -> CGFloat {
+        let cues = studio.script.cues.count
+        guard cues > 0 else { return 0 }
+        return 6 + CueBar.height + (studio.cuesOpen ? 6 + cueListHeight(cues) : 0)
     }
 
     /// Top-centred on the screen with the notch (the camera), else the main screen; floating,
@@ -67,7 +74,7 @@ final class PrompterController {
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
         let studio = StudioModel.shared
         var size = size ?? studio.size
-        if studio.cuesOpen { size.height += 8 + Self.cueListHeight(studio.script.cues.count) }
+        size.height += Self.below(studio)
         var top = CGPoint(x: screen.frame.midX, y: screen.frame.maxY)
         if studio.floating {
             top = studio.floatAt ?? CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY - 60)
@@ -121,12 +128,17 @@ struct PrompterView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             prompter
-            if studio.cuesOpen {
-                CueList(studio: studio)
-                    .frame(width: min(studio.size.width, 420))
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            // Like Moody's: a small bar under the prompter — previous, "2 / 7" (the list), next —
+            // and the list hanging under it.
+            if !studio.script.cues.isEmpty, studio.shown {
+                CueBar(studio: studio)
+                if studio.cuesOpen {
+                    CueList(studio: studio)
+                        .frame(width: min(studio.size.width, 360))
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
         }
         .frame(width: studio.size.width, alignment: .top)
@@ -253,8 +265,8 @@ struct PrompterView: View {
                 if studio.following { studio.stopFollowing() } else { studio.startFollowing() }
             } label: {
                 Image(systemName: studio.following ? "waveform" : "mic.fill").font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white).frame(width: 24, height: 24)
-                    .background(Circle().fill(studio.following ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
+                    .foregroundStyle(studio.following ? Color.black : .white).frame(width: 26, height: 26)
+                    .background(Circle().fill(studio.following ? MoodyLook.cream : MoodyLook.slate))
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -266,19 +278,6 @@ struct PrompterView: View {
             }
             PrompterButton(symbol: "tortoise.fill", help: "Slower") { studio.speed = max(6, studio.speed - 6) }
             PrompterButton(symbol: "hare.fill", help: "Faster") { studio.speed = min(120, studio.speed + 6) }
-            if !studio.script.cues.isEmpty {
-                // The cue list hangs below the prompter (like Moody's), not a menu.
-                // Just the icon (user's ask); Studio blue while the list is open.
-                Button { studio.cuesOpen.toggle() } label: {
-                    Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white).frame(width: 24, height: 24)
-                        .background(Circle().fill(studio.cuesOpen ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Cues: jump to a section")
-                .accessibilityLabel("Cues")
-            }
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }
             Spacer()
@@ -418,42 +417,42 @@ private struct ResizeEdges: View {
 /// blue; a click jumps there and folds the list.
 private struct CueList: View {
     @Bindable var studio: StudioModel
+    @State private var hovered: Int?
 
     var body: some View {
+        let cues = studio.script.cues
         let current = studio.script.cue(atLine: studio.readingLine)
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text("Cues").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
-                Spacer()
-                Text("\(studio.script.cues.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
-            }
-            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 2) {
-                    ForEach(Array(studio.script.cues.enumerated()), id: \.element.id) { index, cue in
-                        Button { studio.goTo(cue) } label: {
-                            HStack(spacing: 10) {
-                                Text("\(index + 1)").font(.system(size: 11, weight: .bold).monospacedDigit())
-                                    .foregroundStyle(cue == current ? .white : .white.opacity(0.4))
-                                    .frame(width: 18, alignment: .trailing)
-                                Text(cue.title).font(.system(size: 13, weight: cue == current ? .semibold : .regular))
-                                    .foregroundStyle(.white.opacity(cue == current ? 1 : 0.8)).lineLimit(1)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(cue == current ? AnyShapeStyle(Quicksilver.fill.opacity(0.85)) : AnyShapeStyle(Color.clear)))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
+        let rows = VStack(spacing: 2) {
+            ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
+                let chosen = cue == current
+                Button { studio.goTo(cue) } label: {
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)").font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(chosen ? Color.black.opacity(0.55) : MoodyLook.quiet)
+                            .frame(width: 18, alignment: .trailing)
+                        Text(cue.title).font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(chosen ? Color.black : .white).lineLimit(1)
+                        Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, 10).frame(height: 28)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(chosen ? MoodyLook.cream : hovered == index ? MoodyLook.row : Color.clear))
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 4).padding(.bottom, 6)
+                .buttonStyle(.plain)
+                .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             }
         }
-        .frame(height: PrompterController.cueListHeight(studio.script.cues.count))
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.black))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .padding(6)
+        // Up to six, no scroll view: in the notch (no focus of its own) a scroll view swallowed
+        // the first click, and cues couldn't be picked (user's report, 2026-11-01).
+        Group {
+            if cues.count <= 6 { rows } else { ScrollView(.vertical, showsIndicators: false) { rows } }
+        }
+        .frame(height: PrompterController.cueListHeight(cues.count))
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(MoodyLook.card))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .onHover { if $0 { ShelfDrop.focusNotch() } }
     }
 }
 
@@ -470,13 +469,69 @@ private struct PrompterButton: View {
     }
 }
 
+/// The prompter's black and white (user's ask, 2026-11-01: "white and black like Moody", from
+/// its site): dark slate circles with white icons; a chosen cue, or a button that's on, inverted
+/// to cream with black; a charcoal cue list in a monospaced face.
+enum MoodyLook {
+    static let slate = Color(red: 0.16, green: 0.19, blue: 0.21)
+    static let slatePressed = Color(red: 0.24, green: 0.28, blue: 0.31)
+    static let card = Color(red: 0.11, green: 0.11, blue: 0.12)
+    static let row = Color.white.opacity(0.09)
+    static let cream = Color(red: 0.95, green: 0.93, blue: 0.87)
+    static let quiet = Color.white.opacity(0.45)
+}
+
 private struct PrompterButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(.white)
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(Color.white.opacity(configuration.isPressed ? 0.3 : 0.14)))
+            .frame(width: 26, height: 26)
+            .background(Circle().fill(configuration.isPressed ? MoodyLook.slatePressed : MoodyLook.slate))
             .contentShape(Circle())
+    }
+}
+
+/// Under the prompter: ⌃ previous cue, "2 / 7" (opens and closes the list), ⌄ next cue.
+struct CueBar: View {
+    @Bindable var studio: StudioModel
+    static let height: CGFloat = 30
+
+    var body: some View {
+        let cues = studio.script.cues
+        let current = studio.script.cue(atLine: studio.readingLine).flatMap { cues.firstIndex(of: $0) } ?? 0
+        HStack(spacing: 4) {
+            Button { studio.nextCue(-1) } label: { Image(systemName: "chevron.up").font(.system(size: 10, weight: .bold)) }
+                .buttonStyle(CueBarButton()).disabled(current == 0).help("Previous cue (⌃⌘↑)")
+            Button { studio.cuesOpen.toggle() } label: {
+                HStack(spacing: 4) {
+                    Text("\(current + 1)/\(cues.count)").font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    Image(systemName: studio.cuesOpen ? "chevron.down" : "chevron.up").font(.system(size: 8, weight: .bold))
+                }
+                .padding(.horizontal, 6)
+            }
+            .buttonStyle(CueBarButton(wide: true, on: studio.cuesOpen)).help(studio.cuesOpen ? "Close the cues" : "All cues")
+            Button { studio.nextCue(1) } label: { Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)) }
+                .buttonStyle(CueBarButton()).disabled(current >= cues.count - 1).help("Next cue (⌃⌘↓)")
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.black))
+        .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .frame(height: Self.height)
+        .onHover { if $0 { ShelfDrop.focusNotch() } }  // the first click lands (the notch takes no focus by itself)
+    }
+}
+
+private struct CueBarButton: ButtonStyle {
+    var wide = false
+    var on = false
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(on ? Color.black : .white.opacity(enabled ? 1 : 0.3))
+            .frame(minWidth: wide ? 52 : 24, minHeight: 24)
+            .background(Capsule().fill(on ? MoodyLook.cream : configuration.isPressed ? MoodyLook.slatePressed : MoodyLook.slate))
+            .contentShape(Capsule())
     }
 }
 

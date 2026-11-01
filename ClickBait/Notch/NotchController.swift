@@ -226,8 +226,7 @@ final class NotchController {
     static var prompter: (width: Double, height: Double)? {
         let studio = StudioModel.shared
         guard studio.inNotch else { return nil }
-        let cues = studio.cuesOpen ? 8 + PrompterController.cueListHeight(studio.script.cues.count) : 0
-        return (Double(studio.size.width), Double(studio.size.height + cues))
+        return (Double(studio.size.width), Double(studio.size.height + PrompterController.below(studio)))
     }
 
     /// Studio started or stopped prompting, or resized it: the notch springs to the new shape;
