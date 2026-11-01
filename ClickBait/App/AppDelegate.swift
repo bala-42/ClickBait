@@ -238,8 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.hostedInNotch = true
             notch.model.chatting = true
             coordinator.startTypedChat(trigger: "notch")
-            chat.model.draft = text
-            chat.model.send()
+            chat.tuck()
+            coordinator.sendTyped(text)
         }
         notch.model.onChatEnd = { [weak self] in
             guard let self else { return }
@@ -586,6 +586,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             // Out of the way the moment Enter is pressed, before thinking starts (it used to
             // wait ~1–2 s, until the message had been sorted).
+            // Typed into the notch's kept history after its chat ended: start the chat first (one
+            // conversation, whichever way it's opened).
+            if !coordinator.chatShown, notch.model.showsChat {
+                notch.model.ask(text)
+                return
+            }
             chat.tuck()
             coordinator.sendTyped(text)
             // Refused without a word (busy, nothing to send to): back at once.
@@ -603,7 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         chat.model.onSaveAnswer = { [weak self] in
             guard let self else { return }
-            let turns: [(role: SavedAnswer.Role, text: String)] = chat.model.messages.compactMap { message in
+            let turns: [(role: SavedAnswer.Role, text: String)] = chat.model.current.compactMap { message in
                 switch message.role {
                 case .user: (.user, message.text)
                 case .assistant: (.assistant, message.text)

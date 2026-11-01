@@ -421,7 +421,7 @@ private struct OpenNotch: View {
                 switch model.tab {
                 case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .ask where model.chatting:
+                case .ask where model.showsChat:
                     if let chat = model.chat { ChatView(model: chat, inNotch: true).padding(.bottom, 2).transition(.opacity) }
                 case .ask:
                     AskCard(model: model)

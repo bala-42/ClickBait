@@ -175,6 +175,10 @@ struct ChatView: View {
 
     @ViewBuilder private var closeButton: some View {
         if inNotch {
+            // Clear forgets the session's history; ✕ only puts it away (it's there next time).
+            if !model.messages.isEmpty, !model.isBusy {
+                NotchHeaderIcon(symbol: "trash", label: "Clear the conversation") { model.clearHistory(); model.onClose?() }
+            }
             NotchHeaderIcon(symbol: "xmark", label: "Close chat") { model.onClose?() }
         } else {
             gelCloseButton

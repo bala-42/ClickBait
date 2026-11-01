@@ -100,7 +100,8 @@ final class NotchController {
         /// The notch folded on its conversation: the app delegate ends it.
         var onChatEnd: @MainActor () -> Void = {}
         /// Showing the Ask tab's conversation.
-        var showsChat: Bool { tab == .ask && chatting }
+        /// Also the conversation from before, kept like the shelf's files until cleared or quit.
+        var showsChat: Bool { tab == .ask && (chatting || chat?.messages.isEmpty == false) }
         /// The pointer is near the notch: the folded handle shows.
         var nearNotch = false
         /// The display the notch is open on (peek, open, a HUD); every other display's panel

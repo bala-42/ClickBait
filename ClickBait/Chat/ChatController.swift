@@ -65,7 +65,7 @@ final class ChatController {
         setHome()
         homePoint = logoCenter
         trace("open\(tucked ? " (tucked)" : "") at \(Int(logoCenter.x)),\(Int(logoCenter.y))")
-        model.messages = []
+        model.startSession()
         model.draft = ""
         model.isBusy = false
         model.isClosing = false
@@ -107,7 +107,9 @@ final class ChatController {
     /// Hides the current chat without treating it as a user close. Its messages are
     /// handed to a background capsule and restored if the user returns to that job.
     func stash() -> [ChatModel.Message] {
-        let messages = model.messages
+        // Only this chat's messages go to the dock; the history stays.
+        let messages = model.current
+        model.messages.removeLast(messages.count)
         closeNow()
         model.isClosing = false
         // Its answer goes on in the dock: this chat isn't waiting any more. Left busy, the next
@@ -119,7 +121,7 @@ final class ChatController {
     /// Restores a stashed conversation at the companion, belonging to its original app.
     func restore(_ messages: [ChatModel.Message], logoAt logoCenter: CGPoint, homeApp: NSRunningApplication?) {
         open(logoAt: logoCenter)
-        model.messages = messages
+        model.messages += messages
         model.isBusy = false
         if let homeApp {
             homePID = homeApp.processIdentifier
