@@ -229,7 +229,11 @@ public enum SmartSearch {
             let words = wordMatch(request, entry.item) + (request.related.contains(where: haystack.contains) ? 0.35 : 0)
             let you: Float = request.wantsMe ? (entry.item.hasYou == true ? 0.3 : -0.1) : 0
             let kindBonus: Float = request.kind == .any || request.kind == entry.item.kind ? 0.05 : -0.15
-            let spotlight: Float = boosted.contains(entry.item.id) ? 0.3 : 0
+            // A name match says little about what a picture or video shows when it hasn't been
+            // described yet: "girl shampooing her own hair" put ten undescribed "shampoo_input"
+            // videos above the two described as a person washing their hair (2026-11-02).
+            let nameOnly = entry.item.kind.isVisual && entry.item.caption == nil
+            let spotlight: Float = boosted.contains(entry.item.id) ? (nameOnly ? 0.1 : 0.3) : 0
             return (entry.item, 0.7 * meaning + 0.3 * words + kindBonus + spotlight + you)
         }
         // Good on its own (0.4), or close to the best: "within 0.25 of the best" alone left one

@@ -29,7 +29,7 @@ public enum VisionMemory {
     /// 3,000 captions said "photo", 5 "painting": user's report, 2026-11-01).
     public static func captionPrompt(documentLike: Bool, video: Bool = false) -> String {
         if video {
-            return "This is a frame from the middle of a video. In one plain sentence of at most 22 words, start with \"A video of\", then who or what is in it, what's happening, where. No preamble."
+            return "These are three moments from one video, left to right. In one plain sentence of at most 22 words, start with \"A video of\", then who or what is in it, what's happening, where. Describe only what is clearly visible in the frames; don't guess. People are often seen from behind or only partly: arms, hands or a head of hair belong to a person, not a doll or mannequin, unless it is clearly a toy. No preamble."
         }
         return documentLike
             ? "In one plain sentence of at most 25 words, start with what kind of thing this is (a screenshot, chart, slide, receipt, code, form, web page, diagram…), then its title or subject and its key details. No preamble."
@@ -38,6 +38,8 @@ public enum VisionMemory {
 
     /// Which caption style a caption was written in: older ones are redone in the background.
     public static let captionStyle = "kinds-1"
+    /// Videos' own style: "frames3-1", described from three moments (`SearchIndex.threeFrames`).
+    public static let videoCaptionStyle = "frames3-1"
 
     /// Folders that hold data, not pictures someone would look for: datasets, code
     /// dependencies, build output (2,643 of the user's 3,000 indexed pictures were 16-pixel
@@ -85,15 +87,29 @@ public enum VisionMemory {
         var result: [SmartSearch.Item] = []
         var firstIndex: [String: Int] = [:]
         for item in items {
-            guard let key = item.contentKey else { result.append(item); continue }
-            if let index = firstIndex[key] {
+            // Same contents, or versions of one file: ClickBait's smaller copies and conversions
+            // ("x (smaller).mov", "x (smaller) 2.mov", "x.gif" with "x.MP4") — they filled a
+            // search, 2026-11-02. Either key joins the result already listed.
+            let keys = [item.contentKey.map { "content:" + $0 }, variantKey(item.file)].compactMap { $0 }
+            if let index = keys.lazy.compactMap({ firstIndex[$0] }).first {
                 if let file = item.file { result[index].copies = (result[index].copies ?? []) + [file] }
+                for key in keys { firstIndex[key] = index }
             } else {
-                firstIndex[key] = result.count
+                for key in keys { firstIndex[key] = result.count }
                 result.append(item)
             }
         }
         return result
+    }
+
+    /// Folder and name without its extension and ClickBait's " (smaller)" and copy number:
+    /// "…/shampoo_input (12) (smaller) 2.mov" and "…/shampoo_input (12).MP4" →
+    /// "…/shampoo_input (12)". Videos and pictures only (a report's .docx and .pdf stay apart).
+    public static func variantKey(_ path: String?) -> String? {
+        guard let path, SmartSearch.Kind.of(path).isVisual else { return nil }
+        var stem = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        if let range = stem.range(of: #"( \(smaller\))+( \d+)?$"#, options: .regularExpression) { stem = String(stem[..<range.lowerBound]) }
+        return "variant:" + (path as NSString).deletingLastPathComponent.lowercased() + "/" + stem.lowercased()
     }
 
     /// A meaning vector as half-precision bytes (2 per number, 6× smaller than JSON text).

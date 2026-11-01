@@ -78,4 +78,16 @@ struct VisionMemoryPictureTests {
         #expect(SmartSearch.Kind.video.isVisual && !SmartSearch.Kind.note.isVisual)
         #expect(VisionMemory.captionPrompt(documentLike: false, video: true).contains("A video of"))
     }
+
+    @Test func smallerVersionsAreOneResult() {
+        #expect(VisionMemory.variantKey("/x/shampoo_input (12) (smaller) 2.mov") == VisionMemory.variantKey("/x/shampoo_input (12) (smaller).mov"))
+        #expect(VisionMemory.variantKey("/x/shampoo_input (12).MP4") == VisionMemory.variantKey("/x/shampoo_input (12) (smaller).mov"))
+        #expect(VisionMemory.variantKey("/x/report.pdf") == nil)
+        #expect(VisionMemory.variantKey("/x/shampoo_input (12) (smaller).mov") != VisionMemory.variantKey("/x/shampoo_input (13) (smaller).mov"))
+        let items = ["/x/a (smaller).mov", "/x/a (smaller) 2.mov", "/x/b.mov"].map {
+            SmartSearch.Item(id: $0, kind: .video, title: ($0 as NSString).lastPathComponent, place: "x", text: "", file: $0)
+        }
+        let collapsed = VisionMemory.collapseCopies(items)
+        #expect(collapsed.count == 2 && collapsed[0].copies == ["/x/a (smaller) 2.mov"])
+    }
 }

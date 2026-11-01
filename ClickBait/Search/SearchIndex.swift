@@ -102,8 +102,9 @@ actor SearchIndex {
         // Files open in apps right now (user's report, 2026-11-02: "I have that video open and
         // the search did not give me it"): always in the running, ahead of their peers.
         var open: [SmartSearch.Item] = []
+        var shown: [URL] = []
         if request.kind != .note, request.kind != .reminder {
-            let shown = await MainActor.run(body: { AXInspector.openDocuments() })
+            shown = await MainActor.run(body: { AXInspector.openDocuments() })
             for url in shown + Self.recentlyOpened().filter { !shown.contains($0) }
             where !VisionMemory.isExcluded(url.path, excluded: options.excluded) {
                 let id = "file:\(url.path)"
@@ -142,8 +143,9 @@ actor SearchIndex {
         let present = candidates.filter { item in item.file.map { FileManager.default.fileExists(atPath: $0) } ?? true }
         // Every good match, to scroll through (user: "why is 8 the limit?"), up to 60.
         var ranked = Array(VisionMemory.collapseCopies(present).prefix(60))
-        // A match that's open (or just opened) is most likely the one meant: first.
-        let openIDs = Set(open.map(\.id))
+        // A match showing on screen right now is most likely the one meant: first. (Just opened
+        // ones are only boosted: test files opened an hour ago took the top of a search.)
+        let openIDs = Set(open.filter { item in shown.contains { $0.path == item.file } }.map(\.id))
         let openOrder = Dictionary(open.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         ranked = ranked.filter { openIDs.contains($0.id) }.sorted { openOrder[$0.id, default: 0] < openOrder[$1.id, default: 0] }
             + ranked.filter { !openIDs.contains($0.id) }
@@ -154,6 +156,10 @@ actor SearchIndex {
             ranked = first + ranked.filter { item in !first.contains { $0.id == item.id } }
         }
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
+        #if DEBUG
+        // What was asked and found, to judge relevance from the log (debug builds only).
+        Log.ask.notice("Smart search terms: \(request.kind.rawValue, privacy: .public) [\(request.terms.joined(separator: " "), privacy: .public)] related [\(request.related.joined(separator: " "), privacy: .public)] → \(ranked.prefix(20).map { "\($0.title) {\(($0.caption ?? $0.text).prefix(60))}" }.joined(separator: " | "), privacy: .public)")
+        #endif
         return ranked
     }
 
@@ -249,7 +255,7 @@ actor SearchIndex {
                 guard item.kind.isVisual, item.userEdited != true, item.sensitive != true else { return false }
                 if !options.screenshots, VisionMemory.isDocumentLike(labels: item.text, name: item.title) { return false }
                 // Older captions (another brain, or before captions named the kind) are redone.
-                return item.caption == nil || item.captionModel != Self.captionTag(options.brain)
+                return item.caption == nil || !Self.isCurrent(item, brain: options.brain)
             }
             let ordered = waiting.filter { fresh[$0].caption == nil } + waiting.filter { fresh[$0].caption != nil }
             var described: [String: (String, String)] = [:]
@@ -261,9 +267,12 @@ actor SearchIndex {
                 }
                 describing = true
                 guard let caption = await Self.caption(fresh[index], brain: options.brain) else { continue }
-                (fresh[index].caption, fresh[index].captionModel) = (caption, options.brain)
+                // Stamped with the style too: stamped with the brain alone, every caption looked
+                // out of date and was redone on every pass, 300 at a time (found 2026-11-02).
+                let tag = Self.captionTag(options.brain, kind: fresh[index].kind)
+                (fresh[index].caption, fresh[index].captionModel) = (caption, tag)
                 describingNow += 1
-                if let key = fresh[index].contentKey { described[key] = (caption, options.brain) }
+                if let key = fresh[index].contentKey { described[key] = (caption, tag) }
                 captioned += 1
             }
         }
@@ -341,8 +350,17 @@ actor SearchIndex {
     /// ~0.5 s each with gemma4:e4b (measured 2026-11-01); 300 every 30 minutes covers 3,000 pictures in 5 hours of use.
     private static let captionsPerPass = 300
 
-    /// The brain and caption style a caption was written with ("gemma4:e4b|kinds-1").
-    static func captionTag(_ brain: String) -> String { brain + "|" + VisionMemory.captionStyle }
+    /// The brain and caption style a caption was written with ("gemma4:e4b|kinds-1"; videos
+    /// have their own style, so a change to them redoes only videos).
+    static func captionTag(_ brain: String, kind: SmartSearch.Kind = .image) -> String {
+        brain + "|" + (kind == .video ? VisionMemory.videoCaptionStyle : VisionMemory.captionStyle)
+    }
+
+    /// Written in the current style by this brain. Pictures stamped with the brain alone (the
+    /// bug above) count as current: redoing all of them would gain nothing.
+    static func isCurrent(_ item: SmartSearch.Item, brain: String) -> Bool {
+        item.captionModel == captionTag(brain, kind: item.kind) || (item.kind != .video && item.captionModel == brain)
+    }
 
     /// One line on what a picture shows, from the brain, or nil (no brain, can't see, slow).
     private static func caption(_ item: SmartSearch.Item, brain: String) async -> String? {
@@ -350,7 +368,7 @@ actor SearchIndex {
                                                 video: item.kind == .video)
         let image: CGImage?
         if item.kind == .video, let path = item.file {
-            image = await middleFrame(of: URL(fileURLWithPath: path))
+            image = await threeFrames(of: URL(fileURLWithPath: path))
         } else if let path = item.file {
             image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         } else if item.id.hasPrefix("photo:") {
@@ -591,6 +609,36 @@ actor SearchIndex {
     }
 
     /// A video's frame from its middle (what it's about, past any title card), small.
+    /// Three moments of a video (¼, ½, ¾ of the way) side by side, for its caption: one middle
+    /// frame described a hair-wash video as "a doll's head being washed" (user: "there is no
+    /// doll", 2026-11-02); one odd moment can't decide the whole video now.
+    private static func threeFrames(of url: URL) async -> CGImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 512, height: 512)
+        guard let duration = try? await asset.load(.duration), duration.seconds.isFinite, duration.seconds > 0 else { return nil }
+        var frames: [CGImage] = []
+        for share in [0.25, 0.5, 0.75] {
+            if let frame = try? await generator.image(at: CMTime(seconds: duration.seconds * share, preferredTimescale: 600)).image { frames.append(frame) }
+        }
+        guard let first = frames.first else { return nil }
+        guard frames.count > 1 else { return first }
+        let height = 384
+        let widths = frames.map { Int(Double($0.width) * Double(height) / Double(max(1, $0.height))) }
+        let gap = 8
+        guard let context = CGContext(data: nil, width: widths.reduce(0, +) + gap * (frames.count - 1), height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return first }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: context.width, height: height))
+        var x = 0
+        for (frame, width) in zip(frames, widths) {
+            context.draw(frame, in: CGRect(x: x, y: 0, width: width, height: height))
+            x += width + gap
+        }
+        return context.makeImage() ?? first
+    }
+
     private static func middleFrame(of url: URL) async -> CGImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
