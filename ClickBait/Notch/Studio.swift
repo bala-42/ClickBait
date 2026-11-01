@@ -285,6 +285,10 @@ final class StudioModel {
         }
         rewriting = job
         problem = nil
+        if job == .cuesOnly {
+            organize(original, brain: brain)
+            return
+        }
         Task { @MainActor in
             defer { rewriting = nil }
             let words = ScriptFollower.normalized(original).count
@@ -317,6 +321,38 @@ final class StudioModel {
             text = rewritten
             offset = 0
             Log.app.notice("Studio: \(job == .speakable ? "made speakable" : "cues added", privacy: .public) (\(self.script.cues.count, privacy: .public) cues)")
+        }
+    }
+
+    /// Add cues: your sentences sorted into sections by topic, each named — the brain only
+    /// groups them (a structured answer); the script is rebuilt from the exact sentences.
+    private func organize(_ original: String, brain: String) {
+        let sentences = ScriptOrganizer.sentences(of: original)
+        guard sentences.count >= 2 else { problem = "the script needs a few sentences to sort"; rewriting = nil; return }
+        Task { @MainActor in
+            defer { rewriting = nil }
+            var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 240)
+            call.httpMethod = "POST"
+            call.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            call.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "model": brain, "prompt": ScriptOrganizer.prompt(sentences), "stream": false, "think": false,
+                "format": ScriptOrganizer.schema, "options": ["temperature": 0]
+            ] as [String: Any])
+            struct Answer: Decodable { let sections: [ScriptOrganizer.Section] }
+            guard let (data, response) = try? await URLSession.shared.data(for: call),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let reply = (json["response"] as? String)?.data(using: .utf8),
+                  let answer = try? JSONDecoder().decode(Answer.self, from: reply),
+                  let organized = ScriptOrganizer.assemble(sentences, sections: answer.sections) else {
+                problem = "the brain couldn't sort it: is Ollama running?"
+                return
+            }
+            guard text == original else { return }  // edited meanwhile: theirs wins
+            undoText = original
+            text = organized
+            offset = 0
+            Log.app.notice("Studio: organized into \(self.script.cues.count, privacy: .public) cues")
         }
     }
 

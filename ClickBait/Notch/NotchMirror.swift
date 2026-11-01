@@ -445,14 +445,14 @@ private struct PrompterDesk: View {
                     Button { studio.rewrite(.speakable) } label: { Label("Make it speakable", systemImage: "waveform.and.mic") }
                         .help("The local brain rewrites it the way people actually talk, and makes the cues")
                     Button { studio.rewrite(.cuesOnly) } label: { Label("Add cues", systemImage: "list.bullet") }
-                        .help("The local brain adds section headings without changing your words")
+                        .help("The local brain sorts your sentences into sections by topic and names them — your words stay as they are")
                 }
                 .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
                 .disabled(studio.rewriting != nil || studio.text.isEmpty)
                 if let job = studio.rewriting {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text(job == .speakable ? "Rewriting…" : "Finding the sections…")
+                        Text(job == .speakable ? "Rewriting…" : "Sorting into cues…")
                     }
                     .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
                 } else if studio.undoText != nil {

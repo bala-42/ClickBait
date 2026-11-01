@@ -70,3 +70,75 @@ public enum ScriptRewrite {
         return ratio > 0.6 && ratio < 1.6 && headings
     }
 }
+
+/// Add cues = organize the content into sections by topic and make those the cues (user's ask,
+/// 2026-11-01: "it should organize whatever content i have into [cues]"). ClickBait numbers
+/// the script's own sentences, the brain only says which go together and what each group is
+/// called (a structured answer), and the script is rebuilt from the exact sentences — none can
+/// be reworded or lost. Pure.
+public enum ScriptOrganizer {
+    public struct Section: Decodable, Equatable, Sendable {
+        public let title: String
+        public let sentences: [Int]
+        public init(title: String, sentences: [Int]) { self.title = title; self.sentences = sentences }
+    }
+
+    /// The script's sentences in order, old headings and dividers left out.
+    public static func sentences(of script: String) -> [String] {
+        let body = script.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return !trimmed.hasPrefix("#") && !(trimmed.count >= 3 && trimmed.allSatisfy { "-*_=".contains($0) })
+        }.joined(separator: "\n")
+        var found: [String] = []
+        body.enumerateSubstrings(in: body.startIndex..<body.endIndex, options: .bySentences) { sentence, _, _, _ in
+            let text = (sentence ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { found.append(text) }
+        }
+        return found
+    }
+
+    public static func prompt(_ sentences: [String]) -> String {
+        let listing = sentences.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        return """
+            Group these numbered sentences of a script into sections by topic. Each section gets a \
+            title of two to five words. Put every sentence in exactly one section; sentences about \
+            the same thing go together; order the sections the way a talk would flow (greeting \
+            first, goodbye last).
+
+            \(listing)
+            """
+    }
+
+    /// The answer's shape, for Ollama's structured output.
+    public static var schema: [String: Any] { [
+        "type": "object",
+        "properties": ["sections": ["type": "array", "items": [
+            "type": "object",
+            "properties": ["title": ["type": "string"], "sentences": ["type": "array", "items": ["type": "integer"]]],
+            "required": ["title", "sentences"]
+        ]]],
+        "required": ["sections"]
+    ] }
+
+    /// The script rebuilt: "# Title" and its sentences, section by section. Every sentence
+    /// appears once: repeats are dropped, and any the brain left out joins the section of the
+    /// sentence just before it (else the first).
+    public static func assemble(_ sentences: [String], sections: [Section]) -> String? {
+        var groups: [(title: String, items: [Int])] = []
+        var used = Set<Int>()
+        for section in sections {
+            let title = section.title.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "#*")))
+            let items = section.sentences.filter { (1...sentences.count).contains($0) && used.insert($0).inserted }
+            if !items.isEmpty, !title.isEmpty { groups.append((title, items)) }
+        }
+        guard !groups.isEmpty else { return nil }
+        for missing in (1...sentences.count) where !used.contains(missing) {
+            let home = groups.firstIndex { $0.items.contains(missing - 1) } ?? 0
+            groups[home].items.append(missing)
+            groups[home].items.sort()
+        }
+        return groups.map { group in
+            "# \(group.title)\n" + group.items.map { sentences[$0 - 1] }.joined(separator: " ")
+        }.joined(separator: "\n\n")
+    }
+}
