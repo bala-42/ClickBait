@@ -3,14 +3,14 @@ name: ClickBait
 options:
   bundleIdPrefix: org.clickbait
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
     ARCHS: arm64
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
@@ -21,6 +21,17 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: 1.1.0
+  # Kokoro voices (MIT; Kokoro's weights are Apache 2.0): MLX, with Misaki for pronunciation
+  # (no eSpeak, which is GPL).
+  KokoroSwift:
+    url: https://github.com/mlalma/kokoro-ios.git
+    exactVersion: 1.0.11
+  MLXSwift:
+    url: https://github.com/ml-explore/mlx-swift
+    exactVersion: 0.30.2
+  MLXUtilsLibrary:
+    url: https://github.com/mlalma/MLXUtilsLibrary.git
+    exactVersion: 0.0.6
 
 targets:
   ClickBait:
@@ -31,6 +42,11 @@ targets:
     dependencies:
       - package: ClickBaitCore
       - package: WhisperKit
+      - package: KokoroSwift
+        embed: true  # a dynamic framework: copied into the app, or it crashes at launch
+      - package: MLXSwift
+        product: MLX
+      - package: MLXUtilsLibrary
     info:
       path: ClickBait/Info.plist
       properties:

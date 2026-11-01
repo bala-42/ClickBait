@@ -39,7 +39,7 @@ actor SearchIndex {
     func search(_ request: SmartSearch.Request, notchNote: String, photos: Bool, brain: String) async -> [SmartSearch.Item] {
         load()
         let request = await Self.withRelatedWords(request, brain: brain)
-        if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(photos: photos) } }
+        if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(photos: photos, brain: brain) } }
         var pool = entries.values.map { ($0.item, $0.vector) }
         pool.append((SmartSearch.Item(id: "quicknote", kind: .note, title: "Quick note", place: "the notch", text: notchNote), nil))
         // Files: Spotlight's matches for the words, by name or the text inside.
@@ -87,13 +87,13 @@ actor SearchIndex {
     }
 
     private static func document(_ item: SmartSearch.Item) -> String {
-        "\(item.title). \(item.text)"
+        item.searchable
     }
 
     // MARK: Refreshing
 
     /// Re-reads every source; only new or changed things are embedded and (pictures) looked at.
-    func refresh(photos photosOn: Bool) async {
+    func refresh(photos photosOn: Bool, brain: String) async {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false; refreshedAt = Date() }
@@ -106,13 +106,23 @@ actor SearchIndex {
         if photosOn { pictures += Self.libraryPhotos() }
         // Pictures: kept as they were unless the file changed; new ones read with Vision.
         var picturesRead = 0
+        let you = YourFace.reference()
         for (id, title, place, url, asset, modified) in pictures {
             if let old = entries[id], old.item.modified == modified { fresh.append(old.item); continue }
             guard picturesRead < 400 else { continue }  // a few hundred per pass; the rest next time
             picturesRead += 1
-            let text = await Self.look(at: url, asset: asset)
-            fresh.append(SmartSearch.Item(id: id, kind: .image, title: title, place: place, text: text,
-                                          file: url?.path, modified: modified))
+            let look = await Self.look(at: url, asset: asset, you: you)
+            let bytes = url.flatMap { (try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
+            fresh.append(SmartSearch.Item(id: id, kind: .image, title: title, place: place, text: look.text,
+                                          file: url?.path, modified: modified, bytes: bytes, hasYou: you == nil ? nil : look.hasYou))
+        }
+        // Captions from the brain (it can see pictures): newest first, a few per pass, so
+        // the brain stays free for questions; changed ones are embedded again below.
+        var captioned = 0
+        for index in fresh.indices where fresh[index].kind == .image && fresh[index].caption == nil && captioned < Self.captionsPerPass {
+            guard !Task.isCancelled, let caption = await Self.caption(fresh[index], brain: brain) else { continue }
+            fresh[index].caption = caption
+            captioned += 1
         }
         var next: [String: Entry] = [:]
         for item in fresh {
@@ -130,7 +140,54 @@ actor SearchIndex {
         }
         entries = next
         save()
-        Log.app.notice("Search index: \(next.count, privacy: .public) things, \(picturesRead, privacy: .public) pictures read")
+        Log.app.notice("Search index: \(next.count, privacy: .public) things, \(picturesRead, privacy: .public) pictures read, \(captioned, privacy: .public) captioned")
+    }
+
+    /// Pictures read again (after the user's reference photo changed): faces are matched anew.
+    func forgetPictures() {
+        load()
+        entries = entries.filter { $0.value.item.kind != .image }
+        save()
+    }
+
+    /// ~0.5 s each with gemma4:e4b (measured 2026-11-01); 300 every 30 minutes covers 3,000 pictures in 5 hours of use.
+    private static let captionsPerPass = 300
+
+    /// One line on what a picture shows, from the brain, or nil (no brain, can't see, slow).
+    private static func caption(_ item: SmartSearch.Item, brain: String) async -> String? {
+        let image: CGImage?
+        if let path = item.file {
+            image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        } else if item.id.hasPrefix("photo:") {
+            image = await thumbnail(of: String(item.id.dropFirst(6)))
+        } else {
+            image = nil
+        }
+        guard let image, let jpeg = jpeg(image, longSide: 512) else { return nil }
+        var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 45)
+        call.httpMethod = "POST"
+        call.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        call.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": brain, "stream": false, "think": false, "images": [jpeg.base64EncodedString()],
+            "prompt": "Describe this picture in one plain sentence of at most 20 words: who or what is in it, what they're doing, where. No preamble.",
+            "options": ["temperature": 0, "num_predict": 48]
+        ] as [String: Any])
+        guard let (data, response) = try? await URLSession.shared.data(for: call),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reply = (json["response"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reply.isEmpty else { return nil }
+        return String(reply.prefix(200))
+    }
+
+    private static func jpeg(_ image: CGImage, longSide: CGFloat) -> Data? {
+        let scale = min(1, longSide / CGFloat(max(image.width, image.height)))
+        let size = NSSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        let small = NSImage(size: size)
+        small.lockFocus()
+        NSImage(cgImage: image, size: .zero).draw(in: NSRect(origin: .zero, size: size))
+        small.unlockFocus()
+        guard let tiff = small.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.7])
     }
 
     func forgetAll() {
@@ -281,7 +338,7 @@ actor SearchIndex {
     }
 
     /// What a picture shows and says: Vision's labels and the text in it, on this Mac.
-    private static func look(at url: URL?, asset: String?) async -> String {
+    private static func look(at url: URL?, asset: String?, you: VNFeaturePrintObservation?) async -> (text: String, hasYou: Bool) {
         let image: CGImage?
         if let url {
             image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -290,14 +347,18 @@ actor SearchIndex {
         } else {
             image = nil
         }
-        guard let image else { return "" }
+        guard let image else { return ("", false) }
         let classify = VNClassifyImageRequest()
         let text = VNRecognizeTextRequest()
         text.recognitionLevel = .fast
-        try? VNImageRequestHandler(cgImage: image).perform([classify, text])
+        let faces = VNDetectFaceRectanglesRequest()
+        try? VNImageRequestHandler(cgImage: image).perform(you == nil ? [classify, text] : [classify, text, faces])
+        let hasYou = you.map { reference in
+            (faces.results ?? []).contains { YourFace.matches(reference, face: $0, in: image) }
+        } ?? false
         let labels = (classify.results ?? []).filter { $0.confidence > 0.3 }.prefix(8).map { $0.identifier.replacingOccurrences(of: "_", with: " ") }
         let words = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        return ([labels.joined(separator: ", ")] + (words.isEmpty ? [] : ["text: " + String(words.prefix(600))])).joined(separator: ". ")
+        return (([labels.joined(separator: ", ")] + (words.isEmpty ? [] : ["text: " + String(words.prefix(600))])).joined(separator: ". "), hasYou)
     }
 
     private static func thumbnail(of id: String) async -> CGImage? {
@@ -339,8 +400,10 @@ actor SearchIndex {
             }.prefix(40).map { path in
                 let url = URL(fileURLWithPath: path)
                 let isImage = imageKinds.contains(url.pathExtension.lowercased())
+                let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
                 return SmartSearch.Item(id: "file:\(path)", kind: isImage ? .image : .file, title: url.lastPathComponent,
-                                        place: url.deletingLastPathComponent().lastPathComponent, text: "", file: path)
+                                        place: url.deletingLastPathComponent().lastPathComponent, text: "", file: path,
+                                        modified: values?.contentModificationDate, bytes: values?.fileSize)
             }
         }.value
     }

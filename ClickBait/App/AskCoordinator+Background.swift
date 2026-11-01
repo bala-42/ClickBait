@@ -575,6 +575,7 @@ extension AskCoordinator {
         // "Find that note about the plumber" is smart search (in `respond`): not an order or a
         // walkthrough ("show me the picture…" was sorted as a possible walkthrough first).
         let searching = SmartSearch.request(in: transcript) != nil
+            || SmartSearch.followUp(in: transcript, count: lastSearchResults.count) != nil
         // Direct orders run right away, without the model.
         if !searching, settings.commandsEnabled,
            let command = CommandParser.parse(transcript, allowedShortcuts: settings.allowedShortcuts),

@@ -249,12 +249,27 @@ extension AskCoordinator {
         }
         // "Find that note about the dentist", "find the march invoice": smart search on this
         // Mac (`SearchIndex`), not the model; the reply links each thing found.
+        // After a search: "open it", "open the second one", "show it in Finder" act on the
+        // results themselves (in Taby's demo, "open it" opened the picture in Preview).
+        if snip == nil, let followUp = SmartSearch.followUp(in: question, count: lastSearchResults.count) {
+            encoding.cancel()
+            let message = SearchResultActions.perform(followUp, on: lastSearchResults)
+            if speak { speaker.speak(message) }
+            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: message) }
+            if state == .thinking { state = .idle }
+            onAnswer?(AssistantResponse(speech: message), [])
+            return
+        }
         // Any time in a chat, spoken or typed: a search question stands on its own.
         if snip == nil, let search = SmartSearch.request(in: question) {
             encoding.cancel()
             let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, photos: settings.searchPhotos,
                                                             brain: settings.ollamaModel)
-            let headline = SmartSearch.headline(found, for: search)
+            lastSearchResults = found
+            // One sentence about the best find, from the brain (~0.5 s), like Taby's "I found a
+            // picture of you with a dog in your Downloads folder. Want me to open it?"
+            let headline = await Self.searchSentence(found, question: question, brain: settings.ollamaModel)
+                ?? SmartSearch.headline(found, for: search)
             if speak { speaker.speak(headline) }
             // The chat keeps the full list, so "open the second one" can follow.
             if !flow.sentAway { conversation?.append(user: question, assistantSpeech: SmartSearch.reply(found, for: search)) }
@@ -649,8 +664,8 @@ extension AskCoordinator {
         // No streamed "speech" field (e.g. plain-text fallback): speak the parsed answer.
         if speak, !spokeAnything {
             var sentences = SentenceSplitter()
-            sentences.feed(MessageFormat.spokenText(parsed.response.speech)).forEach(speaker.speak)
-            sentences.flush().map(speaker.speak)
+            sentences.feed(MessageFormat.spokenText(parsed.response.speech)).forEach { speaker.speak($0) }
+            sentences.flush().map { speaker.speak($0) }
         }
         run.conversation.append(user: Prompt.userText(for: request), assistantSpeech: parsed.response.speech,
                                 code: parsed.response.code, language: parsed.response.language)
@@ -1214,6 +1229,24 @@ extension AskCoordinator {
             self.state = .idle
         }
     }
+
+    /// The brain's one sentence about the best find, or nil (no results, no brain, over 4 s).
+    nonisolated static func searchSentence(_ found: [SmartSearch.Item], question: String, brain: String) async -> String? {
+        guard let prompt = SmartSearch.sentencePrompt(found, question: question) else { return nil }
+        var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 4)
+        call.httpMethod = "POST"
+        call.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        call.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": brain, "prompt": prompt, "stream": false, "think": false,
+            "options": ["temperature": 0.3, "num_predict": 60]
+        ] as [String: Any])
+        guard let (data, response) = try? await URLSession.shared.data(for: call),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reply = (json["response"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\""))),
+              !reply.isEmpty, reply.count < 300 else { return nil }
+        return reply
+    }
 }
 
 extension ScreenChange {
@@ -1229,4 +1262,5 @@ extension ScreenChange {
         }
         return pixels
     }
+
 }

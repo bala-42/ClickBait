@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ClickBaitCore
 
@@ -49,5 +50,35 @@ struct SmartSearchTests {
         let pdf = SmartSearch.Item(id: "f", kind: .file, title: "invoice-march.pdf", place: "Downloads", text: "", file: "/Users/me/Downloads/invoice-march.pdf")
         #expect(SmartSearch.reply([pdf], for: request) == "Found it:\n• [invoice-march.pdf](file:///Users/me/Downloads/invoice-march.pdf) — Downloads")
         #expect(SmartSearch.reply([], for: request) == "I couldn't find anything about invoice on this Mac.")
+    }
+
+    @Test func knowsWhenThePictureIsOfTheUser() {
+        #expect(SmartSearch.request(in: "find me an image where I'm holding a dog")?.wantsMe == true)
+        #expect(SmartSearch.request(in: "find me an image where I'm holding a dog")?.terms == ["holding", "dog"])
+        #expect(SmartSearch.request(in: "show me the picture of the airport")?.wantsMe == false)
+        #expect(SmartSearch.request(in: "find a photo of me at the beach")?.wantsMe == true)
+        #expect(SmartSearch.request(in: "find the note about me and the dentist")?.wantsMe == false)  // notes, not pictures
+    }
+
+    @Test func followUpsActOnTheResults() {
+        #expect(SmartSearch.followUp(in: "open it", count: 3) == .open(0))
+        #expect(SmartSearch.followUp(in: "open the second one", count: 3) == .open(1))
+        #expect(SmartSearch.followUp(in: "yes, open that", count: 1) == .open(0))
+        #expect(SmartSearch.followUp(in: "show the last one in Finder", count: 3) == .reveal(2))
+        #expect(SmartSearch.followUp(in: "open number 3", count: 3) == .open(2))
+        #expect(SmartSearch.followUp(in: "open Safari", count: 3) == nil)
+        #expect(SmartSearch.followUp(in: "open the fifth one", count: 3) == nil)
+        #expect(SmartSearch.followUp(in: "open it", count: 0) == nil)
+    }
+
+    @Test func saysWhyAndShowsDetails() {
+        let request = SmartSearch.Request(kind: .image, terms: ["dog"], text: "dog")
+        var picture = SmartSearch.Item(id: "p", kind: .image, title: "me_with_dog.png", place: "Downloads", text: "animal, dog",
+                                       modified: Date(timeIntervalSince1970: 1_773_187_200), bytes: 460_000)
+        #expect(SmartSearch.reason(for: picture, request: request, spotlight: false) == "Matches “dog” in the name")
+        picture.title = "IMG_1852.HEIC"
+        #expect(SmartSearch.reason(for: picture, request: request, spotlight: false) == "Matches “dog” in the picture")
+        let calendar = Calendar(identifier: .gregorian)
+        #expect(picture.details(now: Date(timeIntervalSince1970: 1_780_000_000), calendar: calendar) == "Downloads · Mar 11 · 460 KB")
     }
 }

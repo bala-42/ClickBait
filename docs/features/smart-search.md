@@ -44,3 +44,26 @@ things are re-read and re-embedded. Nothing leaves the Mac.
 - First pass reads 400 pictures; the rest come in over later passes (every 30 minutes).
 - Questions about on-screen controls ("find the settings menu") stay pointing questions.
 - Photos-library results have no file to open; they name the day.
+
+
+## Like Taby's results (2026-11-01, user's ask, from a Taby demo video)
+Typed (chat, notch Ask tab) and spoken alike:
+- **A sentence about the best find**, from the brain (~0.5 s, ≤ 4 s else "Found 3."):
+  "I found a picture called me with dog in your Downloads folder; would you like me to open
+  it?" Spoken too when asked by voice.
+- **"Open it" / "open the second one" / "show it in Finder"** (`SmartSearch.followUp`) act on
+  the last results (`AskCoordinator.lastSearchResults`), skipping orders and walkthroughs.
+- **The card**: why the top result matched ("Matches “dog” in the picture", "…in the name",
+  "…inside", "Close in meaning"); bigger thumbnails (~3 across); folder · date · size; **Open**
+  and a folder button always shown; Copy and Share on hover; **Listen again** (reads the
+  sentence even with "Read answers aloud" off).
+- **Captions**: the brain (it can see) writes one line per picture in the background, newest
+  first, 300 per pass (~0.5 s each with gemma4:e4b): "A woman wearing a fluffy white hat is
+  posing indoors." where Vision only had "people, adult". Captions are searched and embedded.
+- **"Me"** (`YourFace`): Settings ▸ Behavior ▸ "Your photo, for “me”". Each picture's faces are
+  compared with it (Vision feature prints of the face crops, threshold 0.75); matches are
+  tagged as the user and come first for "a picture where I'm holding a dog" / "a photo of me".
+  Measured on 26 faces from this Mac: unrelated faces never matched under 0.75, but only about
+  a quarter of same-folder pairs did, so many photos of the user are missed. A real face
+  recognition model would do much better (a further download). Changing the photo re-reads
+  every picture.

@@ -146,6 +146,7 @@ extension AskCoordinator {
             let startedAt = ContinuousClock.now
             // "Find the march invoice" is smart search (in `respond`): not an order or a walkthrough.
             let searching = SmartSearch.request(in: text) != nil
+                || SmartSearch.followUp(in: text, count: lastSearchResults.count) != nil
             if !searching, let (order, proposal) = await understandOrder(text) {
                 onChatUserMessage?(text)
                 let answerID = beginAnswerFlow()

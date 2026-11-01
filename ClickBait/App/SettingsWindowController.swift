@@ -145,13 +145,15 @@ struct SettingsView: View {
                           isOn: $settings.morningCards)
                     .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
                 Divider().overlay(SettingsLook.hairline)
+                YourPhotoRow(settings: settings)
+                Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Search the Photos library", "“Find the picture of the airport” also looks in Photos. Pictures in your folders are always searched. All on this Mac.",
                           isOn: $settings.searchPhotos)
                     .onChange(of: settings.searchPhotos) { _, on in
                         guard on else { return }
                         Task {
                             _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                            await SearchIndex.shared.refresh(photos: true)
+                            await SearchIndex.shared.refresh(photos: true, brain: settings.ollamaModel)
                         }
                     }
                 Divider().overlay(SettingsLook.hairline)
@@ -718,13 +720,23 @@ private struct VoiceSettingsSection: View {
         Text(voice.title).tag(Optional(voice.id))
     }
 
+    private var kokoroChosen: Bool { KokoroVoice.name(in: settings.voiceIdentifier) != nil }
+
     var body: some View {
         Toggle("Read answers aloud", isOn: $settings.speakAnswers)
         Picker("Voice", selection: $settings.voiceIdentifier) {
             Text("Automatic (best for your language)").tag(String?.none)
-            ForEach(voices, content: Self.voiceRow)
+            Section("Kokoro — natural, English, on this Mac") {
+                ForEach(KokoroVoice.offered, id: \.id) { voice in
+                    Text(voice.title).tag(Optional(KokoroVoice.prefix + voice.id))
+                }
+            }
+            Section("macOS voices") {
+                ForEach(voices, content: Self.voiceRow)
+            }
         }
         .disabled(!settings.speakAnswers)
+        if kokoroChosen { KokoroDownloadRow() }
         HStack {
             Text("Speed")
             Slider(value: $settings.speechRate, in: 0.4...0.62)
@@ -735,6 +747,76 @@ private struct VoiceSettingsSection: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Smart search's "me": one photo of the user, so "a picture where I'm holding a dog" finds them.
+private struct YourPhotoRow: View {
+    let settings: AppSettings
+    @State private var isSet = YourFace.isSet
+    @State private var problem: String?
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your photo, for “me”").font(.system(size: 13, weight: .medium))
+                Text(problem ?? (isSet ? "Set. “Find a picture of me…” looks for your face. Stays on this Mac."
+                                       : "Pick a clear photo of your face, so “find a picture of me…” knows who you are."))
+                    .font(.system(size: 11)).foregroundStyle(problem == nil ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if isSet { Button("Remove") { YourFace.clear(); isSet = false; reindex() } }
+            Button(isSet ? "Change…" : "Choose…") { choose() }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.message = "Pick a photo of yourself (your face clear and big)."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if YourFace.setReference(from: url) {
+            isSet = true
+            problem = nil
+            reindex()
+        } else {
+            problem = "No face found in that photo. Try one where your face is clear."
+        }
+    }
+
+    /// Pictures are read again so their faces are compared with the new photo.
+    private func reindex() {
+        let brain = settings.ollamaModel, photos = settings.searchPhotos
+        Task {
+            await SearchIndex.shared.forgetPictures()
+            await SearchIndex.shared.refresh(photos: photos, brain: brain)
+        }
+    }
+}
+
+/// Kokoro's one-time download, shown once a Kokoro voice is picked.
+private struct KokoroDownloadRow: View {
+    @State private var download = KokoroDownload.shared
+    @State private var installed = KokoroVoice.isInstalled
+
+    var body: some View {
+        if let fraction = download.fraction {
+            ProgressView(value: fraction) { Text("Downloading Kokoro…") }
+        } else if !installed {
+            HStack {
+                Text("Kokoro voices need a one-time download (340 MB). Until then, the Mac's voice speaks.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Download") { download.start() }
+            }
+        }
+        if let problem = download.problem {
+            Text(problem).font(.callout).foregroundStyle(.orange)
+        }
+        Color.clear.frame(height: 0)
+            .onChange(of: download.fraction) { _, now in if now == nil { installed = KokoroVoice.isInstalled } }
     }
 }
 

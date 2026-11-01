@@ -18,7 +18,7 @@ ClickBait is a free, open-source (AGPL-3.0), local-first AI companion that lives
 - ~~**Background agents** (BYOK only) via tool-use loop + MCP.~~ Dropped with BYOK (2026-10-10); revisit only with a free, local route.
 
 ## Tech stack
-- Swift 5.10+, SwiftUI + AppKit, **macOS 14+, Apple Silicon**.
+- Swift 5.10+, SwiftUI + AppKit, **macOS 15+, Apple Silicon** (15 since 2026-11-01: Kokoro voices need it).
 - Project generated with **XcodeGen** (`project.yml`). Never hand-edit `.xcodeproj`; regenerate it.
 - Non-sandboxed app (needs Accessibility + Screen Recording). Hardened runtime on.
 - Dependencies via Swift Package Manager:

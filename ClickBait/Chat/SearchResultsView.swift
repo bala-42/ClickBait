@@ -4,30 +4,62 @@ import Photos
 import QuickLookThumbnailing
 import SwiftUI
 
-/// Smart search's results in the chat, like Taby's: pictures as a grid of thumbnails, files
-/// with their previews, notes and reminders as rows. Click opens; files and pictures drag
-/// out, and have Copy, Show in Finder and Share on hover.
+/// Smart search's results in the chat, like Taby's: why they matched, pictures as a grid of
+/// big thumbnails, files with their previews, notes and reminders as rows; each with folder,
+/// date and size, and Open and Show in Finder buttons. Click opens; files and pictures drag
+/// out; Copy and Share on hover. "Listen again" reads the answer out once more.
 struct SearchResultsView: View {
     let items: [SmartSearch.Item]
+    let answer: String
 
     private var pictures: [SmartSearch.Item] { items.filter { $0.kind == .image } }
     private var others: [SmartSearch.Item] { items.filter { $0.kind != .image } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let reason = items.first?.reason {
+                Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(AquaDark.textSecondary)
+            }
             if !pictures.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 140), spacing: 8)], alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 180), spacing: 10)], alignment: .leading, spacing: 12) {
                     ForEach(pictures) { PictureTile(item: $0) }
                 }
             }
             ForEach(others) { ResultRow(item: $0) }
+            Button {
+                NotificationCenter.default.post(name: .clickBaitListenAgain, object: answer)
+            } label: {
+                Label("Listen again", systemImage: "speaker.wave.2")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(AquaDark.textSecondary)
+            }
+            .buttonStyle(.plain)
         }
     }
+}
+
+extension Notification.Name {
+    /// The results card's "Listen again": the answer's text, read aloud again.
+    static let clickBaitListenAgain = Notification.Name("clickBaitListenAgain")
 }
 
 /// Opening, copying and sharing one result.
 @MainActor
 enum SearchResultActions {
+    /// "Open it", "show the second one in Finder": does it, and says what it did.
+    static func perform(_ followUp: SmartSearch.FollowUp, on items: [SmartSearch.Item]) -> String {
+        switch followUp {
+        case .open(let index):
+            let item = items[index]
+            open(item)
+            return "Opening \(item.title)."
+        case .reveal(let index):
+            let item = items[index]
+            guard let path = item.file else { open(item); return "Opening \(item.title)." }
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            return "Here's \(item.title) in Finder."
+        }
+    }
+
     static func open(_ item: SmartSearch.Item) {
         if let path = item.file {
             NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -81,8 +113,8 @@ private struct PictureTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Thumbnail(item: item, size: CGSize(width: 140, height: 104))
-                .frame(height: 96)
+            Thumbnail(item: item, size: CGSize(width: 180, height: 136))
+                .frame(height: 118)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(alignment: .topTrailing) {
@@ -101,8 +133,9 @@ private struct PictureTile: View {
                         .padding(5)
                     }
                 }
-            Text(item.title).font(.system(size: 11, weight: .medium)).foregroundStyle(AquaDark.textPrimary).lineLimit(1)
-            Text(item.place).font(.system(size: 10)).foregroundStyle(AquaDark.textSecondary).lineLimit(1)
+            Text(item.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(AquaDark.textPrimary).lineLimit(2)
+            Text(item.details()).font(.system(size: 10)).foregroundStyle(AquaDark.textSecondary).lineLimit(1)
+            OpenButtons(item: item)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -132,21 +165,21 @@ private struct ResultRow: View {
             .frame(width: 36, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(AquaDark.textPrimary).lineLimit(1)
-                Text(item.place).font(.system(size: 11)).foregroundStyle(AquaDark.textSecondary).lineLimit(1)
+                Text(item.details()).font(.system(size: 11)).foregroundStyle(AquaDark.textSecondary).lineLimit(1)
                 let snippet = item.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
                 if !snippet.isEmpty {
                     Text(snippet).font(.system(size: 12)).foregroundStyle(AquaDark.textSecondary).lineLimit(2)
                 }
             }
             Spacer(minLength: 0)
-            if hovering, let path = item.file {
-                HStack(spacing: 4) {
-                    ResultButton(symbol: "doc.on.doc", help: "Copy") { SearchResultActions.copy(item) }
-                    ResultButton(symbol: "folder", help: "Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            VStack(alignment: .trailing, spacing: 6) {
+                OpenButtons(item: item)
+                if hovering, item.file != nil {
+                    HStack(spacing: 4) {
+                        ResultButton(symbol: "doc.on.doc", help: "Copy") { SearchResultActions.copy(item) }
+                        ResultButton(symbol: "square.and.arrow.up", help: "Share") { SearchResultActions.share(item, from: anchor) }
+                            .background(ViewGrabber(view: $anchor))
                     }
-                    ResultButton(symbol: "square.and.arrow.up", help: "Share") { SearchResultActions.share(item, from: anchor) }
-                        .background(ViewGrabber(view: $anchor))
                 }
             }
         }
@@ -156,6 +189,39 @@ private struct ResultRow: View {
         .onHover { hovering = $0 }
         .onTapGesture { SearchResultActions.open(item) }
         .onDrag { SearchResultActions.dragItem(item) }
+    }
+}
+
+/// "Open" and a folder button (Show in Finder), always shown, as in Taby's results.
+private struct OpenButtons: View {
+    let item: SmartSearch.Item
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button("Open") { SearchResultActions.open(item) }
+                .buttonStyle(ResultPillStyle())
+            if let path = item.file {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .buttonStyle(ResultPillStyle())
+                .help("Show in Finder")
+            }
+        }
+    }
+}
+
+private struct ResultPillStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(AquaDark.textPrimary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(Capsule().strokeBorder(Color.white.opacity(configuration.isPressed ? 0.5 : 0.25)))
+            .contentShape(Capsule())
     }
 }
 

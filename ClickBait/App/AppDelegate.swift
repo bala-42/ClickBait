@@ -133,7 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             while !Task.isCancelled {
                 let photos = await MainActor.run { settings.searchPhotos }
-                await SearchIndex.shared.refresh(photos: photos)
+                let brain = await MainActor.run { settings.ollamaModel }
+                await SearchIndex.shared.refresh(photos: photos, brain: brain)
                 try? await Task.sleep(for: .seconds(30 * 60))
             }
         }
@@ -626,7 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.tutorial = tutorial
         overlay.onClick = { [weak self] point in self?.tutorial.noteClick(point) }
-        tutorial.speak = { [weak self] text in self?.coordinator.speaker.speak(text) }
+        tutorial.speak = { [weak self] text in self?.coordinator.speaker.speak(text, force: true) }
         tutorial.onChecklist = { [weak self] text in
             guard let self, chat.isOpen else { return }
             chat.model.replaceLastAssistant(text)
@@ -680,6 +681,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onActionStarted = { [weak self] message in self?.overlay.showWorking(message) }
         coordinator.onActionDone = { [weak self] message in self?.overlay.showDone(message) }
         coordinator.onSearchResults = { [weak self] items in self?.chat.model.setResults(items) }
+        NotificationCenter.default.addObserver(forName: .clickBaitListenAgain, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                self?.coordinator.speaker.stop()
+                self?.coordinator.speaker.speak(text, force: true)
+            }
+        }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             guard let self else { return }
@@ -714,6 +722,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let provider = settings.makeProvider()
         Task.detached(priority: .utility) { await provider.warmUp() }
         speech.loadIfInstalled()
+        if let voice = KokoroVoice.name(in: settings.voiceIdentifier), KokoroVoice.isInstalled {
+            Task.detached(priority: .utility) { await KokoroEngine.shared.warmUp(voice: voice) }
+        }
 
         logPermissions()
         if onboardingWindow.shouldShowAtLaunch {

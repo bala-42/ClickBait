@@ -109,6 +109,8 @@ final class AskCoordinator {
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
     /// Smart search's finds, for the chat's results card (after `onAnswer`).
     @ObservationIgnored var onSearchResults: (([SmartSearch.Item]) -> Void)?
+    /// The latest search's finds, for "open it" / "open the second one".
+    @ObservationIgnored var lastSearchResults: [SmartSearch.Item] = []
 
     @ObservationIgnored let settings: AppSettings
     @ObservationIgnored let speech: SpeechModelManager
