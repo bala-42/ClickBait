@@ -176,7 +176,7 @@ struct SettingsView: View {
             SettingsGroup("ClickBait") {
                 LinkRow("About ClickBait", "Version, licence and credits.", external: true) { menu?.openAbout() }
                 Divider().overlay(SettingsLook.hairline)
-                ButtonRow("Quit ClickBait", "The companion and notch go away until you open it again.", button: "Quit") { menu?.quit() }
+                ButtonRow("Quit ClickBait", "The companion and notch go away until you open it again.", button: "Quit", destructive: true) { menu?.quit() }
             }
         case .shortcuts:
             SettingsGroup("Talk to ClickBait") {
