@@ -76,6 +76,17 @@ public struct Script: Equatable, Sendable {
         cues.last { $0.start <= offset } ?? cues.first
     }
 
+    /// The line (0-based) a character offset is on: `readable` keeps every line, so the
+    /// prompter's lines and the cues meet by line, not by character.
+    public func line(of offset: Int) -> Int {
+        text.prefix(max(0, offset)).reduce(0) { $1 == "\n" ? $0 + 1 : $0 }
+    }
+
+    /// The cue being read when `line` is at the top.
+    public func cue(atLine line: Int) -> Cue? {
+        cues.last { self.line(of: $0.start) <= line } ?? cues.first
+    }
+
     /// The text to show: the script without heading marks and dividers (headings stay as lines).
     public var readable: String {
         text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in

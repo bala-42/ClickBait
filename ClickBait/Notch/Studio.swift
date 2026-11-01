@@ -18,7 +18,11 @@ final class StudioModel {
 
     var name = "Untitled script"
     var text = "" {
-        didSet { script = Script(text: text); scheduleSave() }
+        didSet {
+            script = Script(text: text)
+            scheduleSave()
+            if following { stopFollowing(); startFollowing() }  // edited while following: follow the new text
+        }
     }
     private(set) var script = Script(text: "")
 
@@ -38,6 +42,39 @@ final class StudioModel {
 
     func scroll(by points: Double) {
         offset = min(max(0, offset + points), maxOffset)
+        // Scrolled by hand while following: reading picks up from what's now at the top.
+        if following {
+            place = nil
+            voice?.resume(atLine: readingLine)
+        }
+    }
+
+    func startFollowing() {
+        guard voice == nil else { return }
+        playing = false
+        following = true
+        place = nil
+        let voice = VoiceFollower(readable: script.readable,
+                                  onPlace: { [weak self] in self?.place = $0 },
+                                  onLevel: { [weak self] new in
+                                      guard let self else { return }
+                                      level = level * 0.6 + new * 0.4  // smoothed, so the ring breathes
+                                  },
+                                  onProblem: { [weak self] message in
+                                      self?.problem = message
+                                      self?.stopFollowing()
+                                  })
+        self.voice = voice
+        voice.resume(atLine: readingLine)
+        Task { await voice.start() }
+    }
+
+    func stopFollowing() {
+        voice?.stop()
+        voice = nil
+        following = false
+        place = nil
+        level = 0
     }
     /// A cue was picked: the prompter scrolls to it (its character offset).
     var jump: Int?
@@ -45,8 +82,13 @@ final class StudioModel {
     var cuesOpen = false {
         didSet { if cuesOpen != oldValue { PrompterController.shared.resize(to: size) } }
     }
-    /// Where reading is now (a character offset), for marking the current cue.
-    var readingAt = 0
+    /// The prompter line at the top of what's showing, for marking the current cue.
+    var readingLine = 0
+    /// Following the voice (phase 2): the prompter runs at your pace, still when you stop.
+    var following = false
+    /// Where the voice is in the script (the last confident match).
+    var place: ScriptFollower.Place?
+    @ObservationIgnored private var voice: VoiceFollower?
     /// The voice's loudness now, 0…1 (drives the ring; 0 without voice-following).
     var level: Double = 0
     var problem: String?
@@ -113,11 +155,14 @@ final class StudioModel {
         problem = nil
         prompting = true
         PrompterController.shared.show()
+        startFollowing()  // it follows your voice from the start; ▶ scrolls at a set speed instead
     }
 
     func stopPrompting() {
+        stopFollowing()
         prompting = false
         playing = false
+        cuesOpen = false
         PrompterController.shared.hide()
     }
 
@@ -125,6 +170,9 @@ final class StudioModel {
         jump = cue.start
         cuesOpen = false
         if !prompting { startPrompting() }
+        let line = script.line(of: cue.start)
+        place = nil
+        voice?.resume(atLine: line)
     }
 
     private func scheduleSave() {

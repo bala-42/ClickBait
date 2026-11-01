@@ -89,13 +89,9 @@ struct PrompterView: View {
     private let top = max(PrompterController.notchHeight, 10) + 8
     private static let shape = UnevenRoundedRectangle(bottomLeadingRadius: 22, bottomTrailingRadius: 22, style: .continuous)
 
-    /// The script's lines with where each starts, so a cue can jump to its line.
-    private var lines: [(start: Int, text: String)] {
-        var start = 0
-        return studio.script.readable.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            defer { start += line.count + 1 }
-            return (start, String(line))
-        }
+    /// The script's lines, numbered: cues and the voice's place meet them by line.
+    private var lines: [(index: Int, text: String)] {
+        studio.script.readable.split(separator: "\n", omittingEmptySubsequences: false).enumerated().map { ($0.offset, String($0.element)) }
     }
 
     var body: some View {
@@ -127,8 +123,8 @@ struct PrompterView: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         .onChange(of: studio.jump) { _, target in
             guard let target else { return }
-            let start = lines.last(where: { $0.start <= target })?.start ?? 0
-            withAnimation(.easeInOut(duration: 0.35)) { studio.offset = max(0, (lineTops[start] ?? 0) - 4) }
+            let line = studio.script.line(of: target)
+            withAnimation(.easeInOut(duration: 0.35)) { studio.offset = max(0, (lineTops[line] ?? 0) - 4) }
             studio.jump = nil
         }
         .onChange(of: studio.playing) { _, _ in lastTick = nil }
@@ -136,9 +132,9 @@ struct PrompterView: View {
 
     /// The script, scrolling up; lines fade in at the bottom and out under the notch.
     private var text: some View {
-        TimelineView(.animation(paused: !studio.playing)) { timeline in
+        TimelineView(.animation(paused: !studio.playing && !studio.following)) { timeline in
             VStack(alignment: .center, spacing: 6) {
-                ForEach(lines, id: \.start) { line in
+                ForEach(lines, id: \.index) { line in
                     Text(line.text.isEmpty ? " " : line.text)
                         .font(.system(size: studio.fontSize, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
@@ -148,7 +144,7 @@ struct PrompterView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
                         .background(GeometryReader { proxy in
-                            Color.clear.preference(key: LineTops.self, value: [line.start: proxy.frame(in: .named("script")).minY])
+                            Color.clear.preference(key: LineTops.self, value: [line.index: proxy.frame(in: .named("script")).minY])
                         })
                 }
             }
@@ -160,7 +156,7 @@ struct PrompterView: View {
             .onChange(of: timeline.date) { _, now in advance(to: now) }
             .onChange(of: studio.offset) { _, offset in
                 // The line at the top of what's showing is where reading is.
-                studio.readingAt = lines.last(where: { (lineTops[$0.start] ?? 0) <= offset + 8 })?.start ?? 0
+                studio.readingLine = lines.last(where: { (lineTops[$0.index] ?? 0) <= offset + 8 })?.index ?? 0
             }
         }
         .onPreferenceChange(LineTops.self) { lineTops = $0 }
@@ -175,8 +171,20 @@ struct PrompterView: View {
 
     private func advance(to now: Date) {
         defer { lastTick = now }
-        guard studio.playing, let last = lastTick else { return }
-        nudge(by: studio.speed * now.timeIntervalSince(last))
+        guard let last = lastTick else { return }
+        let elapsed = now.timeIntervalSince(last)
+        if studio.following {
+            // Glide to the voice's place: its line, as far through it as you are, kept a
+            // quarter of the way down; still when there's no new place (you stopped).
+            guard let place = studio.place, let top = lineTops[place.line] else { return }
+            let bottom = lineTops[place.line + 1] ?? contentHeight
+            let target = max(0, top + (bottom - top) * place.fraction - (studio.size.height - self.top) * 0.35)
+            let step = (target - studio.offset) * min(1, elapsed * 4)
+            if abs(step) > 0.05 { studio.offset = min(max(0, studio.offset + step), studio.maxOffset) }
+            return
+        }
+        guard studio.playing else { return }
+        nudge(by: studio.speed * elapsed)
         if studio.offset >= max(0, contentHeight - 20) { studio.playing = false }  // the end
     }
 
@@ -188,7 +196,20 @@ struct PrompterView: View {
     /// bottom-right corner resizes.
     private var controls: some View {
         HStack(spacing: 6) {
-            PrompterButton(symbol: studio.playing ? "pause.fill" : "play.fill", help: studio.playing ? "Pause" : "Scroll") {
+            // Follow my voice (on from the start), or ▶ at a set speed.
+            Button {
+                if studio.following { studio.stopFollowing() } else { studio.startFollowing() }
+            } label: {
+                Image(systemName: studio.following ? "waveform" : "mic.fill").font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white).frame(width: 24, height: 24)
+                    .background(Circle().fill(studio.following ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(studio.following ? "Following your voice: click to stop" : "Follow my voice")
+            .accessibilityLabel(studio.following ? "Stop following my voice" : "Follow my voice")
+            PrompterButton(symbol: studio.playing ? "pause.fill" : "play.fill", help: studio.playing ? "Pause" : "Scroll at a set speed") {
+                if studio.following { studio.stopFollowing() }
                 studio.playing.toggle()
             }
             PrompterButton(symbol: "tortoise.fill", help: "Slower") { studio.speed = max(6, studio.speed - 6) }
@@ -292,7 +313,7 @@ private struct CueList: View {
     @Bindable var studio: StudioModel
 
     var body: some View {
-        let current = studio.script.cue(at: studio.readingAt)
+        let current = studio.script.cue(atLine: studio.readingLine)
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text("Cues").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
