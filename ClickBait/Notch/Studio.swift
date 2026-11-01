@@ -159,14 +159,17 @@ final class StudioModel {
         didSet {
             UserDefaults.standard.set(floating, forKey: Key.floating)
             guard floating != oldValue, prompting else { return }
-            // Out of the notch into its own window, or back into the notch.
+            // Out of the notch into its own window (the notch folds away: left open as Studio,
+            // its flat top looked like the floating prompter's), or back into the notch.
             if floating {
                 shown = true
                 PrompterController.shared.show()
+                notchChanged?()
+                foldNotch?()
             } else {
                 PrompterController.shared.hide()
+                notchChanged?()
             }
-            notchChanged?()
         }
     }
     var floatAt: CGPoint? {

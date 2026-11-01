@@ -62,3 +62,22 @@ struct ScriptPickerRenderTests {
         try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "picker.png"))
     }
 }
+
+/// The floating (unpinned) prompter, to look at its corners (ClickBaitTests-studio/floating.png).
+@MainActor
+struct FloatingRenderTests {
+    @Test func floatingDraws() throws {
+        let studio = StudioModel.shared
+        let saved = (studio.floating, studio.shown)
+        defer { studio.floating = saved.0; studio.shown = saved.1 }
+        studio.floating = true
+        studio.shown = true
+        let view = PrompterView(studio: studio).frame(height: studio.size.height).padding(30).background(Color(red: 0.35, green: 0.37, blue: 0.75))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let image = try #require(renderer.nsImage)
+        let rep = try #require(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        let folder = FileManager.default.temporaryDirectory.appending(path: "ClickBaitTests-studio")
+        try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "floating.png"))
+    }
+}

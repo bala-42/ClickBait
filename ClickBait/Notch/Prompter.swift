@@ -303,7 +303,8 @@ struct PrompterView: View {
             }
             PrompterButton(symbol: "xmark", help: "Close the prompter") { studio.stopPrompting() }
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, 14)
+        .padding(.trailing, 34)  // room for the corner's resize grip
         .padding(.bottom, 8)
         .padding(.top, 18)
         // A dark band behind them, so they don't sit on the text.
@@ -388,8 +389,19 @@ private struct ResizeEdges: View {
             handle(.left).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 30)
             handle(.right).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 30)
             handle(.bottom).frame(height: Self.grip).frame(maxHeight: .infinity, alignment: .bottom).padding(.horizontal, 16)
-            handle(.bottomLeft).frame(width: 16, height: 16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            handle(.bottomRight).frame(width: 16, height: 16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            // Inside the rounded corners: right in them, the rounding clipped the grips away and
+            // the corner couldn't be dragged (user's report, 2026-11-01). A mark shows on hover.
+            handle(.bottomLeft).frame(width: 24, height: 24).padding([.leading, .bottom], 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            handle(.bottomRight).frame(width: 24, height: 24).padding([.trailing, .bottom], 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            if studio.hovering {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 9, weight: .bold)).foregroundStyle(MoodyLook.cream.opacity(0.55))
+                    .padding([.trailing, .bottom], 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .allowsHitTesting(false)
+            }
         }
     }
 

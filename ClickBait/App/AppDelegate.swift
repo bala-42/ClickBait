@@ -354,9 +354,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         // Studio from the outside, for live tests: start or stop the prompter.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.studio"), object: nil, queue: .main) { note in
-            let stop = note.object as? String == "stop"
+            let command = note.object as? String
             MainActor.assumeIsolated {
-                if stop { StudioModel.shared.stopPrompting() } else { StudioModel.shared.startPrompting() }
+                switch command {
+                case "stop": StudioModel.shared.stopPrompting()
+                case "float": StudioModel.shared.floating.toggle()
+                default: StudioModel.shared.startPrompting()
+                }
             }
         }
         #endif
