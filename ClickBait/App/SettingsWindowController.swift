@@ -754,8 +754,10 @@ struct VisionMemorySection: View {
 
     private var pausedNote: String? {
         if !settings.visionDescribe { return "off" }
-        guard let until = settings.visionPausedUntil, until > Date() else { return nil }
-        return "paused"
+        if let until = settings.visionPausedUntil, until > Date() { return "paused" }
+        // Not paused, but waiting all the same: say why, not "Describing now".
+        if !settings.visionOnBattery, VisionOptions.onBatteryPower, stats.described < stats.pictures { return "waiting for the charger" }
+        return nil
     }
 
     private var allDone: Bool { stats.pictures > 0 && stats.described >= stats.pictures }

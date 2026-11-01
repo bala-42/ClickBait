@@ -33,6 +33,9 @@ public enum SmartSearch {
         /// "a picture where I'm holding a dog": pictures with the user's face in them first
         /// (`Item.hasYou`, from the reference photo picked in Settings).
         public var wantsMe = false
+        /// "the video I have open", "the pdf that's open", "what I'm watching": the files open in
+        /// apps right now come first.
+        public var openNow = false
 
         public init(kind: Kind, terms: [String], text: String, related: [String] = [], wantsMe: Bool = false) {
             self.kind = kind
@@ -131,6 +134,8 @@ public enum SmartSearch {
     static let videoWords: Set<String> = ["video", "videos", "clip", "clips", "movie", "movies", "recording", "recordings", "footage"]
     static let kindNouns: Set<String> = videoWords.union(["photos", "pictures", "pics", "images", "screenshots", "pdfs", "files",
                                                           "documents", "notes", "reminders"])
+    /// Words saying it's open now. ("open" itself is also a stop word: "open the file" isn't a term.)
+    static let openWords: Set<String> = ["open", "opened", "playing", "watching", "viewing", "showing", "current", "currently", "onscreen"]
     private static let uiWords: Set<String> = ["button", "menu", "icon", "tab", "toolbar", "setting", "settings", "field", "link",
                                                "checkbox", "switch", "option", "bar", "sidebar", "window"]
     private static let stopWords: Set<String> = ["the", "a", "an", "my", "me", "i", "that", "this", "about", "of", "for", "with", "from",
@@ -168,8 +173,9 @@ public enum SmartSearch {
         let named = kind != .any && words.count <= 5 && Self.kindNouns.contains(words.last ?? "")
         guard asks.contains(where: { joined.contains($0) }) || words.first == "find" || words.first == "search" || whereThing || named
         else { return nil }
-        let terms = words.filter { !stopWords.contains($0) && $0.count > 1 && !["im", "myself", "ive"].contains($0) }
-        guard !terms.isEmpty else { return nil }
+        let openNow = words.contains(where: Self.openWords.contains)
+        let terms = words.filter { !stopWords.contains($0) && $0.count > 1 && !["im", "myself", "ive", "thats", "its", "whats"].contains($0) && !Self.openWords.contains($0) }
+        guard !terms.isEmpty || (openNow && kind != .any) else { return nil }
         // "…where I'm holding a dog", "a photo of me": the user is in it ("show me", "find me"
         // and "I took" are just how it's asked).
         let selfWords = words.enumerated().filter { offset, word in
@@ -181,7 +187,19 @@ public enum SmartSearch {
             }
         }
         let wantsMe = kind == .image && !selfWords.isEmpty
-        return Request(kind: kind, terms: terms, text: terms.joined(separator: " "), wantsMe: wantsMe)
+        var request = Request(kind: kind, terms: terms, text: terms.isEmpty ? kind.rawValue : terms.joined(separator: " "), wantsMe: wantsMe)
+        request.openNow = openNow
+        return request
+    }
+
+    /// The word's stem for matching names: "shampooing" → "shampoo" (a file named
+    /// "shampoo_input" never matched "shampooing"; user's report, 2026-11-02), "shoulders" →
+    /// "shoulder", "wearing" → "wear". Short words are kept as they are.
+    public static func stem(_ word: String) -> String {
+        for suffix in ["ing", "ed", "es", "s"] where word.count > suffix.count + 3 && word.hasSuffix(suffix) {
+            return String(word.dropLast(suffix.count))
+        }
+        return word
     }
 
     public static func cosine(_ a: [Float], _ b: [Float]) -> Float {
@@ -289,8 +307,11 @@ public enum SmartSearch {
     }
 
     /// A line over the results card, also what's said aloud.
-    public static func headline(_ found: [Item], for request: Request) -> String {
+    /// `waiting`: pictures and videos found but not read yet; with none found, that's why.
+    public static func headline(_ found: [Item], for request: Request, waiting: Int = 0, waitingWhy: String? = nil) -> String {
         switch found.count {
+        case 0 where waiting > 0 && request.kind != .note && request.kind != .reminder && request.kind != .file:
+            "I couldn't find it, but \(waiting) pictures and videos aren't read yet\(waitingWhy.map { " (\($0))" } ?? ""), so I can only match their names for now."
         case 0: "I couldn't find anything about \(request.text) on this Mac."
         case 1: "Found it."
         default: "Found \(found.count)."

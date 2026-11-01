@@ -100,4 +100,22 @@ struct SmartSearchTests {
         #expect(SmartSearch.request(in: "beach photos")?.kind == .image)
         #expect(SmartSearch.request(in: "make a video about cats") == nil)  // not a search
     }
+
+    @Test func openNowIsASearch() {
+        let open = SmartSearch.request(in: "find the video I have open")
+        #expect(open?.kind == .video && open?.openNow == true && open?.terms.isEmpty == true)
+        let named = SmartSearch.request(in: "find the shampoo video that's playing")
+        #expect(named?.openNow == true && named?.terms == ["shampoo"])
+        #expect(SmartSearch.request(in: "find the shampoo videos")?.openNow == false)
+        let none = SmartSearch.Request(kind: .video, terms: ["towel"], text: "towel")
+        #expect(SmartSearch.headline([], for: none, waiting: 50, waitingWhy: "on battery").contains("50 pictures and videos aren't read yet"))
+    }
+
+    @Test func stems() {
+        #expect(SmartSearch.stem("shampooing") == "shampoo")
+        #expect(SmartSearch.stem("shoulders") == "shoulder")
+        #expect(SmartSearch.stem("wearing") == "wear")
+        #expect(SmartSearch.stem("hair") == "hair")
+        #expect(SmartSearch.stem("towel") == "towel")
+    }
 }

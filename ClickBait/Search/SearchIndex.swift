@@ -1,6 +1,7 @@
 import AVFoundation
 import AppKit
 import ClickBaitCore
+import CoreServices
 import CryptoKit
 import EventKit
 import NaturalLanguage
@@ -66,6 +67,9 @@ actor SearchIndex {
     private var forgotten: Set<String> = []
     /// Captions written in the pass under way (saved at its end), so Settings' count moves live.
     private var describingNow = 0
+    /// Pictures and videos found in the folders but not read yet (on battery, paused, busy):
+    /// counted so Settings and an empty search say so instead of "done".
+    private(set) var waiting = 0
     private var describing = false
 
     /// At most this many pictures are read (newest first), so the first pass stays minutes, not hours.
@@ -79,7 +83,12 @@ actor SearchIndex {
         if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(options) } }
         var pool = entries.values.filter { entry in
             entry.item.file.map { !VisionMemory.isExcluded($0, excluded: options.excluded) } ?? true
-        }.map { ($0.item, $0.vector) }
+        }.map { entry in
+            // Read before videos were their own kind: the kind from the file, so "videos" finds them.
+            var item = entry.item
+            if item.kind.isVisual, let file = item.file { item.kind = SmartSearch.Kind.of(file) }
+            return (item, entry.vector)
+        }
         pool.append((SmartSearch.Item(id: "quicknote", kind: .note, title: "Quick note", place: "the notch", text: notchNote), nil))
         // Files: Spotlight's matches for the words, by name or the text inside.
         var boosted: Set<String> = []
@@ -90,7 +99,30 @@ actor SearchIndex {
                 boosted.insert(item.id)
             }
         }
-        if request.kind != .any { pool = pool.filter { $0.0.kind == request.kind || ($0.0.kind == .file && request.kind == .image) } }
+        // Files open in apps right now (user's report, 2026-11-02: "I have that video open and
+        // the search did not give me it"): always in the running, ahead of their peers.
+        var open: [SmartSearch.Item] = []
+        if request.kind != .note, request.kind != .reminder {
+            let shown = await MainActor.run(body: { AXInspector.openDocuments() })
+            for url in shown + Self.recentlyOpened().filter { !shown.contains($0) }
+            where !VisionMemory.isExcluded(url.path, excluded: options.excluded) {
+                let id = "file:\(url.path)"
+                var item = entries[id]?.item ?? SmartSearch.Item(
+                    id: id, kind: SmartSearch.Kind.of(url.path), title: url.lastPathComponent,
+                    place: url.deletingLastPathComponent().lastPathComponent, text: "", file: url.path,
+                    modified: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                    bytes: (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize)
+                item.kind = SmartSearch.Kind.of(url.path)
+                open.append(item)
+                boosted.insert(id)
+                if !pool.contains(where: { $0.0.id == id }) { pool.append((item, entries[id]?.vector)) }
+            }
+        }
+        if request.kind != .any {
+            let fits = { (kind: SmartSearch.Kind) in kind == request.kind || (kind == .file && request.kind == .image) }
+            pool = pool.filter { fits($0.0.kind) }
+            open = open.filter { fits($0.kind) }
+        }
         // Meaning: nomic for the question; items without a nomic vector are embedded now (a few).
         var query = await Embedder.vectors([request.text], as: .query)?.first
         var vectors: [[Float]?] = pool.map(\.1)
@@ -109,7 +141,18 @@ actor SearchIndex {
         // A file deleted or moved since it was read never shows; copies become one result.
         let present = candidates.filter { item in item.file.map { FileManager.default.fileExists(atPath: $0) } ?? true }
         // Every good match, to scroll through (user: "why is 8 the limit?"), up to 60.
-        let ranked = Array(VisionMemory.collapseCopies(present).prefix(60))
+        var ranked = Array(VisionMemory.collapseCopies(present).prefix(60))
+        // A match that's open (or just opened) is most likely the one meant: first.
+        let openIDs = Set(open.map(\.id))
+        let openOrder = Dictionary(open.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        ranked = ranked.filter { openIDs.contains($0.id) }.sorted { openOrder[$0.id, default: 0] < openOrder[$1.id, default: 0] }
+            + ranked.filter { !openIDs.contains($0.id) }
+        // "the video I have open": the open ones first, those naming the words before the rest.
+        if request.openNow, !open.isEmpty {
+            let named = open.filter { item in request.terms.contains { (item.title + " " + (item.caption ?? "")).lowercased().contains($0) } }
+            let first = named + open.filter { !named.map(\.id).contains($0.id) }
+            ranked = first + ranked.filter { item in !first.contains { $0.id == item.id } }
+        }
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
         return ranked
     }
@@ -238,6 +281,7 @@ actor SearchIndex {
             for (id, vector) in zip(batch, vectors) { next[id]?.vector = vector; next[id]?.model = Embedder.model }
         }
         entries = next
+        self.waiting = pictures.filter { next[$0.id] == nil }.count
         (describingNow, describing) = (0, false)
         save()
         Log.app.notice("Search index: \(next.count, privacy: .public) things, \(picturesRead, privacy: .public) pictures read, \(captioned, privacy: .public) captioned")
@@ -271,7 +315,8 @@ actor SearchIndex {
         let pictures = entries.values.filter { $0.item.kind.isVisual }
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         let described = min(pictures.count, pictures.filter { $0.item.caption != nil }.count + describingNow)
-        return (pictures.count, described, size, describing)
+        // Found but not read yet count too: "317 of 317 … Done!" hid 50 unread videos.
+        return (pictures.count + waiting, described, size, describing)
     }
 
     /// Size and a hash of the first 64 KB: the same for copies of one file.
@@ -566,6 +611,30 @@ actor SearchIndex {
     }
 
     /// Files whose name or contents hold the words (Spotlight's own index); AND first, then each word.
+    /// Files opened in the last two hours (Spotlight's last-used date): open on another desktop,
+    /// minimised, or just closed — what "the video I have open" often means.
+    private static func recentlyOpened() -> [URL] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        process.arguments = ["-onlyin", FileManager.default.homeDirectoryForCurrentUser.path, "kMDItemLastUsedDate >= $time.now(-7200)"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let skip = ["/Library/", "/.Trash/", ".app", "/node_modules/", "/.git/", "/DerivedData/"]
+        return String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init)
+            .filter { path in
+                // Pictures, videos and documents people open; not code, logs and app data.
+                !skip.contains(where: path.contains)
+                    && (SmartSearch.Kind.of(path) != .file || ["pdf", "docx", "doc", "pages", "key", "numbers", "txt", "rtf"].contains((path as NSString).pathExtension.lowercased()))
+            }
+            .map { path in (path, MDItemCreate(nil, path as CFString).flatMap { MDItemCopyAttribute($0, kMDItemLastUsedDate) as? Date } ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }  // the latest opened first
+            .prefix(30).map { URL(fileURLWithPath: $0.0) }
+    }
+
     private static func spotlight(_ terms: [String], kind wanted: SmartSearch.Kind) async -> [SmartSearch.Item] {
         func run(_ query: String) -> [String] {
             let process = Process()
@@ -581,7 +650,14 @@ actor SearchIndex {
         }
         return await Task.detached(priority: .userInitiated) {
             var paths = run(terms.joined(separator: " "))
-            if paths.count < 5 { for term in terms.prefix(3) where term.count > 2 { paths += run(term) } }
+            // Every word, by its stem, in file names too: "girl … shampooing her hair" tried only
+            // "girl wearing towel" and missed every "shampoo_input" video (user's report, 2026-11-02).
+            if paths.count < 20 {
+                for term in terms.prefix(8) where term.count > 2 {
+                    let stem = SmartSearch.stem(term).replacingOccurrences(of: "\"", with: "")
+                    paths += run(term) + run("kMDItemFSName == \"*\(stem)*\"cd")
+                }
+            }
             let skip = ["/Library/", "/.Trash/", "/node_modules/", ".app/", "/.git/", "/DerivedData/"]
             var seen: Set<String> = []
             return paths.filter { path in

@@ -267,8 +267,13 @@ extension AskCoordinator {
             lastSearchResults = found
             // One sentence about the best find, from the brain (~0.5 s), like Taby's "I found a
             // picture of you with a dog in your Downloads folder. Want me to open it?"
-            let headline = await Self.searchSentence(found, question: question, brain: settings.ollamaModel)
-                ?? SmartSearch.headline(found, for: search)
+            let waiting = await SearchIndex.shared.waiting
+            let options = settings.visionOptions
+            let waitingWhy = !settings.visionDescribe ? "Describe multimedia is off"
+                : !options.onBattery && VisionOptions.onBatteryPower ? "I read them while the Mac is plugged in" : nil
+            let headline = found.isEmpty
+                ? SmartSearch.headline(found, for: search, waiting: waiting, waitingWhy: waitingWhy)
+                : await Self.searchSentence(found, question: question, brain: settings.ollamaModel) ?? SmartSearch.headline(found, for: search)
             if speak { speaker.speak(headline) }
             // The chat keeps the full list, so "open the second one" can follow.
             if !flow.sentAway { conversation?.append(user: question, assistantSpeech: SmartSearch.reply(found, for: search)) }

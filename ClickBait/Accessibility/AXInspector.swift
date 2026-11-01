@@ -173,6 +173,29 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
+    /// Every file open in a window of any app (a video in QuickTime, a PDF in Preview, a page in
+    /// Pages), front app's first: what "the video I have open" means to smart search (user's
+    /// report, 2026-11-02). Only windows on the current desktop are listed (macOS): smart
+    /// search adds the files opened recently (`SearchIndex.recentlyOpened`) for the rest.
+    static func openDocuments() -> [URL] {
+        guard isTrusted else { return [] }
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != getpid() }
+            .sorted { ($0.processIdentifier == front ? 0 : 1) < ($1.processIdentifier == front ? 0 : 1) }
+        var seen: Set<String> = []
+        var found: [URL] = []
+        for app in apps {
+            for window in element(appElement(app.processIdentifier)).children(kAXWindowsAttribute) {
+                guard let document = window.string(kAXDocumentAttribute), let url = URL(string: document), url.isFileURL,
+                      seen.insert(url.path).inserted, FileManager.default.fileExists(atPath: url.path) else { continue }
+                found.append(url)
+            }
+        }
+        Log.app.notice("Open files: \(found.count, privacy: .public) in \(apps.count, privacy: .public) apps")
+        return found
+    }
+
     /// The file open in the front app's window (QuickTime's video, Preview's PDF…), from its
     /// `AXDocument`; nil for web pages, unsaved documents and apps that don't say.
     static func openDocument(frontmostPID pid: pid_t?) -> URL? {
