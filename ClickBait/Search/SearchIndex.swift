@@ -105,10 +105,11 @@ actor SearchIndex {
             vectors = pool.map { entry in apple.vector(for: String(Self.document(entry.0).prefix(300))).map { $0.map(Float.init) } }
         }
         let candidates = SmartSearch.rank(zip(pool.map(\.0), vectors).map { ($0, $1) }, for: request, query: query,
-                                          boosted: boosted, limit: 30)
+                                          boosted: boosted, limit: 80)
         // A file deleted or moved since it was read never shows; copies become one result.
         let present = candidates.filter { item in item.file.map { FileManager.default.fileExists(atPath: $0) } ?? true }
-        let ranked = Array(VisionMemory.collapseCopies(present).prefix(8))
+        // Every good match, to scroll through (user: "why is 8 the limit?"), up to 60.
+        let ranked = Array(VisionMemory.collapseCopies(present).prefix(60))
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
         return ranked
     }
@@ -584,7 +585,7 @@ actor SearchIndex {
             return paths.filter { path in
                 !skip.contains(where: path.contains) && !path.hasSuffix(".app") && seen.insert(path).inserted
                     && (wanted == .any || wanted == .file || SmartSearch.Kind.of(path) == wanted)
-            }.prefix(40).map { path in
+            }.prefix(80).map { path in
                 let url = URL(fileURLWithPath: path)
                 let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
                 return SmartSearch.Item(id: "file:\(path)", kind: SmartSearch.Kind.of(path), title: url.lastPathComponent,
