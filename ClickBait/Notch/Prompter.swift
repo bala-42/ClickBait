@@ -266,14 +266,17 @@ struct PrompterView: View {
             // At your pace: while you speak the reading position runs on at your words a second
             // (up to 6 words past the last match), still the moment you stop; each match corrects it.
             guard let place = studio.place, let follower = studio.follower else { return }
-            if studio.speaking {
-                studio.reading = min(studio.reading + studio.pace * elapsed, Double(place.word) + 6)
-            }
+            let dt = min(elapsed, 0.1)  // a stall isn't a leap
+            (studio.reading, studio.readingSpeed) = StudioMotion.read(
+                at: studio.reading, speed: studio.readingSpeed, matched: Double(place.word),
+                pace: studio.pace, speaking: studio.speaking, dt: dt)
             guard let spot = follower.placement(ofWord: studio.reading), let top = lineTops[spot.line] else { return }
             let bottom = lineTops[spot.line + 1] ?? contentHeight
             let target = max(0, top + (bottom - top) * spot.fraction - (studio.size.height - self.top) * 0.35)
-            let step = (target - studio.offset) * min(1, elapsed * 4)
-            if abs(step) > 0.05 { studio.offset = min(max(0, studio.offset + step), studio.maxOffset) }
+            var (offset, velocity) = StudioMotion.spring(studio.offset, velocity: studio.scrollVelocity, to: target, dt: dt)
+            offset = min(max(0, offset), studio.maxOffset)
+            studio.scrollVelocity = velocity
+            if abs(offset - studio.offset) > 0.02 { studio.offset = offset }
             return
         }
         guard studio.playing else { return }
@@ -584,4 +587,36 @@ private struct LineTops: PreferenceKey {
 private struct ContentHeight: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// How the prompter moves while following the voice: smooth starts, stops and corrections.
+enum StudioMotion {
+    /// The reading position (words) and its speed (words a second) after `dt`. The speed eases
+    /// toward your pace while you speak and to rest when you stop (~0.35 s), plus a correction
+    /// that closes a gap behind the last match over about a second; it never runs backwards, and
+    /// never more than 6 words past the match.
+    static func read(at reading: Double, speed: Double, matched: Double, pace: Double, speaking: Bool, dt: Double) -> (Double, Double) {
+        let wanted = speaking ? pace : 0
+        let eased = speed + (wanted - speed) * min(1, dt / 0.35)
+        let gap = matched - reading  // behind > 0
+        // Matches come a second late, so running a few words past one is right: only more than
+        // 5 ahead slows it down.
+        let correction = gap > 0 ? gap * 0.9 : (gap < -5 ? (gap + 5) * 0.6 : 0)
+        let rate = max(0, eased + correction)
+        return (min(reading + rate * dt, matched + 6), eased)
+    }
+
+    /// A critically damped spring (ω 6/s, no overshoot): momentum, so changes of pace glide
+    /// instead of jolting. Small steps keep it stable at any frame rate.
+    static func spring(_ position: Double, velocity: Double, to target: Double, dt: Double) -> (Double, Double) {
+        let omega = 6.0
+        var (x, v) = (position, velocity)
+        let steps = max(1, Int((dt / 0.008).rounded(.up)))
+        let h = dt / Double(steps)
+        for _ in 0..<steps {
+            v += (omega * omega * (target - x) - 2 * omega * v) * h
+            x += v * h
+        }
+        return (x, v)
+    }
 }

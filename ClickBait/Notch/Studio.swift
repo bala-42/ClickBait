@@ -61,6 +61,8 @@ final class StudioModel {
             place = nil
             lastMatch = nil
             reading = Double(follower?.words.firstIndex { $0.line >= readingLine } ?? 0)
+        (readingSpeed, scrollVelocity) = (0, 0)
+            (readingSpeed, scrollVelocity) = (0, 0)
             voice?.resume(atLine: readingLine)
         }
     }
@@ -73,6 +75,7 @@ final class StudioModel {
         lastMatch = nil
         follower = ScriptFollower(readable: script.readable)
         reading = Double(follower?.words.firstIndex { $0.line >= readingLine } ?? 0)
+        (readingSpeed, scrollVelocity) = (0, 0)
         let voice = VoiceFollower(readable: script.readable,
                                   onPlace: { [weak self] in self?.place = $0 },
                                   onLevel: { [weak self] new in
@@ -128,6 +131,11 @@ final class StudioModel {
     /// second, learnt from the matches; `spokeAt` the last moment the voice was loud.
     @ObservationIgnored var reading: Double = 0
     @ObservationIgnored var pace: Double = 2.5
+    /// Smoothness (user's ask, 2026-11-02: "make the pace reactive aspect smoother"): the
+    /// words a second the reading position moves now (eases toward `pace` while you speak, to
+    /// 0 when you stop), and the scroll's own speed in points a second (a spring, not a chase).
+    @ObservationIgnored var readingSpeed: Double = 0
+    @ObservationIgnored var scrollVelocity: Double = 0
     @ObservationIgnored var spokeAt = Date.distantPast
     @ObservationIgnored private var lastMatch: (word: Int, at: Date)?
     @ObservationIgnored var follower: ScriptFollower?
@@ -143,8 +151,10 @@ final class StudioModel {
         }
         lastMatch = (place.word, now)
         Log.app.debug("Studio: at word \(place.word, privacy: .public) (line \(place.line, privacy: .public)), pace \(String(format: "%.1f", self.pace), privacy: .public) words/s")
-        // Behind the match: catch up; ran a little ahead: keep going (it was right); far ahead: back.
-        if Double(place.word) > reading || reading - Double(place.word) > 4 { reading = Double(place.word) }
+        // A skip (far behind or ahead): straight there. Otherwise the gap is closed by speeding up
+        // or slowing down (`StudioMotion`), not a jump: matches land each second, and snapping
+        // to each one made the text lurch.
+        if abs(Double(place.word) - reading) > 8 { reading = Double(place.word) }
     }
     @ObservationIgnored private var voice: VoiceFollower?
     /// The voice's loudness now, 0…1 (drives the ring; 0 without voice-following).
@@ -406,6 +416,7 @@ final class StudioModel {
         place = nil
         lastMatch = nil
         reading = Double(follower?.words.firstIndex { $0.line >= line } ?? 0)
+        (readingSpeed, scrollVelocity) = (0, 0)
         voice?.resume(atLine: line)
     }
 
