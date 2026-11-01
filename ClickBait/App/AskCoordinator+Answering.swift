@@ -1103,6 +1103,11 @@ extension AskCoordinator {
             show(error: error.message)
             return .failure(error.message)
         case .success(let action):
+            // Copy-making file jobs can take minutes (a big video): they go to the dock as a
+            // Shamrock tile and ClickBait is free at once (user's ask, 2026-11-02).
+            if case .file(let file) = action, file.makesCopies, let jobs = backgroundJobs, jobs.hasRoom {
+                return startFileJob(file, title: Self.workingMessage(for: action), jobs: jobs, speak: speak)
+            }
             onActionStarted?(Self.workingMessage(for: action))
             do {
                 let confirmation = try await ActionExecutor.run(action, blocklist: settings.blocklist,
@@ -1125,6 +1130,35 @@ extension AskCoordinator {
                 return .failure(error.localizedDescription)
             }
         }
+    }
+
+    /// Runs a file job as a dock tile: the files are read now (from where they're chosen), the
+    /// card shows the result and its "show me!" reveals the new files.
+    private func startFileJob(_ file: FileAction, title: String, jobs: BackgroundJobs, speak: Bool) -> ActionOutcome {
+        let front = NSWorkspace.shared.frontmostApplication
+        let job = BackgroundJob(question: String(title.dropLast()), kind: .files, homeBundleID: front?.bundleIdentifier,
+                                homePID: front.map { Int32($0.processIdentifier) }, conversation: Conversation())
+        let task = Task { @MainActor [weak jobs] in
+            do {
+                let (message, made) = try await FileActions.run(file, reveal: false)
+                guard !Task.isCancelled else { return }
+                jobs?.setMadeFiles(made, for: job.id)
+                jobs?.complete(job.id, answer: message, conversation: Conversation())
+                Log.ask.notice("File job done: \(message, privacy: .public)")
+            } catch {
+                guard !Task.isCancelled else { return }
+                jobs?.fail(job.id, reason: error.localizedDescription)
+                Log.ask.error("File job failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        guard jobs.add(job, task: task) else {
+            task.cancel()
+            return .failure("The dock is full")
+        }
+        let note = "On it, in the dock"
+        if speak { speaker.speak(note + ".") }
+        onActionDone?(note)
+        return .success(note)
     }
 
     static func workingMessage(for action: ResolvedAction) -> String {

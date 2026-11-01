@@ -129,7 +129,7 @@ struct CapsuleView: View {
             let top = Self.top(of: job, messages: presentation.entry.chatMessages)
             AgentDoneCard(title: top.question, summary: summary, answer: top.answer, suggestions: presentation.entry.offeredSuggestions,
                           tone: tone, canGoThere: canGoThere(),
-                          goLabel: job.kind == .walkthrough ? PeelRule.walkthroughResumePrompt : "go there!",
+                          goLabel: job.kind == .walkthrough ? PeelRule.walkthroughResumePrompt : job.kind == .files ? "show me!" : "go there!",
                           onClose: { onDismiss(id) },
                           onSuggestion: { onSuggestion(id, $0) },
                           followUp: presentation.followUp,

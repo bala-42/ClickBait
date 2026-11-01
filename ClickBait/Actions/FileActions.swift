@@ -48,23 +48,24 @@ enum FileActions {
         return nil
     }
 
+    /// `reveal` false (a dock job): nothing is brought forward; the card shows the files later.
     @MainActor
-    static func run(_ action: FileAction) async throws -> String {
+    static func run(_ action: FileAction, reveal: Bool = true) async throws -> (message: String, made: [URL]) {
         let front = NSWorkspace.shared.frontmostApplication
         let source = otherSource(for: action, frontmostPID: front?.processIdentifier, frontmostBundleID: front?.bundleIdentifier)
         let selection: [URL]
         if let source { selection = source.files } else { selection = try await FinderSelection.read() }
         guard !selection.isEmpty else { throw FileActionError.nothingSelected }
 
-        let (message, reveal): (String, [URL]) = try await Task.detached(priority: .userInitiated) {
+        let (message, made): (String, [URL]) = try await Task.detached(priority: .userInitiated) {
             try await perform(action, on: selection)
         }.value
         if source?.shelf == true {
-            addToShelf(reveal)
-        } else if !reveal.isEmpty {
-            NSWorkspace.shared.activateFileViewerSelecting(reveal)
+            addToShelf(made)
+        } else if reveal, !made.isEmpty {
+            NSWorkspace.shared.activateFileViewerSelecting(made)
         }
-        return message
+        return (message, made)
     }
 
     static func perform(_ action: FileAction, on files: [URL]) async throws -> (String, [URL]) {

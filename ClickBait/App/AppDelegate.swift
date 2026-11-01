@@ -266,6 +266,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         capsules.onLater = { [weak self] in self?.capsules.fold($0) }
         capsules.onGoThere = { [weak self] id in
             guard let self else { return }
+            // A file job: "show me!" shows the new files in Finder, and the tile is done with.
+            if let made = backgroundJobs.entries.first(where: { $0.id == id })?.madeFiles, !made.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(made)
+                backgroundJobs.remove(id)
+                return
+            }
             // A walkthrough planned in the dock: "show me!" goes there and starts it.
             if let pending = backgroundJobs.entries.first(where: { $0.id == id })?.walkthrough {
                 goThere(id) { [weak self] in self?.coordinator.resumeWalkthrough(pending) }
@@ -366,6 +372,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let found = await SearchIndex.shared.search(request, notchNote: "", options: options)
                     Log.app.notice("Debug search: kind \(request.kind.rawValue, privacy: .public), terms \(request.terms.joined(separator: " "), privacy: .public) → \(found.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "), privacy: .public)")
                 }
+            }
+        }
+        // An order from the outside ("convert this to mp4"), as if typed: for live dock tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.order"), object: nil, queue: .main) { [weak self] note in
+            guard let text = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self, let request = CommandParser.parse(text, allowedShortcuts: []) else { Log.app.notice("Debug order: not an order"); return }
+                Task { _ = await self.coordinator.perform(request, speak: false) }
             }
         }
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.studio"), object: nil, queue: .main) { note in
@@ -843,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The first time a done card opens: ask for its "suggested next:" pills.
     private func suggestNext(for id: UUID) {
         guard let entry = backgroundJobs.entries.first(where: { $0.id == id }), entry.suggestions == nil,
-              entry.walkthrough == nil,  // its one next step is "show me!"
+              entry.walkthrough == nil, entry.job.kind != .files,  // their one next step is "show me!"
               case .done = entry.job.status, !askingSuggestions.contains(id) else { return }
         askingSuggestions.insert(id)
         let question = entry.job.question, answer = entry.job.answer

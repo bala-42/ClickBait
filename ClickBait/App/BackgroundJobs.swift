@@ -31,6 +31,8 @@ final class BackgroundJobs {
         /// A suggestion that comes before the asked-for ones (a snip peeled before its tour offers
         /// "show me the parts").
         var leadingSuggestion: String?
+        /// A file job's new files: its card's "show me!" reveals them in Finder.
+        var madeFiles: [URL] = []
         /// Its card has been opened since it finished: the tile stops pulsing.
         var seen = false
         var id: UUID { job.id }
@@ -145,6 +147,11 @@ final class BackgroundJobs {
         entries[index].job.rename(question)
     }
 
+    func setMadeFiles(_ files: [URL], for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].madeFiles = files
+    }
+
     func setSuggestions(_ suggestions: [String], for id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].suggestions = suggestions
@@ -248,6 +255,7 @@ extension BackgroundJob.Kind {
         case .answer: .processing
         case .snip: .capture
         case .walkthrough: .tutorial
+        case .files: .action
         }
     }
 }

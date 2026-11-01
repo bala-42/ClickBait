@@ -7,6 +7,8 @@ public struct BackgroundJob: Identifiable, Equatable, Sendable {
         case snip
         /// A walkthrough planned in the dock (Lavender): its card offers "show me!".
         case walkthrough
+        /// A file job sent to the dock (Shamrock): shrinking, converting, zipping, combining.
+        case files
     }
 
     public enum Status: Equatable, Sendable {

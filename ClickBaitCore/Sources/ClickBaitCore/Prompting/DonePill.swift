@@ -5,12 +5,13 @@ import Foundation
 /// few, never the same twice running; lowercase like the companion's other pills.
 public enum DonePill {
     public enum Task: Equatable, Sendable {
-        case snip, walkthrough, code, why, how, answer
+        case snip, walkthrough, files, code, why, how, answer
     }
 
     static let lines: [Task: [String]] = [
         .snip: ["your snip's figured out ✓", "worked out what you circled", "snip explained, in the dock ✓"],
         .walkthrough: ["steps ready, say show me!", "your walkthrough's planned ✓", "ready to walk you through it"],
+        .files: ["your files are ready ✓", "file job done, in the dock", "all converted, in the dock ✓"],
         .code: ["your code's ready ✓", "code written, in the dock", "fresh code, in the dock ✓"],
         .why: ["got the why for you ✓", "the why is in the dock", "figured out why ✓"],
         .how: ["here's how, in the dock ✓", "worked out the how", "the how-to is ready ✓"],
@@ -22,6 +23,7 @@ public enum DonePill {
         switch kind {
         case .snip: return .snip
         case .walkthrough: return .walkthrough
+        case .files: return .files
         case .answer:
             if answer.contains("```") { return .code }
             let words = question.lowercased().split { !$0.isLetter && $0 != "'" }

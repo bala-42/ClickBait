@@ -162,7 +162,7 @@ enum ActionExecutor {
             return "Showing the desktop"
 
         case .file(let action):
-            return try await FileActions.run(action)
+            return try await FileActions.run(action).message
         }
     }
 }
