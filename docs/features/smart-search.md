@@ -67,3 +67,32 @@ Typed (chat, notch Ask tab) and spoken alike:
   a quarter of same-folder pairs did, so many photos of the user are missed. A real face
   recognition model would do much better (a further download). Changing the photo re-reads
   every picture.
+
+## Vision Memory: the user's control (2026-11-01, user's asks)
+Settings ▸ **Vision Memory** (`VisionMemorySection`), rules in Core's `VisionMemory`:
+- **Describe pictures** on/off; **Pause for an hour / until tomorrow / Resume**; a status line
+  ("1,240 of 3,000 pictures described · 8 MB on disk · paused until 3:00 PM").
+- **Folders it reads** (Desktop, Downloads, Documents, Pictures, the screenshot folder by
+  default) and **Never look in**: excluded folders are skipped while walking and left out of
+  search results, Spotlight's included.
+- **Screenshots and documents** on/off: off, they're only labelled as such (no text, no caption).
+- **Secret-looking text** (passwords, keys, card and ID numbers: `Memory.looksSecret`) is never
+  kept; such pictures are marked `sensitive` and the brain doesn't describe them.
+- **Right-click a picture** in results: **Edit description…** (kept over the brain's, never
+  overwritten; empty lets the brain describe again) or **Forget this picture** (out of the
+  index, never read again: `vision-forgotten.json`).
+- **Respects the Mac** (`VisionOptions.mayWork`), checked before each picture and caption: not
+  while an ask is under way (`AskActivity`), not in Low Power Mode or when the Mac is hot, not on
+  battery unless "Work on battery" is on.
+- **Copies**: size + SHA-256 of the first 64 KB (`contentKey`); a copy reuses what was read and
+  described, and search shows one result with "N copies". Older entries are fingerprinted on
+  the next pass without being read again.
+- **Sync**: folders are watched (`PictureWatcher`, FSEvents, 5 s): a quick pass (pictures only)
+  follows any change; a file gone since it was read never shows in results.
+- **Per-kind captions**: documents, charts and screenshots are described by kind, subject and
+  key details; photos by who, what, where.
+- **A new brain** describes again in the background, after the undescribed pictures
+  (`captionModel`); the user's own descriptions are kept.
+- **Storage**: vectors as half-precision bytes (`VisionMemory.pack`): this Mac's index went from
+  30.9 MB to 8.2 MB (3,059 entries) with identical search results. **Delete Vision Memory…**
+  empties it (pictures untouched).

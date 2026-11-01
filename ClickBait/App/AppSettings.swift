@@ -15,6 +15,12 @@ final class AppSettings {
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
         static let searchPhotos = "settings.searchPhotos"
+        static let visionDescribe = "settings.vision.describe"
+        static let visionPausedUntil = "settings.vision.pausedUntil"
+        static let visionFolders = "settings.vision.folders"
+        static let visionExcluded = "settings.vision.excluded"
+        static let visionScreenshots = "settings.vision.screenshots"
+        static let visionOnBattery = "settings.vision.onBattery"
         static let morningCardsShown = "settings.morningCardsShown"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let youtubeThumbnailsAlways = "settings.youtubeThumbnailsAlways"
@@ -117,6 +123,47 @@ final class AppSettings {
     var soundCues: Bool {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
+    /// Vision Memory (`SearchIndex`'s pictures): reading and describing pictures at all.
+    var visionDescribe: Bool {
+        didSet { defaults.set(visionDescribe, forKey: Key.visionDescribe) }
+    }
+    /// Paused until then (Settings' Pause for an hour / until tomorrow).
+    var visionPausedUntil: Date? {
+        didSet { defaults.set(visionPausedUntil, forKey: Key.visionPausedUntil) }
+    }
+    /// Folders whose pictures are read (with their insides).
+    var visionFolders: [String] {
+        didSet { defaults.set(visionFolders, forKey: Key.visionFolders) }
+    }
+    /// Folders never looked at, inside or outside the ones above (also left out of search results).
+    var visionExcluded: [String] {
+        didSet { defaults.set(visionExcluded, forKey: Key.visionExcluded) }
+    }
+    /// Screenshots, documents and charts read and described too.
+    var visionScreenshots: Bool {
+        didSet { defaults.set(visionScreenshots, forKey: Key.visionScreenshots) }
+    }
+    /// Keeps working on battery (off: only plugged in).
+    var visionOnBattery: Bool {
+        didSet { defaults.set(visionOnBattery, forKey: Key.visionOnBattery) }
+    }
+
+    static var defaultVisionFolders: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var folders = ["Desktop", "Downloads", "Documents", "Pictures"].map { home + "/" + $0 }
+        if let shots = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
+            let path = (shots as NSString).expandingTildeInPath
+            if !folders.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) { folders.append(path) }
+        }
+        return folders
+    }
+
+    /// What `SearchIndex` works from, read on the main actor.
+    var visionOptions: VisionOptions {
+        VisionOptions(photos: searchPhotos, brain: ollamaModel, describe: visionDescribe, pausedUntil: visionPausedUntil,
+                      folders: visionFolders, excluded: visionExcluded, screenshots: visionScreenshots, onBattery: visionOnBattery)
+    }
+
     /// Smart search also reads the Photos library (`SearchIndex`): off until the user turns it on.
     var searchPhotos: Bool {
         didSet { defaults.set(searchPhotos, forKey: Key.searchPhotos) }
@@ -190,6 +237,12 @@ final class AppSettings {
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)
         searchPhotos = defaults.bool(forKey: Key.searchPhotos)
+        visionDescribe = defaults.object(forKey: Key.visionDescribe) as? Bool ?? true
+        visionPausedUntil = defaults.object(forKey: Key.visionPausedUntil) as? Date
+        visionFolders = defaults.stringArray(forKey: Key.visionFolders) ?? Self.defaultVisionFolders
+        visionExcluded = defaults.stringArray(forKey: Key.visionExcluded) ?? []
+        visionScreenshots = defaults.object(forKey: Key.visionScreenshots) as? Bool ?? true
+        visionOnBattery = defaults.object(forKey: Key.visionOnBattery) as? Bool ?? false
         // Off unless chosen: covers come from Spotify's servers, so only with Internet Mode
         // (user's rule, 2026-10-23, keeping "nothing leaves your Mac").
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? false

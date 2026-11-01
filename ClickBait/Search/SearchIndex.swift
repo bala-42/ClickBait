@@ -1,5 +1,6 @@
 import AppKit
 import ClickBaitCore
+import CryptoKit
 import EventKit
 import NaturalLanguage
 import OSLog
@@ -19,6 +20,32 @@ actor SearchIndex {
         var vector: [Float]?
         /// The vector's model ("nomic-embed-text"), so a later model's vectors aren't mixed in.
         var model: String?
+
+        init(item: SmartSearch.Item, vector: [Float]?, model: String?) {
+            (self.item, self.vector, self.model) = (item, vector, model)
+        }
+
+        // On disk the vector is half-precision bytes (`VisionMemory.pack`, ~2 KB as base64
+        // instead of ~9 KB of JSON numbers); older files' number lists still load.
+        enum CodingKeys: String, CodingKey { case item, packed, vector, model }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            item = try container.decode(SmartSearch.Item.self, forKey: .item)
+            model = try container.decodeIfPresent(String.self, forKey: .model)
+            if let packed = try container.decodeIfPresent(Data.self, forKey: .packed) {
+                vector = VisionMemory.unpack(packed)
+            } else {
+                vector = try container.decodeIfPresent([Float].self, forKey: .vector)
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(item, forKey: .item)
+            try container.encodeIfPresent(model, forKey: .model)
+            try container.encodeIfPresent(vector.map(VisionMemory.pack), forKey: .packed)
+        }
     }
 
     private var entries: [String: Entry] = [:]
@@ -30,22 +57,31 @@ actor SearchIndex {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("ClickBait/search-index.json")
     }()
+    /// Pictures the user chose Forget for: never read again (their ids, as a JSON list).
+    private let forgottenFile: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("ClickBait/vision-forgotten.json")
+    }()
+    private var forgotten: Set<String> = []
 
     /// At most this many pictures are read (newest first), so the first pass stays minutes, not hours.
     private static let pictureLimit = 3_000
 
     // MARK: Searching
 
-    func search(_ request: SmartSearch.Request, notchNote: String, photos: Bool, brain: String) async -> [SmartSearch.Item] {
+    func search(_ request: SmartSearch.Request, notchNote: String, options: VisionOptions) async -> [SmartSearch.Item] {
         load()
-        let request = await Self.withRelatedWords(request, brain: brain)
-        if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(photos: photos, brain: brain) } }
-        var pool = entries.values.map { ($0.item, $0.vector) }
+        let request = await Self.withRelatedWords(request, brain: options.brain)
+        if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(options) } }
+        var pool = entries.values.filter { entry in
+            entry.item.file.map { !VisionMemory.isExcluded($0, excluded: options.excluded) } ?? true
+        }.map { ($0.item, $0.vector) }
         pool.append((SmartSearch.Item(id: "quicknote", kind: .note, title: "Quick note", place: "the notch", text: notchNote), nil))
         // Files: Spotlight's matches for the words, by name or the text inside.
         var boosted: Set<String> = []
         if request.kind == .any || request.kind == .file || request.kind == .image {
-            for item in await Self.spotlight(request.terms, images: request.kind == .image) where entries[item.id] == nil {
+            for item in await Self.spotlight(request.terms, images: request.kind == .image)
+            where entries[item.id] == nil && !forgotten.contains(item.id) && !VisionMemory.isExcluded(item.file ?? "", excluded: options.excluded) {
                 pool.append((item, nil))
                 boosted.insert(item.id)
             }
@@ -64,7 +100,11 @@ actor SearchIndex {
             query = apple.vector(for: request.text).map { $0.map(Float.init) }
             vectors = pool.map { entry in apple.vector(for: String(Self.document(entry.0).prefix(300))).map { $0.map(Float.init) } }
         }
-        let ranked = SmartSearch.rank(zip(pool.map(\.0), vectors).map { ($0, $1) }, for: request, query: query, boosted: boosted)
+        let candidates = SmartSearch.rank(zip(pool.map(\.0), vectors).map { ($0, $1) }, for: request, query: query,
+                                          boosted: boosted, limit: 30)
+        // A file deleted or moved since it was read never shows; copies become one result.
+        let present = candidates.filter { item in item.file.map { FileManager.default.fileExists(atPath: $0) } ?? true }
+        let ranked = Array(VisionMemory.collapseCopies(present).prefix(5))
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
         return ranked
     }
@@ -93,40 +133,90 @@ actor SearchIndex {
     // MARK: Refreshing
 
     /// Re-reads every source; only new or changed things are embedded and (pictures) looked at.
-    func refresh(photos photosOn: Bool, brain: String) async {
+    /// `quick` (a folder changed): pictures only, no captions; the rest is kept as it was.
+    func refresh(_ options: VisionOptions, quick: Bool = false) async {
         guard !refreshing else { return }
         refreshing = true
-        defer { refreshing = false; refreshedAt = Date() }
+        defer { refreshing = false; if !quick { refreshedAt = Date() } }
         load()
         var fresh: [SmartSearch.Item] = []
-        fresh += Self.clickBaitNotes()
-        fresh += await Self.reminders()
-        fresh += await Self.appleNotes()
-        var pictures = Self.pictureFiles()
-        if photosOn { pictures += Self.libraryPhotos() }
-        // Pictures: kept as they were unless the file changed; new ones read with Vision.
+        if quick {
+            fresh += entries.values.map(\.item).filter { $0.kind != .image }
+        } else {
+            fresh += Self.clickBaitNotes()
+            fresh += await Self.reminders()
+            fresh += await Self.appleNotes()
+        }
+        var pictures = Self.pictureFiles(folders: options.folders, excluded: options.excluded)
+        if options.photos { pictures += Self.libraryPhotos() }
+        pictures = pictures.filter { !forgotten.contains($0.id) }
+        // Pictures: kept as they were unless the file changed; new ones read with Vision when
+        // the Mac allows (`VisionOptions.mayWork`). Copies (same contents) reuse what was read.
         var picturesRead = 0
         let you = YourFace.reference()
+        var byContent: [String: SmartSearch.Item] = [:]
+        for entry in entries.values where entry.item.kind == .image { if let key = entry.item.contentKey { byContent[key] = entry.item } }
         for (id, title, place, url, asset, modified) in pictures {
-            if let old = entries[id], old.item.modified == modified { fresh.append(old.item); continue }
-            guard picturesRead < 400 else { continue }  // a few hundred per pass; the rest next time
-            picturesRead += 1
-            let look = await Self.look(at: url, asset: asset, you: you)
+            if let old = entries[id], old.item.modified == modified {
+                // Read before copies were spotted: fingerprinted now (64 KB, no Vision).
+                var kept = old.item
+                if kept.contentKey == nil, let url {
+                    kept.contentKey = Self.contentKey(url, bytes: kept.bytes ?? (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize)
+                    if let key = kept.contentKey, byContent[key] == nil { byContent[key] = kept }
+                }
+                fresh.append(kept)
+                continue
+            }
             let bytes = url.flatMap { (try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
-            fresh.append(SmartSearch.Item(id: id, kind: .image, title: title, place: place, text: look.text,
-                                          file: url?.path, modified: modified, bytes: bytes, hasYou: you == nil ? nil : look.hasYou))
+            let key = url.flatMap { Self.contentKey($0, bytes: bytes) }
+            var item = SmartSearch.Item(id: id, kind: .image, title: title, place: place, text: "",
+                                        file: url?.path, modified: modified, bytes: bytes)
+            item.contentKey = key
+            if let key, let twin = byContent[key] {
+                (item.text, item.caption, item.hasYou, item.sensitive) = (twin.text, twin.caption, twin.hasYou, twin.sensitive)
+                (item.userEdited, item.captionModel) = (twin.userEdited, twin.captionModel)
+                fresh.append(item)
+                continue
+            }
+            guard picturesRead < 400, options.mayWork else { continue }  // a few hundred per pass; the rest next time
+            picturesRead += 1
+            let look = await Self.look(at: url, asset: asset, you: you, screenshots: options.screenshots, name: title)
+            (item.text, item.sensitive) = (look.text, look.sensitive ? true : nil)
+            item.hasYou = you == nil ? nil : look.hasYou
+            if let key { byContent[key] = item }
+            fresh.append(item)
         }
-        // Captions from the brain (it can see pictures): newest first, a few per pass, so
-        // the brain stays free for questions; changed ones are embedded again below.
+        // Captions from the brain (it can see pictures): newest first, a few per pass, only
+        // while the Mac allows; then pictures a different brain described. Never the user's own
+        // captions, sensitive pictures, or (switched off) screenshots and documents.
         var captioned = 0
-        for index in fresh.indices where fresh[index].kind == .image && fresh[index].caption == nil && captioned < Self.captionsPerPass {
-            guard !Task.isCancelled, let caption = await Self.caption(fresh[index], brain: brain) else { continue }
-            fresh[index].caption = caption
-            captioned += 1
+        if !quick {
+            let waiting = fresh.indices.filter { index in
+                let item = fresh[index]
+                guard item.kind == .image, item.userEdited != true, item.sensitive != true else { return false }
+                if !options.screenshots, VisionMemory.isDocumentLike(labels: item.text, name: item.title) { return false }
+                // Captions from before brains were recorded count as the current brain's.
+                return item.caption == nil || (item.captionModel ?? options.brain) != options.brain
+            }
+            let ordered = waiting.filter { fresh[$0].caption == nil } + waiting.filter { fresh[$0].caption != nil }
+            var described: [String: (String, String)] = [:]
+            for index in ordered {
+                guard captioned < Self.captionsPerPass, !Task.isCancelled, options.mayWork else { break }
+                if let key = fresh[index].contentKey, let done = described[key] {
+                    (fresh[index].caption, fresh[index].captionModel) = (done.0, done.1)
+                    continue
+                }
+                guard let caption = await Self.caption(fresh[index], brain: options.brain) else { continue }
+                (fresh[index].caption, fresh[index].captionModel) = (caption, options.brain)
+                if let key = fresh[index].contentKey { described[key] = (caption, options.brain) }
+                captioned += 1
+            }
         }
         var next: [String: Entry] = [:]
         for item in fresh {
-            if let old = entries[item.id], old.item == item, old.model == Embedder.model {
+            // The vector depends only on the searchable text: kept when that's the same.
+            if var old = entries[item.id], old.item.searchable == item.searchable, old.model == Embedder.model {
+                old.item = item
                 next[item.id] = old
             } else {
                 next[item.id] = Entry(item: item, vector: nil, model: nil)
@@ -143,6 +233,44 @@ actor SearchIndex {
         Log.app.notice("Search index: \(next.count, privacy: .public) things, \(picturesRead, privacy: .public) pictures read, \(captioned, privacy: .public) captioned")
     }
 
+    /// Forget this picture: out of the index, never read again.
+    func forget(_ id: String) {
+        load()
+        forgotten.insert(id)
+        entries[id] = nil
+        save()
+    }
+
+    /// The user's own description: kept over the brain's, searched by meaning at once.
+    func setCaption(_ id: String, _ caption: String) async {
+        load()
+        guard var entry = entries[id] else { return }
+        let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        entry.item.caption = text.isEmpty ? nil : text
+        entry.item.userEdited = text.isEmpty ? nil : true
+        entry.vector = await Embedder.vectors([Self.document(entry.item)], as: .document)?.first
+        entry.model = entry.vector == nil ? nil : Embedder.model
+        entries[id] = entry
+        save()
+    }
+
+    /// For Settings: pictures known, described, and the index's size on disk.
+    func stats() -> (pictures: Int, described: Int, bytes: Int) {
+        load()
+        let pictures = entries.values.filter { $0.item.kind == .image }
+        let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        return (pictures.count, pictures.filter { $0.item.caption != nil }.count, size)
+    }
+
+    /// Size and a hash of the first 64 KB: the same for copies of one file.
+    private static func contentKey(_ url: URL, bytes: Int?) -> String? {
+        guard let bytes, let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 65_536) else { return nil }
+        let digest = SHA256.hash(data: head).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return "\(bytes)-\(digest)"
+    }
+
     /// Pictures read again (after the user's reference photo changed): faces are matched anew.
     func forgetPictures() {
         load()
@@ -155,6 +283,7 @@ actor SearchIndex {
 
     /// One line on what a picture shows, from the brain, or nil (no brain, can't see, slow).
     private static func caption(_ item: SmartSearch.Item, brain: String) async -> String? {
+        let prompt = VisionMemory.captionPrompt(documentLike: VisionMemory.isDocumentLike(labels: item.text, name: item.title))
         let image: CGImage?
         if let path = item.file {
             image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -169,7 +298,7 @@ actor SearchIndex {
         call.setValue("application/json", forHTTPHeaderField: "Content-Type")
         call.httpBody = try? JSONSerialization.data(withJSONObject: [
             "model": brain, "stream": false, "think": false, "images": [jpeg.base64EncodedString()],
-            "prompt": "Describe this picture in one plain sentence of at most 20 words: who or what is in it, what they're doing, where. No preamble.",
+            "prompt": prompt,
             "options": ["temperature": 0, "num_predict": 48]
         ] as [String: Any])
         guard let (data, response) = try? await URLSession.shared.data(for: call),
@@ -192,12 +321,16 @@ actor SearchIndex {
 
     func forgetAll() {
         entries = [:]
+        refreshedAt = Date()  // no instant rebuild behind the user's back; the next pass reads again
         try? FileManager.default.removeItem(at: file)
     }
 
     private func load() {
         guard !loaded else { return }
         loaded = true
+        if let data = try? Data(contentsOf: forgottenFile), let ids = try? JSONDecoder().decode([String].self, from: data) {
+            forgotten = Set(ids)
+        }
         guard let data = try? Data(contentsOf: file),
               let saved = try? JSONDecoder().decode([String: Entry].self, from: data) else { return }
         entries = saved
@@ -207,6 +340,7 @@ actor SearchIndex {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)
+        if let ids = try? JSONEncoder().encode(Array(forgotten)) { try? ids.write(to: forgottenFile, options: .atomic) }
     }
 
     // MARK: Sources
@@ -298,12 +432,8 @@ actor SearchIndex {
     private typealias Picture = (id: String, title: String, place: String, url: URL?, asset: String?, modified: Date?)
 
     /// Pictures in Desktop, Downloads, Documents, Pictures and the screenshot folder, newest first.
-    private static func pictureFiles() -> [Picture] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        var folders = ["Desktop", "Downloads", "Documents", "Pictures"].map { home.appendingPathComponent($0) }
-        if let shots = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location") {
-            folders.append(URL(fileURLWithPath: (shots as NSString).expandingTildeInPath))
-        }
+    private static func pictureFiles(folders paths: [String], excluded: [String]) -> [Picture] {
+        let folders = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
         let kinds: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp"]
         var found: [Picture] = []
         var seen: Set<String> = []
@@ -314,6 +444,8 @@ actor SearchIndex {
             for case let url as URL in walker {
                 // Photos' own library is read through PhotoKit, when allowed.
                 if url.pathExtension == "photoslibrary" { walker.skipDescendants(); continue }
+                // The user's excluded folders: never looked inside.
+                if VisionMemory.isExcluded(url.path, excluded: excluded) { walker.skipDescendants(); continue }
                 guard kinds.contains(url.pathExtension.lowercased()), seen.insert(url.path).inserted else { continue }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
                 found.append(("file:\(url.path)", url.lastPathComponent, url.deletingLastPathComponent().lastPathComponent, url, nil, modified))
@@ -338,7 +470,8 @@ actor SearchIndex {
     }
 
     /// What a picture shows and says: Vision's labels and the text in it, on this Mac.
-    private static func look(at url: URL?, asset: String?, you: VNFeaturePrintObservation?) async -> (text: String, hasYou: Bool) {
+    private static func look(at url: URL?, asset: String?, you: VNFeaturePrintObservation?, screenshots: Bool,
+                             name: String) async -> (text: String, hasYou: Bool, sensitive: Bool) {
         let image: CGImage?
         if let url {
             image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -347,7 +480,7 @@ actor SearchIndex {
         } else {
             image = nil
         }
-        guard let image else { return ("", false) }
+        guard let image else { return ("", false, false) }
         let classify = VNClassifyImageRequest()
         let text = VNRecognizeTextRequest()
         text.recognitionLevel = .fast
@@ -357,8 +490,16 @@ actor SearchIndex {
             (faces.results ?? []).contains { YourFace.matches(reference, face: $0, in: image) }
         } ?? false
         let labels = (classify.results ?? []).filter { $0.confidence > 0.3 }.prefix(8).map { $0.identifier.replacingOccurrences(of: "_", with: " ") }
-        let words = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
-        return (([labels.joined(separator: ", ")] + (words.isEmpty ? [] : ["text: " + String(words.prefix(600))])).joined(separator: ". "), hasYou)
+        let labelText = labels.joined(separator: ", ")
+        // Screenshots and documents switched off: only that it is one, nothing it says.
+        if !screenshots, VisionMemory.isDocumentLike(labels: labelText, name: name) {
+            return (labelText, hasYou, false)
+        }
+        // Secret-looking lines (passwords, card and ID numbers) are never kept.
+        let lines = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        let guarded = VisionMemory.guardText(lines)
+        let words = guarded.kept.replacingOccurrences(of: "\n", with: " ")
+        return (([labelText] + (words.isEmpty ? [] : ["text: " + String(words.prefix(600))])).joined(separator: ". "), hasYou, guarded.sensitive)
     }
 
     private static func thumbnail(of id: String) async -> CGImage? {

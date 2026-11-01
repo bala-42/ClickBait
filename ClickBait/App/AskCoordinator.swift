@@ -36,7 +36,10 @@ final class AskCoordinator {
     static let errorDisplayTime: Duration = .milliseconds(2500)
 
     var state: AskState = .idle {
-        didSet { if state != oldValue { onStateChange?(state) } }
+        didSet {
+            AskActivity.set(state != .idle)
+            if state != oldValue { onStateChange?(state) }
+        }
     }
     @ObservationIgnored var onStateChange: ((AskState) -> Void)?
     /// Called with what Whisper heard.

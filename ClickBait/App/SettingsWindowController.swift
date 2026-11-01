@@ -145,21 +145,12 @@ struct SettingsView: View {
                           isOn: $settings.morningCards)
                     .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
                 Divider().overlay(SettingsLook.hairline)
-                YourPhotoRow(settings: settings)
-                Divider().overlay(SettingsLook.hairline)
-                ToggleRow("Search the Photos library", "“Find the picture of the airport” also looks in Photos. Pictures in your folders are always searched. All on this Mac.",
-                          isOn: $settings.searchPhotos)
-                    .onChange(of: settings.searchPhotos) { _, on in
-                        guard on else { return }
-                        Task {
-                            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-                            await SearchIndex.shared.refresh(photos: true, brain: settings.ollamaModel)
-                        }
-                    }
-                Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Greetings", "A hello by the cursor each time your Mac wakes or you unlock it.", isOn: $settings.greetings)
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Sounds", "A soft sound when a background ClickBait is done or needs your yes.", isOn: $settings.soundCues)
+            }
+            SettingsGroup("Vision Memory") {
+                VisionMemorySection(settings: settings)
             }
             SettingsGroup("Notch") {
                 ToggleRow("Notch panel", "Music, shelf, mirror and chat at the notch.",
@@ -750,6 +741,123 @@ private struct VoiceSettingsSection: View {
     }
 }
 
+/// Vision Memory (user's asks, 2026-11-01): what ClickBait reads and describes in pictures,
+/// and the user's control over it — on/off and pause, folders in and out, screenshots,
+/// battery, the Photos library, "me", and what it all takes on disk.
+private struct VisionMemorySection: View {
+    @Bindable var settings: AppSettings
+    @State private var stats: (pictures: Int, described: Int, bytes: Int) = (0, 0, 0)
+    @State private var confirmDelete = false
+
+    private var pausedNote: String? {
+        if !settings.visionDescribe { return "off" }
+        guard let until = settings.visionPausedUntil, until > Date() else { return nil }
+        return "paused until " + until.formatted(date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ToggleRow("Describe pictures", "Reads your pictures on this Mac (what they show, and any text) so smart search can find them by what's in them.",
+                      isOn: $settings.visionDescribe)
+            Text("\(stats.described) of \(stats.pictures) pictures described · \(ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file)) on disk" + (pausedNote.map { " · " + $0 } ?? ""))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack {
+                if pausedNote != nil, settings.visionDescribe {
+                    Button("Resume") { settings.visionPausedUntil = nil }
+                } else {
+                    Button("Pause for an hour") { settings.visionPausedUntil = Date().addingTimeInterval(3_600) }
+                    Button("Pause until tomorrow") {
+                        settings.visionPausedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+                    }
+                }
+            }
+            .disabled(!settings.visionDescribe)
+            Divider().overlay(SettingsLook.hairline)
+            FolderList(title: "Folders it reads", detail: "Pictures in these folders and the folders inside them.",
+                       folders: $settings.visionFolders, add: "Add folder…")
+            FolderList(title: "Never look in", detail: "Left out completely, including from search results.",
+                       folders: $settings.visionExcluded, add: "Exclude folder…")
+            Divider().overlay(SettingsLook.hairline)
+            ToggleRow("Screenshots and documents", "Also describe screenshots, charts and documents. Text that looks like a password, card or ID number is never kept either way.",
+                      isOn: $settings.visionScreenshots)
+            Divider().overlay(SettingsLook.hairline)
+            ToggleRow("Work on battery", "Off: only while plugged in. It always waits while you're asking ClickBait something, in Low Power Mode, or when the Mac is hot.",
+                      isOn: $settings.visionOnBattery)
+            Divider().overlay(SettingsLook.hairline)
+            ToggleRow("Search the Photos library", "“Find the picture of the airport” also looks in Photos (not its Hidden album). All on this Mac.",
+                      isOn: $settings.searchPhotos)
+                .onChange(of: settings.searchPhotos) { _, on in
+                    guard on else { return }
+                    let options = settings.visionOptions
+                    Task {
+                        _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                        await SearchIndex.shared.refresh(options)
+                    }
+                }
+            Divider().overlay(SettingsLook.hairline)
+            YourPhotoRow(settings: settings)
+            Divider().overlay(SettingsLook.hairline)
+            HStack {
+                Text("Right-click a picture in search results to correct its description or forget it.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Delete Vision Memory…") { confirmDelete = true }
+            }
+        }
+        .task { await reload() }
+        .onChange(of: settings.visionFolders) { _, _ in AppDelegate.watchPictures(settings); refreshSoon() }
+        .onChange(of: settings.visionExcluded) { _, _ in refreshSoon() }
+        .confirmationDialog("Delete everything Vision Memory has read and described?", isPresented: $confirmDelete) {
+            Button("Delete", role: .destructive) {
+                Task { await SearchIndex.shared.forgetAll(); await reload() }
+            }
+        } message: {
+            Text("Your pictures aren't touched. Smart search starts over, reading them again at the next pass unless you turn Describe pictures off.")
+        }
+    }
+
+    private func reload() async {
+        stats = await SearchIndex.shared.stats()
+    }
+
+    private func refreshSoon() {
+        let options = settings.visionOptions
+        Task { await SearchIndex.shared.refresh(options, quick: true); await reload() }
+    }
+}
+
+/// A list of folders with remove buttons and an add button (an open panel).
+private struct FolderList: View {
+    let title: String
+    let detail: String
+    @Binding var folders: [String]
+    let add: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 13, weight: .medium))
+            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+            ForEach(folders, id: \.self) { folder in
+                HStack {
+                    Image(systemName: "folder").foregroundStyle(.secondary)
+                    Text((folder as NSString).abbreviatingWithTildeInPath).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Button { folders.removeAll { $0 == folder } } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.plain).help("Remove")
+                }
+            }
+            Button(add) {
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = false
+                panel.canChooseDirectories = true
+                panel.allowsMultipleSelection = true
+                guard panel.runModal() == .OK else { return }
+                for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
+            }
+        }
+    }
+}
+
 /// Smart search's "me": one photo of the user, so "a picture where I'm holding a dog" finds them.
 private struct YourPhotoRow: View {
     let settings: AppSettings
@@ -788,10 +896,10 @@ private struct YourPhotoRow: View {
 
     /// Pictures are read again so their faces are compared with the new photo.
     private func reindex() {
-        let brain = settings.ollamaModel, photos = settings.searchPhotos
+        let options = settings.visionOptions
         Task {
             await SearchIndex.shared.forgetPictures()
-            await SearchIndex.shared.refresh(photos: photos, brain: brain)
+            await SearchIndex.shared.refresh(options)
         }
     }
 }

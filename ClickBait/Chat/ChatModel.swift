@@ -80,6 +80,11 @@ final class ChatModel {
         }
     }
 
+    /// Drops a forgotten find from every results card.
+    func removeResult(_ id: String) {
+        for index in messages.indices { messages[index].results.removeAll { $0.id == id } }
+    }
+
     /// Puts smart search's finds under the latest reply.
     func setResults(_ items: [SmartSearch.Item]) {
         if let last = messages.indices.last(where: { messages[$0].role == .assistant }) { messages[last].results = items }

@@ -132,11 +132,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await OllamaSetup.pull(Embedder.model) { _ in }
             }
             while !Task.isCancelled {
-                let photos = await MainActor.run { settings.searchPhotos }
-                let brain = await MainActor.run { settings.ollamaModel }
-                await SearchIndex.shared.refresh(photos: photos, brain: brain)
+                let options = await MainActor.run { settings.visionOptions }
+                await SearchIndex.shared.refresh(options)
                 try? await Task.sleep(for: .seconds(30 * 60))
             }
+        }
+        Self.watchPictures(settings)
+    }
+
+    /// Folder changes update Vision Memory within seconds (`PictureWatcher`).
+    static func watchPictures(_ settings: AppSettings) {
+        PictureWatcher.shared.watch(settings.visionFolders) {
+            let options = settings.visionOptions
+            Task.detached(priority: .background) { await SearchIndex.shared.refresh(options, quick: true) }
         }
     }
 
@@ -681,6 +689,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onActionStarted = { [weak self] message in self?.overlay.showWorking(message) }
         coordinator.onActionDone = { [weak self] message in self?.overlay.showDone(message) }
         coordinator.onSearchResults = { [weak self] items in self?.chat.model.setResults(items) }
+        NotificationCenter.default.addObserver(forName: .clickBaitForgetResult, object: nil, queue: .main) { [weak self] note in
+            guard let id = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                self?.chat.model.removeResult(id)
+                self?.coordinator.lastSearchResults.removeAll { $0.id == id }
+            }
+        }
         NotificationCenter.default.addObserver(forName: .clickBaitListenAgain, object: nil, queue: .main) { [weak self] note in
             guard let text = note.object as? String else { return }
             MainActor.assumeIsolated {

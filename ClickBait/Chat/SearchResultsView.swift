@@ -37,7 +37,23 @@ struct SearchResultsView: View {
     }
 }
 
+/// Right-click on a picture: correct what Vision Memory says it shows, or forget it.
+private struct PictureMenu: ViewModifier {
+    let item: SmartSearch.Item
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            if item.kind == .image {
+                Button("Edit description…") { SearchResultActions.editDescription(item) }
+                Button("Forget this picture") { SearchResultActions.forget(item) }
+            }
+        }
+    }
+}
+
 extension Notification.Name {
+    /// A result was forgotten (its id): the chat drops it from the card.
+    static let clickBaitForgetResult = Notification.Name("clickBaitForgetResult")
     /// The results card's "Listen again": the answer's text, read aloud again.
     static let clickBaitListenAgain = Notification.Name("clickBaitListenAgain")
 }
@@ -74,6 +90,26 @@ enum SearchResultActions {
         } else if item.id.hasPrefix("photo:") {
             openApp("com.apple.Photos")
         }
+    }
+
+    static func editDescription(_ item: SmartSearch.Item) {
+        let alert = NSAlert()
+        alert.messageText = "What does this picture show?"
+        alert.informativeText = "Your words replace ClickBait's description and are never overwritten. Leave it empty to let ClickBait describe it again."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = item.caption ?? ""
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let text = field.stringValue
+        Task { await SearchIndex.shared.setCaption(item.id, text) }
+    }
+
+    static func forget(_ item: SmartSearch.Item) {
+        Task { await SearchIndex.shared.forget(item.id) }
+        NotificationCenter.default.post(name: .clickBaitForgetResult, object: item.id)
     }
 
     static func copy(_ item: SmartSearch.Item) {
@@ -141,7 +177,8 @@ private struct PictureTile: View {
         .onHover { hovering = $0 }
         .onTapGesture { SearchResultActions.open(item) }
         .onDrag { SearchResultActions.dragItem(item) }
-        .help(item.file ?? item.title)
+        .modifier(PictureMenu(item: item))
+        .help(item.caption ?? item.file ?? item.title)
     }
 }
 

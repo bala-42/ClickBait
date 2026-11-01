@@ -169,7 +169,7 @@ public struct Memory: Equatable, Sendable {
     }
 
     /// Passwords, PINs, keys, tokens, card numbers: never written down.
-    static func looksSecret(_ text: String) -> Bool {
+    public static func looksSecret(_ text: String) -> Bool {
         let lower = text.lowercased()
         let words = ["password", "passcode", "passwd", "pin code", "my pin", "api key", "secret key", "private key",
                      "token", "cvv", "security code", "seed phrase", "recovery phrase", "social security",

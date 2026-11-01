@@ -67,6 +67,17 @@ public enum SmartSearch {
         public var hasYou: Bool?
         /// Why it came up ("Matches “dog” in the picture"), set by `rank`.
         public var reason: String?
+        /// Pictures: what identical copies share (size and a hash of the contents), so 17
+        /// copies of one screenshot are read and described once and shown as one result.
+        public var contentKey: String?
+        /// The other copies' files, filled in by `VisionMemory.collapseCopies`.
+        public var copies: [String]?
+        /// Pictures whose text looked secret: that text isn't kept and the brain doesn't describe them.
+        public var sensitive: Bool?
+        /// The user wrote or corrected the caption: the brain never replaces it.
+        public var userEdited: Bool?
+        /// The brain that wrote the caption, so a new brain can describe again.
+        public var captionModel: String?
 
         public init(id: String, kind: Kind, title: String, place: String, text: String, file: String? = nil, modified: Date? = nil,
                     bytes: Int? = nil, caption: String? = nil, hasYou: Bool? = nil) {
@@ -98,6 +109,7 @@ public enum SmartSearch {
                 parts.append(formatter.string(from: modified))
             }
             if let bytes { parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
+            if let copies, !copies.isEmpty { parts.append("\(copies.count + 1) copies") }
             return parts.joined(separator: " · ")
         }
     }

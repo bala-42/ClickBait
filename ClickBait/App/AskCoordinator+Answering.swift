@@ -263,8 +263,7 @@ extension AskCoordinator {
         // Any time in a chat, spoken or typed: a search question stands on its own.
         if snip == nil, let search = SmartSearch.request(in: question) {
             encoding.cancel()
-            let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, photos: settings.searchPhotos,
-                                                            brain: settings.ollamaModel)
+            let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, options: settings.visionOptions)
             lastSearchResults = found
             // One sentence about the best find, from the brain (~0.5 s), like Taby's "I found a
             // picture of you with a dog in your Downloads folder. Want me to open it?"
