@@ -252,7 +252,7 @@ struct NotchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // One curve for the whole motion: growing or tab-changing springs, folding eases out.
         // (Width and height used to always take the opening spring, even while folding.)
-        .animation(reduceMotion ? nil : spring(open: state != .collapsed),
+        .animation(reduceMotion || StudioModel.shared.resizing ? nil : spring(open: state != .collapsed),
                    value: Motion(state: state, tab: model.tab, width: look.width, height: look.height, activity: model.activity))
         .environment(\.notchLive, open && model.settled)
         .accessibilityElement(children: open ? .contain : .ignore)

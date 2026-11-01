@@ -359,6 +359,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch command {
                 case "stop": StudioModel.shared.stopPrompting()
                 case "float": StudioModel.shared.floating.toggle()
+                case "shrinktest":
+                    // A drag shrinking the prompter, step by step: the window's centre each step.
+                    Task { @MainActor in
+                        let studio = StudioModel.shared
+                        let start = studio.size
+                        studio.resizing = true
+                        for step in 0...20 {
+                            studio.size = CGSize(width: start.width - Double(step) * 10, height: start.height - Double(step) * 4)
+                            PrompterController.shared.resize(to: studio.size)
+                            try? await Task.sleep(for: .milliseconds(30))
+                            if let window = NSApp.windows.filter({ $0.isVisible && $0.level == WindowLayers.notch }).max(by: { $0.frame.height < $1.frame.height }) {
+                                Log.app.notice("Studio shrink: width \(Int(studio.size.width), privacy: .public) window \(Int(window.frame.width), privacy: .public) centre \(Int(window.frame.midX), privacy: .public)")
+                            }
+                        }
+                        studio.resizing = false
+                        studio.size = start
+                        PrompterController.shared.resize(to: start)
+                    }
                 case "snap":
                     // The prompter windows' live contents, drawn, for checking their shape.
                     for (index, window) in NSApp.windows.enumerated() where window.isVisible && window.level == WindowLayers.notch {

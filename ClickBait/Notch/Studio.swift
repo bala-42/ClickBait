@@ -111,6 +111,9 @@ final class StudioModel {
         didSet { if hovering != oldValue { PrompterController.shared.resize(to: size) } }
     }
     var cueBarShown: Bool { !script.cues.isEmpty && (hovering || cuesOpen) }
+    /// An edge or corner is being dragged: the notch follows the pointer exactly, no spring
+    /// (it wobbled sideways while shrinking: user's report, 2026-11-01).
+    var resizing = false
     /// The prompter line at the top of what's showing, for marking the current cue.
     var readingLine = 0
     /// Following the voice (phase 2): the prompter runs at your pace, still when you stop.

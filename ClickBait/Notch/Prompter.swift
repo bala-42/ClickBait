@@ -432,11 +432,17 @@ private struct ResizeEdges: View {
                 case .bottomRight: size.width += dx * 2; size.height += dy
                 }
                 let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 }?.frame ?? NSScreen.main?.frame ?? .zero
-                size.width = min(max(200, size.width), max(200, screen.width - 40))
+                // In the notch, never narrower than the notch's own black (it sat off-centre in it).
+                let narrowest = studio.inNotch ? PrompterController.notchSize.width + 24 : 200
+                size.width = min(max(narrowest, size.width), max(narrowest, screen.width - 40))
+                studio.resizing = true
                 size.height = min(max(60, size.height), max(60, screen.height * 0.85))
                 studio.size = size
                 PrompterController.shared.resize(to: size)
-            }.onEnded { _ in start = nil })
+            }.onEnded { _ in
+                start = nil
+                studio.resizing = false
+            })
     }
 
     private func cursor(_ edge: Edge) -> NSCursor {

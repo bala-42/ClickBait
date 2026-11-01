@@ -470,6 +470,12 @@ final class NotchController {
         targets[displayID] = target
         let current = panel.frame
         guard current != target else { return }
+        // Dragging the prompter's edges: exactly the new frame, at once (the jump-and-settle
+        // below, made for the opening spring, fought every step of a drag).
+        if StudioModel.shared.resizing {
+            panel.setFrame(target, display: true)
+            return
+        }
 
         // SwiftUI springs the black shape (`Look.Motion`); the clear window only has to hold
         // it. Stepping the window's frame every 16 ms on its own curve re-laid out the whole
