@@ -38,6 +38,7 @@ final class VoiceFollower {
     func resume(atLine line: Int) {
         follower.resume(atLine: line)
         audio.clear()
+        Log.app.notice("Studio: resuming at line \(line, privacy: .public)")
     }
 
     func start() async {
@@ -93,19 +94,25 @@ final class VoiceFollower {
         var heard = 0
         var ticks = 0
         while running, !Task.isCancelled {
-            try? await Task.sleep(for: .milliseconds(600))
+            try? await Task.sleep(for: .milliseconds(350))
             ticks += 1
             if ticks % 5 == 0 {
                 Log.app.notice("Studio: loudest \(String(format: "%.2f", self.audio.takePeak()), privacy: .public), \(self.audio.last(seconds: 4).count, privacy: .public) samples, model \(Self.transcribe == nil ? "none" : "set", privacy: .public)")
             }
             guard running, audio.spokeRecently(within: 1.5), let transcribe = Self.transcribe else { continue }
-            let samples = audio.last(seconds: 4)
+            let samples = audio.last(seconds: 3)
             guard samples.count > 8_000 else { continue }
-            // The script just ahead steers Whisper's spelling of names and jargon.
-            let ahead = follower.words.dropFirst(max(0, (follower.place?.word ?? 0) - 4)).prefix(24).map(\.text).joined(separator: " ")
-            guard let text = await transcribe(samples, ahead), !text.isEmpty else { continue }
+            // What's been read steers Whisper's spelling (the script ahead as a prompt, Whisper
+            // "said" it: "…now Studio has a" before it was read).
+            let ahead = follower.readSoFar()
+            let began = ContinuousClock.now
+            let result = await transcribe(samples, ahead)
+            guard let text = result, !text.isEmpty else { continue }
+            let took = ContinuousClock.now - began
             heard += 1
-            if heard <= 3 || heard % 20 == 0 { Log.app.notice("Studio: heard \(text.split(separator: " ").count, privacy: .public) words") }
+            if heard <= 3 || heard % 20 == 0 || took > .seconds(1.5) {
+                Log.app.notice("Studio: heard \(text.split(separator: " ").count, privacy: .public) words in \(String(describing: took), privacy: .public)")
+            }
             if let place = follower.hear(text) {
                 if place.line != lastLine { Log.app.notice("Studio: voice at line \(place.line, privacy: .public)") }
                 lastLine = place.line

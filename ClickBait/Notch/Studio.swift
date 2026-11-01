@@ -21,13 +21,23 @@ final class StudioModel {
         didSet {
             script = Script(text: text)
             scheduleSave()
-            if following { stopFollowing(); startFollowing() }  // edited while following: follow the new text
+            // Edited while following: follow the new text (only a real change: the editor
+            // writes the same text back as the notch folds, and that restarted it mid-speech).
+            if following, text != oldValue {
+                Log.app.notice("Studio: script edited while following: restarting")
+                stopFollowing()
+                startFollowing()
+            }
         }
     }
     private(set) var script = Script(text: "")
 
     /// The prompter under the notch is showing.
     var prompting = false
+    /// The morph: false while it grows out of the notch (and shrinks back into it).
+    var shown = false
+    /// Set by the notch: folds it, so the notch itself seems to become the prompter.
+    @ObservationIgnored var foldNotch: (() -> Void)?
     /// Scrolling by itself (phase 1: at `speed`; with voice-following, at your pace).
     var playing = false
     /// Points a second.
@@ -45,6 +55,8 @@ final class StudioModel {
         // Scrolled by hand while following: reading picks up from what's now at the top.
         if following {
             place = nil
+            lastMatch = nil
+            reading = Double(follower?.words.firstIndex { $0.line >= readingLine } ?? 0)
             voice?.resume(atLine: readingLine)
         }
     }
@@ -54,13 +66,17 @@ final class StudioModel {
         playing = false
         following = true
         place = nil
+        lastMatch = nil
+        follower = ScriptFollower(readable: script.readable)
+        reading = Double(follower?.words.firstIndex { $0.line >= readingLine } ?? 0)
         let voice = VoiceFollower(readable: script.readable,
                                   onPlace: { [weak self] in self?.place = $0 },
                                   onLevel: { [weak self] new in
                                       guard let self else { return }
-                                      // A fast rise and a slow fall: the beam jumps with each syllable
-                                      // and eases away, like a VU meter.
-                                      level = new > level ? level * 0.3 + new * 0.7 : level * 0.85 + new * 0.15
+                                      if new > 0.3 { spokeAt = Date() }
+                                      // Soft, like Moody's: it eases up with the voice and settles
+                                      // slowly (it jumped with every syllable: "not soft").
+                                      level = new > level ? level * 0.82 + new * 0.18 : level * 0.94 + new * 0.06
                                   },
                                   onProblem: { [weak self] message in
                                       self?.problem = message
@@ -89,7 +105,33 @@ final class StudioModel {
     /// Following the voice (phase 2): the prompter runs at your pace, still when you stop.
     var following = false
     /// Where the voice is in the script (the last confident match).
-    var place: ScriptFollower.Place?
+    var place: ScriptFollower.Place? {
+        didSet { if let place { learnPace(from: place) } }
+    }
+    /// Pace (user's ask: "it is not pace-reactive yet"): matches land about once a second, a
+    /// second late, so between them the prompter runs on at your reading speed while you speak
+    /// and stops as you go quiet. `reading` is that running word position; `pace` words a
+    /// second, learnt from the matches; `spokeAt` the last moment the voice was loud.
+    @ObservationIgnored var reading: Double = 0
+    @ObservationIgnored var pace: Double = 2.5
+    @ObservationIgnored var spokeAt = Date.distantPast
+    @ObservationIgnored private var lastMatch: (word: Int, at: Date)?
+    @ObservationIgnored var follower: ScriptFollower?
+    var speaking: Bool { Date().timeIntervalSince(spokeAt) < 0.35 }
+
+    private func learnPace(from place: ScriptFollower.Place) {
+        let now = Date()
+        if let last = lastMatch, place.word > last.word {
+            let seconds = now.timeIntervalSince(last.at)
+            if seconds > 0.3, seconds < 6 {
+                pace = min(5, max(0.8, pace * 0.7 + Double(place.word - last.word) / seconds * 0.3))
+            }
+        }
+        lastMatch = (place.word, now)
+        Log.app.debug("Studio: at word \(place.word, privacy: .public) (line \(place.line, privacy: .public)), pace \(String(format: "%.1f", self.pace), privacy: .public) words/s")
+        // Behind the match: catch up; ran a little ahead: keep going (it was right); far ahead: back.
+        if Double(place.word) > reading || reading - Double(place.word) > 4 { reading = Double(place.word) }
+    }
     @ObservationIgnored private var voice: VoiceFollower?
     /// The voice's loudness now, 0…1 (drives the ring; 0 without voice-following).
     var level: Double = 0
@@ -155,17 +197,30 @@ final class StudioModel {
             return
         }
         problem = nil
+        // The notch folds and the prompter grows out of it (user's ask, 2026-11-01: "the notch
+        // should morph into the teleprompter").
+        foldNotch?()
         prompting = true
+        shown = false
         PrompterController.shared.show()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))  // the fold under way first
+            shown = true
+        }
         startFollowing()  // it follows your voice from the start; ▶ scrolls at a set speed instead
     }
 
     func stopPrompting() {
         stopFollowing()
-        prompting = false
         playing = false
         cuesOpen = false
-        PrompterController.shared.hide()
+        shown = false  // shrinks back into the notch, then goes
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(420))
+            guard !shown else { return }
+            prompting = false
+            PrompterController.shared.hide()
+        }
     }
 
     func goTo(_ cue: Script.Cue) {
@@ -174,6 +229,8 @@ final class StudioModel {
         if !prompting { startPrompting() }
         let line = script.line(of: cue.start)
         place = nil
+        lastMatch = nil
+        reading = Double(follower?.words.firstIndex { $0.line >= line } ?? 0)
         voice?.resume(atLine: line)
     }
 

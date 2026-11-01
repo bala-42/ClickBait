@@ -127,6 +127,26 @@ public struct ScriptFollower: Sendable {
         return row[b.count]
     }
 
+    /// Where a word position falls (fractional: between matches the prompter runs on at your
+    /// pace): its line and how far through it, 0…1.
+    public func placement(ofWord position: Double) -> (line: Int, fraction: Double)? {
+        guard !words.isEmpty else { return nil }
+        let clamped = min(max(0, position), Double(words.count - 1))
+        let index = Int(clamped)
+        let line = words[index].line
+        let lineWords = words.indices.filter { words[$0].line == line }
+        guard let first = lineWords.first else { return nil }
+        let through = Double(index - first) + 1 + (clamped - Double(index))
+        return (line, min(1, through / Double(lineWords.count)))
+    }
+
+    /// The words already read (up to the place): Whisper's prompt, for spelling. The script
+    /// *ahead* was a prompt once, and Whisper went on to "say" it ("…now Studio has a").
+    public func readSoFar(_ count: Int = 24) -> String {
+        guard let place else { return "" }
+        return words[max(0, place.word - count + 1)...place.word].map(\.text).joined(separator: " ")
+    }
+
     static func place(of index: Int, in words: [Word]) -> Place {
         let line = words[index].line
         let lineWords = words.indices.filter { words[$0].line == line }

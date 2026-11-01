@@ -151,6 +151,7 @@ final class NotchController {
         self.speaker = speaker
         searxng = SearXNGStatus(fetcher: settings.web)
         model = Model(note: Note(text: settings.notchNote, save: { [weak settings] in settings?.notchNote = $0 }))
+        StudioModel.shared.foldNotch = { [weak self] in self?.apply(.escape) }
         music.spotifyArtworkAllowed = { [weak settings] in
             guard let settings else { return false }
             return settings.spotifyArtworkAlways || settings.internet.isOn

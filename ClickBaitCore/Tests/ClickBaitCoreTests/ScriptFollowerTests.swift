@@ -58,4 +58,16 @@ struct ScriptFollowerTests {
         #expect(follower.hear("thank you") == nil)
         #expect(follower.place?.line == 1)
     }
+
+    @Test func placesAFractionalWordAndPromptsOnlyWhatWasRead() {
+        var follower = ScriptFollower(readable: Self.script)
+        #expect(follower.readSoFar() == "")
+        follower.hear("hi I'm bala this is clickbait")
+        #expect(follower.readSoFar().hasSuffix("this is clickbait"))
+        #expect(!follower.readSoFar().contains("triangle"))
+        // Line 1 has 14 words; halfway between words 5 and 6 of it.
+        let place = follower.placement(ofWord: 1 + 5.5)
+        #expect(place?.line == 1)
+        #expect(abs((place?.fraction ?? 0) - 6.5 / 14) < 0.001)
+    }
 }

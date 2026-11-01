@@ -75,6 +75,13 @@ final class PrompterController {
     static var notchHeight: CGFloat {
         (NSScreen.screens.first { $0.safeAreaInsets.top > 0 }?.safeAreaInsets.top).map { $0 } ?? 0
     }
+
+    /// The notch's own size: where the morph starts from (and ends, going away).
+    static var notchSize: CGSize {
+        guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }),
+              let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else { return CGSize(width: 200, height: 32) }
+        return CGSize(width: max(120, screen.frame.width - left.width - right.width), height: screen.safeAreaInsets.top)
+    }
 }
 
 struct PrompterView: View {
@@ -108,6 +115,9 @@ struct PrompterView: View {
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: studio.cuesOpen)
     }
 
+    /// The prompter's size now: the notch's while it grows out of it, its own once shown.
+    private var current: CGSize { studio.shown ? studio.size : PrompterController.notchSize }
+
     private var prompter: some View {
         ZStack(alignment: .bottom) {
             Self.shape.fill(Color.black)
@@ -115,11 +125,21 @@ struct PrompterView: View {
                 .frame(width: studio.size.width, height: studio.size.height)
                 .clipShape(Self.shape)
                 .allowsHitTesting(false)
-            text
-            if hovering || studio.cuesOpen { controls.transition(.opacity) }
+            Group {
+                text
+                if hovering || studio.cuesOpen { controls.transition(.opacity) }
+            }
+            .opacity(studio.shown ? 1 : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: studio.shown ? 0.3 : 0.12).delay(studio.shown ? 0.22 : 0), value: studio.shown)
         }
         .frame(width: studio.size.width, height: studio.size.height)
-        .clipShape(Self.shape)  // the controls' dark band keeps the rounded corners
+        // The morph: the black shape grows from the notch's size to the prompter's (springy,
+        // like the notch's own opening), the text fading in once it's nearly there.
+        .frame(width: current.width, height: current.height, alignment: .top)
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: studio.shown ? 22 : 10, bottomTrailingRadius: studio.shown ? 22 : 10,
+                                          style: .continuous))
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.48, dampingFraction: 0.8), value: studio.shown)
+        .frame(width: studio.size.width, alignment: .top)
         .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         .onChange(of: studio.jump) { _, target in
             guard let target else { return }
@@ -174,11 +194,15 @@ struct PrompterView: View {
         guard let last = lastTick else { return }
         let elapsed = now.timeIntervalSince(last)
         if studio.following {
-            // Glide to the voice's place: its line, as far through it as you are, kept a
-            // quarter of the way down; still when there's no new place (you stopped).
-            guard let place = studio.place, let top = lineTops[place.line] else { return }
-            let bottom = lineTops[place.line + 1] ?? contentHeight
-            let target = max(0, top + (bottom - top) * place.fraction - (studio.size.height - self.top) * 0.35)
+            // At your pace: while you speak the reading position runs on at your words a second
+            // (up to 6 words past the last match), still the moment you stop; each match corrects it.
+            guard let place = studio.place, let follower = studio.follower else { return }
+            if studio.speaking {
+                studio.reading = min(studio.reading + studio.pace * elapsed, Double(place.word) + 6)
+            }
+            guard let spot = follower.placement(ofWord: studio.reading), let top = lineTops[spot.line] else { return }
+            let bottom = lineTops[spot.line + 1] ?? contentHeight
+            let target = max(0, top + (bottom - top) * spot.fraction - (studio.size.height - self.top) * 0.35)
             let step = (target - studio.offset) * min(1, elapsed * 4)
             if abs(step) > 0.05 { studio.offset = min(max(0, studio.offset + step), studio.maxOffset) }
             return
@@ -265,80 +289,54 @@ enum Quicksilver {
     static let bright = Color(hex: 0x5FA3DA)
     static let royal = Color(hex: 0x3A86C8)   // the Studio tab's blue
     static let deep = Color(hex: 0x1F4FA0)    // the edges (its darkest stop)
+    /// The Studio blue at full strength, for glows that blur (blurring dulls a colour).
+    static let vivid = Color(hex: 0x2F7BF0)
     /// For a button or pill: royal blue with a metallic top light.
     static let fill = LinearGradient(colors: [bright, royal, deep], startPoint: .top, endPoint: .bottom)
 }
 
-/// The voice beam, in quicksilver blue (user's ask, 2026-11-01: "animate it like what Moody
-/// has", from its video; built afresh): a glowing half-dome rising from the prompter's bottom
-/// edge — a hot core, a bright rim, a halo spilling past it — that grows and lifts with every
-/// syllable and falls away in silence, sending out a ripple ring as each word starts. While
-/// listening in silence it only breathes, faintly. `level` 0…1 (the voice, smoothed with a fast
-/// rise and a slow fall).
+/// The voice ring, after Moody's (user's ask, 2026-11-01: "moody has its own softer [look],
+/// respect it"; built afresh): a thick ring of light, heavily blurred, its top arc rising from
+/// the prompter's bottom edge with a dark centre, in the Studio blue. It swells and brightens
+/// gently with the voice and settles when you stop — no hard rim, nothing popping.
+/// `level` 0…1 (the voice, smoothed slowly).
 struct QuicksilverRing: View {
     let level: Double
     let reduceMotion: Bool
-    /// Ripples: when each started (a word's onset: the level jumping up).
-    @State private var ripples: [Date] = []
-    @State private var lastLevel = 0.0
 
     var body: some View {
         GeometryReader { box in
-            TimelineView(.animation(paused: reduceMotion && ripples.isEmpty)) { timeline in
-                let now = timeline.date
-                let t = now.timeIntervalSinceReferenceDate
-                let breathe = reduceMotion ? 0 : (sin(t * 1.6) + 1) / 2 * 0.06
-                let energy = max(level, breathe)
-                let width = box.size.width * (0.26 + energy * 0.4)
-                let height = width * (0.55 + energy * 0.35)
-                let centre = CGPoint(x: box.size.width / 2, y: box.size.height + height * 0.12)
+            // 30 frames a second, flattened into one layer: big blurs redrawn at 120 Hz took the
+            // graphics chip from Whisper, and a transcription took 7 s (live test, 2026-11-01).
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                // A slow breath underneath, so it's alive even between words.
+                let breath = reduceMotion ? 0 : (sin(t * 1.3) + 1) / 2
+                let energy = min(1, level + breath * 0.05)
+                let diameter = box.size.width * (0.42 + energy * 0.16)
+                let thickness = diameter * (0.07 + energy * 0.05)
+                // Saturated Studio blues only: the whitish highlight greyed it under the blur.
+                let light = LinearGradient(colors: [Quicksilver.bright, Quicksilver.royal, Quicksilver.deep],
+                                           startPoint: .top, endPoint: .bottom)
                 ZStack {
-                    // The halo: wide, soft, spilling up behind the text.
-                    Ellipse()
-                        .fill(RadialGradient(colors: [Quicksilver.bright.opacity(0.75), Quicksilver.royal.opacity(0.45), .clear],
-                                             center: .center, startRadius: 0, endRadius: width * 0.75))
-                        .frame(width: width * 1.6, height: height * 1.6)
-                        .blur(radius: 18)
-                        .opacity(0.35 + energy * 0.65)
-                    // The dome: a hot core fading to the Studio blue.
-                    Ellipse()
-                        // Hottest at its base (the edge it rises from), fading up to the rim.
-                        .fill(RadialGradient(stops: [.init(color: Quicksilver.core, location: 0),
-                                                     .init(color: Quicksilver.bright, location: 0.35),
-                                                     .init(color: Quicksilver.royal.opacity(0.7), location: 0.7),
-                                                     .init(color: Quicksilver.deep.opacity(0.25), location: 1)],
-                                             center: UnitPoint(x: 0.5, y: 0.62), startRadius: 0, endRadius: height * 0.62))
-                        .frame(width: width, height: height)
-                        .blur(radius: 3 + (1 - energy) * 4)
-                        .opacity(0.25 + energy * 0.75)
-                    // The rim: a bright edge with a shine running round it.
-                    Ellipse()
-                        .stroke(AngularGradient(colors: [Quicksilver.royal, Quicksilver.core, Quicksilver.bright, Quicksilver.royal,
-                                                         Quicksilver.core, Quicksilver.royal],
-                                                center: .center, angle: .degrees(reduceMotion ? 0 : t * (40 + energy * 220))),
-                                lineWidth: 1.5 + energy * 2.5)
-                        .frame(width: width, height: height)
-                        .blur(radius: 0.8)
-                        .opacity(0.3 + energy * 0.7)
-                    // Ripples: a ring from each word, growing and fading over 0.9 s.
-                    ForEach(ripples, id: \.self) { start in
-                        let age = now.timeIntervalSince(start) / 0.9
-                        if age < 1 {
-                            Ellipse()
-                                .stroke(Quicksilver.core.opacity(0.7 * (1 - age)), lineWidth: 2 * (1 - age) + 0.5)
-                                .frame(width: width * (1 + age * 0.9), height: height * (1 + age * 0.9))
-                                .blur(radius: 1 + age * 3)
-                        }
-                    }
+                    // The wide glow round it.
+                    Circle()
+                        .stroke(Quicksilver.vivid, lineWidth: thickness * 2.6)
+                        .blur(radius: thickness * 1.6)
+                        .opacity(0.35 + energy * 0.4)
+                    // The ring itself: thick and soft.
+                    Circle()
+                        .stroke(light, lineWidth: thickness)
+                        .blur(radius: thickness * 0.55)
+                        .opacity(0.45 + energy * 0.55)
                 }
-                .position(centre)
-                .onChange(of: now) { _, now in ripples.removeAll { now.timeIntervalSince($0) > 0.9 } }
+                .frame(width: diameter, height: diameter)
+                .padding(thickness * 4)
+                .drawingGroup()
+                .padding(-thickness * 4)
+                // Its top arc shows above the bottom edge, rising a little as you speak.
+                .position(x: box.size.width / 2, y: box.size.height + diameter / 2 - diameter * (0.2 + energy * 0.08))
             }
-        }
-        .onChange(of: level) { _, level in
-            // A word starting: the level jumping up from quieter.
-            if level - lastLevel > 0.12, level > 0.3, ripples.count < 4, !reduceMotion { ripples.append(Date()) }
-            lastLevel = level
         }
     }
 }
