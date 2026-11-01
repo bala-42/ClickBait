@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import ClickBaitCore
+import QuickLookThumbnailing
 import SwiftUI
 
 /// One native drag session with several file URLs, suitable for dropping the selection
@@ -1454,7 +1455,7 @@ private struct ShelfView: View {
     private func file(_ url: URL) -> some View {
         let selected = shelf.selectedFiles.contains(url)
         return VStack(spacing: 2) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 32, height: 32)
+            FileThumbnail(url: url).frame(width: 32, height: 32)
             if renaming == url {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.plain).font(.system(size: 9, weight: .medium)).foregroundStyle(NotchPalette.text)
@@ -1589,5 +1590,28 @@ private struct OpenOnTap: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// A shelf file as Finder shows it (user's ask, 2026-11-02): the picture itself, a video's frame,
+/// a PDF's page, a song's cover, a folder's own icon; Finder's plain icon until it's ready or when
+/// Quick Look has none. Made once per file and kept (`cache`).
+struct FileThumbnail: View {
+    let url: URL
+    @State private var image: NSImage?
+    @MainActor private static let cache = NSCache<NSURL, NSImage>()
+
+    var body: some View {
+        Image(nsImage: image ?? Self.cache.object(forKey: url as NSURL) ?? NSWorkspace.shared.icon(forFile: url.path))
+            .resizable().aspectRatio(contentMode: .fit)
+            .task(id: url) {
+                if let cached = Self.cache.object(forKey: url as NSURL) { image = cached; return }
+                let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 64, height: 64),
+                                                           scale: NSScreen.main?.backingScaleFactor ?? 2,
+                                                           representationTypes: [.icon, .thumbnail])
+                guard let made = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request) else { return }
+                Self.cache.setObject(made.nsImage, forKey: url as NSURL)
+                image = made.nsImage
+            }
     }
 }
