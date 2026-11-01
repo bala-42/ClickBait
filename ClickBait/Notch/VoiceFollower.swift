@@ -168,6 +168,8 @@ final class VoiceFollower {
             /// judged against it, not a fixed bar (the user's real voice peaked at 0.13–0.29 on
             /// a bar of 0.3 set with the Mac's voice through speakers, and was never heard).
             var floor = 0.2
+            /// Buffers in a row loud enough to be speech.
+            var loudRun = 0
         }
         private let state = OSAllocatedUnfairLock(initialState: State())
         private static let keep = 16_000 * 6
@@ -182,8 +184,10 @@ final class VoiceFollower {
                 let voice = max(0, level - state.floor)
                 if voice > Self.aboveRoom { state.spokeAt = Date() }
                 state.peak = max(state.peak, level)
-                // The ring gets the voice above the room, scaled so a normal voice fills it.
-                state.level = min(1, voice / 0.25)
+                // The ring moves only for speech: above the speech bar for 2 buffers running
+                // (~85 ms), so room noise and clicks or typing leave it still (user's ask, 2026-11-02).
+                state.loudRun = voice > Self.aboveRoom ? state.loudRun + 1 : 0
+                state.level = state.loudRun >= 2 ? min(1, (voice - Self.aboveRoom) / 0.2) : 0
             }
         }
 
