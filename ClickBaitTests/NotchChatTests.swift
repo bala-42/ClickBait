@@ -23,4 +23,17 @@ struct NotchChatTests {
         chat.clear()
         #expect(chat.model.messages.isEmpty)
     }
+
+    @Test func searchesThisMac() async throws {
+        let chat = NotchChat()
+        chat.brain = { ProcessInfo.processInfo.environment["CLICKBAIT_NOTCH_CHAT"] ?? "" }
+        let settings = AppSettings()
+        chat.searchSettings = { (settings.notchNote, settings.visionOptions, nil) }
+        chat.send("find shampoo videos")
+        let deadline = Date().addingTimeInterval(90)
+        while chat.model.isBusy, Date() < deadline { try await Task.sleep(for: .milliseconds(200)) }
+        let reply = chat.model.messages.last
+        print("NOTCH search: \(reply?.text ?? "-") [\(reply?.results.count ?? 0) results]")
+        #expect((reply?.results.count ?? 0) > 0)
+    }
 }

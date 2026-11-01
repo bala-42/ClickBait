@@ -13,6 +13,11 @@ final class NotchChat {
     var brain: () -> String = { "" }
     /// A JPEG of the screen under the pointer, or nil (no permission, failed).
     var look: () async -> Data? = { nil }
+    /// Smart search's settings (set by the app delegate): the notch's note, Vision Memory's
+    /// options, and why unread pictures wait ("…while plugged in"), for an empty search.
+    var searchSettings: () -> (note: String, options: VisionOptions, waitingWhy: String?)? = { nil }
+    /// The last search's finds: "open the second one" acts on them.
+    private var lastResults: [SmartSearch.Item] = []
 
     private struct Turn {
         let role: String
@@ -49,6 +54,32 @@ final class NotchChat {
     }
 
     private func answer(_ text: String, looking: Bool) async {
+        // Smart search, as in the overlay chat (it was lost when the notch got its own chat:
+        // "now no smart search from vision memory?", 2026-11-02): finds on this Mac, not the model.
+        if !looking, let settings = searchSettings() {
+            if let followUp = SmartSearch.followUp(in: text, count: lastResults.count) {
+                let message = SearchResultActions.perform(followUp, on: lastResults)
+                model.setAssistant(message)
+                turns += [Turn(role: "user", text: text, image: nil), Turn(role: "assistant", text: message, image: nil)]
+                model.isBusy = false
+                return
+            }
+            if let search = SmartSearch.request(in: text) {
+                let found = await SearchIndex.shared.search(search, notchNote: settings.note, options: settings.options)
+                guard !Task.isCancelled else { return }
+                lastResults = found
+                let headline = found.isEmpty
+                    ? SmartSearch.headline(found, for: search, waiting: await SearchIndex.shared.waiting, waitingWhy: settings.waitingWhy)
+                    : await AskCoordinator.searchSentence(found, question: text, brain: brain()) ?? SmartSearch.headline(found, for: search)
+                guard !Task.isCancelled else { return }
+                model.setAssistant(headline)
+                model.setResults(found)
+                // The model remembers the full list, so a later question can refer to it.
+                turns += [Turn(role: "user", text: text, image: nil), Turn(role: "assistant", text: SmartSearch.reply(found, for: search), image: nil)]
+                model.isBusy = false
+                return
+            }
+        }
         let image = looking ? await look() : nil
         if looking, image == nil { model.addError("I couldn't see the screen (Screen Recording may be off), so this answer is without it.") }
         turns.append(Turn(role: "user", text: text, image: image))

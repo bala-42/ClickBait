@@ -242,6 +242,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       excluding: settings.blocklist, ignoreClickBait: settings.ignoreNotchInCaptures) else { return nil }
             return try? await ScreenshotEncoder.encodeInBackground(capture.image).jpeg
         }
+        notchChat.searchSettings = { [weak self] in
+            guard let self else { return nil }
+            let options = settings.visionOptions
+            let why = !settings.visionDescribe ? "Describe multimedia is off"
+                : !options.onBattery && VisionOptions.onBatteryPower ? "I read them while the Mac is plugged in" : nil
+            return (settings.notchNote, options, why)
+        }
         notchChat.model.onClose = { [weak self] in self?.notch.model.tab = .home }  // put away, kept
         notchChat.model.onClear = { [weak self] in
             self?.notchChat.clear()
