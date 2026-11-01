@@ -329,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
         // Drops on the notch's shelf say how they went in the companion's pill.
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
+        TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
         // Setup's last step: a tapped suggestion is asked for real, in the chat.
         _ = NotificationCenter.default.addObserver(forName: .clickBaitAskFromSetup, object: nil, queue: .main) { [weak self] note in
             guard let question = note.object as? String else { return }

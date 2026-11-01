@@ -189,6 +189,23 @@ final class OverlayController {
         model.bubble = .idle
     }
 
+    /// A hover hint by the companion ("take me there!" over the notch's cover), only while
+    /// it has nothing else to say; nil takes it away again, if it's still showing.
+    func showHoverHint(_ text: String?) {
+        if let text {
+            guard model.bubble == .idle, !isGuiding, !model.isSnipping, !model.isTutoring else { return }
+            setCompanionHidden(false)
+            stickyNote = false
+            model.bubble = .answer(text)
+            scheduleDismiss(after: .seconds(6))
+        } else if case .answer(let shown) = model.bubble, shown == hoverHintShown {
+            model.bubble = .idle
+        }
+        hoverHintShown = text
+    }
+
+    private var hoverHintShown: String?
+
     /// A reply short enough for a pill ("Yep, it's on!"): said by the companion, no chat.
     func showShortAnswer(_ text: String) {
         endGuide()

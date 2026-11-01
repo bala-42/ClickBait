@@ -595,6 +595,7 @@ private struct FocusCard: View {
                     .frame(width: Self.coverSize, height: Self.coverSize)
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                    .modifier(TakeMeThere())
                     .onTapGesture { onOpen() }
                     .accessibilityElement()
                     .accessibilityAddTraits(.isButton)
@@ -813,6 +814,7 @@ private struct MusicPanel: View {
                     .frame(width: 76, height: 76)
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                    .modifier(TakeMeThere())
                     .onTapGesture { onOpen() }
                     .accessibilityElement()
                     .accessibilityAddTraits(.isButton)
@@ -1540,6 +1542,30 @@ struct InternetSwitch: View {
     }
 }
 
+/// The cover (or the bean standing in for it) under the pointer: it lifts a little, the
+/// pointer becomes a hand, and the companion's pill says "take me there!" (user's ask,
+/// 2026-11-01: nothing showed the cover could be clicked).
+struct TakeMeThere: ViewModifier {
+    /// Set by the app delegate: the pill's words, or nil to take them away.
+    @MainActor static var say: ((String?) -> Void)?
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering && !reduceMotion ? 1.05 : 1)
+            .animation(Look.Motion.press, value: hovering)
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                Self.say?(inside ? "take me there!" : nil)
+            }
+            .onDisappear {
+                if hovering { NSCursor.pop(); Self.say?(nil) }
+            }
+    }
+}
+
 /// A tap that does `action`, only while `on` (the bean standing in for a cover).
 private struct OpenOnTap: ViewModifier {
     let on: Bool
@@ -1549,6 +1575,7 @@ private struct OpenOnTap: ViewModifier {
     func body(content: Content) -> some View {
         if on {
             content
+                .modifier(TakeMeThere())
                 .onTapGesture(perform: action)
                 .help(label)
                 .accessibilityAddTraits(.isButton)
