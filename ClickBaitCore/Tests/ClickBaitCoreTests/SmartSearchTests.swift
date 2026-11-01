@@ -92,4 +92,12 @@ struct SmartSearchTests {
                                      for: request, query: [1, 0], boosted: ["a"])
         #expect(found.map(\.id) == ["a", "b"])
     }
+
+    @Test func videosAreAKindAndShortPhrasesSearch() {
+        let find = SmartSearch.request(in: "find shampoo videos")
+        #expect(find?.kind == .video && find?.terms == ["shampoo"])
+        #expect(SmartSearch.request(in: "shampoo videos")?.terms == ["shampoo"])
+        #expect(SmartSearch.request(in: "beach photos")?.kind == .image)
+        #expect(SmartSearch.request(in: "make a video about cats") == nil)  // not a search
+    }
 }

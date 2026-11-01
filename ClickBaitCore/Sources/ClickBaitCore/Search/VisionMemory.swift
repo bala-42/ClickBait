@@ -27,8 +27,11 @@ public enum VisionMemory {
     /// The brain's prompt. Every caption starts with the kind of picture ("A photo of…", "A
     /// painting of…"): without it nothing told a group photo from a painting of a crowd (1 of
     /// 3,000 captions said "photo", 5 "painting": user's report, 2026-11-01).
-    public static func captionPrompt(documentLike: Bool) -> String {
-        documentLike
+    public static func captionPrompt(documentLike: Bool, video: Bool = false) -> String {
+        if video {
+            return "This is a frame from the middle of a video. In one plain sentence of at most 22 words, start with \"A video of\", then who or what is in it, what's happening, where. No preamble."
+        }
+        return documentLike
             ? "In one plain sentence of at most 25 words, start with what kind of thing this is (a screenshot, chart, slide, receipt, code, form, web page, diagram…), then its title or subject and its key details. No preamble."
             : "Describe this picture in one plain sentence of at most 22 words. Start with what kind of picture it is (a photo, a painting, a drawing, an illustration, a meme, a render, a scan…), then who or what is in it, what they're doing, where. No preamble."
     }

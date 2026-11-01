@@ -60,4 +60,11 @@ struct VisionMemoryPictureTests {
         #expect(VisionMemory.captionPrompt(documentLike: false).contains("a photo, a painting"))
         #expect(VisionMemory.captionPrompt(documentLike: true).contains("start with what kind"))
     }
+
+    @Test func videosAreVisualAndCaptionedAsVideos() {
+        #expect(SmartSearch.Kind.of("/x/shampoo_input (2).mov") == .video)
+        #expect(SmartSearch.Kind.of("/x/a.HEIC") == .image && SmartSearch.Kind.of("/x/a.pdf") == .file)
+        #expect(SmartSearch.Kind.video.isVisual && !SmartSearch.Kind.note.isVisual)
+        #expect(VisionMemory.captionPrompt(documentLike: false, video: true).contains("A video of"))
+    }
 }

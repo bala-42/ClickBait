@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import ClickBaitCore
 import CryptoKit
@@ -82,8 +83,8 @@ actor SearchIndex {
         pool.append((SmartSearch.Item(id: "quicknote", kind: .note, title: "Quick note", place: "the notch", text: notchNote), nil))
         // Files: Spotlight's matches for the words, by name or the text inside.
         var boosted: Set<String> = []
-        if request.kind == .any || request.kind == .file || request.kind == .image {
-            for item in await Self.spotlight(request.terms, images: request.kind == .image)
+        if request.kind != .note, request.kind != .reminder {
+            for item in await Self.spotlight(request.terms, kind: request.kind)
             where entries[item.id] == nil && !forgotten.contains(item.id) && !VisionMemory.isExcluded(item.file ?? "", excluded: options.excluded) {
                 pool.append((item, nil))
                 boosted.insert(item.id)
@@ -144,7 +145,7 @@ actor SearchIndex {
         load()
         var fresh: [SmartSearch.Item] = []
         if quick {
-            fresh += entries.values.map(\.item).filter { $0.kind != .image }
+            fresh += entries.values.map(\.item).filter { !$0.kind.isVisual }
         } else {
             fresh += Self.clickBaitNotes()
             fresh += await Self.reminders()
@@ -158,7 +159,7 @@ actor SearchIndex {
         var picturesRead = 0
         let you = YourFace.reference()
         var byContent: [String: SmartSearch.Item] = [:]
-        for entry in entries.values where entry.item.kind == .image { if let key = entry.item.contentKey { byContent[key] = entry.item } }
+        for entry in entries.values where entry.item.kind.isVisual { if let key = entry.item.contentKey { byContent[key] = entry.item } }
         for (id, title, place, url, asset, modified) in pictures {
             if let old = entries[id], old.item.modified == modified {
                 // Read before copies were spotted: fingerprinted now (64 KB, no Vision).
@@ -172,8 +173,8 @@ actor SearchIndex {
             }
             let bytes = url.flatMap { (try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
             let key = url.flatMap { Self.contentKey($0, bytes: bytes) }
-            var item = SmartSearch.Item(id: id, kind: .image, title: title, place: place, text: "",
-                                        file: url?.path, modified: modified, bytes: bytes)
+            var item = SmartSearch.Item(id: id, kind: url.map { SmartSearch.Kind.of($0.path) } ?? .image, title: title, place: place,
+                                        text: "", file: url?.path, modified: modified, bytes: bytes)
             item.contentKey = key
             if let key, let twin = byContent[key] {
                 (item.text, item.caption, item.hasYou, item.sensitive) = (twin.text, twin.caption, twin.hasYou, twin.sensitive)
@@ -196,7 +197,7 @@ actor SearchIndex {
         if !quick {
             let waiting = fresh.indices.filter { index in
                 let item = fresh[index]
-                guard item.kind == .image, item.userEdited != true, item.sensitive != true else { return false }
+                guard item.kind.isVisual, item.userEdited != true, item.sensitive != true else { return false }
                 if !options.screenshots, VisionMemory.isDocumentLike(labels: item.text, name: item.title) { return false }
                 // Older captions (another brain, or before captions named the kind) are redone.
                 return item.caption == nil || item.captionModel != Self.captionTag(options.brain)
@@ -264,7 +265,7 @@ actor SearchIndex {
     /// size on disk, and whether pictures are being described right now.
     func stats() -> (pictures: Int, described: Int, bytes: Int, active: Bool) {
         load()
-        let pictures = entries.values.filter { $0.item.kind == .image }
+        let pictures = entries.values.filter { $0.item.kind.isVisual }
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         let described = min(pictures.count, pictures.filter { $0.item.caption != nil }.count + describingNow)
         return (pictures.count, described, size, describing)
@@ -282,7 +283,7 @@ actor SearchIndex {
     /// Pictures read again (after the user's reference photo changed): faces are matched anew.
     func forgetPictures() {
         load()
-        entries = entries.filter { $0.value.item.kind != .image }
+        entries = entries.filter { !$0.value.item.kind.isVisual }
         save()
     }
 
@@ -294,9 +295,12 @@ actor SearchIndex {
 
     /// One line on what a picture shows, from the brain, or nil (no brain, can't see, slow).
     private static func caption(_ item: SmartSearch.Item, brain: String) async -> String? {
-        let prompt = VisionMemory.captionPrompt(documentLike: VisionMemory.isDocumentLike(labels: item.text, name: item.title))
+        let prompt = VisionMemory.captionPrompt(documentLike: VisionMemory.isDocumentLike(labels: item.text, name: item.title),
+                                                video: item.kind == .video)
         let image: CGImage?
-        if let path = item.file {
+        if item.kind == .video, let path = item.file {
+            image = await middleFrame(of: URL(fileURLWithPath: path))
+        } else if let path = item.file {
             image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         } else if item.id.hasPrefix("photo:") {
             image = await thumbnail(of: String(item.id.dropFirst(6)))
@@ -454,7 +458,8 @@ actor SearchIndex {
     /// Pictures in Desktop, Downloads, Documents, Pictures and the screenshot folder, newest first.
     private static func pictureFiles(folders paths: [String], excluded: [String]) -> [Picture] {
         let folders = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
-        let kinds: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp"]
+        // Pictures and videos (user's ask, 2026-11-01: "it should also consider videos").
+        let kinds = SmartSearch.Kind.imageExtensions.union(SmartSearch.Kind.videoExtensions)
         var found: [Picture] = []
         var seen: Set<String> = []
         for folder in folders {
@@ -472,7 +477,7 @@ actor SearchIndex {
                 }
                 guard kinds.contains(url.pathExtension.lowercased()), seen.insert(url.path).inserted else { continue }
                 // Icons, thumbnails and dataset samples: too small to be a picture anyone looks for.
-                guard !Self.isTiny(url) else { continue }
+                guard SmartSearch.Kind.of(url.path) == .video || !Self.isTiny(url) else { continue }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
                 found.append(("file:\(url.path)", url.lastPathComponent, url.deletingLastPathComponent().lastPathComponent, url, nil, modified))
             }
@@ -503,7 +508,9 @@ actor SearchIndex {
     private static func look(at url: URL?, asset: String?, you: VNFeaturePrintObservation?, screenshots: Bool,
                              name: String) async -> (text: String, hasYou: Bool, sensitive: Bool) {
         let image: CGImage?
-        if let url {
+        if let url, SmartSearch.Kind.of(url.path) == .video {
+            image = await middleFrame(of: url)
+        } else if let url {
             image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         } else if let asset {
             image = await thumbnail(of: asset)
@@ -532,6 +539,16 @@ actor SearchIndex {
         return (([labelText] + (words.isEmpty ? [] : ["text: " + String(words.prefix(600))])).joined(separator: ". "), hasYou, guarded.sensitive)
     }
 
+    /// A video's frame from its middle (what it's about, past any title card), small.
+    private static func middleFrame(of url: URL) async -> CGImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 768, height: 768)
+        guard let duration = try? await asset.load(.duration), duration.seconds.isFinite, duration.seconds > 0 else { return nil }
+        return try? await generator.image(at: CMTime(seconds: duration.seconds / 2, preferredTimescale: 600)).image
+    }
+
     private static func thumbnail(of id: String) async -> CGImage? {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
         let options = PHImageRequestOptions()
@@ -546,7 +563,7 @@ actor SearchIndex {
     }
 
     /// Files whose name or contents hold the words (Spotlight's own index); AND first, then each word.
-    private static func spotlight(_ terms: [String], images: Bool) async -> [SmartSearch.Item] {
+    private static func spotlight(_ terms: [String], kind wanted: SmartSearch.Kind) async -> [SmartSearch.Item] {
         func run(_ query: String) -> [String] {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
@@ -563,16 +580,14 @@ actor SearchIndex {
             var paths = run(terms.joined(separator: " "))
             if paths.count < 5 { for term in terms.prefix(3) where term.count > 2 { paths += run(term) } }
             let skip = ["/Library/", "/.Trash/", "/node_modules/", ".app/", "/.git/", "/DerivedData/"]
-            let imageKinds: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff"]
             var seen: Set<String> = []
             return paths.filter { path in
                 !skip.contains(where: path.contains) && !path.hasSuffix(".app") && seen.insert(path).inserted
-                    && (!images || imageKinds.contains((path as NSString).pathExtension.lowercased()))
+                    && (wanted == .any || wanted == .file || SmartSearch.Kind.of(path) == wanted)
             }.prefix(40).map { path in
                 let url = URL(fileURLWithPath: path)
-                let isImage = imageKinds.contains(url.pathExtension.lowercased())
                 let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-                return SmartSearch.Item(id: "file:\(path)", kind: isImage ? .image : .file, title: url.lastPathComponent,
+                return SmartSearch.Item(id: "file:\(path)", kind: SmartSearch.Kind.of(path), title: url.lastPathComponent,
                                         place: url.deletingLastPathComponent().lastPathComponent, text: "", file: path,
                                         modified: values?.contentModificationDate, bytes: values?.fileSize)
             }

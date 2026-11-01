@@ -759,13 +759,13 @@ struct VisionMemorySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ToggleRow("Describe pictures", "Reads your pictures on this Mac (what they show, and any text) so smart search can find them by what's in them.",
+            ToggleRow("Describe multimedia", "Reads your pictures and videos on this Mac (what they show, and any text) so smart search can find them by what's in them.",
                       isOn: $settings.visionDescribe)
             Divider().overlay(SettingsLook.hairline)
             // Progress, and pausing: one row, like the others.
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    RowLabel("\(stats.described.formatted()) of \(stats.pictures.formatted()) pictures described",
+                    RowLabel("\(stats.described.formatted()) of \(stats.pictures.formatted()) pictures and videos described",
                              (stats.active && pausedNote == nil ? "Describing now · " : "")
                                 + ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file) + " on disk"
                                 + (pausedNote.map { " · " + $0 } ?? ""))
@@ -811,7 +811,7 @@ struct VisionMemorySection: View {
             Divider().overlay(SettingsLook.hairline)
             YourPhotoRow(settings: settings)
             Divider().overlay(SettingsLook.hairline)
-            ButtonRow("Delete Vision Memory", "Everything read and described; your pictures aren't touched. To fix one picture, right-click it in search results.",
+            ButtonRow("Delete Vision Memory", "Everything read and described; your pictures and videos aren't touched. To fix one picture, right-click it in search results.",
                       button: "Delete…", destructive: true) { confirmDelete = true }
         }
         // Live while the page is open: the count moves as pictures are described.

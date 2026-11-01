@@ -353,6 +353,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #if DEBUG
         // Studio from the outside, for live tests: start or stop the prompter.
+        // Smart search from the outside, for live tests: "search:<question>" logs what it finds.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.search"), object: nil, queue: .main) { [weak self] note in
+            guard let question = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self, let request = SmartSearch.request(in: question) else {
+                    Log.app.notice("Debug search: not a search question")
+                    return
+                }
+                let options = self.settings.visionOptions
+                Task {
+                    let found = await SearchIndex.shared.search(request, notchNote: "", options: options)
+                    Log.app.notice("Debug search: kind \(request.kind.rawValue, privacy: .public), terms \(request.terms.joined(separator: " "), privacy: .public) → \(found.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "), privacy: .public)")
+                }
+            }
+        }
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.studio"), object: nil, queue: .main) { note in
             let command = note.object as? String
             MainActor.assumeIsolated {

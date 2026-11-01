@@ -16,8 +16,8 @@ struct SearchResultsView: View {
     /// Descriptions saved in this card, shown at once.
     @State private var edited: [String: String] = [:]
 
-    private var pictures: [SmartSearch.Item] { items.filter { $0.kind == .image } }
-    private var others: [SmartSearch.Item] { items.filter { $0.kind != .image } }
+    private var pictures: [SmartSearch.Item] { items.filter { $0.kind.isVisual } }
+    private var others: [SmartSearch.Item] { items.filter { !$0.kind.isVisual } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -57,7 +57,7 @@ private struct PictureMenu: ViewModifier {
 
     func body(content: Content) -> some View {
         content.contextMenu {
-            if item.kind == .image {
+            if item.kind.isVisual {
                 Button("Edit description") { edit() }
                 Button("Forget this picture") { SearchResultActions.forget(item) }
             }
@@ -400,9 +400,9 @@ private struct Thumbnail: View {
         ZStack {
             Color.white.opacity(0.06)
             if let image {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: item.kind == .image ? .fill : .fit)
+                Image(nsImage: image).resizable().aspectRatio(contentMode: item.kind.isVisual ? .fill : .fit)
             } else {
-                Image(systemName: item.kind == .image ? "photo" : "doc").foregroundStyle(AquaDark.textSecondary)
+                Image(systemName: item.kind == .video ? "film" : item.kind == .image ? "photo" : "doc").foregroundStyle(AquaDark.textSecondary)
             }
         }
         .task(id: item.id) { image = await load() }

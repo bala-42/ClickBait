@@ -6,7 +6,19 @@ import Foundation
 /// Everything it searches stays on this Mac.
 public enum SmartSearch {
     public enum Kind: String, Sendable, Codable, CaseIterable {
-        case any, file, image, note, reminder
+        case any, file, image, video, note, reminder
+
+        /// Pictures and videos: read and described by Vision Memory, shown as thumbnails.
+        public var isVisual: Bool { self == .image || self == .video }
+
+        public static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp"]
+        public static let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv", "webm", "3gp"]
+
+        /// What a file is by its name: a picture, a video, else a file.
+        public static func of(_ path: String) -> Kind {
+            let ext = (path as NSString).pathExtension.lowercased()
+            return imageExtensions.contains(ext) ? .image : videoExtensions.contains(ext) ? .video : .file
+        }
     }
 
     public struct Request: Equatable, Sendable {
@@ -114,6 +126,10 @@ public enum SmartSearch {
         }
     }
 
+    /// Words asking for videos (user's ask, 2026-11-01: "find shampoo videos" found nothing).
+    static let videoWords: Set<String> = ["video", "videos", "clip", "clips", "movie", "movies", "recording", "recordings", "footage"]
+    static let kindNouns: Set<String> = videoWords.union(["photos", "pictures", "pics", "images", "screenshots", "pdfs", "files",
+                                                          "documents", "notes", "reminders"])
     private static let uiWords: Set<String> = ["button", "menu", "icon", "tab", "toolbar", "setting", "settings", "field", "link",
                                                "checkbox", "switch", "option", "bar", "sidebar", "window"]
     private static let stopWords: Set<String> = ["the", "a", "an", "my", "me", "i", "that", "this", "about", "of", "for", "with", "from",
@@ -123,7 +139,8 @@ public enum SmartSearch {
                                                  "open", "file", "files", "document", "documents", "doc", "pdf", "pdfs", "note", "notes",
                                                  "photo", "photos", "picture", "pictures", "pic", "pics", "image", "images", "screenshot",
                                                  "screenshots", "reminder", "reminders", "task", "tasks", "all", "had", "made", "took",
-                                                 "taken", "got", "for", "up", "again", "earlier", "last", "recent"]
+                                                 "taken", "got", "for", "up", "again", "earlier", "last", "recent",
+                                                 "video", "videos", "clip", "clips", "movie", "movies", "recording", "recordings", "footage"]
 
     /// A search question, or nil. Asking for something on screen ("where's the share
     /// button?") is pointing, not search: UI words keep it out.
@@ -137,6 +154,7 @@ public enum SmartSearch {
                     " show me my ", " show me the picture", " show me the photo", " show me the screenshot", " show me the pdf",
                     " show me the file", " show me that "]
         let kind: Kind = {
+            if words.contains(where: Self.videoWords.contains) { return .video }
             if words.contains(where: ["photo", "photos", "picture", "pictures", "pic", "pics", "image", "images", "screenshot", "screenshots"].contains) { return .image }
             if words.contains(where: ["reminder", "reminders", "task", "tasks"].contains) { return .reminder }
             if words.contains(where: ["note", "notes", "wrote", "write"].contains) { return .note }
@@ -145,7 +163,10 @@ public enum SmartSearch {
         }()
         // "Where's the march invoice pdf?" / "where is the picture of…": a named kind of thing.
         let whereThing = kind != .any && (words.first == "where" || words.first == "wheres")
-        guard asks.contains(where: { joined.contains($0) }) || words.first == "find" || words.first == "search" || whereThing else { return nil }
+        // A short phrase naming a kind of thing is a search too: "shampoo videos", "beach photos".
+        let named = kind != .any && words.count <= 5 && Self.kindNouns.contains(words.last ?? "")
+        guard asks.contains(where: { joined.contains($0) }) || words.first == "find" || words.first == "search" || whereThing || named
+        else { return nil }
         let terms = words.filter { !stopWords.contains($0) && $0.count > 1 && !["im", "myself", "ive"].contains($0) }
         guard !terms.isEmpty else { return nil }
         // "…where I'm holding a dog", "a photo of me": the user is in it ("show me", "find me"
@@ -217,7 +238,7 @@ public enum SmartSearch {
         }
         if let word = words.first(where: name.contains) { return "Matches “\(word)” in the name" }
         if let word = words.first(where: shown.contains) {
-            return "Matches “\(word)” " + (item.kind == .image ? "in the picture" : item.kind == .file ? "inside" : "in the text")
+            return "Matches “\(word)” " + (item.kind == .image ? "in the picture" : item.kind == .video ? "in the video" : item.kind == .file ? "inside" : "in the text")
         }
         if spotlight { return "Matches “\(request.terms.joined(separator: " "))” inside" }
         return "Close in meaning"
@@ -258,7 +279,7 @@ public enum SmartSearch {
     /// What the brain is asked for the spoken and written sentence about the best find.
     public static func sentencePrompt(_ found: [Item], question: String) -> String? {
         guard let top = found.first else { return nil }
-        let what = top.kind == .image ? (top.caption ?? top.text) : top.text
+        let what = top.kind == .image || top.kind == .video ? (top.caption ?? top.text) : top.text
         return """
         The user asked: "\(question)". The best match is a \(top.kind == .image ? "picture" : top.kind.rawValue) named         "\(top.title)" in \(top.place)\(what.isEmpty ? "" : ", showing or saying: \(what.prefix(200))")\(top.hasYou == true ? ", with the user in it" : "").\
         \(found.count > 1 ? " There are \(found.count) matches." : "")
