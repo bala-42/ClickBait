@@ -32,7 +32,7 @@ struct ActionPolicyTests {
     @Test func everyAskedActionHasItsOwnQuestion() {
         let asked: [ResolvedAction] = [.openApp("Notes"), .makeNote("milk"), .addReminder("call mum"), .setVolume(percent: 30),
                                        .setMuted(false), .setDarkMode(false), .setWiFi(true), .newFolder(in: .downloads, name: "X"),
-                                       .file(.compress), .file(.merge), .file(.shrink), .file(.convert(to: .png)),
+                                       .file(.compress), .file(.merge), .file(.shrink(toBytes: nil)), .file(.convert(to: .png)),
                                        .file(.copyTo(.desktop)), .file(.copyToFolder("Old"))]
         for action in asked {
             #expect(ActionCatalog.confirmationQuestion(for: action, fileCount: 2) != "Go ahead?", "\(action)")

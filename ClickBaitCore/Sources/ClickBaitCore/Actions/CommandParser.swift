@@ -241,11 +241,13 @@ public enum CommandParser {
         // "make these smaller", "reduce the size of this", "shrink them", "optimise these images"
         let shrinkVerbs: Set<String> = ["shrink", "reduce", "downsize", "optimise", "optimize", "minify", "lighten"]
         if shrinkVerbs.contains(verb) || (verb == "make" && (rest.contains("smaller") || rest.contains("lighter"))) {
-            return ActionRequest(name: "shrink")
+            return ActionRequest(name: "shrink", argument: FileSize.bytes(in: transcript).map(String.init))
         }
 
         switch verb {
         case "compress", "zip":
+            // "Compress this to 200 MB" wants a smaller file, not a zip.
+            if verb == "compress", let bytes = FileSize.bytes(in: transcript) { return ActionRequest(name: "shrink", argument: String(bytes)) }
             return ActionRequest(name: "compress")
         case "merge", "combine", "join":
             return ActionRequest(name: "merge")

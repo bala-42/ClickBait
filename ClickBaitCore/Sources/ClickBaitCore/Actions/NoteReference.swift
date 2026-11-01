@@ -100,6 +100,9 @@ public enum OrderCheck {
             // The app has to be named in the order.
             guard let app = proposal.argument.map(ImpliedPointer.normalized), !app.isEmpty,
                   spoken.contains(" " + app + " ") else { return nil }
+        case "shrink":
+            // The size said is the target, whatever the model wrote for it.
+            proposal.argument = FileSize.bytes(in: order).map(String.init)
         case "rename":
             let vague: Set<String> = ["", "it", "this", "these", "that", "this file", "that file", "the file", "this folder", "them"]
             if vague.contains(ImpliedPointer.normalized(proposal.detail ?? "")), let name = proposal.argument, !vague.contains(ImpliedPointer.normalized(name)) {

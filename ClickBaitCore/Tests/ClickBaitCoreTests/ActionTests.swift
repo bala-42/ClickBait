@@ -124,6 +124,8 @@ struct SystemAndFileCommandTests {
         ("Delete these files", "trash", nil), ("Move these to the Trash", "trash", nil), ("Trash them", "trash", nil),
         ("Make these smaller", "shrink", nil), ("Reduce the size of this file", "shrink", nil), ("Shrink them", "shrink", nil),
         ("Optimize these images", "shrink", nil), ("Reduce the file size of these videos", "shrink", nil), ("Shrink", "shrink", nil),
+        ("Shrink this video to 200 MB", "shrink", "200000000"), ("Make this smaller, under 1.5gb", "shrink", "1500000000"),
+        ("Reduce the size of these images to 500 kb", "shrink", "500000"), ("Compress this video to 200mb", "shrink", "200000000"),
     ] as [(String, String, String?)])
     func fileOrders(_ text: String, _ name: String, _ argument: String?) {
         #expect(parse(text) == ActionRequest(name: name, argument: argument))
@@ -143,7 +145,12 @@ struct SystemAndFileCommandTests {
         #expect(ActionCatalog.resolve(ActionRequest(name: "convert", argument: "webp"), allowedShortcuts: [])
             == .failure(.invalidArgument("I can convert to MP4, MOV, M4V, audio, GIF, JPEG, PNG, HEIC, TIFF, BMP, PDF, Word, RTF, text, a web page or OpenDocument")))
         #expect(ActionCatalog.resolve(ActionRequest(name: "trash"), allowedShortcuts: []) == .success(.file(.moveToTrash)))
-        #expect(ActionCatalog.resolve(ActionRequest(name: "shrink"), allowedShortcuts: []) == .success(.file(.shrink)))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "shrink"), allowedShortcuts: []) == .success(.file(.shrink(toBytes: nil))))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "shrink", argument: "200 MB"), allowedShortcuts: [])
+            == .success(.file(.shrink(toBytes: 200_000_000))))
+        #expect(FileSize.bytes(in: "under 5 megs please") == 5_000_000)
+        #expect(FileSize.bytes(in: "make it 2,5 GB") == 2_500_000_000)
+        #expect(FileSize.bytes(in: "shrink these 3 videos") == nil)
     }
 
     @Test func outputNamesNeverOverwrite() {

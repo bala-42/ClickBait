@@ -62,7 +62,8 @@ public enum FileAction: Equatable, Sendable {
     /// Recoverable: Finder's Trash, never a permanent delete.
     case moveToTrash
     /// Smaller copies of images, PDFs and videos (originals untouched).
-    case shrink
+    /// Smaller copies; `toBytes`: the size each copy should come in under ("shrink this to 200 MB").
+    case shrink(toBytes: Int64?)
 
     /// File orders only act while Finder is frontmost, so "delete this" in a text
     /// editor can never touch files.
@@ -247,7 +248,7 @@ public enum ActionCatalog {
             guard let detail else { return .failure(.missingArgument("rename it to")) }
             return .success(.file(.rename(to: detail)))
         case "shrink":
-            return .success(.file(.shrink))
+            return .success(.file(.shrink(toBytes: argument.isEmpty ? nil : FileSize.bytes(in: argument))))
         case "trash":
             return .success(.file(.moveToTrash))
         case "run_shortcut":
@@ -280,7 +281,7 @@ public enum ActionCatalog {
         case .file(.compress): "Zip \(files)?"
         case .file(.merge): "Combine \(files) into one PDF?"
         case .file(.convert(let format)): "Convert \(files) to \(format.label)?"
-        case .file(.shrink): "Make smaller copies of \(files)?"
+        case .file(.shrink(let target)): "Make smaller copies of \(files)\(target.map { " under \(FileSize.label($0))" } ?? "")?"
         case .openApp(let name): "Open \(name)?"
         case .setVolume(let percent): "Set the volume to \(percent)%?"
         case .setMuted(let muted): muted ? "Mute the sound?" : "Unmute the sound?"

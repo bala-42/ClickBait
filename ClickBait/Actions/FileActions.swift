@@ -80,7 +80,7 @@ enum FileActions {
         case .copyToFolder(let name): return try transfer(files, intoFolderNamed: name, copying: true)
         case .rename(let name): return try rename(files, to: name)
         case .moveToTrash: return try moveToTrash(files)
-        case .shrink: return try await shrink(files)
+        case .shrink(let target): return try await shrink(files, under: target)
         }
     }
 
@@ -431,19 +431,23 @@ enum FileActions {
 
     /// Smaller copies next to the originals: images re-saved (JPEG 80%, ≤ 2560 px),
     /// PDFs through macOS's "Reduce File Size" filter, videos re-encoded to HEVC ≤ 1080p.
-    /// A copy that wouldn't be meaningfully smaller is discarded.
-    private static func shrink(_ files: [URL]) async throws -> (String, [URL]) {
+    /// A copy that wouldn't be meaningfully smaller is discarded. With a `target` (bytes): each
+    /// copy aims to come in under it (user's report, 2026-11-02: "not respecting the file size
+    /// i request"); files already under it are left alone, and one that can't get there says so.
+    private static func shrink(_ files: [URL], under target: Int64? = nil) async throws -> (String, [URL]) {
         var outputs: [URL] = []
         var before: Int64 = 0, after: Int64 = 0
-        var alreadySmall = 0, unsupported = 0
+        var alreadySmall = 0, unsupported = 0, alreadyUnder = 0
+        var missed: [String] = []
 
         for file in files {
+            if let target, fileSize(file) <= target { alreadyUnder += 1; continue }
             let type = UTType(filenameExtension: file.pathExtension)
             let folder = file.deletingLastPathComponent()
             let base = file.deletingPathExtension().lastPathComponent + " (smaller)"
             let output: URL
             if type?.conforms(to: .image) == true {
-                output = try shrinkImage(file, base: base, in: folder)
+                output = try shrinkImage(file, base: base, in: folder, under: target)
             } else if type?.conforms(to: .pdf) == true {
                 output = folder.appending(path: try uniqueName(base: base, extension: "pdf", in: folder))
                 try shrinkPDF(file, to: output)
@@ -453,7 +457,7 @@ enum FileActions {
                 // part-way (the app quit) left a broken copy with a normal name (user's report).
                 let partial = FileManager.default.temporaryDirectory.appending(path: "ClickBait-shrinking-\(UUID().uuidString).mov")
                 do {
-                    try await shrinkVideo(file, to: partial)
+                    try await shrinkVideo(file, to: partial, under: target)
                     try FileManager.default.moveItem(at: partial, to: output)
                 } catch {
                     try? FileManager.default.removeItem(at: partial)
@@ -465,6 +469,7 @@ enum FileActions {
             }
 
             let originalSize = fileSize(file), newSize = fileSize(output)
+            if let target, newSize > target { missed.append("\(file.lastPathComponent) (\(FileSize.label(newSize)))") }
             if newSize >= originalSize * 97 / 100 {
                 try? FileManager.default.removeItem(at: output)  // our own copy; not worth keeping
                 alreadySmall += 1
@@ -480,13 +485,19 @@ enum FileActions {
             let formatter = ByteCountFormatter()
             parts.append("Made \(count(outputs)) smaller: \(formatter.string(fromByteCount: before)) → \(formatter.string(fromByteCount: after))")
         }
+        if let target, !missed.isEmpty {
+            parts.append("couldn't get \(missed.joined(separator: ", ")) under \(FileSize.label(target)); that's as small as I can make it")
+        }
+        if let target, alreadyUnder > 0 { parts.append("\(alreadyUnder == 1 ? "1 was" : "\(alreadyUnder) were") already under \(FileSize.label(target))") }
         if alreadySmall > 0 { parts.append("\(alreadySmall == 1 ? "1 was" : "\(alreadySmall) were") already as small as I can make it") }
         if unsupported > 0 { parts.append("skipped \(unsupported) I can't shrink (images, PDFs and videos only)") }
         guard !parts.isEmpty else { throw FileActionError.nothingSelected }
         return (parts.joined(separator: "; "), outputs)
     }
 
-    private static func shrinkImage(_ file: URL, base: String, in folder: URL) throws -> URL {
+    /// JPEG 80% at most 2560 px; with a target, lower quality, then smaller sides, until it fits
+    /// (the smallest tried is kept when nothing does).
+    private static func shrinkImage(_ file: URL, base: String, in folder: URL, under target: Int64? = nil) throws -> URL {
         guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
@@ -502,13 +513,28 @@ enum FileActions {
         }
         let hasAlpha = ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
         let (type, ext): (UTType, String) = hasAlpha ? (.png, "png") : (.jpeg, "jpg")
-        let output = folder.appending(path: try uniqueName(base: base, extension: ext, in: folder))
-        guard let destination = CGImageDestinationCreateWithURL(output as CFURL, type.identifier as CFString, 1, nil) else {
-            throw FileActionError.failed("couldn't create \(output.lastPathComponent)")
-        }
         // Location and other metadata aren't copied: smaller, and nothing personal leaks.
-        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
+        func encode(_ image: CGImage, quality: Double) -> Data? {
+            let data = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else { return nil }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+            return CGImageDestinationFinalize(destination) ? data as Data : nil
+        }
+        var best = encode(image, quality: 0.8)
+        if let target, (best?.count ?? 0) > target {
+            let longest = max(image.width, image.height)
+            search: for side in [1.0, 0.75, 0.55, 0.4, 0.28, 0.2] {
+                let size = max(64, Int(Double(longest) * side))
+                guard let scaled = CGImageSourceCreateThumbnailAtIndex(source, 0, (options.merging([kCGImageSourceThumbnailMaxPixelSize: size]) { $1 }) as CFDictionary) else { continue }
+                for quality in hasAlpha ? [1.0] : [0.7, 0.55, 0.4, 0.28] {
+                    guard let data = encode(scaled, quality: quality) else { continue }
+                    if data.count < (best?.count ?? .max) { best = data }
+                    if data.count <= target { break search }
+                }
+            }
+        }
+        let output = folder.appending(path: try uniqueName(base: base, extension: ext, in: folder))
+        guard let best, (try? best.write(to: output)) != nil else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
         return output
     }
 
@@ -529,17 +555,51 @@ enum FileActions {
     /// audio at 128 kbit/s. Apple's HEVC 1080p preset picks its own, higher bitrate, so already
     /// efficient videos (a 1080p H.264 at 3.3 Mbit/s here) came out no smaller and were
     /// discarded: "it can not shrink my videos" (user's report, 2026-11-01).
-    private static func shrinkVideo(_ file: URL, to output: URL) async throws {
+    /// With a `target`: the bitrate the length allows (6% kept spare for the container), the
+    /// picture made smaller as the bitrate falls (1080 → 720 → 480 → 360 on the short side), and
+    /// one more try, lower, if the encoder overshot.
+    private static func shrinkVideo(_ file: URL, to output: URL, under target: Int64? = nil) async throws {
         let asset = AVURLAsset(url: file)
         guard let video = try await asset.loadTracks(withMediaType: .video).first else {
             throw FileActionError.failed("\(file.lastPathComponent) has no picture to shrink")
         }
-        let (natural, transform, rate) = try await video.load(.naturalSize, .preferredTransform, .estimatedDataRate)
-        let audio = try await asset.loadTracks(withMediaType: .audio).first
-        // Up to 1080 on the short side, the shape kept; even sizes, as encoders want.
-        let scale = min(1, 1080 / max(1, min(natural.width, natural.height)))
+        let (natural, rate) = try await video.load(.naturalSize, .estimatedDataRate)
+        let hasAudio = try await !asset.loadTracks(withMediaType: .audio).isEmpty
+        guard let target else {
+            let scale = min(1, 1080 / max(1, min(natural.width, natural.height)))
+            try await encodeVideo(asset, to: output, shortSide: 1080, bitrate: max(800_000, Double(rate) * 0.5 * Double(scale * scale)), audioBitrate: 128_000)
+            return
+        }
+        let seconds = try await asset.load(.duration).seconds
+        guard seconds.isFinite, seconds > 0 else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        var total = Double(target) * 8 / seconds * 0.94
+        let audioBitrate: Double = hasAudio ? (total < 1_000_000 ? 64_000 : 128_000) : 0
+        guard total - audioBitrate >= 100_000 else {
+            let smallest = Int64((100_000 + audioBitrate) * seconds / 8 / 0.94)
+            throw FileActionError.unsupported("A \(Int(seconds / 60)) min video can't fit in \(FileSize.label(target)); about \(FileSize.label(smallest)) is the smallest that's still watchable.")
+        }
+        for attempt in 0..<2 {
+            let videoBitrate = min(total - audioBitrate, Double(rate) * 0.9)
+            let shortSide: CGFloat = videoBitrate >= 2_500_000 ? 1080 : videoBitrate >= 1_200_000 ? 720 : videoBitrate >= 500_000 ? 480 : 360
+            try? FileManager.default.removeItem(at: output)
+            try await encodeVideo(asset, to: output, shortSide: shortSide, bitrate: videoBitrate, audioBitrate: audioBitrate)
+            let made = fileSize(output)
+            Log.app.notice("Shrink to target: try \(attempt + 1) at \(Int(videoBitrate / 1000), privacy: .public) kbit/s, \(Int(shortSide), privacy: .public)p → \(made, privacy: .public) of \(target, privacy: .public) bytes")
+            guard made > target, attempt == 0 else { return }
+            total *= Double(target) / Double(made) * 0.95
+        }
+    }
+
+    private static func encodeVideo(_ asset: AVURLAsset, to output: URL, shortSide: CGFloat, bitrate: Double, audioBitrate: Double) async throws {
+        let file = asset.url
+        guard let video = try await asset.loadTracks(withMediaType: .video).first else {
+            throw FileActionError.failed("\(file.lastPathComponent) has no picture to shrink")
+        }
+        let (natural, transform) = try await video.load(.naturalSize, .preferredTransform)
+        let audio = audioBitrate > 0 ? try await asset.loadTracks(withMediaType: .audio).first : nil
+        // Up to `shortSide` on the short side, the shape kept; even sizes, as encoders want.
+        let scale = min(1, shortSide / max(1, min(natural.width, natural.height)))
         let width = Int((natural.width * scale / 2).rounded()) * 2, height = Int((natural.height * scale / 2).rounded()) * 2
-        let bitrate = max(800_000, Double(rate) * 0.5 * Double(scale * scale))
 
         let reader = try AVAssetReader(asset: asset)
         let videoOut = AVAssetReaderTrackOutput(track: video, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange])
@@ -564,7 +624,7 @@ enum FileActions {
         var audioIn: AVAssetWriterInput?
         if audioOut != nil {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 2, AVSampleRateKey: 44_100, AVEncoderBitRateKey: 128_000
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 2, AVSampleRateKey: 44_100, AVEncoderBitRateKey: Int(audioBitrate)
             ])
             input.expectsMediaDataInRealTime = false
             writer.add(input)

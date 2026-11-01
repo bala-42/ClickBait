@@ -17,7 +17,7 @@ struct ShrinkVideoTests {
             copies.append(copy)
         }
         let start = Date()
-        let (message, outputs) = try await FileActions.perform(.shrink, on: copies)
+        let (message, outputs) = try await FileActions.perform(.shrink(toBytes: nil), on: copies)
         print("SHRINK \(message) in \(Int(Date().timeIntervalSince(start))) s")
         for output in outputs { print("SHRINK made \(output.lastPathComponent)") }
         #expect(outputs.count == copies.count)
