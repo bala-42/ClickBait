@@ -19,11 +19,14 @@ public enum AudioConditioner {
     /// Quiet recordings are raised so their peak reaches this…
     static let targetPeak: Float = 0.7
     /// …but never by more than this, so room noise isn't blown up.
-    static let maxGain: Float = 12
+    public static let maxGain: Float = 12
     /// Silence put in front: Whisper often drops a first word that starts right at 0 s.
     public static let leadIn = 0.2
 
-    public static func condition(_ samples: [Float], sampleRate: Double) -> Result {
+    /// `silence` and `maxGain` for a voice that's already known to be speaking (Studio's
+    /// prompter judges that against the room): a faint voice is lifted much further.
+    public static func condition(_ samples: [Float], sampleRate: Double, silence: Float = silencePeak,
+                                 maxGain: Float = maxGain) -> Result {
         var peak: Float = 0
         var sumSquares: Float = 0
         for sample in samples {
@@ -31,10 +34,10 @@ public enum AudioConditioner {
             sumSquares += sample * sample
         }
         let rms = samples.isEmpty ? 0 : (sumSquares / Float(samples.count)).squareRoot()
-        guard peak >= silencePeak else {
+        guard peak >= silence else {
             return Result(samples: samples, peak: peak, rms: rms, gain: 1, isSilent: true)
         }
-        let gain = min(max(targetPeak / peak, 1), maxGain)
+        let gain = min(max(targetPeak / peak, 1), maxGain)  // the parameter
         let padding = [Float](repeating: 0, count: Int(leadIn * sampleRate))
         let lifted = gain == 1 ? samples : samples.map { $0 * gain }
         return Result(samples: padding + lifted, peak: peak, rms: rms, gain: gain, isSilent: false)

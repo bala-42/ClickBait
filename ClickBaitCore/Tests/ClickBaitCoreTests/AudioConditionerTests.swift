@@ -29,4 +29,11 @@ struct AudioConditionerTests {
         #expect(result.gain == 1)
         #expect(result.samples.suffix(16_000) == tone(amplitude: 0.9)[...])
     }
+
+    @Test func aFaintVoiceCanBeLiftedFurther() {
+        let faint = [Float](repeating: 0.005, count: 1600)
+        #expect(AudioConditioner.condition(faint, sampleRate: 16_000).isSilent)
+        let lifted = AudioConditioner.condition(faint, sampleRate: 16_000, silence: 0.002, maxGain: 40)
+        #expect(!lifted.isSilent && lifted.gain == 40)
+    }
 }

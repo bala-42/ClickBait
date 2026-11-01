@@ -133,6 +133,7 @@ struct PrompterView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: studio.shown ? 0.3 : 0.12).delay(studio.shown ? 0.22 : 0), value: studio.shown)
         }
         .frame(width: studio.size.width, height: studio.size.height)
+        .overlay { if studio.shown { ResizeEdges(studio: studio) } }
         // The morph: the black shape grows from the notch's size to the prompter's (springy,
         // like the notch's own opening), the text fading in once it's nearly there.
         .frame(width: current.width, height: current.height, alignment: .top)
@@ -255,20 +256,6 @@ struct PrompterView: View {
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }
             Spacer()
             PrompterButton(symbol: "xmark", help: "Close the prompter") { studio.stopPrompting() }
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.7))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-                .gesture(DragGesture(coordinateSpace: .global).onChanged { drag in
-                    let start = dragStart ?? studio.size
-                    dragStart = start
-                    // Centred under the notch: a corner drag grows both sides.
-                    let size = CGSize(width: min(1000, max(340, start.width + drag.translation.width * 2)),
-                                      height: min(460, max(110, start.height + drag.translation.height)))
-                    studio.size = size
-                    PrompterController.shared.resize(to: size)
-                }.onEnded { _ in dragStart = nil })
-                .help("Drag to resize")
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
@@ -334,6 +321,64 @@ struct QuicksilverRing: View {
                 // Its top arc shows above the bottom edge, rising a little as you speak.
                 .position(x: box.size.width / 2, y: box.size.height + diameter / 2 - diameter * (0.2 + energy * 0.08))
             }
+        }
+    }
+}
+
+/// Free resizing (user's ask, 2026-11-01: the corner icon was "so restrictive"): every edge
+/// and corner drags, at any time, with the matching pointer — left or right for width (it
+/// stays centred under the camera, so both sides move), bottom for height, the bottom
+/// corners for both — from a sliver up to nearly the whole screen. Tracked in screen points,
+/// since the window moves as it resizes.
+private struct ResizeEdges: View {
+    @Bindable var studio: StudioModel
+    @State private var start: (mouse: NSPoint, size: CGSize)?
+
+    private enum Edge { case left, right, bottom, bottomLeft, bottomRight }
+    private static let grip: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            handle(.left).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 30)
+            handle(.right).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 30)
+            handle(.bottom).frame(height: Self.grip).frame(maxHeight: .infinity, alignment: .bottom).padding(.horizontal, 16)
+            handle(.bottomLeft).frame(width: 16, height: 16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            handle(.bottomRight).frame(width: 16, height: 16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    }
+
+    private func handle(_ edge: Edge) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { cursor(edge).push() } else { NSCursor.pop() }
+            }
+            .gesture(DragGesture(minimumDistance: 1).onChanged { _ in
+                let mouse = NSEvent.mouseLocation
+                let begin = start ?? (mouse, studio.size)
+                start = begin
+                let dx = mouse.x - begin.mouse.x, dy = begin.mouse.y - mouse.y  // down is taller
+                var size = begin.size
+                switch edge {
+                case .left: size.width -= dx * 2
+                case .right: size.width += dx * 2
+                case .bottom: size.height += dy
+                case .bottomLeft: size.width -= dx * 2; size.height += dy
+                case .bottomRight: size.width += dx * 2; size.height += dy
+                }
+                let screen = NSScreen.screens.first { $0.safeAreaInsets.top > 0 }?.frame ?? NSScreen.main?.frame ?? .zero
+                size.width = min(max(200, size.width), max(200, screen.width - 40))
+                size.height = min(max(60, size.height), max(60, screen.height * 0.85))
+                studio.size = size
+                PrompterController.shared.resize(to: size)
+            }.onEnded { _ in start = nil })
+    }
+
+    private func cursor(_ edge: Edge) -> NSCursor {
+        switch edge {
+        case .left, .right: .resizeLeftRight
+        case .bottom: .resizeUpDown
+        case .bottomLeft, .bottomRight: .crosshair
         }
     }
 }

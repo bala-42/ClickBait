@@ -100,13 +100,19 @@ final class VoiceFollower {
                 Log.app.notice("Studio: loudest \(String(format: "%.2f", self.audio.takePeak()), privacy: .public), room \(String(format: "%.2f", self.audio.roomLevel), privacy: .public), speaking \(self.audio.spokeRecently(within: 3), privacy: .public)")
             }
             guard running, audio.spokeRecently(within: 1.5), let transcribe = Self.transcribe else { continue }
-            let samples = audio.last(seconds: 3)
-            guard samples.count > 8_000 else { continue }
+            // Lifted like dictation's recordings (a quiet voice, 0.03–0.21 here, gave Whisper
+            // near-silence and stray single words); nothing above hiss isn't transcribed.
+            // Lifted up to 40× (dictation's 12× and its silence bar left a quiet voice unheard:
+            // peaks of 0.12–0.19 here); speech was already judged against the room.
+            let heardAudio = AudioConditioner.condition(audio.last(seconds: 3), sampleRate: 16_000, silence: 0.002, maxGain: 40)
+            guard heardAudio.samples.count > 8_000, !heardAudio.isSilent else { continue }
+            let samples = heardAudio.samples
             // What's been read steers Whisper's spelling (the script ahead as a prompt, Whisper
             // "said" it: "…now Studio has a" before it was read).
             let ahead = follower.readSoFar()
             let began = ContinuousClock.now
             let result = await transcribe(samples, ahead)
+            Log.app.notice("Studio: try → \(String((result ?? "nil").prefix(80)), privacy: .public)")
             guard let text = result, !text.isEmpty else { continue }
             let took = ContinuousClock.now - began
             heard += 1
