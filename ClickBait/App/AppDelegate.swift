@@ -121,6 +121,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.makeProvider().unload()
     }
 
+    /// Smart search's index: a first pass a minute after launch, then every 30 minutes, at
+    /// low priority. Fetches the search model too if this Mac's brain came before it.
+    private func startSearchIndex() {
+        let settings = settings
+        Task.detached(priority: .background) {
+            try? await Task.sleep(for: .seconds(60))
+            if let installed = await OllamaSetup.installedModels(),
+               !installed.contains(where: { $0.hasPrefix(Embedder.model) }) {
+                try? await OllamaSetup.pull(Embedder.model) { _ in }
+            }
+            while !Task.isCancelled {
+                let photos = await MainActor.run { settings.searchPhotos }
+                await SearchIndex.shared.refresh(photos: photos)
+                try? await Task.sleep(for: .seconds(30 * 60))
+            }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !Self.isHostingTests else { return }
         NSApp.mainMenu = Self.mainMenu()
@@ -183,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         morning.start()
+        startSearchIndex()
         #if DEBUG
         if ProcessInfo.processInfo.environment["CLICKBAIT_TEST_GREETING"] != nil {
             Task { @MainActor [weak self] in

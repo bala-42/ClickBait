@@ -14,6 +14,7 @@ final class AppSettings {
         static let soundCues = "settings.soundCues"
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
+        static let searchPhotos = "settings.searchPhotos"
         static let morningCardsShown = "settings.morningCardsShown"
         static let spotifyArtworkAlways = "settings.spotifyArtworkAlways"
         static let youtubeThumbnailsAlways = "settings.youtubeThumbnailsAlways"
@@ -116,6 +117,11 @@ final class AppSettings {
     var soundCues: Bool {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
+    /// Smart search also reads the Photos library (`SearchIndex`): off until the user turns it on.
+    var searchPhotos: Bool {
+        didSet { defaults.set(searchPhotos, forKey: Key.searchPhotos) }
+    }
+
     /// Morning cards (`MorningBrief`): off until the user turns them on (they read Reminders and Calendar).
     var morningCards: Bool {
         didSet { defaults.set(morningCards, forKey: Key.morningCards) }
@@ -183,6 +189,7 @@ final class AppSettings {
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)
+        searchPhotos = defaults.bool(forKey: Key.searchPhotos)
         // Off unless chosen: covers come from Spotify's servers, so only with Internet Mode
         // (user's rule, 2026-10-23, keeping "nothing leaves your Mac").
         spotifyArtworkAlways = defaults.object(forKey: Key.spotifyArtworkAlways) as? Bool ?? false

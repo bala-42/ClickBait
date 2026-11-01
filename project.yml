@@ -54,6 +54,7 @@ targets:
         NSRemindersFullAccessUsageDescription: "ClickBait adds reminders when you ask it to. With Morning suggestions on, it reads today's reminders on this Mac to suggest what to ask."
         NSCalendarsFullAccessUsageDescription: "With Morning suggestions on, ClickBait reads today's events on this Mac to suggest what to ask."
         NSRemindersUsageDescription: "ClickBait adds reminders when you ask it to."
+        NSPhotoLibraryUsageDescription: "With “Search the Photos library” on, ClickBait reads your photos on this Mac so “find the picture of the airport” can find them. Nothing leaves your Mac."
     entitlements:
       path: ClickBait/ClickBait.entitlements
       properties:

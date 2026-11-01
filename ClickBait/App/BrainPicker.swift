@@ -25,6 +25,8 @@ final class BrainDownload {
                     Task { @MainActor in if let f = progress.fraction { BrainDownload.shared.fraction = f } }
                 }
                 settings.ollamaModel = brain.model
+                // The search model comes with every brain (smart search, and meaning matches).
+                try? await OllamaSetup.pull(Embedder.model) { _ in }
             } catch {
                 problem = "couldn't download \(brain.name): \(error.localizedDescription)"
             }

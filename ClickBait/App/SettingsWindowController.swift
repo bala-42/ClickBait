@@ -1,3 +1,4 @@
+import Photos
 import AppKit
 import ClickBaitCore
 import SwiftUI
@@ -143,6 +144,16 @@ struct SettingsView: View {
                 ToggleRow("Morning suggestions", "Up to three things to ask each morning, from today's reminders and events.",
                           isOn: $settings.morningCards)
                     .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Search the Photos library", "“Find the picture of the airport” also looks in Photos. Pictures in your folders are always searched. All on this Mac.",
+                          isOn: $settings.searchPhotos)
+                    .onChange(of: settings.searchPhotos) { _, on in
+                        guard on else { return }
+                        Task {
+                            _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+                            await SearchIndex.shared.refresh(photos: true)
+                        }
+                    }
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Greetings", "A hello by the cursor each time your Mac wakes or you unlock it.", isOn: $settings.greetings)
                 Divider().overlay(SettingsLook.hairline)

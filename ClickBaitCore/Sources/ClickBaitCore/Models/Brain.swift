@@ -53,13 +53,14 @@ public enum Brain: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// Download size in GB, as Ollama lists it.
+    /// Download size in GB, as Ollama lists it, with the search model (`Embedder.model`,
+    /// 0.3 GB) that comes with every brain.
     public var downloadGB: Double {
         switch self {
-        case .light: 4.6
-        case .standard: 9.5
-        case .big: 6.6
-        case .galaxy: 7.7
+        case .light: 4.9
+        case .standard: 9.8
+        case .big: 6.9
+        case .galaxy: 8.0
         }
     }
 

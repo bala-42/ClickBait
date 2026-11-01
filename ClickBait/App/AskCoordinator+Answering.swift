@@ -247,6 +247,18 @@ extension AskCoordinator {
             onAnswer?(response, instant)
             return
         }
+        // "Find that note about the dentist", "find the march invoice": smart search on this
+        // Mac (`SearchIndex`), not the model; the reply links each thing found.
+        if snip == nil, selectedText == nil, history.isEmpty, let search = SmartSearch.request(in: question) {
+            encoding.cancel()
+            let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, photos: settings.searchPhotos)
+            let response = AssistantResponse(speech: SmartSearch.reply(found, for: search))
+            if speak { speaker.speak(found.isEmpty ? response.speech : (found.count == 1 ? "Found it." : "Found \(found.count).")) }
+            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: response.speech) }
+            if state == .thinking { state = .idle }
+            onAnswer?(response, [])
+            return
+        }
         // "How many days until Christmas?", "what's the date?": worked out here, exactly, in
         // under 0.1 s. The model has no clock and counted 30 days instead of 66 (2026-10-20).
         if snip == nil, selectedText == nil, history.isEmpty, let answer = DateFacts.instantAnswer(question, now: Date()) {
