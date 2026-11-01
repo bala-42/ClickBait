@@ -192,9 +192,12 @@ public enum SmartSearch {
             let spotlight: Float = boosted.contains(entry.item.id) ? 0.3 : 0
             return (entry.item, 0.7 * meaning + 0.3 * words + kindBonus + spotlight + you)
         }
+        // Good on its own (0.4), or close to the best: "within 0.25 of the best" alone left one
+        // result when a file Spotlight matched by name pulled far ahead (user's report:
+        // "only generating one result when I clearly have more", 2026-11-01).
         let best = scored.map(\.1).max() ?? 0
         return scored
-            .filter { $0.1 > 0.25 && $0.1 >= best - 0.25 }
+            .filter { $0.1 > 0.25 && ($0.1 >= 0.4 || $0.1 >= best - 0.25) }
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
             .map { entry in

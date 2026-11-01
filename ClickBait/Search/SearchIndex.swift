@@ -107,7 +107,7 @@ actor SearchIndex {
                                           boosted: boosted, limit: 30)
         // A file deleted or moved since it was read never shows; copies become one result.
         let present = candidates.filter { item in item.file.map { FileManager.default.fileExists(atPath: $0) } ?? true }
-        let ranked = Array(VisionMemory.collapseCopies(present).prefix(5))
+        let ranked = Array(VisionMemory.collapseCopies(present).prefix(8))
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
         return ranked
     }

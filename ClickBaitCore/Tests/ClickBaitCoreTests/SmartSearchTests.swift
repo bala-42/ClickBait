@@ -81,4 +81,15 @@ struct SmartSearchTests {
         let calendar = Calendar(identifier: .gregorian)
         #expect(picture.details(now: Date(timeIntervalSince1970: 1_780_000_000), calendar: calendar) == "Downloads · Mar 11 · 460 KB")
     }
+
+    @Test func oneStrongMatchDoesntHideTheOtherGoodOnes() {
+        let request = SmartSearch.Request(kind: .image, terms: ["dog"], text: "dog")
+        let named = SmartSearch.Item(id: "a", kind: .image, title: "dog.png", place: "Downloads", text: "")
+        let pictured = SmartSearch.Item(id: "b", kind: .image, title: "IMG_1.jpg", place: "Photos", text: "", caption: "A white dog on a sofa")
+        let unrelated = SmartSearch.Item(id: "c", kind: .image, title: "chart.png", place: "Desktop", text: "chart")
+        // "dog.png" is also a Spotlight hit, far ahead; the captioned dog picture still shows.
+        let found = SmartSearch.rank([(named, [1, 0]), (pictured, [0.8, 0.6]), (unrelated, [0, 1])],
+                                     for: request, query: [1, 0], boosted: ["a"])
+        #expect(found.map(\.id) == ["a", "b"])
+    }
 }
