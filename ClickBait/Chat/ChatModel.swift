@@ -4,9 +4,7 @@ import Foundation
 import Observation
 
 /// What a chat bubble shows. Owned by `ChatController`; its conversation memory lives in
-/// `AskCoordinator`. The messages themselves stay for the session (user's ask, 2026-11-02:
-/// "persistent like the file shelf", one history whether asked by ⌃⌥, ⌥⌘ or the notch): a new
-/// chat starts at `sessionStart`, the ones before it are history.
+/// `AskCoordinator` and disappears with the bubble.
 @MainActor
 @Observable
 final class ChatModel {
@@ -25,25 +23,6 @@ final class ChatModel {
     }
 
     var messages: [Message] = []
-    /// Where this chat's own messages begin; earlier ones are the session's history.
-    var sessionStart = 0
-    /// This chat's own messages (what Save keeps and the dock takes).
-    var current: [Message] { Array(messages[min(sessionStart, messages.count)...]) }
-    /// The session's history kept: the newest this many messages.
-    static let historyLimit = 60
-
-    /// A new chat: what was said stays above as history.
-    func startSession() {
-        if messages.count > Self.historyLimit { messages.removeFirst(messages.count - Self.historyLimit) }
-        sessionStart = messages.count
-    }
-
-    /// Everything forgotten (the notch's Clear).
-    func clearHistory() {
-        guard !isBusy else { return }
-        messages = []
-        sessionStart = 0
-    }
     var draft = ""
     /// Waiting for (or streaming) a reply: sending is disabled meanwhile.
     var isBusy = false
@@ -67,6 +46,11 @@ final class ChatModel {
     var focusRequest = 0
 
     @ObservationIgnored var onSend: ((String) -> Void)?
+    /// The notch's chat: its 🗑 (set) and eye button (`offersLook`); the eye on means a
+    /// screenshot goes with the next message.
+    @ObservationIgnored var onClear: (() -> Void)?
+    var offersLook = false
+    var looksAtScreen = false
     @ObservationIgnored var onClose: (() -> Void)?
     /// The header's Remember and Save buttons (C5): shown once there's an answer.
     @ObservationIgnored var onRemember: (() -> Void)?

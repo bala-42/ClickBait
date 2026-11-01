@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var askingSuggestions: Set<UUID> = []
     private let backgroundJobs = BackgroundJobs()
     private let chat = ChatController()
+    /// The notch's own Ask conversation, separate from the overlay chat.
+    private let notchChat = NotchChat()
     private let confirm = ConfirmController()
     private let escape = InputInterceptor()
     /// The "let's see! / later." pill is up.
@@ -231,20 +233,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         notch.model.checkHealth = checkHealth
         statusBar.checkHealth = checkHealth
-        // Asked in the notch: the conversation stays there (the bubble stays hidden) until it folds.
-        notch.model.chat = chat.model
+        // The notch's Ask is its own conversation, kept like the shelf (`NotchChat`); the
+        // overlay chats (⌃⌥, ⌥⌘) are separate and never touch it.
+        notchChat.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
+        notchChat.look = { [weak self] in
+            guard let self, CGPreflightScreenCaptureAccess(),
+                  let capture = try? await coordinator.capturer.captureDisplayUnderCursor(
+                      excluding: settings.blocklist, ignoreClickBait: settings.ignoreNotchInCaptures) else { return nil }
+            return try? await ScreenshotEncoder.encodeInBackground(capture.image).jpeg
+        }
+        notchChat.model.onClose = { [weak self] in self?.notch.model.tab = .home }  // put away, kept
+        notchChat.model.onClear = { [weak self] in
+            self?.notchChat.clear()
+            self?.notch.model.chatting = false
+            self?.notch.model.tab = .home
+        }
+        notch.model.chat = notchChat.model
         notch.model.ask = { [weak self] text in
             guard let self else { return }
-            chat.hostedInNotch = true
             notch.model.chatting = true
-            coordinator.startTypedChat(trigger: "notch")
-            chat.tuck()
-            coordinator.sendTyped(text)
-        }
-        notch.model.onChatEnd = { [weak self] in
-            guard let self else { return }
-            coordinator.closeChat()
-            chat.hostedInNotch = false
+            notchChat.send(text)
         }
         notch.start()
         coordinator.backgroundJobs = backgroundJobs
@@ -586,12 +594,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             // Out of the way the moment Enter is pressed, before thinking starts (it used to
             // wait ~1–2 s, until the message had been sorted).
-            // Typed into the notch's kept history after its chat ended: start the chat first (one
-            // conversation, whichever way it's opened).
-            if !coordinator.chatShown, notch.model.showsChat {
-                notch.model.ask(text)
-                return
-            }
             chat.tuck()
             coordinator.sendTyped(text)
             // Refused without a word (busy, nothing to send to): back at once.
@@ -599,27 +601,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         chat.model.onClose = { [weak self] in self?.closeChat() }
         // C5: keep a line (Remember) or the whole chat (Save) — only on the user's click.
-        chat.model.onRemember = { [weak self] in
-            guard let self, let answer = chat.model.messages.last(where: { $0.role == .assistant })?.text else { return }
-            let prose = MessageFormat.segments(answer).compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: " ")
-            let first = prose.split(separator: ".", maxSplits: 1).first.map(String.init) ?? prose
-            guard let line = RememberPrompt.confirm(String(first.prefix(160))) else { return }
-            let reply = MemoryStore.shared.reply(to: .remember(line))
-            if reply.ok { flashKept("Remembered") } else { RememberPrompt.tell(reply.message) }
-        }
-        chat.model.onSaveAnswer = { [weak self] in
-            guard let self else { return }
-            let turns: [(role: SavedAnswer.Role, text: String)] = chat.model.current.compactMap { message in
-                switch message.role {
-                case .user: (.user, message.text)
-                case .assistant: (.assistant, message.text)
-                case .error: nil
-                }
-            }
-            guard let file = AnswerArchive.save(turns) else { RememberPrompt.tell("Couldn't save this answer."); return }
-            flashKept("Saved")
-            AnswerArchive.reveal(file)
-        }
+        // C5: keep a line (Remember) or the whole chat (Save), in either chat.
+        wireKeep(chat.model)
+        wireKeep(notchChat.model)
         coordinator.onChatOpen = { [weak self] firstMessage in
             guard let self else { return }
             overlay.endGuide()
@@ -709,7 +693,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.overlay.endGuide()
             self?.chat.close()
             self?.chat.hostedInNotch = false
-            self?.notch.model.chatting = false
         }
         coordinator.onStateChange = { [weak self, weak statusBar] state in
             statusBar?.update(for: state)
@@ -1066,20 +1049,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.endGuide()
         chat.close()
         // Closed in the notch: back to its main panel, the notch staying open.
-        if chat.hostedInNotch || notch.model.chatting {
+        if chat.hostedInNotch {
             chat.hostedInNotch = false
-            notch.model.chatting = false
             notch.model.tab = .home
         }
     }
 
     /// "Saved" / "Remembered" in the chat's header for a moment. (Was inside `#if DEBUG`, so
     /// Release builds didn't compile.)
-    private func flashKept(_ note: String) {
-        chat.model.keptNote = note
-        Task { @MainActor [weak self] in
+    /// Remember (a line of the last answer) and Save (the chat as a file), only on the user's click.
+    private func wireKeep(_ model: ChatModel) {
+    model.onRemember = { [weak self, weak model] in
+        guard let self, let model, let answer = model.messages.last(where: { $0.role == .assistant })?.text else { return }
+        let prose = MessageFormat.segments(answer).compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: " ")
+        let first = prose.split(separator: ".", maxSplits: 1).first.map(String.init) ?? prose
+        guard let line = RememberPrompt.confirm(String(first.prefix(160))) else { return }
+        let reply = MemoryStore.shared.reply(to: .remember(line))
+        if reply.ok { Self.flashKept("Remembered", in: model) } else { RememberPrompt.tell(reply.message) }
+    }
+    model.onSaveAnswer = { [weak model] in
+        guard let model else { return }
+        let turns: [(role: SavedAnswer.Role, text: String)] = model.messages.compactMap { message in
+            switch message.role {
+            case .user: (.user, message.text)
+            case .assistant: (.assistant, message.text)
+            case .error: nil
+            }
+        }
+        guard let file = AnswerArchive.save(turns) else { RememberPrompt.tell("Couldn't save this answer."); return }
+        Self.flashKept("Saved", in: model)
+        AnswerArchive.reveal(file)
+    }
+    }
+
+    private static func flashKept(_ note: String, in model: ChatModel) {
+        model.keptNote = note
+        Task { @MainActor [weak model] in
             try? await Task.sleep(for: .seconds(1.6))
-            self?.chat.model.keptNote = nil
+            model?.keptNote = nil
         }
     }
 

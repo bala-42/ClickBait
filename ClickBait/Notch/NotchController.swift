@@ -93,15 +93,15 @@ final class NotchController {
 
         /// The chat, shown in the Ask tab once a question is asked there (set by the app delegate).
         var chat: ChatModel?
-        /// A conversation started from the Ask tab: it stays in the notch, which grows to fit it.
+        /// The Ask tab has a conversation (`NotchChat`): the notch grows to show it. Folding or
+        /// switching tabs keeps it; only its 🗑 ends it.
         var chatting = false { didSet { if chatting != oldValue { onResize() } } }
         /// Re-fits the window to the shape (set by the controller).
         var onResize: @MainActor () -> Void = {}
         /// The notch folded on its conversation: the app delegate ends it.
         var onChatEnd: @MainActor () -> Void = {}
         /// Showing the Ask tab's conversation.
-        /// Also the conversation from before, kept like the shelf's files until cleared or quit.
-        var showsChat: Bool { tab == .ask && (chatting || chat?.messages.isEmpty == false) }
+        var showsChat: Bool { tab == .ask && chatting }
         /// The pointer is near the notch: the folded handle shows.
         var nearNotch = false
         /// The display the notch is open on (peek, open, a HUD); every other display's panel
@@ -271,7 +271,6 @@ final class NotchController {
         if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
-        if after != .expanded, model.chatting { model.chatting = false; model.onChatEnd() }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         model.settled = false
         settleTask?.cancel()
@@ -570,8 +569,6 @@ final class NotchController {
                 guard let self else { return }
                 if tab == .settings, model.tab != .settings { model.settingsReturnTab = model.tab }
                 model.editing = false  // the field it was typing in is gone
-                // Leaving Ask with a chat open ends that chat (it isn't kept out of sight).
-                if model.chatting, tab != .ask { model.chatting = false; model.onChatEnd() }
                 model.tab = tab
                 self.place()
             },
