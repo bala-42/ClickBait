@@ -298,13 +298,17 @@ final class MusicBridge {
         isPlaying = playing
         if !sameVideo || youtubeScripting != true { (duration, position, positionAt) = (0, 0, .now) }
         Task { await readYouTube() }
+        showThumbnail(of: video)
+    }
+
+    /// The video's thumbnail (downloaded with Internet Mode on, else a saved one), or none.
+    private func showThumbnail(of video: YouTubeVideo) {
         let key = "youtube|\(video.id)"
         // Also once Internet Mode is switched on while the video was showing without its picture.
-        if key != artworkKey || (artwork == nil && youtubeArtworkAllowed()) {
-            if key != artworkKey { showSavedCover(for: key) }
-            artworkKey = key
-            if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(CoverCache.image(for: key), for: key) }
-        }
+        guard key != artworkKey || (artwork == nil && youtubeArtworkAllowed()) else { return }
+        if key != artworkKey { showSavedCover(for: key) }
+        artworkKey = key
+        if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(CoverCache.image(for: key), for: key) }
     }
 
     /// Runs JavaScript in the shown video's tab (or `tab`); nil when the browser refuses or the tab's gone.
@@ -342,10 +346,12 @@ final class MusicBridge {
         isPlaying = state.playing
         (position, duration, positionAt) = (state.position, state.duration, .now)
         if !state.channel.isEmpty { artist = state.channel }
-        // Skipped, or YouTube moved on by itself: a new video, so its title and thumbnail now
-        // (they stayed until the notch was opened again: user's report, 2026-11-01).
-        if let url = state.url, let now = YouTubeVideo(url: url, tabTitle: ""), "youtube|\(now.id)" != artworkKey {
-            refresh()
+        // Skipped, or YouTube moved on by itself: the video, its title and thumbnail from the
+        // page itself. Chrome's tab title lags a skip by about a second, and reading it marked
+        // the new video as shown under the old name for good (user's report, 2026-11-01).
+        if let url = state.url, let now = YouTubeVideo(url: url, tabTitle: state.pageTitle ?? "") {
+            if "youtube|\(now.id)" != artworkKey { showThumbnail(of: now) }
+            if now.title != "YouTube", now.title != title { title = now.title }
         }
         onChange?()
     }

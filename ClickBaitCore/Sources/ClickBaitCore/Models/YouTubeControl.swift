@@ -12,7 +12,7 @@ public enum YouTubeControl {
         (()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';\
         const c=document.querySelector('#owner #channel-name a, ytd-video-owner-renderer #channel-name a');\
         return [v.paused?'paused':'playing',v.currentTime.toFixed(1),(isFinite(v.duration)?v.duration:0).toFixed(1),\
-        (c&&c.textContent||'').trim(),location.href].join('\\u001f')})()
+        (c&&c.textContent||'').trim(),location.href,document.title].join('\\u001f')})()
         """
     /// Pauses (never starts) the video.
     public static let pause = "(()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';v.pause();return 'ok'})()"
@@ -72,15 +72,19 @@ public enum YouTubeControl {
         public let channel: String
         /// The page's address now: a different video after a skip or autoplay (nil from older reads).
         public var url: String? = nil
+        /// The page's own title: right half a second after a skip, while Chrome's tab title
+        /// still showed the last video for about a second more (measured 2026-11-01).
+        public var pageTitle: String? = nil
     }
 
     public static func parse(_ output: String) -> State? {
         let fields = output.components(separatedBy: separator)
-        guard fields.count == 4 || fields.count == 5, ["playing", "paused"].contains(fields[0]),
+        guard (4...6).contains(fields.count), ["playing", "paused"].contains(fields[0]),
               let position = Double(fields[1]), let duration = Double(fields[2]) else { return nil }
         return State(playing: fields[0] == "playing", position: position, duration: duration,
                      channel: fields[3].trimmingCharacters(in: .whitespacesAndNewlines),
-                     url: fields.count == 5 ? fields[4] : nil)
+                     url: fields.count >= 5 ? fields[4] : nil,
+                     pageTitle: fields.count >= 6 ? fields[5] : nil)
     }
 
     /// The browser said its JavaScript-from-Apple-Events switch is off.

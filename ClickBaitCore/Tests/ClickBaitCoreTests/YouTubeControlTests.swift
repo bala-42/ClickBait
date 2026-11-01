@@ -32,5 +32,7 @@ struct YouTubeControlTests {
         let state = YouTubeControl.parse("playing\u{1F}3.0\u{1F}200.0\u{1F}Chan\u{1F}https://www.youtube.com/watch?v=abc&index=41")
         #expect(state?.url == "https://www.youtube.com/watch?v=abc&index=41")
         #expect(YouTubeControl.readState.contains("location.href"))
+        let skipped = YouTubeControl.parse("playing\u{1F}0.4\u{1F}0.0\u{1F}\u{1F}https://www.youtube.com/watch?v=TKV9C7xa8CA&index=7\u{1F}(216) Bindaas - YouTube")
+        #expect(skipped.flatMap { YouTubeVideo(url: $0.url ?? "", tabTitle: $0.pageTitle ?? "") }?.title == "Bindaas")
     }
 }
