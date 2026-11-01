@@ -104,6 +104,13 @@ final class StudioModel {
     var cuesOpen = false {
         didSet { if cuesOpen != oldValue { PrompterController.shared.resize(to: size) } }
     }
+    /// The pointer is on the prompter: its buttons and the cue bar come in (user's ask,
+    /// 2026-11-01: the bar "should come in and go out like the rest of the buttons but stay
+    /// when opened").
+    var hovering = false {
+        didSet { if hovering != oldValue { PrompterController.shared.resize(to: size) } }
+    }
+    var cueBarShown: Bool { !script.cues.isEmpty && (hovering || cuesOpen) }
     /// The prompter line at the top of what's showing, for marking the current cue.
     var readingLine = 0
     /// Following the voice (phase 2): the prompter runs at your pace, still when you stop.

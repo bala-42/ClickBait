@@ -64,7 +64,7 @@ final class PrompterController {
     /// Room under the prompter: the cue bar whenever there are cues, and the list when open.
     static func below(_ studio: StudioModel) -> CGFloat {
         let cues = studio.script.cues.count
-        guard cues > 0 else { return 0 }
+        guard studio.cueBarShown else { return 0 }
         return 6 + CueBar.height + (studio.cuesOpen ? 6 + cueListHeight(cues) : 0)
     }
 
@@ -110,7 +110,8 @@ final class PrompterController {
 
 struct PrompterView: View {
     @Bindable var studio: StudioModel
-    @State private var hovering = false
+    private var hovering: Bool { studio.hovering }
+    @State private var hideTask: Task<Void, Never>?
     @State private var lineTops: [Int: CGFloat] = [:]
     @State private var contentHeight: CGFloat = 0
     @State private var dragStart: CGSize?
@@ -132,8 +133,9 @@ struct PrompterView: View {
             prompter
             // Like Moody's: a small bar under the prompter — previous, "2 / 7" (the list), next —
             // and the list hanging under it.
-            if !studio.script.cues.isEmpty, studio.shown {
+            if studio.cueBarShown, studio.shown {
                 CueBar(studio: studio)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 if studio.cuesOpen {
                     CueList(studio: studio)
                         .frame(width: min(studio.size.width, 360))
@@ -143,7 +145,22 @@ struct PrompterView: View {
         }
         .frame(width: studio.size.width, alignment: .top)
         .frame(maxHeight: .infinity, alignment: .top)
+        // Over the prompter or its bar: the buttons and the bar are in; they go a moment after
+        // the pointer leaves (time to travel down to the bar), the bar staying while the list is open.
+        .onHover { inside in
+            hideTask?.cancel()
+            if inside {
+                withAnimation(.easeOut(duration: 0.15)) { studio.hovering = true }
+            } else {
+                hideTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { studio.hovering = false }
+                }
+            }
+        }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: studio.cuesOpen)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: studio.cueBarShown)
     }
 
     /// The prompter's size now: the notch's while it grows out of it, its own once shown.
@@ -180,7 +197,6 @@ struct PrompterView: View {
         }.onEnded { _ in moveStart = nil } : nil)
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.48, dampingFraction: 0.8), value: studio.shown)
         .frame(width: studio.size.width, alignment: .top)
-        .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
         .onChange(of: studio.jump) { _, target in
             guard let target else { return }
             let line = studio.script.line(of: target)
@@ -195,9 +211,13 @@ struct PrompterView: View {
         TimelineView(.animation(paused: !studio.playing && !studio.following)) { timeline in
             VStack(alignment: .center, spacing: 6) {
                 ForEach(lines, id: \.index) { line in
-                    Text(line.text.isEmpty ? " " : line.text)
-                        .font(.system(size: studio.fontSize, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                    // A blank line between sections is a small gap, not a whole empty line of
+                    // big text (user: "why the dead space?"). Monospaced like the cues and
+                    // Moody's prompter (user's choice).
+                    Text(line.text.trimmingCharacters(in: .whitespaces).isEmpty ? "" : line.text)
+                        .font(.system(size: studio.fontSize, weight: .medium, design: .monospaced))
+                        .frame(height: line.text.trimmingCharacters(in: .whitespaces).isEmpty ? 4 : nil)
+                        .foregroundStyle(MoodyLook.cream)  // the cues' and buttons' white (user's ask)
                         .multilineTextAlignment(.center)
                         // Wraps to as many lines as it needs (the prompter's fixed height
                         // squeezed each to one, cut off with "…": found in the live test).
@@ -223,8 +243,8 @@ struct PrompterView: View {
         .onPreferenceChange(ContentHeight.self) { contentHeight = $0; studio.maxOffset = max(0, $0 - 20) }
         .frame(width: studio.size.width, height: studio.size.height - top, alignment: .top)
         .clipped()
-        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.18),
-                                     .init(color: .black, location: 0.8), .init(color: .clear, location: 1)],
+        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.08),
+                                     .init(color: .black, location: 0.82), .init(color: .clear, location: 1)],
                              startPoint: .top, endPoint: .bottom))
         .frame(maxHeight: .infinity, alignment: .bottom)
     }
@@ -265,7 +285,7 @@ struct PrompterView: View {
                 if studio.following { studio.stopFollowing() } else { studio.startFollowing() }
             } label: {
                 Image(systemName: studio.following ? "waveform" : "mic.fill").font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(studio.following ? Color.black : .white).frame(width: 26, height: 26)
+                    .foregroundStyle(studio.following ? Color.black : MoodyLook.cream).frame(width: 26, height: 26)
                     .background(Circle().fill(studio.following ? MoodyLook.cream : MoodyLook.slate))
                     .contentShape(Circle())
             }
@@ -431,7 +451,7 @@ private struct CueList: View {
                             .foregroundStyle(chosen ? Color.black.opacity(0.55) : MoodyLook.quiet)
                             .frame(width: 18, alignment: .trailing)
                         Text(cue.title).font(.system(size: 12.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(chosen ? Color.black : .white).lineLimit(1)
+                            .foregroundStyle(chosen ? Color.black : MoodyLook.cream).lineLimit(1)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 10).frame(height: 28)
@@ -484,7 +504,7 @@ enum MoodyLook {
 private struct PrompterButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.white)
+            .foregroundStyle(MoodyLook.cream)
             .frame(width: 26, height: 26)
             .background(Circle().fill(configuration.isPressed ? MoodyLook.slatePressed : MoodyLook.slate))
             .contentShape(Circle())
@@ -528,7 +548,7 @@ private struct CueBarButton: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(on ? Color.black : .white.opacity(enabled ? 1 : 0.3))
+            .foregroundStyle(on ? Color.black : MoodyLook.cream.opacity(enabled ? 1 : 0.3))
             .frame(minWidth: wide ? 52 : 24, minHeight: 24)
             .background(Capsule().fill(on ? MoodyLook.cream : configuration.isPressed ? MoodyLook.slatePressed : MoodyLook.slate))
             .contentShape(Capsule())
