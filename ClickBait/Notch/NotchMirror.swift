@@ -440,6 +440,25 @@ private struct PrompterDesk: View {
                 .menuStyle(.button).disabled(studio.script.cues.isEmpty).fixedSize()
                 Button { studio.chooseFile() } label: { Label("Open a script…", systemImage: "doc") }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
+                // The local brain: rewrite it the way people talk (and make cues), or only add cues.
+                HStack(spacing: 10) {
+                    Button { studio.rewrite(.speakable) } label: { Label("Make it speakable", systemImage: "waveform.and.mic") }
+                        .help("The local brain rewrites it the way people actually talk, and makes the cues")
+                    Button { studio.rewrite(.cuesOnly) } label: { Label("Add cues", systemImage: "list.bullet") }
+                        .help("The local brain adds section headings without changing your words")
+                }
+                .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
+                .disabled(studio.rewriting != nil || studio.text.isEmpty)
+                if let job = studio.rewriting {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text(job == .speakable ? "Rewriting…" : "Finding the sections…")
+                    }
+                    .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+                } else if studio.undoText != nil {
+                    Button("Undo the rewrite") { studio.undoRewrite() }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
+                }
                 Spacer(minLength: 0)
                 if let problem = studio.problem {
                     Text(problem).font(.system(size: 11)).foregroundStyle(CompanionTone.problem).fixedSize(horizontal: false, vertical: true)
@@ -461,7 +480,8 @@ private struct PrompterDesk: View {
     }
 }
 
-/// Mirror | Prompter: the chosen one in quicksilver blue (user's ask, 2026-11-01).
+/// Mirror | Prompter: the chosen one dressed like the Studio pill on Home (user's ask,
+/// 2026-11-01): a white wash, the Studio blue at half, a soft top highlight, dark text.
 struct StudioSwitch: View {
     @Binding var mode: StudioModel.Mode
     @Namespace private var pill
@@ -484,14 +504,16 @@ struct StudioSwitch: View {
         } label: {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(mode == value ? Color.white : NotchPalette.secondary)
+                .foregroundStyle(mode == value ? NotchPalette.pillText : NotchPalette.secondary)
                 .padding(.horizontal, 12).frame(height: 22)
                 .background {
                     if mode == value {
-                        Capsule().fill(Quicksilver.fill)
-                            .overlay(Capsule().stroke(Quicksilver.core.opacity(0.45), lineWidth: 0.5))
-                            .shadow(color: Quicksilver.bright.opacity(0.5), radius: 5)
-                            .matchedGeometryEffect(id: "chosen", in: pill)
+                        ZStack {
+                            Capsule().fill(.white.opacity(0.55))
+                            Capsule().fill(NotchPalette.windowsBlue.opacity(0.5))
+                            Capsule().fill(LinearGradient(colors: [.white.opacity(0.22), .clear], startPoint: .top, endPoint: .center))
+                        }
+                        .matchedGeometryEffect(id: "chosen", in: pill)
                     }
                 }
                 .contentShape(Capsule())

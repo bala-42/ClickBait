@@ -330,6 +330,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Drops on the notch's shelf say how they went in the companion's pill.
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
+        StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
+        // Studio's prompter shortcuts, only while it's up: ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →.
+        escape.onPrompterKey = { code in
+            let studio = StudioModel.shared
+            guard studio.prompting else { return false }
+            DispatchQueue.main.async {
+                switch code {
+                case 35: studio.togglePause()
+                case 126: studio.nextCue(-1)
+                case 125: studio.nextCue(1)
+                case 123: studio.changeSpeed(-6)
+                default: studio.changeSpeed(6)
+                }
+            }
+            return true
+        }
         // Studio's prompter hears you through the same speech model as dictation.
         VoiceFollower.transcribe = { [weak self] samples, prompt in
             guard let self, speech.isReady else { return nil }

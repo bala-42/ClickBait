@@ -60,15 +60,31 @@ final class PrompterController {
         CGFloat(min(max(cues, 1), 6)) * 30 + 44
     }
 
-    /// Top-centred on the screen with the notch (the camera), else the main screen; taller
-    /// by the cue list when it hangs open below.
+    /// Top-centred on the screen with the notch (the camera), else the main screen; floating,
+    /// its top centre where it was left. Taller by the cue list when it hangs open below.
     private func place(_ panel: NSPanel, size: CGSize? = nil) {
         guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main else { return }
         let studio = StudioModel.shared
         var size = size ?? studio.size
         if studio.cuesOpen { size.height += 8 + Self.cueListHeight(studio.script.cues.count) }
-        let frame = NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height, width: size.width, height: size.height)
-        panel.setFrame(frame, display: true)
+        var top = CGPoint(x: screen.frame.midX, y: screen.frame.maxY)
+        if studio.floating {
+            top = studio.floatAt ?? CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY - 60)
+        }
+        panel.setFrame(NSRect(x: top.x - size.width / 2, y: top.y - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    /// Floating: moved by a drag (its top centre follows the pointer).
+    func move(by delta: CGSize, from start: CGPoint) {
+        guard let panel else { return }
+        let studio = StudioModel.shared
+        studio.floatAt = CGPoint(x: start.x + delta.width, y: start.y + delta.height)
+        place(panel)
+    }
+
+    /// The top centre now (where a move starts from).
+    var topCentre: CGPoint? {
+        panel.map { CGPoint(x: $0.frame.midX, y: $0.frame.maxY) }
     }
 
     /// The notch's height on that screen: where the text can start without hiding behind it.
@@ -90,10 +106,12 @@ struct PrompterView: View {
     @State private var lineTops: [Int: CGFloat] = [:]
     @State private var contentHeight: CGFloat = 0
     @State private var dragStart: CGSize?
+    @State private var moveStart: (mouse: NSPoint, top: CGPoint)?
     @State private var lastTick: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let top = max(PrompterController.notchHeight, 10) + 8
+    /// Where the text starts: under the notch, or near the top when floating.
+    private var top: CGFloat { studio.floating ? 14 : max(PrompterController.notchHeight, 10) + 8 }
     private static let shape = UnevenRoundedRectangle(bottomLeadingRadius: 22, bottomTrailingRadius: 22, style: .continuous)
 
     /// The script's lines, numbered: cues and the voice's place meet them by line.
@@ -137,8 +155,16 @@ struct PrompterView: View {
         // The morph: the black shape grows from the notch's size to the prompter's (springy,
         // like the notch's own opening), the text fading in once it's nearly there.
         .frame(width: current.width, height: current.height, alignment: .top)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: studio.shown ? 22 : 10, bottomTrailingRadius: studio.shown ? 22 : 10,
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: studio.floating ? 22 : 0, bottomLeadingRadius: studio.shown ? 22 : 10,
+                                          bottomTrailingRadius: studio.shown ? 22 : 10, topTrailingRadius: studio.floating ? 22 : 0,
                                           style: .continuous))
+        // Floating: dragged anywhere by its body.
+        .gesture(studio.floating ? DragGesture(minimumDistance: 3).onChanged { _ in
+            let mouse = NSEvent.mouseLocation
+            let begin = moveStart ?? (mouse, PrompterController.shared.topCentre ?? .zero)
+            moveStart = begin
+            PrompterController.shared.move(by: CGSize(width: mouse.x - begin.mouse.x, height: mouse.y - begin.mouse.y), from: begin.top)
+        }.onEnded { _ in moveStart = nil } : nil)
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.48, dampingFraction: 0.8), value: studio.shown)
         .frame(width: studio.size.width, alignment: .top)
         .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { hovering = inside } }
@@ -255,6 +281,10 @@ struct PrompterView: View {
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }
             Spacer()
+            PrompterButton(symbol: studio.floating ? "pin.fill" : "macwindow.on.rectangle",
+                           help: studio.floating ? "Back under the notch" : "Float: move it anywhere") {
+                studio.floating.toggle()
+            }
             PrompterButton(symbol: "xmark", help: "Close the prompter") { studio.stopPrompting() }
         }
         .padding(.horizontal, 14)

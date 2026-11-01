@@ -136,9 +136,29 @@ final class StudioModel {
     /// The voice's loudness now, 0…1 (drives the ring; 0 without voice-following).
     var level: Double = 0
     var problem: String?
+    /// The brain is rewriting the script (`ScriptRewrite`); the text before, for Undo.
+    var rewriting: ScriptRewrite.Job?
+    var undoText: String?
+    /// Set by the app delegate: the local brain's model name.
+    @ObservationIgnored static var brain: (() -> String)?
+
+    /// Floating (user's ask, 2026-11-01): away from the notch, anywhere on screen, for an
+    /// external display or a camera elsewhere; where its top centre was left.
+    var floating = false {
+        didSet {
+            UserDefaults.standard.set(floating, forKey: Key.floating)
+            if floating != oldValue, prompting { PrompterController.shared.resize(to: size) }
+        }
+    }
+    var floatAt: CGPoint? {
+        didSet { if let floatAt { UserDefaults.standard.set([floatAt.x, floatAt.y], forKey: Key.floatAt) } }
+    }
+    /// Following was paused (⌃⌘P or the pause button), to resume it.
+    @ObservationIgnored private var pausedFollowing = false
 
     private enum Key {
         static let speed = "studio.speed", fontSize = "studio.fontSize", size = "studio.size", name = "studio.name"
+        static let floating = "studio.floating", floatAt = "studio.floatAt"
     }
 
     private static let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -152,6 +172,8 @@ final class StudioModel {
         fontSize = defaults.object(forKey: Key.fontSize) as? Double ?? 22
         if let saved = defaults.array(forKey: Key.size) as? [Double], saved.count == 2 { size = CGSize(width: saved[0], height: saved[1]) }
         name = defaults.string(forKey: Key.name) ?? name
+        floating = defaults.bool(forKey: Key.floating)
+        if let at = defaults.array(forKey: Key.floatAt) as? [Double], at.count == 2 { floatAt = CGPoint(x: at[0], y: at[1]) }
         text = (try? String(contentsOf: Self.scriptFile, encoding: .utf8)) ?? ""
     }
 
@@ -221,6 +243,87 @@ final class StudioModel {
             prompting = false
             PrompterController.shared.hide()
         }
+    }
+
+    // MARK: Shortcuts (while prompting): ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →
+
+    /// Pause, or carry on: following the voice stops and resumes; a set-speed scroll pauses and plays.
+    func togglePause() {
+        if following {
+            stopFollowing()
+            pausedFollowing = true
+        } else if playing {
+            playing = false
+        } else if pausedFollowing {
+            pausedFollowing = false
+            startFollowing()
+        } else {
+            startFollowing()
+        }
+    }
+
+    func nextCue(_ step: Int) {
+        let cues = script.cues
+        guard !cues.isEmpty else { return }
+        let current = script.cue(atLine: readingLine).flatMap { cue in cues.firstIndex(of: cue) } ?? 0
+        goTo(cues[min(max(0, current + step), cues.count - 1)])
+    }
+
+    func changeSpeed(_ step: Double) {
+        speed = min(120, max(6, speed + step))
+        if following { pace = min(5, max(0.8, pace * (step > 0 ? 1.15 : 0.87))) }
+    }
+
+    // MARK: The brain's rewrite
+
+    /// Make it speakable (and create the cues), or only create the cues; the old text kept for Undo.
+    func rewrite(_ job: ScriptRewrite.Job) {
+        let original = text
+        guard rewriting == nil, !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let brain = Self.brain?() else {
+            problem = "add a script first"
+            return
+        }
+        rewriting = job
+        problem = nil
+        Task { @MainActor in
+            defer { rewriting = nil }
+            let words = ScriptFollower.normalized(original).count
+            var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 240)
+            call.httpMethod = "POST"
+            call.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            call.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "model": brain, "prompt": ScriptRewrite.prompt(job, script: original), "stream": false, "think": false,
+                "options": ["temperature": job == .cuesOnly ? 0 : 0.4, "num_predict": words * 3 + 200]
+            ] as [String: Any])
+            guard let (data, response) = try? await URLSession.shared.data(for: call),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let reply = json["response"] as? String else {
+                problem = "the brain didn't answer: is Ollama running?"
+                return
+            }
+            let rewritten = ScriptRewrite.cleaned(reply)
+            switch job {
+            case .cuesOnly where !ScriptRewrite.keepsWords(original: original, rewritten: rewritten):
+                problem = "the brain changed your words, so your script is kept as it was"
+                return
+            case .speakable where !ScriptRewrite.plausible(original: original, rewritten: rewritten):
+                problem = "the rewrite came back too short, long or without cues: try again"
+                return
+            default: break
+            }
+            guard text == original else { return }  // edited meanwhile: theirs wins
+            undoText = original
+            text = rewritten
+            offset = 0
+            Log.app.notice("Studio: \(job == .speakable ? "made speakable" : "cues added", privacy: .public) (\(self.script.cues.count, privacy: .public) cues)")
+        }
+    }
+
+    func undoRewrite() {
+        guard let undoText else { return }
+        text = undoText
+        self.undoText = nil
     }
 
     func goTo(_ cue: Script.Cue) {

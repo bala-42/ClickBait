@@ -25,6 +25,9 @@ final class InputInterceptor {
     var onVolumeKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
     /// The brightness keys, when the notch's sky takes them (true: swallowed, as the volume's).
     var onBrightnessKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
+    /// ⌃⌘ + P, arrows while Studio's prompter is up (true: taken, the app in front never sees it).
+    var onPrompterKey: (_ keyCode: Int64) -> Bool = { _ in false }
+    fileprivate var swallowPrompterUp: Int64?
     /// The key-up of a taken volume key is taken too.
     fileprivate var swallowVolumeUp: Int?
     /// The matching right-mouse-up is taken too, so the app never sees half a click.
@@ -133,6 +136,25 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
             return true
         }
         return taken ? nil : Unmanaged.passUnretained(event)
+    }
+    // Studio's prompter shortcuts: ⌃⌘P pause/carry on, ⌃⌘↑ ↓ cues, ⌃⌘← → slower/faster.
+    if type == .keyDown || type == .keyUp {
+        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        if [35, 123, 124, 125, 126].contains(code) {
+            let flags = event.flags
+            let chord = flags.contains(.maskControl) && flags.contains(.maskCommand)
+                && !flags.contains(.maskAlternate) && !flags.contains(.maskShift)
+            let taken = MainActor.assumeIsolated { () -> Bool in
+                if type == .keyUp {
+                    defer { if interceptor.swallowPrompterUp == code { interceptor.swallowPrompterUp = nil } }
+                    return interceptor.swallowPrompterUp == code
+                }
+                guard chord, interceptor.onPrompterKey(code) else { return false }
+                interceptor.swallowPrompterUp = code
+                return true
+            }
+            if taken { return nil }
+        }
     }
     guard type == .keyDown || type == .keyUp, event.getIntegerValueField(.keyboardEventKeycode) == 53 else {
         return Unmanaged.passUnretained(event)
