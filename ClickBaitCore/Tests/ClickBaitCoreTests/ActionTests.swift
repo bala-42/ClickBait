@@ -114,10 +114,12 @@ struct SystemAndFileCommandTests {
     @Test(arguments: [
         ("Compress these files.", "compress", nil), ("Zip them", "compress", nil), ("Zip this folder", "compress", nil),
         ("Merge these PDFs.", "merge", nil), ("Merge.", "merge", nil), ("Zip", "compress", nil), ("Combine the selected images", "merge", nil),
-        ("Convert these to JPEG", "convert_images", "jpeg"), ("Make them PNGs", "convert_images", "png"),
-        ("Convert this video to mp4", "convert_videos", "mp4"), ("Turn this video into a gif", "convert_videos", "gif"),
-        ("Extract the audio from this video", "convert_videos", "m4a"), ("Convert these videos to mp3", "convert_videos", "m4a"),
-        ("Save this as a mov", "convert_videos", "mov"),
+        ("Convert these to JPEG", "convert", "jpeg"), ("Make them PNGs", "convert", "png"),
+        ("Convert this video to mp4", "convert", "mp4"), ("Turn this video into a gif", "convert", "gif"),
+        ("Extract the audio from this video", "convert", "m4a"), ("Convert these videos to mp3", "convert", "m4a"),
+        ("Save this as a mov", "convert", "mov"), ("Convert this mov to mp4", "convert", "mp4"),
+        ("Convert this pdf to word", "convert", "docx"), ("Turn this doc into a pdf", "convert", "pdf"),
+        ("Convert these images to heic", "convert", "heic"),
         ("Put these in a new folder", "new_folder", nil),
         ("Delete these files", "trash", nil), ("Move these to the Trash", "trash", nil), ("Trash them", "trash", nil),
         ("Make these smaller", "shrink", nil), ("Reduce the size of this file", "shrink", nil), ("Shrink them", "shrink", nil),
@@ -136,10 +138,10 @@ struct SystemAndFileCommandTests {
     }
 
     @Test func resolution() {
-        #expect(ActionCatalog.resolve(ActionRequest(name: "convert_images", argument: "jpg"), allowedShortcuts: [])
-            == .success(.file(.convertImages(to: .jpeg))))
-        #expect(ActionCatalog.resolve(ActionRequest(name: "convert_images", argument: "gif"), allowedShortcuts: [])
-            == .failure(.invalidArgument("I can convert images to JPEG or PNG")))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "convert", argument: "jpg"), allowedShortcuts: [])
+            == .success(.file(.convert(to: .jpeg))))
+        #expect(ActionCatalog.resolve(ActionRequest(name: "convert", argument: "webp"), allowedShortcuts: [])
+            == .failure(.invalidArgument("I can convert to MP4, MOV, M4V, audio, GIF, JPEG, PNG, HEIC, TIFF, BMP, PDF, Word, RTF, text, a web page or OpenDocument")))
         #expect(ActionCatalog.resolve(ActionRequest(name: "trash"), allowedShortcuts: []) == .success(.file(.moveToTrash)))
         #expect(ActionCatalog.resolve(ActionRequest(name: "shrink"), allowedShortcuts: []) == .success(.file(.shrink)))
     }

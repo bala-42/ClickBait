@@ -46,9 +46,9 @@ public enum FileAction: Equatable, Sendable {
     case compress
     /// PDFs and images become one PDF; text files become one text file.
     case merge
-    case convertImages(to: ImageFormat)
-    /// Videos to another container or kind: MP4, MOV, M4V, audio only (M4A), an animated GIF.
-    case convertVideos(to: MediaFormat)
+    /// Any file to another format, by what it is (user's ask, 2026-11-01: "convert mov to mp4 …
+    /// images, files … pdf, doc"): videos, images, PDFs and documents (`FileFormat`).
+    case convert(to: FileFormat)
     case moveIntoNewFolder(name: String?)
     /// Into a named place; nothing is ever overwritten (clashing names get a number).
     case moveTo(Place)
@@ -74,7 +74,7 @@ public enum FileAction: Equatable, Sendable {
     /// Finder-only: "delete this" in a text editor must never touch files.
     public var makesCopies: Bool {
         switch self {
-        case .compress, .merge, .convertImages, .convertVideos, .shrink: true
+        case .compress, .merge, .convert, .shrink: true
         default: false
         }
     }
@@ -95,15 +95,52 @@ public enum ScreenshotKind: String, Equatable, Sendable {
     case window
 }
 
-public enum ImageFormat: String, Equatable, Sendable {
-    case jpeg
-    case png
-}
-
-public enum MediaFormat: String, Equatable, Sendable, CaseIterable {
+/// What a file can be converted to. Which apply depends on the file: a video to MP4, MOV, M4V,
+/// M4A (its sound) or GIF; an image to JPEG, PNG, HEIC, TIFF, GIF, BMP or PDF; a PDF to text,
+/// Word, RTF, a web page or images (a page each); a document (Word, RTF, text, web page,
+/// OpenDocument) to PDF, Word, RTF, text, a web page or OpenDocument.
+public enum FileFormat: String, Equatable, Sendable, CaseIterable {
     case mp4, mov, m4v, m4a, gif
+    case jpeg, png, heic, tiff, bmp
+    case pdf, docx, doc, rtf, txt, html, odt
 
-    public var label: String { self == .m4a ? "audio (M4A)" : rawValue.uppercased() }
+    public var label: String {
+        switch self {
+        case .m4a: "audio (M4A)"
+        case .docx: "Word (.docx)"
+        case .doc: "Word (.doc)"
+        case .txt: "plain text"
+        case .html: "a web page"
+        case .odt: "OpenDocument"
+        default: rawValue.uppercased()
+        }
+    }
+
+    public var fileExtension: String { self == .jpeg ? "jpg" : rawValue }
+
+    /// The format named in someone's words ("jpg", "word", "mp3"…), or nil.
+    public static func named(_ word: String) -> FileFormat? {
+        switch word.lowercased() {
+        case "jpg", "jpgs", "jpeg", "jpegs": .jpeg
+        case "png", "pngs": .png
+        case "heic", "heif": .heic
+        case "tif", "tiff": .tiff
+        case "bmp", "bitmap": .bmp
+        case "gif", "gifs": .gif
+        case "mp4", "mp4s": .mp4
+        case "mov", "movs", "quicktime": .mov
+        case "m4v": .m4v
+        case "m4a", "mp3", "audio", "sound", "aac": .m4a
+        case "pdf", "pdfs": .pdf
+        case "docx", "word": .docx
+        case "doc": .doc
+        case "rtf": .rtf
+        case "txt", "text": .txt
+        case "html", "htm", "webpage": .html
+        case "odt", "opendocument": .odt
+        default: nil
+        }
+    }
 }
 
 public enum ActionError: Error, Equatable, Sendable {
@@ -170,17 +207,11 @@ public enum ActionCatalog {
             return .success(.file(.compress))
         case "merge":
             return .success(.file(.merge))
-        case "convert_images":
-            guard let format = ImageFormat(rawValue: argument.lowercased() == "jpg" ? "jpeg" : argument.lowercased()) else {
-                return .failure(.invalidArgument("I can convert images to JPEG or PNG"))
+        case "convert", "convert_images", "convert_videos":
+            guard let format = FileFormat.named(argument) else {
+                return .failure(.invalidArgument("I can convert to MP4, MOV, M4V, audio, GIF, JPEG, PNG, HEIC, TIFF, BMP, PDF, Word, RTF, text, a web page or OpenDocument"))
             }
-            return .success(.file(.convertImages(to: format)))
-        case "convert_videos":
-            let wanted = argument.lowercased()
-            guard let format = MediaFormat(rawValue: ["mp3", "audio", "sound", "aac"].contains(wanted) ? "m4a" : wanted) else {
-                return .failure(.invalidArgument("I can turn videos into MP4, MOV, M4V, audio (M4A) or a GIF"))
-            }
-            return .success(.file(.convertVideos(to: format)))
+            return .success(.file(.convert(to: format)))
         case "new_folder":
             return .success(.file(.moveIntoNewFolder(name: detail)))
         case "make_folder":
@@ -248,8 +279,7 @@ public enum ActionCatalog {
         case .file(.copyToFolder(let folder)): "Copy \(files) into “\(folder)”?"
         case .file(.compress): "Zip \(files)?"
         case .file(.merge): "Combine \(files) into one PDF?"
-        case .file(.convertImages(let format)): "Convert \(files) to \(format.rawValue.uppercased())?"
-        case .file(.convertVideos(let format)): "Turn \(files) into \(format.label)?"
+        case .file(.convert(let format)): "Convert \(files) to \(format.label)?"
         case .file(.shrink): "Make smaller copies of \(files)?"
         case .openApp(let name): "Open \(name)?"
         case .setVolume(let percent): "Set the volume to \(percent)%?"

@@ -1149,8 +1149,7 @@ extension AskCoordinator {
             switch file {
             case .compress: "Compressing…"
             case .merge: "Merging…"
-            case .convertImages: "Converting…"
-            case .convertVideos(let format): format == .gif ? "Making a GIF…" : "Converting to \(format.label)…"
+            case .convert(let format): format == .gif ? "Making a GIF…" : "Converting to \(format.label)…"
             case .moveIntoNewFolder: "Making a new folder…"
             case .moveTo(let place): "Moving to \(place.displayName)…"
             case .copyTo(let place): "Copying to \(place.displayName)…"

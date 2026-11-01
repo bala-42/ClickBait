@@ -14,9 +14,9 @@ struct ConvertVideoTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let copy = folder.appending(path: "clip.mp4")
         try FileManager.default.copyItem(atPath: source, toPath: copy.path)
-        for format in MediaFormat.allCases {
+        for format in [FileFormat.mp4, .mov, .m4v, .m4a, .gif] {
             let start = Date()
-            let (message, outputs) = try await FileActions.perform(.convertVideos(to: format), on: [copy])
+            let (message, outputs) = try await FileActions.perform(.convert(to: format), on: [copy])
             let size = outputs.first.flatMap { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? NSNumber)?.intValue } ?? 0
             var playable = false
             if let output = outputs.first, format != .gif { playable = try await AVURLAsset(url: output).load(.isPlayable) }

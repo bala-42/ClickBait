@@ -71,8 +71,7 @@ enum FileActions {
         switch action {
         case .compress: return try compress(files)
         case .merge: return try merge(files)
-        case .convertImages(let format): return try convert(files, to: format)
-        case .convertVideos(let format): return try await convertVideos(files, to: format)
+        case .convert(let format): return try await convert(files, to: format)
         case .moveIntoNewFolder(let name): return try moveIntoNewFolder(files, name: name)
         case .moveTo(let place): return try transfer(files, to: place, copying: false)
         case .copyTo(let place): return try transfer(files, to: place, copying: true)
@@ -135,53 +134,163 @@ enum FileActions {
         throw FileActionError.unsupported("I can merge PDFs and images into one PDF, or text files into one text file.")
     }
 
-    private static func convert(_ files: [URL], to format: ImageFormat) throws -> (String, [URL]) {
-        let images = files.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
-        guard !images.isEmpty else { throw FileActionError.unsupported("None of the selected files are images.") }
-        let (type, ext): (UTType, String) = format == .jpeg ? (.jpeg, "jpg") : (.png, "png")
-
+    /// Every file to `format`, by what it is (user's ask, 2026-11-01): videos, images, PDFs and
+    /// documents. Files the format doesn't fit are skipped and named.
+    private static func convert(_ files: [URL], to format: FileFormat) async throws -> (String, [URL]) {
         var outputs: [URL] = []
-        for file in images {
-            guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-            else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        var skipped: [String] = []
+        for file in files {
+            let type = UTType(filenameExtension: file.pathExtension)
             let folder = file.deletingLastPathComponent()
-            let output = folder.appending(path: try uniqueName(base: file.deletingPathExtension().lastPathComponent, extension: ext, in: folder))
-            guard let destination = CGImageDestinationCreateWithURL(output as CFURL, type.identifier as CFString, 1, nil) else {
-                throw FileActionError.failed("couldn't create \(output.lastPathComponent)")
+            let base = file.deletingPathExtension().lastPathComponent
+            let output = folder.appending(path: try uniqueName(base: base, extension: format.fileExtension, in: folder))
+            if type?.conforms(to: .movie) == true || type?.conforms(to: .video) == true {
+                guard [.mp4, .mov, .m4v, .m4a, .gif].contains(format) else { skipped.append(file.lastPathComponent); continue }
+                try await convertVideo(file, to: output, format: format)
+                outputs.append(output)
+            } else if type?.conforms(to: .pdf) == true {
+                outputs += try convertPDF(file, to: format, base: base, in: folder)
+            } else if type?.conforms(to: .image) == true {
+                guard [.jpeg, .png, .heic, .tiff, .gif, .bmp, .pdf].contains(format) else { skipped.append(file.lastPathComponent); continue }
+                try convertImage(file, to: output, format: format)
+                outputs.append(output)
+            } else if let attributed = readDocument(file) {
+                try writeDocument(attributed, to: output, format: format)
+                outputs.append(output)
+            } else {
+                skipped.append(file.lastPathComponent)
             }
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)  // keep orientation and metadata
-            CGImageDestinationAddImage(destination, image, properties)
-            guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
-            outputs.append(output)
         }
-        let skipped = files.count - images.count
-        let note = skipped > 0 ? " (skipped \(skipped) that weren't images)" : ""
-        return ("Converted \(count(images)) to \(format == .jpeg ? "JPEG" : "PNG")\(note)", outputs)
+        guard !outputs.isEmpty else {
+            throw FileActionError.unsupported("I can't make \(format.label) from \(skipped.joined(separator: ", ")).")
+        }
+        let note = skipped.isEmpty ? "" : " (skipped \(skipped.count) that can't become \(format.label))"
+        return ("Converted \(count(outputs)) to \(format.label)\(note)", outputs)
     }
 
-    /// Videos to MP4, MOV or M4V (the streams repackaged as they are when the container takes
-    /// them, else re-encoded), to their sound alone (M4A), or to an animated GIF.
-    private static func convertVideos(_ files: [URL], to format: MediaFormat) async throws -> (String, [URL]) {
-        let videos = files.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .movie) == true }
-        guard !videos.isEmpty else { throw FileActionError.unsupported("None of the selected files are videos.") }
-        var outputs: [URL] = []
-        for file in videos {
-            let folder = file.deletingLastPathComponent()
-            let output = folder.appending(path: try uniqueName(base: file.deletingPathExtension().lastPathComponent,
-                                                               extension: format.rawValue, in: folder))
-            switch format {
-            case .gif: try await makeGIF(file, to: output)
-            case .m4a: try await export(file, to: output, as: .m4a, presets: [AVAssetExportPresetAppleM4A])
-            case .mp4: try await export(file, to: output, as: .mp4, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
-            case .mov: try await export(file, to: output, as: .mov, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
-            case .m4v: try await export(file, to: output, as: .m4v, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
-            }
-            outputs.append(output)
+    private static func convertVideo(_ file: URL, to output: URL, format: FileFormat) async throws {
+        // A cut-off copy (no index) can't be read by anything: say so, not "can't make MP4".
+        let asset = AVURLAsset(url: file)
+        guard (try? await asset.load(.isReadable)) == true, let seconds = try? await asset.load(.duration).seconds,
+              seconds.isFinite, seconds > 0 else {
+            throw FileActionError.failed("\(file.lastPathComponent) is damaged or unfinished (it was cut off while being made), so I can't read it")
         }
-        let skipped = files.count - videos.count
-        let note = skipped > 0 ? " (skipped \(skipped) that weren't videos)" : ""
-        return ("Turned \(count(videos)) into \(format.label)\(note)", outputs)
+        switch format {
+        case .gif: try await makeGIF(file, to: output)
+        case .m4a: try await export(file, to: output, as: .m4a, presets: [AVAssetExportPresetAppleM4A])
+        case .mov: try await export(file, to: output, as: .mov, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+        case .m4v: try await export(file, to: output, as: .m4v, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+        default: try await export(file, to: output, as: .mp4, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+        }
+    }
+
+    /// An image to another image format (orientation and metadata kept), or to a one-page PDF.
+    private static func convertImage(_ file: URL, to output: URL, format: FileFormat) throws {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        if format == .pdf {
+            guard let page = PDFPage(image: NSImage(cgImage: image, size: .zero)) else { throw FileActionError.failed("couldn't make a PDF of \(file.lastPathComponent)") }
+            let document = PDFDocument()
+            document.insert(page, at: 0)
+            guard document.write(to: output) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
+            return
+        }
+        let type: UTType = switch format {
+        case .png: .png
+        case .heic: .heic
+        case .tiff: .tiff
+        case .gif: .gif
+        case .bmp: .bmp
+        default: .jpeg
+        }
+        guard let destination = CGImageDestinationCreateWithURL(output as CFURL, type.identifier as CFString, 1, nil) else {
+            throw FileActionError.failed("couldn't create \(output.lastPathComponent)")
+        }
+        CGImageDestinationAddImage(destination, image, CGImageSourceCopyPropertiesAtIndex(source, 0, nil))
+        guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
+    }
+
+    /// A PDF to text or a document (its text, page after page), or to images (one per page).
+    private static func convertPDF(_ file: URL, to format: FileFormat, base: String, in folder: URL) throws -> [URL] {
+        guard let document = PDFDocument(url: file) else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        switch format {
+        case .jpeg, .png, .heic, .tiff, .bmp, .gif:
+            var pages: [URL] = []
+            for index in 0..<document.pageCount {
+                guard let page = document.page(at: index) else { continue }
+                let bounds = page.bounds(for: .mediaBox)
+                let picture = page.thumbnail(of: CGSize(width: bounds.width * 2, height: bounds.height * 2), for: .mediaBox)
+                guard let image = picture.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+                let name = document.pageCount == 1 ? base : "\(base) page \(index + 1)"
+                let output = folder.appending(path: try uniqueName(base: name, extension: format.fileExtension, in: folder))
+                let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".png")
+                guard let destination = CGImageDestinationCreateWithURL(temporary as CFURL, UTType.png.identifier as CFString, 1, nil) else { continue }
+                CGImageDestinationAddImage(destination, image, nil)
+                CGImageDestinationFinalize(destination)
+                try convertImage(temporary, to: output, format: format)
+                try? FileManager.default.removeItem(at: temporary)
+                pages.append(output)
+            }
+            return pages
+        case .pdf:
+            throw FileActionError.unsupported("\(file.lastPathComponent) is already a PDF.")
+        case .mp4, .mov, .m4v, .m4a:
+            throw FileActionError.unsupported("A PDF can't become \(format.label).")
+        default:
+            let text = NSMutableAttributedString()
+            for index in 0..<document.pageCount {
+                if let page = document.page(at: index)?.attributedString { text.append(page) }
+                if index < document.pageCount - 1 { text.append(NSAttributedString(string: "\n\n")) }
+            }
+            let output = folder.appending(path: try uniqueName(base: base, extension: format.fileExtension, in: folder))
+            try writeDocument(text, to: output, format: format)
+            return [output]
+        }
+    }
+
+    /// A document's text and formatting: Word (.docx, .doc), RTF, plain text, Markdown, a web page, OpenDocument.
+    private static func readDocument(_ file: URL) -> NSAttributedString? {
+        let ext = file.pathExtension.lowercased()
+        guard ["docx", "doc", "rtf", "rtfd", "txt", "text", "md", "markdown", "html", "htm", "odt", "webarchive"].contains(ext) else { return nil }
+        return try? NSAttributedString(url: file, options: [:], documentAttributes: nil)
+    }
+
+    private static func writeDocument(_ text: NSAttributedString, to output: URL, format: FileFormat) throws {
+        let range = NSRange(location: 0, length: text.length)
+        let type: NSAttributedString.DocumentType
+        switch format {
+        case .pdf:
+            try writePDF(text, to: output)
+            return
+        case .docx: type = .officeOpenXML
+        case .doc: type = .docFormat
+        case .rtf: type = .rtf
+        case .txt: type = .plain
+        case .html: type = .html
+        case .odt: type = .openDocument
+        default: throw FileActionError.unsupported("A document can't become \(format.label).")
+        }
+        let data = try text.data(from: range, documentAttributes: [.documentType: type])
+        try data.write(to: output)
+    }
+
+    /// Text laid out on A4 pages with 2 cm margins (Core Text), as a PDF.
+    private static func writePDF(_ text: NSAttributedString, to output: URL) throws {
+        var page = CGRect(x: 0, y: 0, width: 595, height: 842)
+        guard let context = CGContext(output as CFURL, mediaBox: &page, nil) else { throw FileActionError.failed("couldn't create \(output.lastPathComponent)") }
+        let framesetter = CTFramesetterCreateWithAttributedString(text)
+        var start = 0
+        repeat {
+            context.beginPDFPage(nil)
+            let path = CGPath(rect: page.insetBy(dx: 57, dy: 57), transform: nil)
+            let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: start, length: 0), path, nil)
+            CTFrameDraw(frame, context)
+            let shown = CTFrameGetVisibleStringRange(frame).length
+            context.endPDFPage()
+            guard shown > 0 else { break }
+            start += shown
+        } while start < text.length
+        context.closePDF()
     }
 
     /// The first preset that can write `type` (passthrough first: no re-encoding, no loss).
@@ -189,8 +298,8 @@ enum FileActions {
         let asset = AVURLAsset(url: file)
         var lastError: Error?
         for preset in presets {
-            guard let session = AVAssetExportSession(asset: asset, presetName: preset),
-                  await session.compatibleFileTypes.contains(type) else { continue }
+            // Tried, not asked: the "compatible types" answer said no for videos it can export.
+            guard let session = AVAssetExportSession(asset: asset, presetName: preset) else { continue }
             do {
                 try? FileManager.default.removeItem(at: output)
                 try await session.export(to: output, as: type)
@@ -339,7 +448,16 @@ enum FileActions {
                 try shrinkPDF(file, to: output)
             } else if type?.conforms(to: .movie) == true || type?.conforms(to: .video) == true {
                 output = folder.appending(path: try uniqueName(base: base, extension: "mov", in: folder))
-                try await shrinkVideo(file, to: output)
+                // Made in a temporary file and moved in only when complete: a shrink cut off
+                // part-way (the app quit) left a broken copy with a normal name (user's report).
+                let partial = FileManager.default.temporaryDirectory.appending(path: "ClickBait-shrinking-\(UUID().uuidString).mov")
+                do {
+                    try await shrinkVideo(file, to: partial)
+                    try FileManager.default.moveItem(at: partial, to: output)
+                } catch {
+                    try? FileManager.default.removeItem(at: partial)
+                    throw error
+                }
             } else {
                 unsupported += 1
                 continue

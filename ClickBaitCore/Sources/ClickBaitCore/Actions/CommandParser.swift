@@ -233,7 +233,8 @@ public enum CommandParser {
     private static func file(_ words: [String], transcript: String) -> ActionRequest? {
         let references: Set<String> = ["these", "this", "them", "it", "selected", "selection", "files", "file", "items",
                                        "pdfs", "pdf", "images", "photos", "pictures", "screenshots", "documents", "folder", "folders",
-                                       "videos", "video", "movies"]
+                                       "videos", "video", "movies", "mov", "mp4", "doc", "docx", "document", "image", "picture", "photo"]
+        // Not "word": "delete the last word" is about text, never files.
         guard let verb = words.first, words.contains(where: references.contains) || words.count == 1 else { return nil }
         let rest = Set(words.dropFirst())
 
@@ -249,18 +250,11 @@ public enum CommandParser {
         case "merge", "combine", "join":
             return ActionRequest(name: "merge")
         case "convert", "make", "turn", "save", "export", "extract", "get", "pull":
-            // Videos (user's ask, 2026-11-01): another container, the sound alone, or a GIF.
-            if rest.contains("gif") || rest.contains("gifs") { return ActionRequest(name: "convert_videos", argument: "gif") }
-            for format in ["mp4", "mov", "m4v", "m4a"] where rest.contains(format) {
-                return ActionRequest(name: "convert_videos", argument: format)
+            // Any format named (user's ask, 2026-11-01: "convert mov to mp4 … pdf, doc"): the last
+            // one said is the target ("convert this mov to mp4" → MP4).
+            if let format = words.dropFirst().reversed().lazy.compactMap({ FileFormat.named($0) }).first {
+                return ActionRequest(name: "convert", argument: format.rawValue)
             }
-            if rest.contains("mp3") || rest.contains("audio") || rest.contains("sound") {
-                return ActionRequest(name: "convert_videos", argument: "m4a")
-            }
-            if rest.contains("jpeg") || rest.contains("jpg") || rest.contains("jpegs") || rest.contains("jpgs") {
-                return ActionRequest(name: "convert_images", argument: "jpeg")
-            }
-            if rest.contains("png") || rest.contains("pngs") { return ActionRequest(name: "convert_images", argument: "png") }
             return nil
         case "put", "move", "group":
             if rest.contains("trash") || rest.contains("bin") { return ActionRequest(name: "trash") }
