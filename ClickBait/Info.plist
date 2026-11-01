@@ -59,7 +59,5 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Studio's teleprompter follows your voice to scroll at your pace. Speech is recognised on this Mac and never sent anywhere.</string>
 </dict>
 </plist>

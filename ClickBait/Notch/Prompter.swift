@@ -111,7 +111,7 @@ struct PrompterView: View {
     private var prompter: some View {
         ZStack(alignment: .bottom) {
             Self.shape.fill(Color.black)
-            QuicksilverRing(level: max(studio.level, studio.playing ? 0.25 : 0.1), reduceMotion: reduceMotion)
+            QuicksilverRing(level: studio.level, reduceMotion: reduceMotion)
                 .frame(width: studio.size.width, height: studio.size.height)
                 .clipShape(Self.shape)
                 .allowsHitTesting(false)
@@ -257,52 +257,88 @@ struct PrompterView: View {
     }
 }
 
-/// Studio's colour (user's ask, 2026-11-01): quicksilver blue, a vibrant royal-blue gradient
-/// with a liquid-metal shine. The prompter's glow and Studio's Mirror / Prompter switch.
+/// Studio's colour (user's ask, 2026-11-01): quicksilver blue, the Studio tab's own blue
+/// (`NotchPalette.windowsBlue` and its holo stops) with a liquid-metal shine. The prompter's
+/// ring, Studio's Mirror / Prompter switch, the cue being read.
 enum Quicksilver {
-    static let core = Color(red: 0.80, green: 0.86, blue: 1.0)      // the bright, nearly white highlight
-    static let bright = Color(red: 0.30, green: 0.47, blue: 1.0)    // vibrant royal blue
-    static let royal = Color(red: 0.15, green: 0.27, blue: 0.92)
-    static let deep = Color(red: 0.07, green: 0.12, blue: 0.55)     // the edges
+    static let core = Color(hex: 0xB5DDF0)    // the bright highlight (the tab's lightest stop)
+    static let bright = Color(hex: 0x5FA3DA)
+    static let royal = Color(hex: 0x3A86C8)   // the Studio tab's blue
+    static let deep = Color(hex: 0x1F4FA0)    // the edges (its darkest stop)
     /// For a button or pill: royal blue with a metallic top light.
     static let fill = LinearGradient(colors: [bright, royal, deep], startPoint: .top, endPoint: .bottom)
 }
 
-/// The voice ring, in quicksilver blue (user's ask, 2026-11-01: "the same ring thing that
-/// Moody has", not a plain gradient; built afresh): a ring of light whose top arc rises from
-/// the prompter's bottom edge — a wide soft halo, a bright rim, a faint inner wash — with a
-/// metallic highlight running round it. `level` 0…1: resting, or the voice's loudness; the
-/// ring swells, brightens and its shine runs faster as you speak.
+/// The voice beam, in quicksilver blue (user's ask, 2026-11-01: "animate it like what Moody
+/// has", from its video; built afresh): a glowing half-dome rising from the prompter's bottom
+/// edge — a hot core, a bright rim, a halo spilling past it — that grows and lifts with every
+/// syllable and falls away in silence, sending out a ripple ring as each word starts. While
+/// listening in silence it only breathes, faintly. `level` 0…1 (the voice, smoothed with a fast
+/// rise and a slow fall).
 struct QuicksilverRing: View {
     let level: Double
     let reduceMotion: Bool
+    /// Ripples: when each started (a word's onset: the level jumping up).
+    @State private var ripples: [Date] = []
+    @State private var lastLevel = 0.0
 
     var body: some View {
         GeometryReader { box in
-            TimelineView(.animation(paused: reduceMotion)) { timeline in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let spin = reduceMotion ? 0 : t * (25 + level * 140)
-                let diameter = box.size.width * 0.62 * (1 + level * 0.12)
-                // Bright all round (royal blue at its darkest), with two metallic highlights.
-                let rim = AngularGradient(colors: [Quicksilver.royal, Quicksilver.bright, Quicksilver.core, Quicksilver.bright,
-                                                   Quicksilver.royal, Quicksilver.bright, Quicksilver.core, Quicksilver.bright,
-                                                   Quicksilver.royal],
-                                          center: .center, angle: .degrees(spin))
+            TimelineView(.animation(paused: reduceMotion && ripples.isEmpty)) { timeline in
+                let now = timeline.date
+                let t = now.timeIntervalSinceReferenceDate
+                let breathe = reduceMotion ? 0 : (sin(t * 1.6) + 1) / 2 * 0.06
+                let energy = max(level, breathe)
+                let width = box.size.width * (0.26 + energy * 0.4)
+                let height = width * (0.55 + energy * 0.35)
+                let centre = CGPoint(x: box.size.width / 2, y: box.size.height + height * 0.12)
                 ZStack {
-                    // The inner wash: the ring lights what's inside it.
-                    Circle().fill(RadialGradient(colors: [.clear, Quicksilver.royal.opacity(0.05 + level * 0.12)],
-                                                 center: .center, startRadius: diameter * 0.3, endRadius: diameter * 0.5))
-                    // The halo: wide and soft.
-                    Circle().stroke(rim, lineWidth: 14 + level * 18).blur(radius: 14 + level * 10).opacity(0.45 + level * 0.4)
-                    // The rim: thin and bright.
-                    Circle().stroke(rim, lineWidth: 2 + level * 2).blur(radius: 0.5)
-                    Circle().stroke(Quicksilver.core.opacity(0.35 + level * 0.4), lineWidth: 0.8)
+                    // The halo: wide, soft, spilling up behind the text.
+                    Ellipse()
+                        .fill(RadialGradient(colors: [Quicksilver.bright.opacity(0.75), Quicksilver.royal.opacity(0.45), .clear],
+                                             center: .center, startRadius: 0, endRadius: width * 0.75))
+                        .frame(width: width * 1.6, height: height * 1.6)
+                        .blur(radius: 18)
+                        .opacity(0.35 + energy * 0.65)
+                    // The dome: a hot core fading to the Studio blue.
+                    Ellipse()
+                        // Hottest at its base (the edge it rises from), fading up to the rim.
+                        .fill(RadialGradient(stops: [.init(color: Quicksilver.core, location: 0),
+                                                     .init(color: Quicksilver.bright, location: 0.35),
+                                                     .init(color: Quicksilver.royal.opacity(0.7), location: 0.7),
+                                                     .init(color: Quicksilver.deep.opacity(0.25), location: 1)],
+                                             center: UnitPoint(x: 0.5, y: 0.62), startRadius: 0, endRadius: height * 0.62))
+                        .frame(width: width, height: height)
+                        .blur(radius: 3 + (1 - energy) * 4)
+                        .opacity(0.25 + energy * 0.75)
+                    // The rim: a bright edge with a shine running round it.
+                    Ellipse()
+                        .stroke(AngularGradient(colors: [Quicksilver.royal, Quicksilver.core, Quicksilver.bright, Quicksilver.royal,
+                                                         Quicksilver.core, Quicksilver.royal],
+                                                center: .center, angle: .degrees(reduceMotion ? 0 : t * (40 + energy * 220))),
+                                lineWidth: 1.5 + energy * 2.5)
+                        .frame(width: width, height: height)
+                        .blur(radius: 0.8)
+                        .opacity(0.3 + energy * 0.7)
+                    // Ripples: a ring from each word, growing and fading over 0.9 s.
+                    ForEach(ripples, id: \.self) { start in
+                        let age = now.timeIntervalSince(start) / 0.9
+                        if age < 1 {
+                            Ellipse()
+                                .stroke(Quicksilver.core.opacity(0.7 * (1 - age)), lineWidth: 2 * (1 - age) + 0.5)
+                                .frame(width: width * (1 + age * 0.9), height: height * (1 + age * 0.9))
+                                .blur(radius: 1 + age * 3)
+                        }
+                    }
                 }
-                .frame(width: diameter, height: diameter)
-                // Its top arc shows above the bottom edge, higher as the voice is louder.
-                .position(x: box.size.width / 2, y: box.size.height + diameter / 2 - (22 + level * 26))
-                .opacity(0.55 + level * 0.45)
+                .position(centre)
+                .onChange(of: now) { _, now in ripples.removeAll { now.timeIntervalSince($0) > 0.9 } }
             }
+        }
+        .onChange(of: level) { _, level in
+            // A word starting: the level jumping up from quieter.
+            if level - lastLevel > 0.12, level > 0.3, ripples.count < 4, !reduceMotion { ripples.append(Date()) }
+            lastLevel = level
         }
     }
 }

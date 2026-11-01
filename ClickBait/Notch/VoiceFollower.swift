@@ -1,21 +1,26 @@
 import AVFoundation
 import ClickBaitCore
 import OSLog
-import Speech
+import os
 
-/// Studio's ears (user's ask, 2026-11-01: the prompter runs at your pace): Apple's on-device
-/// speech recognition hears you live, `ScriptFollower` places what it hears in the script, and
-/// the microphone's loudness drives the ring. Nothing is sent anywhere; nothing is kept.
+/// Studio's ears (user's ask, 2026-11-01: the prompter runs at your pace). The microphone's
+/// last 4 seconds are transcribed by ClickBait's own speech model (Whisper, already loaded for
+/// dictation) about every 0.6 s while you speak, `ScriptFollower` places the words in the
+/// script, and the microphone's loudness drives the ring. Needs only the microphone: Apple's
+/// live recognizer refused outright with Siri and Dictation off (user's Mac, 2026-11-01).
+/// Nothing is sent anywhere; nothing is kept.
 @MainActor
 final class VoiceFollower {
+    /// Set by the app delegate: ClickBait's speech model (16 kHz mono samples, a prompt to
+    /// steer spelling) → text, or nil when it isn't ready.
+    static var transcribe: (([Float], String?) async -> String?)?
+
     private let engine = AVAudioEngine()
-    private var recognizer: SFSpeechRecognizer?
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
     private var follower: ScriptFollower
     private var running = false
-    /// Transcript before the current recognition task (each task is restarted after a while).
-    private var earlier = ""
+    private var listening: Task<Void, Never>?
+    private var meter: Task<Void, Never>?
+    private let audio = Recording()
     private var lastLine = -1
     private let onPlace: (ScriptFollower.Place) -> Void
     private let onLevel: (Double) -> Void
@@ -29,35 +34,28 @@ final class VoiceFollower {
         self.onProblem = onProblem
     }
 
-    /// Reading resumes from `line` (a cue jump, or a scroll by hand).
+    /// Reading resumes from `line` (a cue jump, or a scroll by hand); what was heard before is dropped.
     func resume(atLine line: Int) {
         follower.resume(atLine: line)
-        earlier = ""
-        restartRecognition()
+        audio.clear()
     }
 
     func start() async {
         guard !running else { return }
-        guard await Self.allowed() else {
-            onProblem("allow Speech Recognition for ClickBait in System Settings → Privacy & Security")
-            return
-        }
-        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-        guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
-            onProblem("on-device speech recognition isn't available on this Mac")
-            return
-        }
-        self.recognizer = recognizer
+        guard Self.transcribe != nil else { onProblem("the speech model isn't ready yet"); return }
+        Microphones.apply(to: engine)  // the microphone chosen in Settings, as dictation uses
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            let level = Self.level(buffer)
-            Task { @MainActor in
-                self?.request?.append(buffer)
-                self?.onLevel(level)
-            }
+        guard format.sampleRate > 0, let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
+              let converter = AVAudioConverter(from: format, to: target) else {
+            onProblem("couldn't use the microphone")
+            return
         }
+        input.removeTap(onBus: 0)
+        // Built off the main actor: the audio arrives on its own thread, and a block tied to
+        // the main actor there stopped the app at once (user's report: "nothing happens").
+        input.installTap(onBus: 0, bufferSize: 2048, format: format,
+                         block: Self.tap(audio: audio, converter: converter, target: target))
         do {
             engine.prepare()
             try engine.start()
@@ -66,52 +64,62 @@ final class VoiceFollower {
             return
         }
         running = true
-        restartRecognition()
-        Log.app.notice("Studio: following the voice")
+        Log.app.notice("Studio: following the voice (microphone \(Int(format.sampleRate), privacy: .public) Hz)")
+        listening = Task { [weak self] in await self?.listen() }
+        // The ring: the latest loudness, ~30 times a second.
+        meter = Task { [weak self] in
+            while let self, running, !Task.isCancelled {
+                onLevel(audio.latestLevel)
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+        }
     }
 
     func stop() {
         guard running else { return }
         running = false
-        task?.cancel()
-        request?.endAudio()
-        task = nil
-        request = nil
+        listening?.cancel()
+        listening = nil
+        meter?.cancel()
+        meter = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         onLevel(0)
     }
 
-    /// A fresh recognition task (at the start, after a jump, and when one ends: tasks don't
-    /// run forever).
-    private func restartRecognition() {
-        guard running, let recognizer else { return }
-        task?.cancel()
-        request?.endAudio()
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        request.requiresOnDeviceRecognition = true  // never sent to Apple
-        request.taskHint = .dictation
-        // The script's own words help it spell names and jargon the way the script does.
-        request.contextualStrings = Array(Set(follower.words.map(\.text).filter { $0.count > 5 }).prefix(100))
-        self.request = request
-        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            let text = result?.bestTranscription.formattedString
-            let final = result?.isFinal ?? (error != nil)
-            Task { @MainActor in self?.heard(text, final: final) }
-        }
-    }
-
-    private func heard(_ text: String?, final: Bool) {
-        if let text, !text.isEmpty {
-            if let place = follower.hear(earlier + " " + text) {
+    /// While running: the last 4 s transcribed every ~0.6 s, only when someone spoke in the
+    /// last 1.5 s (silence makes Whisper invent words — "thanks for watching" among them).
+    private func listen() async {
+        var heard = 0
+        var ticks = 0
+        while running, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(600))
+            ticks += 1
+            if ticks % 5 == 0 {
+                Log.app.notice("Studio: loudest \(String(format: "%.2f", self.audio.takePeak()), privacy: .public), \(self.audio.last(seconds: 4).count, privacy: .public) samples, model \(Self.transcribe == nil ? "none" : "set", privacy: .public)")
+            }
+            guard running, audio.spokeRecently(within: 1.5), let transcribe = Self.transcribe else { continue }
+            let samples = audio.last(seconds: 4)
+            guard samples.count > 8_000 else { continue }
+            // The script just ahead steers Whisper's spelling of names and jargon.
+            let ahead = follower.words.dropFirst(max(0, (follower.place?.word ?? 0) - 4)).prefix(24).map(\.text).joined(separator: " ")
+            guard let text = await transcribe(samples, ahead), !text.isEmpty else { continue }
+            heard += 1
+            if heard <= 3 || heard % 20 == 0 { Log.app.notice("Studio: heard \(text.split(separator: " ").count, privacy: .public) words") }
+            if let place = follower.hear(text) {
                 if place.line != lastLine { Log.app.notice("Studio: voice at line \(place.line, privacy: .public)") }
                 lastLine = place.line
                 onPlace(place)
             }
-            if final { earlier = String((earlier + " " + text).suffix(200)) }
         }
-        if final { restartRecognition() }
+    }
+
+    /// The microphone tap: on the audio thread, never the main actor.
+    nonisolated private static func tap(audio: Recording, converter: AVAudioConverter, target: AVAudioFormat) -> AVAudioNodeTapBlock {
+        nonisolated(unsafe) let converter = converter
+        return { buffer, _ in
+            audio.append(convert(buffer, with: converter, to: target), level: level(buffer))
+        }
     }
 
     /// Loudness 0…1 from a buffer (RMS, on a speech-friendly scale).
@@ -124,14 +132,56 @@ final class VoiceFollower {
         return Double(min(1, max(0, (decibels + 50) / 40)))  // −50 dB → 0, −10 dB → 1
     }
 
-    private static func allowed() async -> Bool {
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .authorized: return true
-        case .notDetermined:
-            return await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+    nonisolated private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter, to format: AVAudioFormat) -> [Float] {
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * format.sampleRate / buffer.format.sampleRate) + 32
+        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return [] }
+        nonisolated(unsafe) var given = false
+        var error: NSError?
+        converter.convert(to: output, error: &error) { _, status in
+            if given { status.pointee = .noDataNow; return nil }
+            given = true
+            status.pointee = .haveData
+            return buffer
+        }
+        guard error == nil, let data = output.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: data, count: Int(output.frameLength)))
+    }
+
+    /// The microphone's last few seconds at 16 kHz, and when speech was last loud enough.
+    private final class Recording: Sendable {
+        private struct State { var samples: [Float] = []; var spokeAt = Date.distantPast; var peak = 0.0; var level = 0.0 }
+        private let state = OSAllocatedUnfairLock(initialState: State())
+        private static let keep = 16_000 * 6
+        /// Speech, not room noise (on the level scale above: about −38 dB).
+        private static let speaking = 0.3
+
+        func append(_ samples: [Float], level: Double) {
+            state.withLock { state in
+                state.samples += samples
+                if state.samples.count > Self.keep { state.samples.removeFirst(state.samples.count - Self.keep) }
+                if level > Self.speaking { state.spokeAt = Date() }
+                state.peak = max(state.peak, level)
+                state.level = level
             }
-        default: return false
+        }
+
+        var latestLevel: Double { state.withLock { $0.level } }
+
+        /// The loudest level since last asked (for the log).
+        func takePeak() -> Double {
+            state.withLock { state in defer { state.peak = 0 }; return state.peak }
+        }
+
+        func last(seconds: Double) -> [Float] {
+            state.withLock { Array($0.samples.suffix(Int(seconds * 16_000))) }
+        }
+
+        func spokeRecently(within seconds: Double) -> Bool {
+            state.withLock { Date().timeIntervalSince($0.spokeAt) < seconds }
+        }
+
+        func clear() {
+            state.withLock { $0.samples.removeAll() }
         }
     }
 }

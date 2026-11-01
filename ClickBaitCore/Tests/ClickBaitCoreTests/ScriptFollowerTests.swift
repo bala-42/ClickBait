@@ -50,4 +50,12 @@ struct ScriptFollowerTests {
         follower.resume(atLine: 5)
         #expect(follower.hear("up here the notch holds")?.line == 5)
     }
+
+    @Test func twoCommonWordsDontLeapFarAhead() {
+        var follower = ScriptFollower(readable: Self.script + "\nAnd that is all from me, thank you so much.")
+        follower.hear("hi I'm bala this is clickbait")
+        // "thank you" is far ahead; two words alone don't take reading there.
+        #expect(follower.hear("thank you") == nil)
+        #expect(follower.place?.line == 1)
+    }
 }

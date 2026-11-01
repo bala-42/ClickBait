@@ -58,7 +58,9 @@ final class StudioModel {
                                   onPlace: { [weak self] in self?.place = $0 },
                                   onLevel: { [weak self] new in
                                       guard let self else { return }
-                                      level = level * 0.6 + new * 0.4  // smoothed, so the ring breathes
+                                      // A fast rise and a slow fall: the beam jumps with each syllable
+                                      // and eases away, like a VU meter.
+                                      level = new > level ? level * 0.3 + new * 0.7 : level * 0.85 + new * 0.15
                                   },
                                   onProblem: { [weak self] message in
                                       self?.problem = message

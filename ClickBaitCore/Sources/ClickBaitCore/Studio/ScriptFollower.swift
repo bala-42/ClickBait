@@ -67,8 +67,11 @@ public struct ScriptFollower: Sendable {
                 best = (end, score)
             }
         }
-        // Two words matching in order is a confident match; one only right where reading is.
-        guard let best, best.score >= 2 || (best.score >= 1 && best.end - from >= 0 && best.end - from <= 2 && heard.count <= 2)
+        // Two words matching in order is a confident match nearby; a leap of more than a dozen
+        // words needs three (two common ones, "in it", jumped ahead and back in the live test);
+        // one word only right where reading is.
+        let needed: Double = best.map { $0.end - from > 12 ? 3 : 2 } ?? 2
+        guard let best, best.score >= needed || (best.score >= 1 && best.end - from >= 0 && best.end - from <= 2 && heard.count <= 2)
         else { return nil }
         guard best.end != place?.word else { return nil }
         place = Self.place(of: best.end, in: words)

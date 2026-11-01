@@ -330,6 +330,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Drops on the notch's shelf say how they went in the companion's pill.
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
+        // Studio's prompter hears you through the same speech model as dictation.
+        VoiceFollower.transcribe = { [weak self] samples, prompt in
+            guard let self, speech.isReady else { return nil }
+            return try? await speech.transcribe(samples, prompt: prompt)
+        }
+        #if DEBUG
+        // Studio from the outside, for live tests: start or stop the prompter.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.studio"), object: nil, queue: .main) { note in
+            let stop = note.object as? String == "stop"
+            MainActor.assumeIsolated {
+                if stop { StudioModel.shared.stopPrompting() } else { StudioModel.shared.startPrompting() }
+            }
+        }
+        #endif
         // Setup's last step: a tapped suggestion is asked for real, in the chat.
         _ = NotificationCenter.default.addObserver(forName: .clickBaitAskFromSetup, object: nil, queue: .main) { [weak self] note in
             guard let question = note.object as? String else { return }
