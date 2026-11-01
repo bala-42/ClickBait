@@ -248,7 +248,15 @@ public enum CommandParser {
             return ActionRequest(name: "compress")
         case "merge", "combine", "join":
             return ActionRequest(name: "merge")
-        case "convert", "make", "turn", "save", "export":
+        case "convert", "make", "turn", "save", "export", "extract", "get", "pull":
+            // Videos (user's ask, 2026-11-01): another container, the sound alone, or a GIF.
+            if rest.contains("gif") || rest.contains("gifs") { return ActionRequest(name: "convert_videos", argument: "gif") }
+            for format in ["mp4", "mov", "m4v", "m4a"] where rest.contains(format) {
+                return ActionRequest(name: "convert_videos", argument: format)
+            }
+            if rest.contains("mp3") || rest.contains("audio") || rest.contains("sound") {
+                return ActionRequest(name: "convert_videos", argument: "m4a")
+            }
             if rest.contains("jpeg") || rest.contains("jpg") || rest.contains("jpegs") || rest.contains("jpgs") {
                 return ActionRequest(name: "convert_images", argument: "jpeg")
             }

@@ -173,6 +173,17 @@ enum AXInspector {
         return found.filter { seen.insert("\($0.role)|\($0.label)|\(Int($0.frame.x))|\(Int($0.frame.y))").inserted }
     }
 
+    /// The file open in the front app's window (QuickTime's video, Preview's PDF…), from its
+    /// `AXDocument`; nil for web pages, unsaved documents and apps that don't say.
+    static func openDocument(frontmostPID pid: pid_t?) -> URL? {
+        guard isTrusted, let pid else { return nil }
+        let app = element(appElement(pid))
+        guard let window = app.element(kAXFocusedWindowAttribute) ?? app.element(kAXMainWindowAttribute),
+              let document = window.string(kAXDocumentAttribute), let url = URL(string: document), url.isFileURL,
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
     /// The web page in front: its address and title, from the browser window
     /// (`AXDocument`) or its web area (`AXURL`, deep inside Safari's splits and tab
     /// groups). Safari, Chrome and other WebKit/Chromium browsers expose one of them.

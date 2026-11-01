@@ -47,6 +47,8 @@ public enum FileAction: Equatable, Sendable {
     /// PDFs and images become one PDF; text files become one text file.
     case merge
     case convertImages(to: ImageFormat)
+    /// Videos to another container or kind: MP4, MOV, M4V, audio only (M4A), an animated GIF.
+    case convertVideos(to: MediaFormat)
     case moveIntoNewFolder(name: String?)
     /// Into a named place; nothing is ever overwritten (clashing names get a number).
     case moveTo(Place)
@@ -65,6 +67,17 @@ public enum FileAction: Equatable, Sendable {
     /// File orders only act while Finder is frontmost, so "delete this" in a text
     /// editor can never touch files.
     public static let requiredFrontmostApp = "com.apple.finder"
+
+    /// Makes new files and leaves the originals as they are: these may use files from the
+    /// shelf or the document open in front, not only Finder's selection (user's ask,
+    /// 2026-11-01). Anything that changes or removes files (trash, move, rename) stays
+    /// Finder-only: "delete this" in a text editor must never touch files.
+    public var makesCopies: Bool {
+        switch self {
+        case .compress, .merge, .convertImages, .convertVideos, .shrink: true
+        default: false
+        }
+    }
 }
 
 public enum MediaKey: String, Equatable, Sendable {
@@ -85,6 +98,12 @@ public enum ScreenshotKind: String, Equatable, Sendable {
 public enum ImageFormat: String, Equatable, Sendable {
     case jpeg
     case png
+}
+
+public enum MediaFormat: String, Equatable, Sendable, CaseIterable {
+    case mp4, mov, m4v, m4a, gif
+
+    public var label: String { self == .m4a ? "audio (M4A)" : rawValue.uppercased() }
 }
 
 public enum ActionError: Error, Equatable, Sendable {
@@ -156,6 +175,12 @@ public enum ActionCatalog {
                 return .failure(.invalidArgument("I can convert images to JPEG or PNG"))
             }
             return .success(.file(.convertImages(to: format)))
+        case "convert_videos":
+            let wanted = argument.lowercased()
+            guard let format = MediaFormat(rawValue: ["mp3", "audio", "sound", "aac"].contains(wanted) ? "m4a" : wanted) else {
+                return .failure(.invalidArgument("I can turn videos into MP4, MOV, M4V, audio (M4A) or a GIF"))
+            }
+            return .success(.file(.convertVideos(to: format)))
         case "new_folder":
             return .success(.file(.moveIntoNewFolder(name: detail)))
         case "make_folder":
@@ -224,6 +249,7 @@ public enum ActionCatalog {
         case .file(.compress): "Zip \(files)?"
         case .file(.merge): "Combine \(files) into one PDF?"
         case .file(.convertImages(let format)): "Convert \(files) to \(format.rawValue.uppercased())?"
+        case .file(.convertVideos(let format)): "Turn \(files) into \(format.label)?"
         case .file(.shrink): "Make smaller copies of \(files)?"
         case .openApp(let name): "Open \(name)?"
         case .setVolume(let percent): "Set the volume to \(percent)%?"

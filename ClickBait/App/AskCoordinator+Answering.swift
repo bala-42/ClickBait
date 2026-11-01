@@ -1013,7 +1013,9 @@ extension AskCoordinator {
     /// ("delete this" in a text editor must never touch files).
     func isUnknownApp(_ command: ActionRequest) -> Bool {
         if command.name == "open_app" { return AppLocator.url(forAppNamed: command.argument ?? "") == nil }
-        if case .success(.file) = ActionCatalog.resolve(command, allowedShortcuts: []) {
+        if case .success(.file(let action)) = ActionCatalog.resolve(command, allowedShortcuts: []) {
+            // Copy-making actions also work on the shelf's selection or the document in front.
+            if FileActions.otherSource(for: action, frontmostPID: frontmostPID, frontmostBundleID: frontmostBundleID) != nil { return false }
             return frontmostBundleID != FileAction.requiredFrontmostApp
         }
         return false
@@ -1148,6 +1150,7 @@ extension AskCoordinator {
             case .compress: "Compressing…"
             case .merge: "Merging…"
             case .convertImages: "Converting…"
+            case .convertVideos(let format): format == .gif ? "Making a GIF…" : "Converting to \(format.label)…"
             case .moveIntoNewFolder: "Making a new folder…"
             case .moveTo(let place): "Moving to \(place.displayName)…"
             case .copyTo(let place): "Copying to \(place.displayName)…"

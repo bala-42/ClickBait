@@ -153,6 +153,12 @@ final class NotchController {
         model = Model(note: Note(text: settings.notchNote, save: { [weak settings] in settings?.notchNote = $0 }))
         StudioModel.shared.foldNotch = { [weak self] in self?.apply(.escape) }
         StudioModel.shared.notchChanged = { [weak self] in self?.prompterChanged() }
+        // File actions can work on the shelf's selected files, and put what they make on it.
+        FileActions.shelfSelection = { [weak self] in
+            guard let self else { return [] }
+            return shelf.files.filter { shelf.selectedFiles.contains($0) }
+        }
+        FileActions.addToShelf = { [weak self] urls in self?.shelf.add(urls) }
         music.spotifyArtworkAllowed = { [weak settings] in
             guard let settings else { return false }
             return settings.spotifyArtworkAlways || settings.internet.isOn

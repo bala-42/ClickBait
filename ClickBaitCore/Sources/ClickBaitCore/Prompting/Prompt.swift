@@ -258,6 +258,7 @@ public enum Prompt {
         like "receipts"; "new folder" for one just made) — the files selected in Finder
         - rename (detail: the new name), trash, compress, merge, shrink — the files selected in Finder
         - convert_images (argument: jpeg or png)
+        - convert_videos (argument: mp4, mov, m4v, m4a for the audio alone, or gif)
         - make_note (detail: the note's text), add_reminder (detail: what to be reminded of)
         - media (argument: play_pause, next or previous)
         - screenshot (argument: full, area or window)

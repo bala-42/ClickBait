@@ -25,19 +25,45 @@ enum FileActionError: LocalizedError {
     }
 }
 
-/// Runs a `FileAction` on the files selected in Finder. New files go next to the
-/// originals with names that never overwrite anything, and are revealed in Finder.
-/// Originals are never modified; "move to Trash" is recoverable.
+/// Runs a `FileAction` on the files chosen: for actions that only make new files
+/// (`FileAction.makesCopies`), the files selected on the shelf, else the document open in the
+/// app in front, else Finder's selection (user's ask, 2026-11-01: "why only from Finder?");
+/// for the rest, Finder's selection. New files go next to the originals with names that never
+/// overwrite anything, and are revealed in Finder (or put on the shelf, when they came from
+/// it). Originals are never modified; "move to Trash" is recoverable.
 enum FileActions {
+    /// Set by the notch: the shelf's selected files, and putting new files on the shelf.
+    @MainActor static var shelfSelection: () -> [URL] = { [] }
+    @MainActor static var addToShelf: ([URL]) -> Void = { _ in }
+
+    /// Where the files for `action` come from right now, without asking Finder; nil means Finder.
+    @MainActor
+    static func otherSource(for action: FileAction, frontmostPID: pid_t?, frontmostBundleID: String?) -> (files: [URL], shelf: Bool)? {
+        guard action.makesCopies else { return nil }
+        let shelf = shelfSelection()
+        if !shelf.isEmpty { return (shelf, true) }
+        if frontmostBundleID != FileAction.requiredFrontmostApp, let document = AXInspector.openDocument(frontmostPID: frontmostPID) {
+            return ([document], false)
+        }
+        return nil
+    }
+
     @MainActor
     static func run(_ action: FileAction) async throws -> String {
-        let selection = try await FinderSelection.read()
+        let front = NSWorkspace.shared.frontmostApplication
+        let source = otherSource(for: action, frontmostPID: front?.processIdentifier, frontmostBundleID: front?.bundleIdentifier)
+        let selection: [URL]
+        if let source { selection = source.files } else { selection = try await FinderSelection.read() }
         guard !selection.isEmpty else { throw FileActionError.nothingSelected }
 
         let (message, reveal): (String, [URL]) = try await Task.detached(priority: .userInitiated) {
             try await perform(action, on: selection)
         }.value
-        if !reveal.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(reveal) }
+        if source?.shelf == true {
+            addToShelf(reveal)
+        } else if !reveal.isEmpty {
+            NSWorkspace.shared.activateFileViewerSelecting(reveal)
+        }
         return message
     }
 
@@ -46,6 +72,7 @@ enum FileActions {
         case .compress: return try compress(files)
         case .merge: return try merge(files)
         case .convertImages(let format): return try convert(files, to: format)
+        case .convertVideos(let format): return try await convertVideos(files, to: format)
         case .moveIntoNewFolder(let name): return try moveIntoNewFolder(files, name: name)
         case .moveTo(let place): return try transfer(files, to: place, copying: false)
         case .copyTo(let place): return try transfer(files, to: place, copying: true)
@@ -131,6 +158,75 @@ enum FileActions {
         let skipped = files.count - images.count
         let note = skipped > 0 ? " (skipped \(skipped) that weren't images)" : ""
         return ("Converted \(count(images)) to \(format == .jpeg ? "JPEG" : "PNG")\(note)", outputs)
+    }
+
+    /// Videos to MP4, MOV or M4V (the streams repackaged as they are when the container takes
+    /// them, else re-encoded), to their sound alone (M4A), or to an animated GIF.
+    private static func convertVideos(_ files: [URL], to format: MediaFormat) async throws -> (String, [URL]) {
+        let videos = files.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .movie) == true }
+        guard !videos.isEmpty else { throw FileActionError.unsupported("None of the selected files are videos.") }
+        var outputs: [URL] = []
+        for file in videos {
+            let folder = file.deletingLastPathComponent()
+            let output = folder.appending(path: try uniqueName(base: file.deletingPathExtension().lastPathComponent,
+                                                               extension: format.rawValue, in: folder))
+            switch format {
+            case .gif: try await makeGIF(file, to: output)
+            case .m4a: try await export(file, to: output, as: .m4a, presets: [AVAssetExportPresetAppleM4A])
+            case .mp4: try await export(file, to: output, as: .mp4, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+            case .mov: try await export(file, to: output, as: .mov, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+            case .m4v: try await export(file, to: output, as: .m4v, presets: [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality])
+            }
+            outputs.append(output)
+        }
+        let skipped = files.count - videos.count
+        let note = skipped > 0 ? " (skipped \(skipped) that weren't videos)" : ""
+        return ("Turned \(count(videos)) into \(format.label)\(note)", outputs)
+    }
+
+    /// The first preset that can write `type` (passthrough first: no re-encoding, no loss).
+    private static func export(_ file: URL, to output: URL, as type: AVFileType, presets: [String]) async throws {
+        let asset = AVURLAsset(url: file)
+        var lastError: Error?
+        for preset in presets {
+            guard let session = AVAssetExportSession(asset: asset, presetName: preset),
+                  await session.compatibleFileTypes.contains(type) else { continue }
+            do {
+                try? FileManager.default.removeItem(at: output)
+                try await session.export(to: output, as: type)
+                return
+            } catch {
+                lastError = error
+            }
+        }
+        try? FileManager.default.removeItem(at: output)
+        throw FileActionError.failed(lastError?.localizedDescription ?? "can't make \(type.rawValue) from \(file.lastPathComponent)")
+    }
+
+    /// An animated GIF: up to 150 frames spread across the video (at most 10 a second), 480 px
+    /// wide, looping.
+    private static func makeGIF(_ file: URL, to output: URL) async throws {
+        let asset = AVURLAsset(url: file)
+        let seconds = try await asset.load(.duration).seconds
+        guard seconds.isFinite, seconds > 0 else { throw FileActionError.failed("couldn't read \(file.lastPathComponent)") }
+        let frames = max(2, min(150, Int(seconds * 10)))
+        let step = seconds / Double(frames)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 480, height: 480)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = CMTime(seconds: step, preferredTimescale: 600)
+        guard let destination = CGImageDestinationCreateWithURL(output as CFURL, UTType.gif.identifier as CFString, frames, nil) else {
+            throw FileActionError.failed("couldn't create \(output.lastPathComponent)")
+        }
+        CGImageDestinationSetProperties(destination, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
+        let delay = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: step]] as CFDictionary
+        for index in 0..<frames {
+            let time = CMTime(seconds: Double(index) * step, preferredTimescale: 600)
+            guard let frame = try? await generator.image(at: time).image else { continue }
+            CGImageDestinationAddImage(destination, frame, delay)
+        }
+        guard CGImageDestinationFinalize(destination) else { throw FileActionError.failed("couldn't save \(output.lastPathComponent)") }
     }
 
     private static func moveIntoNewFolder(_ files: [URL], name: String?) throws -> (String, [URL]) {
