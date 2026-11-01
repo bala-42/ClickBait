@@ -67,7 +67,18 @@ extension AskCoordinator {
             report("No model is set up for this question.", for: flow)
             return
         }
-        let context = flow.context
+        var context = flow.context
+        // In a browser: the page's address, read when it was asked (waits at most 0.4 s for it).
+        if context.pageAddress == nil, let reading = flow.browserTab {
+            let tab = await withTaskGroup(of: BrowserTab?.self) { group in
+                group.addTask { await reading.value }
+                group.addTask { try? await Task.sleep(for: .milliseconds(400)); return nil }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+            context.pageAddress = tab.flatMap { ScreenContext.cleanAddress($0.url) }
+        }
         flow.phase = .buildingRequest
         if !queued, conversation != nil, !chatShown { conversation = nil }  // an earlier pointing answer: start fresh
         let history = (queued ? flow.conversation : conversation)?.history ?? []

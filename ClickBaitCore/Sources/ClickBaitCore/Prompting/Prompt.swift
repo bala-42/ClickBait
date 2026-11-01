@@ -367,6 +367,7 @@ public enum Prompt {
             if let app = request.context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
             if let browser = request.browser, !browser.isEmpty { lines.append("The user's web browser: \(browser)") }
             if let title = request.context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
+            if let page = request.context.pageAddress, !page.isEmpty { lines.append("Web page: \(page)") }
             if !request.menuOutline.isEmpty {
                 lines.append("The app's menu bar (menu ▸ item):")
                 lines.append(contentsOf: request.menuOutline)
@@ -438,6 +439,7 @@ public enum Prompt {
         let context = request.context
         if let app = context.appName, !app.isEmpty { lines.append("Frontmost app: \(app)") }
         if let title = context.windowTitle, !title.isEmpty { lines.append("Window title: \(title)") }
+        if let page = context.pageAddress, !page.isEmpty { lines.append("Web page: \(page)") }
         if let focused = context.focusedElement, !focused.isEmpty { lines.append("Focused element: \(focused)") }
         if !request.elements.isEmpty {
             lines.append("")

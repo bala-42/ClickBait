@@ -9,6 +9,19 @@ public struct ScreenContext: Equatable, Sendable {
     /// The front window's frame (AppKit's accessibility frame, top-left origin): with the
     /// title, how "go there!" finds the window a background job came from. Not sent to the model.
     public var windowFrame: Rect?
+    /// In a browser, the page's address, cleaned (`cleanAddress`): the model knows which site
+    /// and page it's looking at (user's ask, 2026-11-01). Only the local brain gets it.
+    public var pageAddress: String?
+
+    /// "https://www.example.com/a/b?token=1#x" → "example.com/a/b": web pages only; the query
+    /// and fragment (where tokens and personal bits live) dropped; at most 160 characters.
+    public static func cleanAddress(_ url: String) -> String? {
+        guard let parts = URLComponents(string: url), let scheme = parts.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", var host = parts.host?.lowercased(), !host.isEmpty else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        let path = parts.path == "/" ? "" : parts.path
+        return String((host + path).prefix(160))
+    }
 
     public init(appName: String? = nil, windowTitle: String? = nil, focusedElement: String? = nil) {
         self.appName = appName
