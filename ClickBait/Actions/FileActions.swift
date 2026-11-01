@@ -41,7 +41,7 @@ enum FileActions {
         return message
     }
 
-    private static func perform(_ action: FileAction, on files: [URL]) async throws -> (String, [URL]) {
+    static func perform(_ action: FileAction, on files: [URL]) async throws -> (String, [URL]) {
         switch action {
         case .compress: return try compress(files)
         case .merge: return try merge(files)
@@ -310,19 +310,85 @@ enum FileActions {
         }
     }
 
+    /// HEVC at about half the original's bitrate (at least 0.8 Mbit/s), at most 1080p, AAC
+    /// audio at 128 kbit/s. Apple's HEVC 1080p preset picks its own, higher bitrate, so already
+    /// efficient videos (a 1080p H.264 at 3.3 Mbit/s here) came out no smaller and were
+    /// discarded: "it can not shrink my videos" (user's report, 2026-11-01).
     private static func shrinkVideo(_ file: URL, to output: URL) async throws {
         let asset = AVURLAsset(url: file)
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVC1920x1080) else {
+        guard let video = try await asset.loadTracks(withMediaType: .video).first else {
+            throw FileActionError.failed("\(file.lastPathComponent) has no picture to shrink")
+        }
+        let (natural, transform, rate) = try await video.load(.naturalSize, .preferredTransform, .estimatedDataRate)
+        let audio = try await asset.loadTracks(withMediaType: .audio).first
+        // Up to 1080 on the short side, the shape kept; even sizes, as encoders want.
+        let scale = min(1, 1080 / max(1, min(natural.width, natural.height)))
+        let width = Int((natural.width * scale / 2).rounded()) * 2, height = Int((natural.height * scale / 2).rounded()) * 2
+        let bitrate = max(800_000, Double(rate) * 0.5 * Double(scale * scale))
+
+        let reader = try AVAssetReader(asset: asset)
+        let videoOut = AVAssetReaderTrackOutput(track: video, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange])
+        videoOut.alwaysCopiesSampleData = false
+        reader.add(videoOut)
+        var audioOut: AVAssetReaderTrackOutput?
+        if let audio {
+            let out = AVAssetReaderTrackOutput(track: audio, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
+            reader.add(out)
+            audioOut = out
+        }
+
+        let writer = try AVAssetWriter(outputURL: output, fileType: .mov)
+        let videoIn = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: width, AVVideoHeightKey: height,
+            AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bitrate]
+        ])
+        videoIn.transform = transform
+        videoIn.expectsMediaDataInRealTime = false
+        writer.add(videoIn)
+        var audioIn: AVAssetWriterInput?
+        if audioOut != nil {
+            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 2, AVSampleRateKey: 44_100, AVEncoderBitRateKey: 128_000
+            ])
+            input.expectsMediaDataInRealTime = false
+            writer.add(input)
+            audioIn = input
+        }
+
+        guard reader.startReading(), writer.startWriting() else {
             throw FileActionError.failed("can't re-encode \(file.lastPathComponent)")
         }
-        session.shouldOptimizeForNetworkUse = true
-        if #available(macOS 15.0, *) {
-            try await session.export(to: output, as: .mov)
-        } else {
-            session.outputURL = output
-            session.outputFileType = .mov
-            await session.export()
-            if let error = session.error { throw FileActionError.failed(error.localizedDescription) }
+        writer.startSession(atSourceTime: .zero)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await Self.pump(videoOut, into: videoIn, label: "video") }
+            if let audioOut, let audioIn { group.addTask { await Self.pump(audioOut, into: audioIn, label: "audio") } }
+        }
+        if reader.status == .failed {
+            writer.cancelWriting()
+            throw FileActionError.failed(reader.error?.localizedDescription ?? "couldn't read \(file.lastPathComponent)")
+        }
+        await writer.finishWriting()
+        if writer.status != .completed {
+            throw FileActionError.failed(writer.error?.localizedDescription ?? "couldn't write \(output.lastPathComponent)")
+        }
+    }
+
+    /// Copies one track's samples from the reader into the writer, as fast as the writer takes them.
+    private static func pump(_ output: AVAssetReaderTrackOutput, into input: AVAssetWriterInput, label: String) async {
+        nonisolated(unsafe) let output = output
+        nonisolated(unsafe) let input = input
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "clickbait.shrink.\(label)")) {
+                while input.isReadyForMoreMediaData {
+                    guard let sample = output.copyNextSampleBuffer() else {
+                        input.markAsFinished()
+                        done.resume()
+                        return
+                    }
+                    input.append(sample)
+                }
+            }
         }
     }
 
