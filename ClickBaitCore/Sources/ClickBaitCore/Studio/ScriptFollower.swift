@@ -71,11 +71,30 @@ public struct ScriptFollower: Sendable {
         // words needs three (two common ones, "in it", jumped ahead and back in the live test);
         // one word only right where reading is.
         let needed: Double = best.map { $0.end - from > 12 ? 3 : 2 } ?? 2
-        guard let best, best.score >= needed || (best.score >= 1 && best.end - from >= 0 && best.end - from <= 2 && heard.count <= 2)
-        else { return nil }
-        guard best.end != place?.word else { return nil }
-        place = Self.place(of: best.end, in: words)
+        let nearby = best.flatMap { best in
+            best.score >= needed || (best.score >= 1 && best.end - from >= 0 && best.end - from <= 2 && heard.count <= 2) ? best.end : nil
+        }
+        // Nothing nearby: anywhere in the script, on four words in order (the user skipped a long
+        // paragraph and reading never found them again: it only looked 40 words ahead).
+        guard let end = nearby ?? Self.anywhere(heard, in: words, near: from) else { return nil }
+        guard end != place?.word else { return nil }
+        place = Self.place(of: end, in: words)
         return place
+    }
+
+    /// The best place for the heard words in the whole script, if four or more match in order
+    /// (ties to the nearest after where reading was).
+    static func anywhere(_ heard: [String], in words: [Word], near from: Int) -> Int? {
+        guard heard.count >= 4 else { return nil }
+        var best: (end: Int, score: Double)?
+        for end in words.indices {
+            let score = score(heard, endingAt: end, in: words)
+            guard score >= 3.6 else { continue }
+            if best == nil || score > best!.score || (score == best!.score && abs(end - from) < abs(best!.end - from)) {
+                best = (end, score)
+            }
+        }
+        return best?.end
     }
 
     /// The heard words against the script's words ending at `end`, newest last: each match

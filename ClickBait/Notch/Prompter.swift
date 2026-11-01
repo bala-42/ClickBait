@@ -280,24 +280,12 @@ struct PrompterView: View {
     /// bottom-right corner resizes.
     private var controls: some View {
         HStack(spacing: 6) {
-            // Follow my voice (on from the start), or ▶ at a set speed.
-            Button {
-                if studio.following { studio.stopFollowing() } else { studio.startFollowing() }
-            } label: {
-                Image(systemName: studio.following ? "waveform" : "mic.fill").font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(studio.following ? Color.black : MoodyLook.cream).frame(width: 26, height: 26)
-                    .background(Circle().fill(studio.following ? MoodyLook.cream : MoodyLook.slate))
-                    .contentShape(Circle())
+            // One button (user: "why is there a voice button and a play button… confusing"):
+            // it follows your voice — at your pace — or it's paused. ⌃⌘P does the same.
+            PrompterButton(symbol: studio.following ? "pause.fill" : "play.fill",
+                           help: studio.following ? "Pause (⌃⌘P)" : "Carry on: follows your voice (⌃⌘P)") {
+                studio.togglePause()
             }
-            .buttonStyle(.plain)
-            .help(studio.following ? "Following your voice: click to stop" : "Follow my voice")
-            .accessibilityLabel(studio.following ? "Stop following my voice" : "Follow my voice")
-            PrompterButton(symbol: studio.playing ? "pause.fill" : "play.fill", help: studio.playing ? "Pause" : "Scroll at a set speed") {
-                if studio.following { studio.stopFollowing() }
-                studio.playing.toggle()
-            }
-            PrompterButton(symbol: "tortoise.fill", help: "Slower") { studio.speed = max(6, studio.speed - 6) }
-            PrompterButton(symbol: "hare.fill", help: "Faster") { studio.speed = min(120, studio.speed + 6) }
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }
             Spacer()

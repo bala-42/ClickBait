@@ -282,15 +282,12 @@ final class StudioModel {
 
     /// Pause, or carry on: following the voice stops and resumes; a set-speed scroll pauses and plays.
     func togglePause() {
+        playing = false
         if following {
             stopFollowing()
             pausedFollowing = true
-        } else if playing {
-            playing = false
-        } else if pausedFollowing {
-            pausedFollowing = false
-            startFollowing()
         } else {
+            pausedFollowing = false
             startFollowing()
         }
     }

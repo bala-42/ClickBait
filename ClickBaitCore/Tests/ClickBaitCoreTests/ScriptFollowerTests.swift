@@ -70,4 +70,17 @@ struct ScriptFollowerTests {
         #expect(place?.line == 1)
         #expect(abs((place?.fraction ?? 0) - 6.5 / 14) < 0.001)
     }
+
+    @Test func findsTheReaderAfterALongSkip() {
+        let long = "Hello\nHi I'm Bala.\n" + String(repeating: "This sentence is only padding to make a long paragraph here. ", count: 8)
+            + "\nYou can find a picture just by telling it what's in it.\nBye for now."
+        var follower = ScriptFollower(readable: long)
+        follower.hear("hi I'm bala")
+        // Skipped the padding (80 words): found again on four words in order.
+        #expect(follower.hear("you can find a picture just by telling")?.line == 3)
+        // Three words far away don't move it.
+        var other = ScriptFollower(readable: long)
+        other.hear("hi I'm bala")
+        #expect(other.hear("bye for now") == nil)
+    }
 }
