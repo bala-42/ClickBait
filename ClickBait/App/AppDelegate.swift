@@ -379,7 +379,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let text = note.object as? String else { return }
             MainActor.assumeIsolated {
                 guard let self, let request = CommandParser.parse(text, allowedShortcuts: []) else { Log.app.notice("Debug order: not an order"); return }
-                Task { _ = await self.coordinator.perform(request, speak: false) }
+                Task {
+                    if let action = self.coordinator.asksFirst(request) {
+                        await self.coordinator.handleOrder(action, request: request, speak: false, from: .clearOrder)
+                    } else {
+                        _ = await self.coordinator.perform(request, speak: false)
+                    }
+                }
             }
         }
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.studio"), object: nil, queue: .main) { note in

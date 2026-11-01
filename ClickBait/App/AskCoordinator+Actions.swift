@@ -70,7 +70,12 @@ extension AskCoordinator {
                              from source: ActionPolicy.Source) async -> String {
         if ActionPolicy.decide(action, from: source) == .ask {
             var count: Int?
-            if case .file = action { count = try? await FinderSelection.read().count }
+            // The files it will use: the shelf's or the document in front, else Finder's.
+            if case .file(let file) = action {
+                let front = NSWorkspace.shared.frontmostApplication
+                count = FileActions.otherSource(for: file, frontmostPID: front?.processIdentifier, frontmostBundleID: front?.bundleIdentifier)?.files.count
+                if count == nil { count = try? await FinderSelection.read().count }
+            }
             if count == 0 {
                 let message = FileActionError.nothingSelected.localizedDescription
                 if speak { speaker.speak(message) }

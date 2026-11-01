@@ -28,7 +28,9 @@ public enum ActionPolicy {
         switch source {
         case .clearOrder:
             switch action {
-            case .quitApp, .file(.moveToTrash): .ask
+            // Every file order asks first, said clearly or not (user's ask, 2026-11-02: "a
+            // confirmation pill before the work of file manipulation begins").
+            case .quitApp, .file: .ask
             default: .run
             }
         case .modelGuess:

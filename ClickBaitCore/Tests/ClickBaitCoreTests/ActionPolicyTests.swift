@@ -4,10 +4,10 @@ import Testing
 /// The user's rules (2026-10-20): clear words are the approval except binning and quitting;
 /// a guessed order asks before it changes anything.
 struct ActionPolicyTests {
-    @Test func clearOrdersRunExceptTrashAndQuit() {
+    @Test func clearOrdersRunExceptFilesAndQuit() {
         #expect(ActionPolicy.decide(.quitApp("Safari"), from: .clearOrder) == .ask)
         #expect(ActionPolicy.decide(.file(.moveToTrash), from: .clearOrder) == .ask)
-        for action: ResolvedAction in [.openApp("Notes"), .file(.rename(to: "Q3")), .file(.moveTo(.documents)),
+        for action: ResolvedAction in [.openApp("Notes"),
                                        .runShortcut("Focus"), .setWiFi(false), .lockScreen, .makeNote("milk"),
                                        .setVolume(percent: 30)] {
             #expect(ActionPolicy.decide(action, from: .clearOrder) == .run, "\(action)")
@@ -26,6 +26,12 @@ struct ActionPolicyTests {
     @Test func lookingRunsEvenWhenGuessed() {
         for action: ResolvedAction in [.screenshot(.full), .media(.playPause), .openPlace(.downloads), .newFinderWindow, .showDesktop] {
             #expect(ActionPolicy.decide(action, from: .modelGuess) == .run, "\(action)")
+        }
+    }
+
+    @Test func fileOrdersAlwaysAskFirst() {
+        for action: ResolvedAction in [.file(.shrink(toBytes: 50_000_000)), .file(.convert(to: .mp4)), .file(.compress), .file(.rename(to: "X"))] {
+            #expect(ActionPolicy.decide(action, from: .clearOrder) == .ask, "\(action)")
         }
     }
 
