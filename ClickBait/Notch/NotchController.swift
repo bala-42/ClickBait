@@ -238,6 +238,11 @@ final class NotchController {
             model.tab = .mirror
             apply(.clicked)
         }
+        // On the screen with the camera, whatever screen the pointer is on: it opened on the
+        // external display (the main one here), under its menu bar (user's report, 2026-11-01).
+        if inNotch, let camera = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }).flatMap(Self.displayID) {
+            model.activeDisplay = camera
+        }
         place()
     }
 
@@ -254,7 +259,7 @@ final class NotchController {
         primaryPanel?.contentView.map { NotchFrameProbe.measure($0, label: "\(before) → \(after)") }
         #endif
         // Opening from folded: on the display the pointer is on; it stays there until it folds.
-        if before == .collapsed || before == .hidden { model.activeDisplay = Self.displayUnderPointer() }
+        if before == .collapsed || before == .hidden, !StudioModel.shared.inNotch { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
         if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops

@@ -359,6 +359,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch command {
                 case "stop": StudioModel.shared.stopPrompting()
                 case "float": StudioModel.shared.floating.toggle()
+                case "snap":
+                    // The prompter windows' live contents, drawn, for checking their shape.
+                    for (index, window) in NSApp.windows.enumerated() where window.isVisible && window.level == WindowLayers.notch {
+                        if let rep = window.contentView?.sharpRep(scale: 2),
+                           let png = rep.representation(using: .png, properties: [:]) {
+                            try? png.write(to: URL(fileURLWithPath: "/tmp/clickbait-window-\(index).png"))
+                        }
+                    }
                 default: StudioModel.shared.startPrompting()
                 }
             }

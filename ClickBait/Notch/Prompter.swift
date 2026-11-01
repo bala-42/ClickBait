@@ -52,7 +52,14 @@ final class PrompterController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: PrompterView(studio: .shared))
+        let host = NSHostingView(rootView: PrompterView(studio: .shared))
+        // The window itself is rounded on all four corners (only the floating prompter uses it):
+        // the view's own rounding was cropped at the top in the live window (user's report).
+        host.wantsLayer = true
+        host.layer?.cornerRadius = 22
+        host.layer?.cornerCurve = .continuous
+        host.layer?.masksToBounds = true
+        panel.contentView = host
         return panel
     }
 
