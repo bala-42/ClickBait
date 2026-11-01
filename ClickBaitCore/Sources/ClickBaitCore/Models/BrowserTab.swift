@@ -98,16 +98,27 @@ public struct BrowserTab: Equatable, Sendable {
         return tabs.first
     }
 
-    /// Safari: selects the tab (by window id and index, else by URL anywhere), brings its
-    /// window to the front and Safari forward (onto that window's desktop). Returns "true"
-    /// when found.
+    /// The site, for finding the tab again after its address changed: a YouTube playlist moves
+    /// on (`&index=41`) or a timestamp is added, so the exact address no longer matches
+    /// (user's report, 2026-11-01: clicking the notch's cover did nothing). nil: none.
+    public var site: String? {
+        guard let host = URL(string: url)?.host?.lowercased() else { return nil }
+        return host.hasSuffix("youtube.com") ? "youtube.com/watch" : host
+    }
+
+    /// Safari: selects the tab and brings its window and Safari forward (onto that window's
+    /// desktop): the same window and tab still on the same site; else the exact address
+    /// anywhere; else, for YouTube, any video tab. Returns "true" when found.
     public var safariReturnScript: String {
             let url = self.url.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            let site = (self.site ?? self.url).replacingOccurrences(of: "\"", with: "")
+            let youtube = self.site == "youtube.com/watch"
             return """
                 tell application id "\(browser.rawValue)"
                     try
                         set w to window id \(windowID)
-                        if (URL of tab \(tab) of w) is "\(url)" then
+                        set u to URL of tab \(tab) of w
+                        if u is "\(url)" or u contains "\(site)" then
                             set current tab of w to tab \(tab) of w
                             set index of w to 1
                             activate
@@ -126,6 +137,20 @@ public struct BrowserTab: Equatable, Sendable {
                             end repeat
                         end try
                     end repeat
+                \(youtube ? """
+                    repeat with w in windows
+                        try
+                            repeat with t in tabs of w
+                                if (URL of t) contains "youtube.com/watch" then
+                                    set current tab of w to t
+                                    set index of w to 1
+                                    activate
+                                    return "true"
+                                end if
+                            end repeat
+                        end try
+                    end repeat
+                """ : "")
                     return "false"
                 end tell
                 """

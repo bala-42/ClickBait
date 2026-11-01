@@ -247,10 +247,12 @@ final class NotchController {
                 guard !Task.isCancelled, let self, model.state == .expanded else { return }
                 model.settled = true
                 music.refresh()
+                music.follow(true)
                 model.health = await model.checkHealth()
             }
             watchEscape(true)
         } else if before == .expanded {
+            music.follow(false)
             watchEscape(false)
             // The open panel stays built (hidden) now: a recording in its Ask card stops with it.
             if model.tab == .ask { model.voiceCancel() }

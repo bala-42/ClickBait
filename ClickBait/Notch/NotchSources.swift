@@ -119,14 +119,44 @@ final class MusicBridge {
 
     /// Brings the player forward (Music when none has played yet), or YouTube's tab.
     func openPlayer() {
-        guard let tab = youtubeTab, player == nil else { open(player ?? .music); return }
+        guard let tab = youtubeTab, player == nil else {
+            Log.app.notice("Notch cover: opening \(self.player?.name ?? "Music (nothing played yet)", privacy: .public)")
+            open(player ?? .music)
+            return
+        }
         switch tab.browser {
         case .chrome:
             // Whichever Chrome process has the tab (a hidden one can share the bundle id).
-            for app in NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue)
-            where ChromeTabs.select(tab, pid: app.processIdentifier) { break }
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: tab.browser.rawValue)
+            let chrome = apps.first { ChromeTabs.select(tab, pid: $0.processIdentifier) }
+            Log.app.notice("Notch cover: YouTube tab in Chrome \(chrome != nil ? "selected" : "NOT found", privacy: .public) (\(apps.count, privacy: .public) Chrome process(es))")
+            // Selecting the tab doesn't bring Chrome forward from a click in the notch (macOS
+            // ignores an activation asked for by an app that isn't in front: user's report,
+            // 2026-11-01). As "go there" does: accessibility raises it, then it's checked.
+            if let chrome { bringForward(chrome) }
         case .safari:
-            Task { _ = try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name) }
+            Task {
+                let found = (try? await AppleScriptRunner.run(tab.safariReturnScript, app: tab.browser.name)) == "true"
+                Log.app.notice("Notch cover: YouTube tab in Safari \(found ? "selected" : "NOT found", privacy: .public)")
+            }
+        }
+    }
+
+    /// Brings `app` to the front for real (onto its window's desktop), and logs whether it got there.
+    private func bringForward(_ app: NSRunningApplication) {
+        AXInspector.bringToFront(pid: app.processIdentifier)
+        app.activate()
+        Task { @MainActor in
+            for _ in 0..<10 where NSWorkspace.shared.frontmostApplication != app {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            if NSWorkspace.shared.frontmostApplication != app, let url = app.bundleURL {
+                // Last resort: Launch Services always brings a running app forward.
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            }
+            Log.app.notice("Notch cover: \(app.localizedName ?? "the app", privacy: .public) in front \(NSWorkspace.shared.frontmostApplication == app, privacy: .public)")
         }
     }
 
@@ -271,6 +301,7 @@ final class MusicBridge {
         let key = "youtube|\(video.id)"
         // Also once Internet Mode is switched on while the video was showing without its picture.
         if key != artworkKey || (artwork == nil && youtubeArtworkAllowed()) {
+            if key != artworkKey { showSavedCover(for: key) }
             artworkKey = key
             if youtubeArtworkAllowed() { download(video.thumbnail, for: key) } else { setArtwork(CoverCache.image(for: key), for: key) }
         }
@@ -311,7 +342,31 @@ final class MusicBridge {
         isPlaying = state.playing
         (position, duration, positionAt) = (state.position, state.duration, .now)
         if !state.channel.isEmpty { artist = state.channel }
+        // Skipped, or YouTube moved on by itself: a new video, so its title and thumbnail now
+        // (they stayed until the notch was opened again: user's report, 2026-11-01).
+        if let url = state.url, let now = YouTubeVideo(url: url, tabTitle: ""), "youtube|\(now.id)" != artworkKey {
+            refresh()
+        }
         onChange?()
+    }
+
+    @ObservationIgnored private var following: Task<Void, Never>?
+
+    /// While the notch is open: a YouTube video is checked every 2 s (one script in its tab),
+    /// so a skip or autoplay shows at once. Music and Spotify tell ClickBait themselves.
+    func follow(_ on: Bool) {
+        following?.cancel()
+        following = nil
+        guard on else { return }
+        following = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                if youtubeTab != nil, player == nil {
+                    if youtubeScripting == false { refresh() } else { await readYouTube() }
+                }
+            }
+        }
     }
 
     private static func stateScript(_ player: Player) -> String {
@@ -355,8 +410,12 @@ final class MusicBridge {
                 if await runYouTube(script) == "ok" {
                     Log.app.notice("Notch music: \(command, privacy: .public) → YouTube tab")
                     if command == "playpause" { isPlaying.toggle(); position = currentPosition(); positionAt = .now }
-                    try? await Task.sleep(for: .milliseconds(command == "playpause" ? 150 : 900))
+                    try? await Task.sleep(for: .milliseconds(command == "playpause" ? 150 : 600))
                     await readYouTube()
+                    if command != "playpause" {
+                        try? await Task.sleep(for: .milliseconds(900))  // a slow page swaps later
+                        await readYouTube()
+                    }
                 } else {
                     Log.app.notice("Notch music: \(command, privacy: .public) → media key (tab scripting: \(String(describing: self.youtubeScripting), privacy: .public))")
                     switch command {
@@ -434,6 +493,7 @@ final class MusicBridge {
     private func loadArtwork(_ player: Player, url: String?) {
         let key = "\(player.rawValue)|\(title)|\(artist)"
         guard key != artworkKey else { return }
+        showSavedCover(for: key)
         artworkKey = key
         switch player {
         case .music:
@@ -510,6 +570,13 @@ final class MusicBridge {
         }
         Log.app.notice("Notch music: \(videos.count, privacy: .public) YouTube tab(s), none \(asked ? "playing" : "asked", privacy: .public)")
         return (first.tab, first.video, asked ? false : nil)
+    }
+
+    /// A new track: its saved cover at once, else none, instead of the last track's staying up
+    /// until the new one has downloaded.
+    private func showSavedCover(for key: String) {
+        artwork = CoverCache.image(for: key)
+        tint = artwork.flatMap(Self.averageColor)
     }
 
     private func setArtwork(_ image: NSImage?, for key: String) {

@@ -27,4 +27,10 @@ struct YouTubeControlTests {
     @Test func seekNeverGoesNegative() {
         #expect(YouTubeControl.seek(to: -4).contains("v.currentTime=0.0"))
     }
+
+    @Test func theStateSaysWhichVideoIsPlaying() {
+        let state = YouTubeControl.parse("playing\u{1F}3.0\u{1F}200.0\u{1F}Chan\u{1F}https://www.youtube.com/watch?v=abc&index=41")
+        #expect(state?.url == "https://www.youtube.com/watch?v=abc&index=41")
+        #expect(YouTubeControl.readState.contains("location.href"))
+    }
 }

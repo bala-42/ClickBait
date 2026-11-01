@@ -39,6 +39,19 @@ struct BrowserTabTests {
     @Test func safariChecksTheURLAndEscapesIt() {
         let script = BrowserTab(browser: .safari, windowID: 7, tab: 3, title: "t", url: "https://x.com/?q=\"hi\"").safariReturnScript
         #expect(script.contains("window id 7"))
-        #expect(script.contains("(URL of tab 3 of w) is \"https://x.com/?q=\\\"hi\\\"\""))
+        #expect(script.contains("set u to URL of tab 3 of w"))
+        #expect(script.contains("u is \"https://x.com/?q=\\\"hi\\\"\""))
+        #expect(script.contains("(URL of t) is \"https://x.com/?q=\\\"hi\\\"\""))
+    }
+
+    @Test func findsAYouTubeTabAfterItsAddressMovedOn() {
+        let tab = BrowserTab(browser: .safari, windowID: 7, tab: 3, title: "t",
+                             url: "https://www.youtube.com/watch?v=OHlVhhPIcu4&list=RD&index=40")
+        #expect(tab.site == "youtube.com/watch")
+        #expect(tab.safariReturnScript.contains("u contains \"youtube.com/watch\""))
+        #expect(tab.safariReturnScript.contains("(URL of t) contains \"youtube.com/watch\""))
+        let page = BrowserTab(browser: .safari, windowID: 7, tab: 3, title: "t", url: "https://en.wikipedia.org/wiki/Bosch")
+        #expect(page.site == "en.wikipedia.org")
+        #expect(!page.safariReturnScript.contains("youtube.com/watch"))
     }
 }

@@ -12,7 +12,7 @@ public enum YouTubeControl {
         (()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';\
         const c=document.querySelector('#owner #channel-name a, ytd-video-owner-renderer #channel-name a');\
         return [v.paused?'paused':'playing',v.currentTime.toFixed(1),(isFinite(v.duration)?v.duration:0).toFixed(1),\
-        (c&&c.textContent||'').trim()].join('\\u001f')})()
+        (c&&c.textContent||'').trim(),location.href].join('\\u001f')})()
         """
     /// Pauses (never starts) the video.
     public static let pause = "(()=>{const v=document.querySelector('video.html5-main-video')||document.querySelector('video');if(!v)return '';v.pause();return 'ok'})()"
@@ -70,14 +70,17 @@ public enum YouTubeControl {
         public let position: Double
         public let duration: Double
         public let channel: String
+        /// The page's address now: a different video after a skip or autoplay (nil from older reads).
+        public var url: String? = nil
     }
 
     public static func parse(_ output: String) -> State? {
         let fields = output.components(separatedBy: separator)
-        guard fields.count == 4, ["playing", "paused"].contains(fields[0]),
+        guard fields.count == 4 || fields.count == 5, ["playing", "paused"].contains(fields[0]),
               let position = Double(fields[1]), let duration = Double(fields[2]) else { return nil }
         return State(playing: fields[0] == "playing", position: position, duration: duration,
-                     channel: fields[3].trimmingCharacters(in: .whitespacesAndNewlines))
+                     channel: fields[3].trimmingCharacters(in: .whitespacesAndNewlines),
+                     url: fields.count == 5 ? fields[4] : nil)
     }
 
     /// The browser said its JavaScript-from-Apple-Events switch is off.
