@@ -250,10 +250,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (settings.notchNote, options, why)
         }
         notchChat.model.onClose = { [weak self] in self?.notch.model.tab = .home }  // put away, kept
+        // New chat: a fresh Ask, staying on the Ask tab (it went Home: "should just restart ask").
         notchChat.model.onClear = { [weak self] in
             self?.notchChat.clear()
             self?.notch.model.chatting = false
-            self?.notch.model.tab = .home
         }
         notch.model.chat = notchChat.model
         notch.model.ask = { [weak self] text in
