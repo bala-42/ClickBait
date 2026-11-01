@@ -1267,6 +1267,11 @@ private struct ShelfView: View {
                 Text("Files").font(.system(size: 12, weight: .semibold))
                 Text("\(shelf.files.count)/12").font(.system(size: 10).monospacedDigit()).foregroundStyle(NotchPalette.tertiary)
                 Spacer(minLength: 4)
+                Button("Paste") { ShelfDrop.paste(into: shelf) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(NotchPalette.highlight)
+                    .help("Paste what you copied onto the shelf (⌘V)")
                 if shelf.files.count > 1 {
                     Button(shelf.selectedFiles.count == shelf.files.count ? "Clear" : "Select all") {
                         if shelf.selectedFiles.count == shelf.files.count { shelf.clearSelection() } else { shelf.selectAll() }
@@ -1298,7 +1303,7 @@ private struct ShelfView: View {
                 if shelf.files.isEmpty {
                     VStack(spacing: 4) {
                         Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchPalette.highlight)
-                        Text(targeted ? "Release to add" : "Drop files here")
+                        Text(targeted ? "Release to add" : "Drop or paste files here")
                             .font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
                     }
                 } else {
@@ -1310,6 +1315,16 @@ private struct ShelfView: View {
             }
             .frame(maxHeight: .infinity)
             .onDrop(of: ShelfDrop.types, isTargeted: $targeted) { ShelfDrop.take($0, into: shelf) }
+            // A click here makes the notch key, so ⌘V pastes onto the shelf; right-click ▸ Paste too.
+            .simultaneousGesture(TapGesture().onEnded { ShelfDrop.focusNotch() })
+            .contextMenu {
+                Button("Paste") { ShelfDrop.paste(into: shelf) }.disabled(!ShelfDrop.canPaste)
+            }
+            .onAppear {
+                ShelfDrop.shelfShown = true
+                ShelfDrop.listenForPaste(shelf: shelf)
+            }
+            .onDisappear { ShelfDrop.shelfShown = false }
             .accessibilityLabel(shelf.files.isEmpty ? "Shelf, empty. Drop files here." : "Shelf, \(shelf.files.count) files")
         }
         .padding(10)

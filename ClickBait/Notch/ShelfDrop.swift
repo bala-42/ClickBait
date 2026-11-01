@@ -29,6 +29,64 @@ enum ShelfDrop {
 
     struct Refusal: Error { let message: String }
 
+    // MARK: Paste (user's ask, 2026-11-01)
+
+    /// What's on the clipboard, as the same items a drag would carry: copied files (Finder's
+    /// ⌘C), else a copied image, else a web link, else text.
+    static func clipboardItems() -> [NSItemProvider] {
+        let board = NSPasteboard.general
+        if let files = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !files.isEmpty {
+            return files.compactMap { NSItemProvider(contentsOf: $0) }
+        }
+        if let image = (board.readObjects(forClasses: [NSImage.self]) as? [NSImage])?.first {
+            return [NSItemProvider(object: image)]
+        }
+        if let link = (board.readObjects(forClasses: [NSURL.self]) as? [URL])?.first, link.scheme?.hasPrefix("http") == true {
+            return [NSItemProvider(object: link as NSURL)]
+        }
+        if let text = board.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [NSItemProvider(object: text as NSString)]
+        }
+        return []
+    }
+
+    static var canPaste: Bool {
+        let board = NSPasteboard.general
+        return board.canReadObject(forClasses: [NSURL.self, NSImage.self], options: nil) || board.string(forType: .string) != nil
+    }
+
+    /// Pastes the clipboard onto the shelf, like dropping it there.
+    @discardableResult
+    static func paste(into shelf: ShelfStore) -> Bool {
+        let items = clipboardItems()
+        guard !items.isEmpty else { say?("nothing to paste", .error); return false }
+        return take(items, into: shelf)
+    }
+
+    private static var pasteMonitor: Any?
+    /// The shelf is on screen (set by its view): ⌘V goes to it only then.
+    static var shelfShown = false
+
+    /// ⌘V while the notch is the key window and the shelf shows: pastes onto it. Typing in
+    /// a text field there (the quick note, a rename) keeps its own paste.
+    static func listenForPaste(shelf: ShelfStore) {
+        guard pasteMonitor == nil else { return }
+        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "v",
+                  let window = event.window, window.level == WindowLayers.notch,
+                  !(window.firstResponder is NSText) else { return event }
+            guard MainActor.assumeIsolated({ shelfShown }) else { return event }
+            MainActor.assumeIsolated { _ = paste(into: shelf) }
+            return nil
+        }
+    }
+
+    /// Makes the notch the key window, so ⌘V reaches it (it doesn't take focus by itself).
+    static func focusNotch() {
+        NSApp.windows.first { $0.isVisible && $0.canBecomeKey && $0.level == WindowLayers.notch }?.makeKey()
+    }
+
     /// Takes a drop: true when there was something to take (the work carries on after).
     static func take(_ providers: [NSItemProvider], into shelf: ShelfStore) -> Bool {
         guard !providers.isEmpty else { return false }
