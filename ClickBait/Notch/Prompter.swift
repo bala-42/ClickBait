@@ -240,19 +240,16 @@ struct PrompterView: View {
             PrompterButton(symbol: "hare.fill", help: "Faster") { studio.speed = min(120, studio.speed + 6) }
             if !studio.script.cues.isEmpty {
                 // The cue list hangs below the prompter (like Moody's), not a menu.
+                // Just the icon (user's ask); Studio blue while the list is open.
                 Button { studio.cuesOpen.toggle() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
-                        Text("Cues").font(.system(size: 11, weight: .semibold))
-                        Image(systemName: studio.cuesOpen ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9).frame(height: 24)
-                    .background(Capsule().fill(studio.cuesOpen ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
-                    .contentShape(Capsule())
+                    Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white).frame(width: 24, height: 24)
+                        .background(Circle().fill(studio.cuesOpen ? AnyShapeStyle(Quicksilver.fill) : AnyShapeStyle(Color.white.opacity(0.14))))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help("Jump to a cue")
+                .help("Cues: jump to a section")
+                .accessibilityLabel("Cues")
             }
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }

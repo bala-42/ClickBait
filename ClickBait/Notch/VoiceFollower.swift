@@ -97,7 +97,7 @@ final class VoiceFollower {
             try? await Task.sleep(for: .milliseconds(350))
             ticks += 1
             if ticks % 5 == 0 {
-                Log.app.notice("Studio: loudest \(String(format: "%.2f", self.audio.takePeak()), privacy: .public), \(self.audio.last(seconds: 4).count, privacy: .public) samples, model \(Self.transcribe == nil ? "none" : "set", privacy: .public)")
+                Log.app.notice("Studio: loudest \(String(format: "%.2f", self.audio.takePeak()), privacy: .public), room \(String(format: "%.2f", self.audio.roomLevel), privacy: .public), speaking \(self.audio.spokeRecently(within: 3), privacy: .public)")
             }
             guard running, audio.spokeRecently(within: 1.5), let transcribe = Self.transcribe else { continue }
             let samples = audio.last(seconds: 3)
@@ -156,23 +156,33 @@ final class VoiceFollower {
 
     /// The microphone's last few seconds at 16 kHz, and when speech was last loud enough.
     private final class Recording: Sendable {
-        private struct State { var samples: [Float] = []; var spokeAt = Date.distantPast; var peak = 0.0; var level = 0.0 }
+        private struct State {
+            var samples: [Float] = []; var spokeAt = Date.distantPast; var peak = 0.0; var level = 0.0
+            /// The room's own level (falls at once to quieter, creeps up slowly): speech is
+            /// judged against it, not a fixed bar (the user's real voice peaked at 0.13–0.29 on
+            /// a bar of 0.3 set with the Mac's voice through speakers, and was never heard).
+            var floor = 0.2
+        }
         private let state = OSAllocatedUnfairLock(initialState: State())
         private static let keep = 16_000 * 6
-        /// Speech, not room noise (on the level scale above: about −38 dB).
-        private static let speaking = 0.3
+        /// Speech: this far above the room's level (about 3 dB on the scale above).
+        private static let aboveRoom = 0.07
 
         func append(_ samples: [Float], level: Double) {
             state.withLock { state in
                 state.samples += samples
                 if state.samples.count > Self.keep { state.samples.removeFirst(state.samples.count - Self.keep) }
-                if level > Self.speaking { state.spokeAt = Date() }
+                state.floor = level < state.floor ? level : state.floor + (level - state.floor) * 0.002
+                let voice = max(0, level - state.floor)
+                if voice > Self.aboveRoom { state.spokeAt = Date() }
                 state.peak = max(state.peak, level)
-                state.level = level
+                // The ring gets the voice above the room, scaled so a normal voice fills it.
+                state.level = min(1, voice / 0.25)
             }
         }
 
         var latestLevel: Double { state.withLock { $0.level } }
+        var roomLevel: Double { state.withLock { $0.floor } }
 
         /// The loudest level since last asked (for the log).
         func takePeak() -> Double {

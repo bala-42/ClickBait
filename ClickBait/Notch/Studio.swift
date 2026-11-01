@@ -73,7 +73,7 @@ final class StudioModel {
                                   onPlace: { [weak self] in self?.place = $0 },
                                   onLevel: { [weak self] new in
                                       guard let self else { return }
-                                      if new > 0.3 { spokeAt = Date() }
+                                      if new > 0.25 { spokeAt = Date() }  // (already above the room)
                                       // Soft, like Moody's: it eases up with the voice and settles
                                       // slowly (it jumped with every syllable: "not soft").
                                       level = new > level ? level * 0.82 + new * 0.18 : level * 0.94 + new * 0.06
