@@ -390,7 +390,7 @@ final class StudioModel {
 
     func goTo(_ cue: Script.Cue) {
         jump = cue.start
-        cuesOpen = false
+        // The cue list stays open: it closes only from its own button (user's ask, 2026-11-01).
         if !prompting { startPrompting() }
         let line = script.line(of: cue.start)
         place = nil
