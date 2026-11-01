@@ -183,7 +183,8 @@ struct ChatView: View {
                 .help(model.looksAtScreen ? "Your screen goes with the next message" : "Look at my screen with the next message")
             }
             if let clear = model.onClear, !model.messages.isEmpty {
-                NotchHeaderIcon(symbol: "trash", label: "Clear the conversation") { clear() }.help("Clear the conversation")
+                // A fresh start, not deleting anything: a refresh arrow (user's pick, 2026-11-02).
+                NotchHeaderIcon(symbol: "arrow.clockwise", label: "New chat") { clear() }.help("New chat")
             }
             NotchHeaderIcon(symbol: "xmark", label: "Put the chat away") { model.onClose?() }
         } else {
