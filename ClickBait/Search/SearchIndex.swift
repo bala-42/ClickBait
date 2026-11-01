@@ -63,6 +63,9 @@ actor SearchIndex {
         return base.appendingPathComponent("ClickBait/vision-forgotten.json")
     }()
     private var forgotten: Set<String> = []
+    /// Captions written in the pass under way (saved at its end), so Settings' count moves live.
+    private var describingNow = 0
+    private var describing = false
 
     /// At most this many pictures are read (newest first), so the first pass stays minutes, not hours.
     private static let pictureLimit = 3_000
@@ -206,8 +209,10 @@ actor SearchIndex {
                     (fresh[index].caption, fresh[index].captionModel) = (done.0, done.1)
                     continue
                 }
+                describing = true
                 guard let caption = await Self.caption(fresh[index], brain: options.brain) else { continue }
                 (fresh[index].caption, fresh[index].captionModel) = (caption, options.brain)
+                describingNow += 1
                 if let key = fresh[index].contentKey { described[key] = (caption, options.brain) }
                 captioned += 1
             }
@@ -229,6 +234,7 @@ actor SearchIndex {
             for (id, vector) in zip(batch, vectors) { next[id]?.vector = vector; next[id]?.model = Embedder.model }
         }
         entries = next
+        (describingNow, describing) = (0, false)
         save()
         Log.app.notice("Search index: \(next.count, privacy: .public) things, \(picturesRead, privacy: .public) pictures read, \(captioned, privacy: .public) captioned")
     }
@@ -254,12 +260,14 @@ actor SearchIndex {
         save()
     }
 
-    /// For Settings: pictures known, described, and the index's size on disk.
-    func stats() -> (pictures: Int, described: Int, bytes: Int) {
+    /// For Settings: pictures known, described (counting this pass's so far), the index's
+    /// size on disk, and whether pictures are being described right now.
+    func stats() -> (pictures: Int, described: Int, bytes: Int, active: Bool) {
         load()
         let pictures = entries.values.filter { $0.item.kind == .image }
         let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        return (pictures.count, pictures.filter { $0.item.caption != nil }.count, size)
+        let described = min(pictures.count, pictures.filter { $0.item.caption != nil }.count + describingNow)
+        return (pictures.count, described, size, describing)
     }
 
     /// Size and a hash of the first 64 KB: the same for copies of one file.

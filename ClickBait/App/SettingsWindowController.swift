@@ -746,7 +746,7 @@ private struct VoiceSettingsSection: View {
 /// battery, the Photos library, "me", and what it all takes on disk.
 struct VisionMemorySection: View {
     @Bindable var settings: AppSettings
-    @State private var stats: (pictures: Int, described: Int, bytes: Int) = (0, 0, 0)
+    @State private var stats: (pictures: Int, described: Int, bytes: Int, active: Bool) = (0, 0, 0, false)
     @State private var confirmDelete = false
 
     private var pausedNote: String? {
@@ -764,7 +764,8 @@ struct VisionMemorySection: View {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     RowLabel("\(stats.described.formatted()) of \(stats.pictures.formatted()) pictures described",
-                             ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file) + " on disk"
+                             (stats.active && pausedNote == nil ? "Describing now · " : "")
+                                + ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file) + " on disk"
                                 + (pausedNote.map { " · " + $0 } ?? ""))
                     ProgressView(value: Double(stats.described), total: Double(max(stats.pictures, 1)))
                         .progressViewStyle(.linear).tint(SettingsLook.accent).frame(maxWidth: 260)
@@ -813,7 +814,13 @@ struct VisionMemorySection: View {
             ButtonRow("Delete Vision Memory", "Everything read and described; your pictures aren't touched. To fix one picture, right-click it in search results.",
                       button: "Delete…", destructive: true) { confirmDelete = true }
         }
-        .task { await reload() }
+        // Live while the page is open: the count moves as pictures are described.
+        .task {
+            while !Task.isCancelled {
+                await reload()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .onChange(of: settings.visionFolders) { _, _ in AppDelegate.watchPictures(settings); refreshSoon() }
         .onChange(of: settings.visionExcluded) { _, _ in refreshSoon() }
         .confirmationDialog("Delete everything Vision Memory has read and described?", isPresented: $confirmDelete) {
