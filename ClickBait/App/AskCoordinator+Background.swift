@@ -572,8 +572,11 @@ extension AskCoordinator {
             return
         }
 
+        // "Find that note about the plumber" is smart search (in `respond`): not an order or a
+        // walkthrough ("show me the picture…" was sorted as a possible walkthrough first).
+        let searching = SmartSearch.request(in: transcript) != nil
         // Direct orders run right away, without the model.
-        if settings.commandsEnabled,
+        if !searching, settings.commandsEnabled,
            let command = CommandParser.parse(transcript, allowedShortcuts: settings.allowedShortcuts),
            !isUnknownApp(command) {
             Log.ask.notice("Command recognised: \(command.name, privacy: .public)")
@@ -590,7 +593,7 @@ extension AskCoordinator {
 
         // An order in other words: ask the model which action it is (text only, ~1 s).
         flow.phase = .orderCheck
-        let understood = await understandOrder(transcript, flow: flow)
+        let understood = searching ? nil : await understandOrder(transcript, flow: flow)
         guard !Task.isCancelled else { return }  // Esc while checking
         if let (order, proposal) = understood {
             encoding.cancel()
@@ -613,8 +616,8 @@ extension AskCoordinator {
 
         // "How do I…" with several clicks: walk them through it on screen.
         let elements = await elementsTask.value
-        if await startTutorial(question: transcript, capture: capture, encoding: encoding, elements: elements,
-                               speak: true, display: transcript, flow: flow) { return }
+        if !searching, await startTutorial(question: transcript, capture: capture, encoding: encoding, elements: elements,
+                                           speak: true, display: transcript, flow: flow) { return }
         flow.kind = .unknown  // not a walkthrough after all
 
         // With a chat open, a spoken question is a follow-up in it.

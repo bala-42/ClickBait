@@ -36,8 +36,9 @@ actor SearchIndex {
 
     // MARK: Searching
 
-    func search(_ request: SmartSearch.Request, notchNote: String, photos: Bool) async -> [SmartSearch.Item] {
+    func search(_ request: SmartSearch.Request, notchNote: String, photos: Bool, brain: String) async -> [SmartSearch.Item] {
         load()
+        let request = await Self.withRelatedWords(request, brain: brain)
         if Date().timeIntervalSince(refreshedAt) > 600 { Task { await refresh(photos: photos) } }
         var pool = entries.values.map { ($0.item, $0.vector) }
         pool.append((SmartSearch.Item(id: "quicknote", kind: .note, title: "Quick note", place: "the notch", text: notchNote), nil))
@@ -66,6 +67,23 @@ actor SearchIndex {
         let ranked = SmartSearch.rank(zip(pool.map(\.0), vectors).map { ($0, $1) }, for: request, query: query, boosted: boosted)
         Log.ask.notice("Smart search: \(ranked.count, privacy: .public) of \(pool.count, privacy: .public)")
         return ranked
+    }
+
+    /// The brain's related words for the search (~0.3 s); the search goes on without them
+    /// after 2 s or if the brain isn't there.
+    private static func withRelatedWords(_ request: SmartSearch.Request, brain: String) async -> SmartSearch.Request {
+        var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 2)
+        call.httpMethod = "POST"
+        call.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        call.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": brain, "prompt": request.relatedPrompt, "stream": false, "think": false,
+            "options": ["temperature": 0, "num_predict": 40]
+        ] as [String: Any])
+        guard let (data, response) = try? await URLSession.shared.data(for: call),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let reply = json["response"] as? String else { return request }
+        return request.with(related: reply)
     }
 
     private static func document(_ item: SmartSearch.Item) -> String {

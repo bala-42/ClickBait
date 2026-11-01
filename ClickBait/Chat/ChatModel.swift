@@ -1,3 +1,4 @@
+import ClickBaitCore
 import SwiftUI
 import Foundation
 import Observation
@@ -17,6 +18,8 @@ final class ChatModel {
         let id = UUID()
         var role: Role
         var text: String
+        /// Smart search's finds, shown as a results card under the text (`SearchResultsView`).
+        var results: [SmartSearch.Item] = []
     }
 
     var messages: [Message] = []
@@ -75,6 +78,11 @@ final class ChatModel {
         } else {
             messages.append(Message(role: .assistant, text: text))
         }
+    }
+
+    /// Puts smart search's finds under the latest reply.
+    func setResults(_ items: [SmartSearch.Item]) {
+        if let last = messages.indices.last(where: { messages[$0].role == .assistant }) { messages[last].results = items }
     }
 
     /// Rewrites the latest reply (a tutorial's checklist ticking along).

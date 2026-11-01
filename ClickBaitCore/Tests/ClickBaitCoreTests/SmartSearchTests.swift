@@ -4,7 +4,8 @@ import Testing
 struct SmartSearchTests {
     @Test func knowsASearchQuestion() {
         #expect(SmartSearch.request(in: "find that note about the dentist") == .init(kind: .note, terms: ["dentist"], text: "dentist"))
-        #expect(SmartSearch.request(in: "where's the march invoice pdf")?.kind == nil)  // "where's the" isn't a search phrase
+        #expect(SmartSearch.request(in: "where's the march invoice pdf")?.kind == .file)  // a named kind of thing
+        #expect(SmartSearch.request(in: "where's the wifi") == nil)
         #expect(SmartSearch.request(in: "find the march invoice pdf")?.kind == .file)
         #expect(SmartSearch.request(in: "show me the picture of the airport")?.terms == ["airport"])
         #expect(SmartSearch.request(in: "show me the picture of the airport")?.kind == .image)
@@ -30,6 +31,17 @@ struct SmartSearchTests {
         // nomic's "unrelated" band (≈ 0.47) doesn't get through on its own.
         let weak = SmartSearch.rank([(shopping, [0.47, 0.88])], for: request, query: [1, 0])
         #expect(weak.isEmpty)
+    }
+
+    @Test func theBrainsRelatedWordsHelpTheLeap() {
+        let request = SmartSearch.Request(kind: .note, terms: ["dentist"], text: "dentist")
+            .with(related: "Toothache, Drill, Cleaning, Dentist, Appointment")
+        #expect(request.related == ["toothache", "drill", "cleaning", "appointment"])
+        #expect(request.text == "dentist, toothache, drill, cleaning, appointment")
+        let cleaning = SmartSearch.Item(id: "1", kind: .note, title: "Tuesday", place: "Notes", text: "cleaning on Tuesday at 3")
+        let plumber = SmartSearch.Item(id: "2", kind: .note, title: "Plumber", place: "Notes", text: "comes Thursday")
+        // Same meaning score (as nomic gave them): the shared word decides.
+        #expect(SmartSearch.rank([(plumber, [0.6, 0.8]), (cleaning, [0.6, 0.8])], for: request, query: [0.6, 0.8]).first?.id == "1")
     }
 
     @Test func repliesWithLinksAndWhereThingsAre() {

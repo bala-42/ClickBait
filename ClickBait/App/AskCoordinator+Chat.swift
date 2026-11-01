@@ -144,7 +144,9 @@ extension AskCoordinator {
         askTask = Task {
             defer { if state == .thinking { state = .idle } }
             let startedAt = ContinuousClock.now
-            if let (order, proposal) = await understandOrder(text) {
+            // "Find the march invoice" is smart search (in `respond`): not an order or a walkthrough.
+            let searching = SmartSearch.request(in: text) != nil
+            if !searching, let (order, proposal) = await understandOrder(text) {
                 onChatUserMessage?(text)
                 let answerID = beginAnswerFlow()
                 defer { finishAnswering(answerID) }
@@ -167,8 +169,8 @@ extension AskCoordinator {
             }
             let encoding = Task.detached(priority: .userInitiated) { try ScreenshotEncoder.encode(capture.image) }
             let elements = await Self.elements(in: capture, frontmostPID: pid)
-            if await startTutorial(question: text, capture: capture, encoding: encoding, elements: elements,
-                                   speak: false, display: text) { return }
+            if !searching, await startTutorial(question: text, capture: capture, encoding: encoding, elements: elements,
+                                               speak: false, display: text) { return }
             // Highlighted code is what "fix this" means; other selections would turn pointing off.
             let highlighted = snapshot.selectedText.flatMap { CodeAnswer.looksLikeCode($0) && !ImpliedPointer.isLocating(text) ? $0 : nil }
             await respond(question: text, selectedText: highlighted, capture: capture, encoding: encoding, startedAt: startedAt,

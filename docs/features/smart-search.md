@@ -3,10 +3,14 @@
 _Added 2026-11-01 (user's ask, after Taby's smart search)._
 
 "Find that note about the plumber", "find the march invoice pdf", "show me the picture of the
-airport", "do I have a reminder about the car?" — asked by voice or typed — are answered by
-smart search on this Mac, not the model. The reply lists up to five things with where they are
-and a line of what they say; files and pictures are links that open them. Spoken, it's just
-"Found 3."
+airport", "where's the invoice pdf", "do I have a reminder about the car?" — asked by voice or
+typed, first question or later in a chat — are answered by smart search on this Mac, not the
+model. They skip the order and walkthrough checks. The chat opens (by voice too) with a results
+card (`SearchResultsView`, like Taby's): pictures as a thumbnail grid, files with their Quick
+Look previews, notes and reminders as rows with a line of what they say. Click opens (Apple
+Notes at the note; Reminders and Photos open their app); files and pictures drag out and have
+Copy, Show in Finder and Share on hover. Spoken, it's just "Found 3." The chat's memory keeps
+the full list.
 
 ## What it searches
 - **Files and PDFs** by name or the text inside: Spotlight (`mdfind`, home folder only; Library,
@@ -20,6 +24,11 @@ and a line of what they say; files and pictures are links that open them. Spoken
 - **Apple Notes**, newest 1,500, through Notes itself (asks for Automation once).
 
 ## By meaning
+First the brain adds related words (~0.3 s, skipped after 2 s): "dentist" → toothache,
+cleaning, appointment. They join the text nomic embeds, and an item holding one of them gets a
+word bonus. Measured 2026-11-01: plain nomic put "cleaning on Tuesday" below the plumber note
+for "dentist"; with the words it came first, and "leaky pipe" found the plumber.
+
 nomic-embed-text through Ollama is ClickBait's standard embedding model: downloaded with every
 brain (brain sizes include its 0.3 GB), or fetched in the background on Macs whose brain came
 first. Queries and documents get nomic's `search_query: ` / `search_document: ` labels. Score =
@@ -33,7 +42,5 @@ things are re-read and re-embedded. Nothing leaves the Mac.
 
 ## Limits
 - First pass reads 400 pictures; the rest come in over later passes (every 30 minutes).
-- Big leaps of meaning miss: "dentist" doesn't find a note that only says "cleaning on Tuesday"
-  (nomic scored it below unrelated notes in testing).
 - Questions about on-screen controls ("find the settings menu") stay pointing questions.
 - Photos-library results have no file to open; they name the day.

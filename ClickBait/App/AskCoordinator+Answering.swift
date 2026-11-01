@@ -249,14 +249,23 @@ extension AskCoordinator {
         }
         // "Find that note about the dentist", "find the march invoice": smart search on this
         // Mac (`SearchIndex`), not the model; the reply links each thing found.
-        if snip == nil, selectedText == nil, history.isEmpty, let search = SmartSearch.request(in: question) {
+        // Any time in a chat, spoken or typed: a search question stands on its own.
+        if snip == nil, let search = SmartSearch.request(in: question) {
             encoding.cancel()
-            let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, photos: settings.searchPhotos)
-            let response = AssistantResponse(speech: SmartSearch.reply(found, for: search))
-            if speak { speaker.speak(found.isEmpty ? response.speech : (found.count == 1 ? "Found it." : "Found \(found.count).")) }
-            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: response.speech) }
+            let found = await SearchIndex.shared.search(search, notchNote: settings.notchNote, photos: settings.searchPhotos,
+                                                            brain: settings.ollamaModel)
+            let headline = SmartSearch.headline(found, for: search)
+            if speak { speaker.speak(headline) }
+            // The chat keeps the full list, so "open the second one" can follow.
+            if !flow.sentAway { conversation?.append(user: question, assistantSpeech: SmartSearch.reply(found, for: search)) }
             if state == .thinking { state = .idle }
-            onAnswer?(response, [])
+            // Spoken: the results need the chat to show in (a spoken answer doesn't open it).
+            if !chatShown, !found.isEmpty, flow.jobID == nil {
+                chatShown = true
+                onChatOpen?(display)
+            }
+            onAnswer?(AssistantResponse(speech: headline), [])
+            onSearchResults?(found)
             return
         }
         // "How many days until Christmas?", "what's the date?": worked out here, exactly, in

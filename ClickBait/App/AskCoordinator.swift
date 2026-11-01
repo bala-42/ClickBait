@@ -107,6 +107,8 @@ final class AskCoordinator {
     @ObservationIgnored var pointedInstantly = false
     /// Called with the parsed answer and its pointers mapped to screen points.
     @ObservationIgnored var onAnswer: ((AssistantResponse, [ScreenPointer]) -> Void)?
+    /// Smart search's finds, for the chat's results card (after `onAnswer`).
+    @ObservationIgnored var onSearchResults: (([SmartSearch.Item]) -> Void)?
 
     @ObservationIgnored let settings: AppSettings
     @ObservationIgnored let speech: SpeechModelManager

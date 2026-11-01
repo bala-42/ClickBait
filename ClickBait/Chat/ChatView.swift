@@ -347,6 +347,7 @@ private struct MessageRow: View {
                         CodeBlock(language: language, code: code)
                     }
                 }
+                if !message.results.isEmpty { SearchResultsView(items: message.results) }
             }
         case .error:
             Label(message.text, systemImage: "exclamationmark.triangle.fill")

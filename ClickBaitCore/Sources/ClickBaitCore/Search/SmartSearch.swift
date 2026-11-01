@@ -15,6 +15,32 @@ public enum SmartSearch {
         public var terms: [String]
         /// What to embed: the question without its "find…" wrapper.
         public var text: String
+        /// Words the brain says go with it ("dentist" → cleaning, appointment): nomic alone
+        /// missed "cleaning on Tuesday" for "dentist" (`with(related:)`).
+        public var related: [String] = []
+
+        public init(kind: Kind, terms: [String], text: String, related: [String] = []) {
+            self.kind = kind
+            self.terms = terms
+            self.text = text
+            self.related = related
+        }
+
+        /// The request with the brain's related words (comma-separated) added.
+        public func with(related reply: String) -> Request {
+            var copy = self
+            copy.related = reply.lowercased().split { $0 == "," || $0 == "\n" }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)) }
+                .filter { $0.count > 2 && !terms.contains($0) }
+                .prefix(8).map { $0 }
+            if !copy.related.isEmpty { copy.text = text + ", " + copy.related.joined(separator: ", ") }
+            return copy
+        }
+
+        /// What the brain is asked for the related words.
+        public var relatedPrompt: String {
+            "List 6 short words or phrases someone might have written in a note or file about: \(terms.joined(separator: " ")). Comma-separated, nothing else."
+        }
     }
 
     /// One thing found: a file, a picture, a note, a reminder, a saved answer.
@@ -63,7 +89,6 @@ public enum SmartSearch {
                     " where did i put ", " what did i write ", " what did i save ", " what did i note ", " do i have a ", " do i have any ",
                     " show me my ", " show me the picture", " show me the photo", " show me the screenshot", " show me the pdf",
                     " show me the file", " show me that "]
-        guard asks.contains(where: { joined.contains($0) }) || words.first == "find" || words.first == "search" else { return nil }
         let kind: Kind = {
             if words.contains(where: ["photo", "photos", "picture", "pictures", "pic", "pics", "image", "images", "screenshot", "screenshots"].contains) { return .image }
             if words.contains(where: ["reminder", "reminders", "task", "tasks"].contains) { return .reminder }
@@ -71,6 +96,9 @@ public enum SmartSearch {
             if words.contains(where: ["file", "files", "pdf", "pdfs", "document", "documents", "doc", "invoice", "spreadsheet"].contains) { return .file }
             return .any
         }()
+        // "Where's the march invoice pdf?" / "where is the picture of…": a named kind of thing.
+        let whereThing = kind != .any && (words.first == "where" || words.first == "wheres")
+        guard asks.contains(where: { joined.contains($0) }) || words.first == "find" || words.first == "search" || whereThing else { return nil }
         let terms = words.filter { !stopWords.contains($0) && $0.count > 1 }
         guard !terms.isEmpty else { return nil }
         return Request(kind: kind, terms: terms, text: terms.joined(separator: " "))
@@ -99,7 +127,8 @@ public enum SmartSearch {
             // 2026-11-01); spread that band over 0…1.
             let similarity = query.flatMap { q in entry.vector.map { cosine(q, $0) } } ?? 0
             let meaning = min(1, max(0, (similarity - 0.5) / 0.25))
-            let words = wordMatch(request, entry.item)
+            let haystack = (entry.item.title + " " + entry.item.text).lowercased()
+            let words = wordMatch(request, entry.item) + (request.related.contains(where: haystack.contains) ? 0.35 : 0)
             let kindBonus: Float = request.kind == .any || request.kind == entry.item.kind ? 0.05 : -0.15
             let spotlight: Float = boosted.contains(entry.item.id) ? 0.3 : 0
             return (entry.item, 0.7 * meaning + 0.3 * words + kindBonus + spotlight)
@@ -112,7 +141,16 @@ public enum SmartSearch {
             .map(\.0)
     }
 
-    /// The reply in the chat: what was found, each with where it is and a line of what it
+    /// A line over the results card, also what's said aloud.
+    public static func headline(_ found: [Item], for request: Request) -> String {
+        switch found.count {
+        case 0: "I couldn't find anything about \(request.text) on this Mac."
+        case 1: "Found it."
+        default: "Found \(found.count)."
+        }
+    }
+
+    /// The full reply, kept in the chat's memory: what was found, each with where it is and a line of what it
     /// says; files and pictures as links that open them.
     public static func reply(_ found: [Item], for request: Request) -> String {
         guard !found.isEmpty else {

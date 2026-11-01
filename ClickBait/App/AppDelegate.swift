@@ -679,6 +679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         coordinator.onActionStarted = { [weak self] message in self?.overlay.showWorking(message) }
         coordinator.onActionDone = { [weak self] message in self?.overlay.showDone(message) }
+        coordinator.onSearchResults = { [weak self] items in self?.chat.model.setResults(items) }
         coordinator.onAnswer = { [weak self, weak statusBar] response, pointers in
             statusBar?.showAnswer(response.speech, pointers: pointers.map { "\($0.label) at \($0.quartz)" })
             guard let self else { return }
