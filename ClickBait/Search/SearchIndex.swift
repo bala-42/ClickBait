@@ -198,8 +198,8 @@ actor SearchIndex {
                 let item = fresh[index]
                 guard item.kind == .image, item.userEdited != true, item.sensitive != true else { return false }
                 if !options.screenshots, VisionMemory.isDocumentLike(labels: item.text, name: item.title) { return false }
-                // Captions from before brains were recorded count as the current brain's.
-                return item.caption == nil || (item.captionModel ?? options.brain) != options.brain
+                // Older captions (another brain, or before captions named the kind) are redone.
+                return item.caption == nil || item.captionModel != Self.captionTag(options.brain)
             }
             let ordered = waiting.filter { fresh[$0].caption == nil } + waiting.filter { fresh[$0].caption != nil }
             var described: [String: (String, String)] = [:]
@@ -288,6 +288,9 @@ actor SearchIndex {
 
     /// ~0.5 s each with gemma4:e4b (measured 2026-11-01); 300 every 30 minutes covers 3,000 pictures in 5 hours of use.
     private static let captionsPerPass = 300
+
+    /// The brain and caption style a caption was written with ("gemma4:e4b|kinds-1").
+    static func captionTag(_ brain: String) -> String { brain + "|" + VisionMemory.captionStyle }
 
     /// One line on what a picture shows, from the brain, or nil (no brain, can't see, slow).
     private static func caption(_ item: SmartSearch.Item, brain: String) async -> String? {
@@ -439,6 +442,15 @@ actor SearchIndex {
 
     private typealias Picture = (id: String, title: String, place: String, url: URL?, asset: String?, modified: Date?)
 
+    /// Under 100 pixels on its longer side (read from the file's header, not decoded).
+    private static func isTiny(_ url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return false }
+        return max(width, height) < 100
+    }
+
     /// Pictures in Desktop, Downloads, Documents, Pictures and the screenshot folder, newest first.
     private static func pictureFiles(folders paths: [String], excluded: [String]) -> [Picture] {
         let folders = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -452,13 +464,23 @@ actor SearchIndex {
             for case let url as URL in walker {
                 // Photos' own library is read through PhotoKit, when allowed.
                 if url.pathExtension == "photoslibrary" { walker.skipDescendants(); continue }
-                // The user's excluded folders: never looked inside.
-                if VisionMemory.isExcluded(url.path, excluded: excluded) { walker.skipDescendants(); continue }
+                // The user's excluded folders, and data folders (datasets, dependencies, builds):
+                // never looked inside.
+                if VisionMemory.isExcluded(url.path, excluded: excluded) || VisionMemory.isDataFolder(url.path) {
+                    walker.skipDescendants()
+                    continue
+                }
                 guard kinds.contains(url.pathExtension.lowercased()), seen.insert(url.path).inserted else { continue }
+                // Icons, thumbnails and dataset samples: too small to be a picture anyone looks for.
+                guard !Self.isTiny(url) else { continue }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
                 found.append(("file:\(url.path)", url.lastPathComponent, url.deletingLastPathComponent().lastPathComponent, url, nil, modified))
             }
         }
+        // A folder of many number-named pictures is a dump (frames, a dataset), not pictures to find.
+        let dumps = Dictionary(grouping: found.filter { VisionMemory.isNumberedName($0.title) }) { $0.url?.deletingLastPathComponent().path ?? "" }
+            .filter { $0.value.count > 40 }.keys
+        found.removeAll { picture in dumps.contains(picture.url?.deletingLastPathComponent().path ?? "") }
         return Array(found.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }.prefix(pictureLimit))
     }
 

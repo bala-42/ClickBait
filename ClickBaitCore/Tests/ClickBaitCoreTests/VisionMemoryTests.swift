@@ -46,3 +46,18 @@ struct VisionMemoryTests {
 private extension SmartSearch.Item {
     func with(_ change: (inout Self) -> Void) -> Self { var copy = self; change(&copy); return copy }
 }
+
+struct VisionMemoryPictureTests {
+    @Test func dataFoldersAndNumberedNames() {
+        #expect(VisionMemory.isDataFolder("/Users/me/Desktop/acv/project_2/x/dataset/USPS/images/test/0/000203.png"))
+        #expect(VisionMemory.isDataFolder("/Users/me/code/app/node_modules/pkg/logo.png"))
+        #expect(!VisionMemory.isDataFolder("/Users/me/Pictures/Holiday/beach.jpg"))
+        #expect(VisionMemory.isNumberedName("000203.png") && VisionMemory.isNumberedName("2024_06_01.jpg"))
+        #expect(!VisionMemory.isNumberedName("IMG_2041.jpg") && !VisionMemory.isNumberedName("me_with_dog.png"))
+    }
+
+    @Test func captionsStartWithTheKind() {
+        #expect(VisionMemory.captionPrompt(documentLike: false).contains("a photo, a painting"))
+        #expect(VisionMemory.captionPrompt(documentLike: true).contains("start with what kind"))
+    }
+}

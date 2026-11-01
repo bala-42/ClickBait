@@ -24,11 +24,33 @@ public enum VisionMemory {
             || name.lowercased().hasPrefix("screen shot")
     }
 
-    /// The brain's prompt: photos by who, what, where; documents by kind, subject and key details.
+    /// The brain's prompt. Every caption starts with the kind of picture ("A photo of…", "A
+    /// painting of…"): without it nothing told a group photo from a painting of a crowd (1 of
+    /// 3,000 captions said "photo", 5 "painting": user's report, 2026-11-01).
     public static func captionPrompt(documentLike: Bool) -> String {
         documentLike
-            ? "In one plain sentence of at most 25 words, say what kind of thing this is (chart, slide, receipt, code, form, web page, diagram…), its title or subject, and its key details. No preamble."
-            : "Describe this picture in one plain sentence of at most 20 words: who or what is in it, what they're doing, where. No preamble."
+            ? "In one plain sentence of at most 25 words, start with what kind of thing this is (a screenshot, chart, slide, receipt, code, form, web page, diagram…), then its title or subject and its key details. No preamble."
+            : "Describe this picture in one plain sentence of at most 22 words. Start with what kind of picture it is (a photo, a painting, a drawing, an illustration, a meme, a render, a scan…), then who or what is in it, what they're doing, where. No preamble."
+    }
+
+    /// Which caption style a caption was written in: older ones are redone in the background.
+    public static let captionStyle = "kinds-1"
+
+    /// Folders that hold data, not pictures someone would look for: datasets, code
+    /// dependencies, build output (2,643 of the user's 3,000 indexed pictures were 16-pixel
+    /// digits from a dataset, crowding out their real pictures).
+    public static func isDataFolder(_ path: String) -> Bool {
+        let parts = Set(path.lowercased().split(separator: "/").map(String.init))
+        let data: Set<String> = ["dataset", "datasets", "data", "node_modules", "venv", ".venv", "site-packages", "__pycache__",
+                                 "build", "deriveddata", "dist", "checkpoints", "runs", "wandb", "mnist", "cifar", "usps"]
+        return !parts.isDisjoint(with: data)
+    }
+
+    /// A name that's only digits and separators ("000203.png"): a dataset's or a camera's
+    /// frame dump, not a picture someone named.
+    public static func isNumberedName(_ name: String) -> Bool {
+        let stem = (name as NSString).deletingPathExtension
+        return !stem.isEmpty && stem.allSatisfy { $0.isNumber || $0 == "_" || $0 == "-" }
     }
 
     /// Inside one of the folders the user excluded (or the folder itself).
