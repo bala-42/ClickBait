@@ -237,14 +237,7 @@ struct PhotoBooth: View {
                 }
                 Text("Studio").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Picker("", selection: $studio.mode) {
-                    Text("Mirror").tag(StudioModel.Mode.mirror)
-                    Text("Prompter").tag(StudioModel.Mode.prompter)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 170)
-                .accessibilityLabel("Studio mode")
+                StudioSwitch(mode: $studio.mode)
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
@@ -463,5 +456,45 @@ private struct PrompterDesk: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 236)
         }
+    }
+}
+
+/// Mirror | Prompter: the chosen one in quicksilver blue (user's ask, 2026-11-01).
+struct StudioSwitch: View {
+    @Binding var mode: StudioModel.Mode
+    @Namespace private var pill
+
+    var body: some View {
+        HStack(spacing: 2) {
+            option("Mirror", .mirror)
+            option("Prompter", .prompter)
+        }
+        .padding(2)
+        .background(Capsule().fill(NotchPalette.ink))
+        .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Studio mode")
+    }
+
+    private func option(_ title: String, _ value: StudioModel.Mode) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { mode = value }
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(mode == value ? Color.white : NotchPalette.secondary)
+                .padding(.horizontal, 12).frame(height: 22)
+                .background {
+                    if mode == value {
+                        Capsule().fill(Quicksilver.fill)
+                            .overlay(Capsule().stroke(Quicksilver.core.opacity(0.45), lineWidth: 0.5))
+                            .shadow(color: Quicksilver.bright.opacity(0.5), radius: 5)
+                            .matchedGeometryEffect(id: "chosen", in: pill)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(mode == value ? .isSelected : [])
     }
 }

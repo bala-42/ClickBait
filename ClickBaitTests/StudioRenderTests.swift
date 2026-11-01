@@ -22,4 +22,19 @@ struct StudioRenderTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "prompter.png"))
     }
+
+    @Test func switchDraws() throws {
+        let row = HStack(spacing: 20) {
+            StudioSwitch(mode: .constant(.mirror))
+            StudioSwitch(mode: .constant(.prompter))
+        }.padding(20).background(Color.black)
+        let host = NSHostingView(rootView: row)
+        host.frame.size = host.fittingSize
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.sharpRep())
+        let folder = FileManager.default.temporaryDirectory.appending(path: "ClickBaitTests-studio")
+        try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "switch.png"))
+    }
 }

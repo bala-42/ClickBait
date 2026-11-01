@@ -121,6 +121,9 @@ struct PrompterView: View {
                         .font(.system(size: studio.fontSize, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                        // Wraps to as many lines as it needs (the prompter's fixed height
+                        // squeezed each to one, cut off with "…": found in the live test).
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
                         .background(GeometryReader { proxy in
                             Color.clear.preference(key: LineTops.self, value: [line.start: proxy.frame(in: .named("script")).minY])
@@ -128,6 +131,7 @@ struct PrompterView: View {
                 }
             }
             .padding(.horizontal, 24)
+            .fixedSize(horizontal: false, vertical: true)
             .background(GeometryReader { proxy in Color.clear.preference(key: ContentHeight.self, value: proxy.size.height) })
             .coordinateSpace(name: "script")
             .offset(y: -studio.offset)
@@ -196,9 +200,20 @@ struct PrompterView: View {
     }
 }
 
-/// The voice glow, in quicksilver (user's ask, 2026-11-01: like Moody's ring, in liquid metal
-/// rather than royal blue): a white core, silver, cool steel at the edges, with a highlight
-/// sliding across it. `level` 0…1 (resting, or the voice's loudness with voice-following).
+/// Studio's colour (user's ask, 2026-11-01): quicksilver blue, a vibrant royal-blue gradient
+/// with a liquid-metal shine. The prompter's glow and Studio's Mirror / Prompter switch.
+enum Quicksilver {
+    static let core = Color(red: 0.80, green: 0.86, blue: 1.0)      // the bright, nearly white highlight
+    static let bright = Color(red: 0.30, green: 0.47, blue: 1.0)    // vibrant royal blue
+    static let royal = Color(red: 0.15, green: 0.27, blue: 0.92)
+    static let deep = Color(red: 0.07, green: 0.12, blue: 0.55)     // the edges
+    /// For a button or pill: royal blue with a metallic top light.
+    static let fill = LinearGradient(colors: [bright, royal, deep], startPoint: .top, endPoint: .bottom)
+}
+
+/// The voice glow, in quicksilver blue (like Moody's ring, built afresh): a bright core,
+/// vibrant royal blue, deep blue at the edges, with a highlight sliding across it like light
+/// on liquid metal. `level` 0…1 (resting, or the voice's loudness with voice-following).
 struct QuicksilverArc: View {
     let level: Double
     let reduceMotion: Bool
@@ -208,9 +223,10 @@ struct QuicksilverArc: View {
             let t = timeline.date.timeIntervalSinceReferenceDate
             let sweep = reduceMotion ? 0.5 : (sin(t * (0.6 + level * 2)) + 1) / 2
             // Fades to nothing at its own edge, so no rim shows even unblurred.
-            let glow = EllipticalGradient(stops: [.init(color: Color(white: 1, opacity: 0.95), location: 0),
-                                                  .init(color: Color(red: 0.78, green: 0.8, blue: 0.84, opacity: 0.8), location: 0.3),
-                                                  .init(color: Color(red: 0.42, green: 0.46, blue: 0.53, opacity: 0.45), location: 0.6),
+            let glow = EllipticalGradient(stops: [.init(color: Quicksilver.core.opacity(0.95), location: 0),
+                                                  .init(color: Quicksilver.bright.opacity(0.9), location: 0.25),
+                                                  .init(color: Quicksilver.royal.opacity(0.6), location: 0.55),
+                                                  .init(color: Quicksilver.deep.opacity(0.3), location: 0.8),
                                                   .init(color: .clear, location: 1)],
                                           center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
             Ellipse()
