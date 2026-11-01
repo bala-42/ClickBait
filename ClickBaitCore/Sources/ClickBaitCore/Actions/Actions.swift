@@ -248,7 +248,8 @@ public enum ActionCatalog {
             guard let detail else { return .failure(.missingArgument("rename it to")) }
             return .success(.file(.rename(to: detail)))
         case "shrink":
-            return .success(.file(.shrink(toBytes: argument.isEmpty ? nil : FileSize.bytes(in: argument))))
+            // Bytes from the parser ("50000000"), or a size in words from the model ("50 MB").
+            return .success(.file(.shrink(toBytes: argument.isEmpty ? nil : Int64(argument) ?? FileSize.bytes(in: argument))))
         case "trash":
             return .success(.file(.moveToTrash))
         case "run_shortcut":

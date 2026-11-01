@@ -56,6 +56,7 @@ enum FileActions {
         let selection: [URL]
         if let source { selection = source.files } else { selection = try await FinderSelection.read() }
         guard !selection.isEmpty else { throw FileActionError.nothingSelected }
+        Log.app.notice("File action on \(selection.count, privacy: .public) from \(source == nil ? "Finder" : source!.shelf ? "the shelf" : "the document in front", privacy: .public): \(selection.map { ByteCountFormatter.string(fromByteCount: fileSize($0), countStyle: .file) }.joined(separator: ", "), privacy: .public)")
 
         let (message, made): (String, [URL]) = try await Task.detached(priority: .userInitiated) {
             try await perform(action, on: selection)
@@ -441,6 +442,7 @@ enum FileActions {
         var missed: [String] = []
 
         for file in files {
+            if (try? file.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true { unsupported += 1; continue }
             if let target, fileSize(file) <= target { alreadyUnder += 1; continue }
             let type = UTType(filenameExtension: file.pathExtension)
             let folder = file.deletingLastPathComponent()

@@ -151,6 +151,18 @@ struct SystemAndFileCommandTests {
         #expect(FileSize.bytes(in: "under 5 megs please") == 5_000_000)
         #expect(FileSize.bytes(in: "make it 2,5 GB") == 2_500_000_000)
         #expect(FileSize.bytes(in: "shrink these 3 videos") == nil)
+        #expect(FileSize.bytes(in: "Shrink this video to fifty megabytes.") == 50_000_000)
+        #expect(FileSize.bytes(in: "make it two hundred and fifty mb") == 250_000_000)
+        #expect(FileSize.bytes(in: "under a hundred megs") == 100_000_000)
+        #expect(FileSize.bytes(in: "shrink a video") == nil)
+        #expect(FileSize.bytes(in: "under 1 gig") == 1_000_000_000)
+        // Said → parsed → resolved keeps the size (it was lost between them: 388 MB → 202.8 MB for "50 mb").
+        for text in ["Shrink this to 50 mb", "compress it to 50 mb", "reduce this to 50mb"] {
+            let parsed = CommandParser.parse(text, allowedShortcuts: [])!
+            #expect(ActionCatalog.resolve(parsed, allowedShortcuts: []) == .success(.file(.shrink(toBytes: 50_000_000))))
+        }
+        let guessed = OrderCheck.sanitized(ActionRequest(name: "shrink"), order: "make this video 50 mb")!
+        #expect(ActionCatalog.resolve(guessed, allowedShortcuts: []) == .success(.file(.shrink(toBytes: 50_000_000))))
     }
 
     @Test func outputNamesNeverOverwrite() {

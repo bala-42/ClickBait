@@ -1155,8 +1155,15 @@ extension AskCoordinator {
             task.cancel()
             return .failure("The dock is full")
         }
+        Log.ask.notice("File job started: \(title, privacy: .public)")
         let note = "On it, in the dock"
-        if speak { speaker.speak(note + ".") }
+        // Free at once: left "thinking", ClickBait stayed busy until Esc (user's report, 2026-11-02).
+        if speak {
+            speaker.speak(note + ".")
+            state = .speaking
+        } else if state == .thinking {
+            state = .idle
+        }
         onActionDone?(note)
         return .success(note)
     }
@@ -1191,7 +1198,7 @@ extension AskCoordinator {
             case .copyToFolder(let name): "Copying into “\(name)”…"
             case .rename: "Renaming…"
             case .moveToTrash: "Moving to the Trash…"
-            case .shrink: "Making smaller copies…"
+            case .shrink(let target): "Making smaller copies\(target.map { " under \(FileSize.label($0))" } ?? "")…"
             }
         }
     }

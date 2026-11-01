@@ -79,7 +79,7 @@ struct SmartSearchTests {
         picture.title = "IMG_1852.HEIC"
         #expect(SmartSearch.reason(for: picture, request: request, spotlight: false) == "Matches “dog” in the picture")
         let calendar = Calendar(identifier: .gregorian)
-        #expect(picture.details(now: Date(timeIntervalSince1970: 1_780_000_000), calendar: calendar) == "Downloads · Mar 11 · 460 KB")
+        #expect(picture.details(now: Date(timeIntervalSince1970: 1_780_000_000), calendar: calendar) == "Downloads · 460 KB · Mar 11")
     }
 
     @Test func oneStrongMatchDoesntHideTheOtherGoodOnes() {

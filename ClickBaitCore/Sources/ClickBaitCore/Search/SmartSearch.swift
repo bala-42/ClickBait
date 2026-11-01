@@ -113,6 +113,8 @@ public enum SmartSearch {
         /// The card's second line: folder, date, size.
         public func details(now: Date = Date(), calendar: Calendar = .current) -> String {
             var parts = [place]
+            // The size second, so a narrow tile's one line still shows it (user's ask, 2026-11-02).
+            if let bytes { parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
             if let modified {
                 let format = calendar.isDate(modified, equalTo: now, toGranularity: .year) ? "MMM d" : "MMM d, yyyy"
                 let formatter = DateFormatter()
@@ -120,7 +122,6 @@ public enum SmartSearch {
                 formatter.dateFormat = format
                 parts.append(formatter.string(from: modified))
             }
-            if let bytes { parts.append(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)) }
             if let copies, !copies.isEmpty { parts.append("\(copies.count + 1) copies") }
             return parts.joined(separator: " · ")
         }

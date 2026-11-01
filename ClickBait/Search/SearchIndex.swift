@@ -165,6 +165,8 @@ actor SearchIndex {
             if let old = entries[id], old.item.modified == modified {
                 // Read before copies were spotted: fingerprinted now (64 KB, no Vision).
                 var kept = old.item
+                // Read before sizes were kept: every result shows its size (user's ask, 2026-11-02).
+                if kept.bytes == nil, let url { kept.bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize }
                 if kept.contentKey == nil, let url {
                     kept.contentKey = Self.contentKey(url, bytes: kept.bytes ?? (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize)
                     if let key = kept.contentKey, byContent[key] == nil { byContent[key] = kept }
