@@ -137,8 +137,10 @@ struct PrompterView: View {
                 CueBar(studio: studio)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 if studio.cuesOpen {
+                    // As wide as the prompter: a narrow card left black strips either side of
+                    // it in the notch (user: "the deadspace on the left and right … ewww").
                     CueList(studio: studio)
-                        .frame(width: min(studio.size.width, 360))
+                        .frame(width: studio.size.width - 12)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
@@ -280,12 +282,18 @@ struct PrompterView: View {
     /// bottom-right corner resizes.
     private var controls: some View {
         HStack(spacing: 6) {
-            // One button (user: "why is there a voice button and a play button… confusing"):
-            // it follows your voice — at your pace — or it's paused. ⌃⌘P does the same.
-            PrompterButton(symbol: studio.following ? "pause.fill" : "play.fill",
-                           help: studio.following ? "Pause (⌃⌘P)" : "Carry on: follows your voice (⌃⌘P)") {
-                studio.togglePause()
+            // The voice button, alone (user: a voice and a play button were "confusing", and
+            // wanted "that voice button thing BACK"): cream with a waveform while it follows
+            // your voice at your pace; a tap (or ⌃⌘P) pauses or carries on.
+            Button { studio.togglePause() } label: {
+                Image(systemName: studio.following ? "waveform" : "mic.fill").font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(studio.following ? Color.black : MoodyLook.cream).frame(width: 26, height: 26)
+                    .background(Circle().fill(studio.following ? MoodyLook.cream : MoodyLook.slate))
+                    .contentShape(Circle())
             }
+            .buttonStyle(.plain)
+            .help(studio.following ? "Following your voice: tap to pause (⌃⌘P)" : "Follow my voice (⌃⌘P)")
+            .accessibilityLabel(studio.following ? "Pause following my voice" : "Follow my voice")
             PrompterButton(symbol: "textformat.size.smaller", help: "Smaller text") { studio.fontSize = max(14, studio.fontSize - 2) }
             PrompterButton(symbol: "textformat.size.larger", help: "Bigger text") { studio.fontSize = min(44, studio.fontSize + 2) }
             Spacer()
