@@ -46,14 +46,29 @@ public enum VisionMemory {
         let parts = Set(path.lowercased().split(separator: "/").map(String.init))
         let data: Set<String> = ["dataset", "datasets", "data", "node_modules", "venv", ".venv", "site-packages", "__pycache__",
                                  "build", "deriveddata", "dist", "checkpoints", "runs", "wandb", "mnist", "cifar", "usps"]
-        return !parts.isDisjoint(with: data)
+        if !parts.isDisjoint(with: data) { return true }
+        // A machine-learning project's folders, alone or joined by _ or - ("train", "masks_test",
+        // "extracted_frames"): 2,700 training images and masks were described as pictures
+        // (user's report, 2026-11-02). Names with spaces ("Test photos") are people's, kept.
+        let mlWords: Set<String> = ["train", "training", "test", "val", "valid", "validation", "masks", "mask", "labels",
+                                    "annotations", "samples", "frames", "predictions", "preds", "outputs", "logs"]
+        // Folders only: a file's own name ("test_photo.jpg") doesn't make it data.
+        var folders = path.lowercased().split(separator: "/").map(String.init)
+        if folders.last?.contains(".") == true { folders.removeLast() }
+        return folders.contains { part in
+            !part.contains(" ") && part.split(whereSeparator: { $0 == "_" || $0 == "-" }).contains { mlWords.contains(String($0)) }
+        }
     }
 
-    /// A name that's only digits and separators ("000203.png"): a dataset's or a camera's
-    /// frame dump, not a picture someone named.
+    /// A machine-made name, not one someone gave a picture: only digits and separators
+    /// ("000203.png"), a hash ("001024887930487182779f5df682a657.png"), or a number and a word
+    /// ("100_predict.png"). Many in one folder make a dump (`SearchIndex.pictureFiles`).
     public static func isNumberedName(_ name: String) -> Bool {
-        let stem = (name as NSString).deletingPathExtension
-        return !stem.isEmpty && stem.allSatisfy { $0.isNumber || $0 == "_" || $0 == "-" }
+        let stem = (name as NSString).deletingPathExtension.lowercased()
+        guard !stem.isEmpty else { return false }
+        if stem.allSatisfy({ $0.isNumber || $0 == "_" || $0 == "-" }) { return true }
+        if stem.count >= 16, stem.allSatisfy(\.isHexDigit) { return true }
+        return stem.range(of: #"^\d+[_-][a-z]+$"#, options: .regularExpression) != nil
     }
 
     /// Inside one of the folders the user excluded (or the folder itself).

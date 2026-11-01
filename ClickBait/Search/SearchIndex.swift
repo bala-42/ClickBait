@@ -195,7 +195,10 @@ actor SearchIndex {
             fresh += await Self.reminders()
             fresh += await Self.appleNotes()
         }
-        var pictures = Self.pictureFiles(folders: options.folders, excluded: options.excluded)
+        // Walked off the index (hundreds of thousands of files can take seconds): a search
+        // waited behind it for over a minute (user's report, 2026-11-02).
+        let (folders, excluded) = (options.folders, options.excluded)
+        var pictures = await Task.detached(priority: .utility) { Self.pictureFiles(folders: folders, excluded: excluded) }.value
         if options.photos { pictures += Self.libraryPhotos() }
         pictures = pictures.filter { !forgotten.contains($0.id) }
         // Pictures: kept as they were unless the file changed; new ones read with Vision when

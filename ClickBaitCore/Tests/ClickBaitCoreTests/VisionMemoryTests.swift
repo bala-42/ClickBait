@@ -54,6 +54,17 @@ struct VisionMemoryPictureTests {
         #expect(!VisionMemory.isDataFolder("/Users/me/Pictures/Holiday/beach.jpg"))
         #expect(VisionMemory.isNumberedName("000203.png") && VisionMemory.isNumberedName("2024_06_01.jpg"))
         #expect(!VisionMemory.isNumberedName("IMG_2041.jpg") && !VisionMemory.isNumberedName("me_with_dog.png"))
+        // What slipped through (2026-11-02): hash names, "100_predict", and ML project folders.
+        #expect(VisionMemory.isNumberedName("001024887930487182779f5df682a657.png") && VisionMemory.isNumberedName("100_predict.png"))
+        #expect(!VisionMemory.isNumberedName("beach2024.jpg") && !VisionMemory.isNumberedName("cafe.png"))
+        for path in ["/Users/me/Desktop/acv/project_1/train/masks/x.png", "/Users/me/Desktop/acv/p/face_parsing/masks_test/1.png",
+                     "/Users/me/Desktop/acv/project_1/samples/parsenet/1.png", "/Users/me/Desktop/x/extracted_frames/a.jpg",
+                     "/Users/me/Desktop/acv/p/test_run/a.png"] {
+            #expect(VisionMemory.isDataFolder(path), "\(path)")
+        }
+        #expect(!VisionMemory.isDataFolder("/Users/me/Pictures/Test photos/me.jpg"))
+        #expect(!VisionMemory.isDataFolder("/Users/me/Pictures/test_photo.jpg"))
+        #expect(!VisionMemory.isDataFolder("/Users/me/Downloads/shampoo_input (1).mov"))
     }
 
     @Test func captionsStartWithTheKind() {
