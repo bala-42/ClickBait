@@ -30,4 +30,12 @@ struct NoteFolderTests {
         #expect(block?.hasPrefix("From the user's notes") == true)
         #expect(block?.contains("- Orion review on Fridays (work)") == true)
     }
+
+    @Test func byMeaningWithoutASharedWord() {
+        // "teeth cleaning" shares no word with the dentist line; nomic's scores pick it.
+        let similarity = ["Dentist appointment Tuesday": 0.62, "Atlas launch: 3 November": 0.44, "Orion review on Fridays": 0.48]
+        #expect(NoteFolder.relevant(to: "when's my teeth cleaning", notes: notes, similarity: similarity) == ["Dentist appointment Tuesday (home)"])
+        // Secrets stay out however close they are.
+        #expect(NoteFolder.relevant(to: "internet login", notes: notes, similarity: ["Wifi password is hunter22": 0.9]).isEmpty)
+    }
 }

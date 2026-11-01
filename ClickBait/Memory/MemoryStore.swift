@@ -56,10 +56,32 @@ final class MemoryStore {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
     }
 
-    /// What goes in a prompt for `question`: remembered facts, then matching note lines.
-    func block(for question: String) -> String? {
-        let blocks = [memory.block(for: question), NoteFolder.block(for: question, notes: notes)].compactMap { $0 }
+    /// What goes in a prompt for `question`: remembered facts, then the note lines that fit,
+    /// by meaning (nomic) when it's there, else by shared words.
+    func block(for question: String) async -> String? {
+        let notes = notes
+        let similarity = await lineSimilarity(question, lines: NoteFolder.lines(in: notes).map(\.line))
+        let blocks = [memory.block(for: question), NoteFolder.block(for: question, notes: notes, similarity: similarity)].compactMap { $0 }
         return blocks.isEmpty ? nil : blocks.joined(separator: "\n\n")
+    }
+
+    /// Note lines' vectors, kept while ClickBait runs (a line is embedded once).
+    private var lineVectors: [String: [Float]] = [:]
+
+    /// Each line's meaning match with the question; empty when nomic isn't there or is slow
+    /// (an answer waits at most ~1.5 s for it, usually ~0.05 s).
+    private func lineSimilarity(_ question: String, lines: [String]) async -> [String: Double] {
+        let lines = Array(Set(lines).prefix(400))
+        guard !lines.isEmpty else { return [:] }
+        let missing = lines.filter { lineVectors[$0] == nil }
+        if !missing.isEmpty {
+            guard let fresh = await Embedder.vectors(missing, as: .document, within: 1.5) else { return [:] }
+            for (line, vector) in zip(missing, fresh) { lineVectors[line] = vector }
+        }
+        guard let query = await Embedder.vectors([question], as: .query, within: 1.5)?.first else { return [:] }
+        var scores: [String: Double] = [:]
+        for line in lines { if let vector = lineVectors[line] { scores[line] = Double(SmartSearch.cosine(query, vector)) } }
+        return scores
     }
 
     /// Opens the notes folder in Finder (made first if it isn't there yet).

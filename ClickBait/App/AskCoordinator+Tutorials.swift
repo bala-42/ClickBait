@@ -610,9 +610,7 @@ extension AskCoordinator {
         let outcome = await settings.web.lookUp(query: query, sources: sources, pages: Array(pages.prefix(2)))
         guard !Task.isCancelled else { return result }
         let documents = outcome.documents
-        result.passages = await Task.detached(priority: .userInitiated) {
-            OnDeviceLanguage.pickPassages(documents, question: question + " " + query)
-        }.value
+        result.passages = await OnDeviceLanguage.pickPassagesByMeaning(documents, question: question + " " + query)
         // Off-topic hits (a weak search's best guesses) are neither used nor credited.
         let kept = result.passages.filter { WebRelevance.isRelevant(title: $0.title, text: $0.text, query: query.isEmpty ? question : query) }
         if kept.count < result.passages.count {

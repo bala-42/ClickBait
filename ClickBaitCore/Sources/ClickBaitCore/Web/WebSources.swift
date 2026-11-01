@@ -363,7 +363,7 @@ public enum PassagePicker {
     }
 
     /// Paragraphs merged up to ~600 characters; long ones cut at a sentence; tiny ones dropped.
-    static func chunks(of text: String, target: Int = 600) -> [String] {
+    public static func chunks(of text: String, target: Int = 600) -> [String] {
         let paragraphs = text.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         var result: [String] = []

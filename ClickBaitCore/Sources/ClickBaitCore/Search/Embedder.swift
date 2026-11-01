@@ -13,9 +13,9 @@ public enum Embedder {
 
     /// The texts' vectors in order, or nil when Ollama or the model isn't there. The model is
     /// let go after a minute, so it never holds memory the brain needs.
-    public static func vectors(_ texts: [String], as role: Role) async -> [[Float]]? {
+    public static func vectors(_ texts: [String], as role: Role, within seconds: TimeInterval = 60) async -> [[Float]]? {
         guard !texts.isEmpty else { return [] }
-        var request = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/embed"), timeoutInterval: 60)
+        var request = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/embed"), timeoutInterval: seconds)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // nomic reads up to ~2,000 words; the opening is what a search needs.

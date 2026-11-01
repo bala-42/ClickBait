@@ -358,7 +358,7 @@ extension AskCoordinator {
                 request.snipMarked = flow.snipMarked
             }
             if request.codeAnswer { Log.ask.notice("Code question: answering in Markdown") }
-            request.remembered = MemoryStore.shared.block(for: question)
+            request.remembered = await MemoryStore.shared.block(for: question)
             request.askSubject = snip != nil && history.isEmpty && settings.internet.isOn
             if let lookup {
                 // What the lookup found within its ~4 s; a question not about the screen is
