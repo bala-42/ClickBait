@@ -367,8 +367,10 @@ actor SearchIndex {
         let prompt = VisionMemory.captionPrompt(documentLike: VisionMemory.isDocumentLike(labels: item.text, name: item.title),
                                                 video: item.kind == .video)
         let image: CGImage?
+        var frames: [CGImage] = []
         if item.kind == .video, let path = item.file {
-            image = await threeFrames(of: URL(fileURLWithPath: path))
+            frames = await threeFrames(of: URL(fileURLWithPath: path))
+            image = frames.first
         } else if let path = item.file {
             image = NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         } else if item.id.hasPrefix("photo:") {
@@ -376,12 +378,16 @@ actor SearchIndex {
         } else {
             image = nil
         }
-        guard let image, let jpeg = jpeg(image, longSide: 512) else { return nil }
+        guard let image else { return nil }
+        // A video's frames go as separate, larger pictures: squeezed into one strip, the model
+        // missed who was doing what (2026-11-02).
+        let jpegs = (frames.isEmpty ? [image] : frames).compactMap { jpeg($0, longSide: frames.isEmpty ? 512 : 640) }
+        guard !jpegs.isEmpty else { return nil }
         var call = URLRequest(url: OllamaProvider.baseURL.appending(path: "api/generate"), timeoutInterval: 45)
         call.httpMethod = "POST"
         call.setValue("application/json", forHTTPHeaderField: "Content-Type")
         call.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "model": brain, "stream": false, "think": false, "images": [jpeg.base64EncodedString()],
+            "model": brain, "stream": false, "think": false, "images": jpegs.map { $0.base64EncodedString() },
             "prompt": prompt,
             "options": ["temperature": 0, "num_predict": 48]
         ] as [String: Any])
@@ -609,34 +615,20 @@ actor SearchIndex {
     }
 
     /// A video's frame from its middle (what it's about, past any title card), small.
-    /// Three moments of a video (¼, ½, ¾ of the way) side by side, for its caption: one middle
-    /// frame described a hair-wash video as "a doll's head being washed" (user: "there is no
-    /// doll", 2026-11-02); one odd moment can't decide the whole video now.
-    private static func threeFrames(of url: URL) async -> CGImage? {
+    /// Three moments of a video (¼, ½, ¾ of the way), for its caption: one middle frame
+    /// described a hair-wash video as "a doll's head being washed" (user: "there is no doll",
+    /// 2026-11-02); one odd moment can't decide the whole video now.
+    private static func threeFrames(of url: URL) async -> [CGImage] {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 512, height: 512)
-        guard let duration = try? await asset.load(.duration), duration.seconds.isFinite, duration.seconds > 0 else { return nil }
+        generator.maximumSize = CGSize(width: 768, height: 768)
+        guard let duration = try? await asset.load(.duration), duration.seconds.isFinite, duration.seconds > 0 else { return [] }
         var frames: [CGImage] = []
         for share in [0.25, 0.5, 0.75] {
             if let frame = try? await generator.image(at: CMTime(seconds: duration.seconds * share, preferredTimescale: 600)).image { frames.append(frame) }
         }
-        guard let first = frames.first else { return nil }
-        guard frames.count > 1 else { return first }
-        let height = 384
-        let widths = frames.map { Int(Double($0.width) * Double(height) / Double(max(1, $0.height))) }
-        let gap = 8
-        guard let context = CGContext(data: nil, width: widths.reduce(0, +) + gap * (frames.count - 1), height: height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return first }
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: context.width, height: height))
-        var x = 0
-        for (frame, width) in zip(frames, widths) {
-            context.draw(frame, in: CGRect(x: x, y: 0, width: width, height: height))
-            x += width + gap
-        }
-        return context.makeImage() ?? first
+        return frames
     }
 
     private static func middleFrame(of url: URL) async -> CGImage? {

@@ -29,7 +29,7 @@ public enum VisionMemory {
     /// 3,000 captions said "photo", 5 "painting": user's report, 2026-11-01).
     public static func captionPrompt(documentLike: Bool, video: Bool = false) -> String {
         if video {
-            return "These are three moments from one video, left to right. In one plain sentence of at most 22 words, start with \"A video of\", then who or what is in it, what's happening, where. Describe only what is clearly visible in the frames; don't guess. People are often seen from behind or only partly: arms, hands or a head of hair belong to a person, not a doll or mannequin, unless it is clearly a toy. No preamble."
+            return "These are three moments from one video, in order. In one plain sentence of at most 22 words, start with \"A video of\", then who or what is in it, what's happening, where. Describe only what is clearly visible in the frames; don't guess. People are often seen from behind or only partly: arms, hands or a head of hair belong to a person, not a doll or mannequin, unless it is clearly a toy. If something is being done to someone (hair washed, cut or styled, makeup put on), say whether they do it themselves or another person does it to them. No preamble."
         }
         return documentLike
             ? "In one plain sentence of at most 25 words, start with what kind of thing this is (a screenshot, chart, slide, receipt, code, form, web page, diagram…), then its title or subject and its key details. No preamble."
@@ -39,7 +39,7 @@ public enum VisionMemory {
     /// Which caption style a caption was written in: older ones are redone in the background.
     public static let captionStyle = "kinds-1"
     /// Videos' own style: "frames3-1", described from three moments (`SearchIndex.threeFrames`).
-    public static let videoCaptionStyle = "frames3-1"
+    public static let videoCaptionStyle = "frames3-2"
 
     /// Folders that hold data, not pictures someone would look for: datasets, code
     /// dependencies, build output (2,643 of the user's 3,000 indexed pictures were 16-pixel

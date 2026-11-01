@@ -209,6 +209,20 @@ public enum SmartSearch {
         return na > 0 && nb > 0 ? dot / (na.squareRoot() * nb.squareRoot()) : 0
     }
 
+    /// "…shampooing her OWN hair" (user's report, 2026-11-02): meaning alone ranks someone washing
+    /// another's hair the same. When the search says own/herself/themselves, a description of
+    /// someone else doing it (or a mannequin) sinks, and one of them doing it themselves rises.
+    static func selfMatch(_ request: Request, _ item: Item) -> Float {
+        let reflexive: Set<String> = ["own", "herself", "himself", "themselves", "myself", "yourself", "selfie"]
+        guard request.terms.contains(where: reflexive.contains), let caption = item.caption?.lowercased() else { return 0 }
+        let other = ["another person", "someone else", "someone", "stylist", "hairdresser", "barber", "mannequin", "doll",
+                     "having their", "having her", "having his", "getting their", "getting her", "being washed", "being styled", "by a "]
+        if other.contains(where: caption.contains) { return -0.3 }
+        let selfPhrase = caption.range(of: #"\b(their|her|his) own\b|\bthemselves\b|\bherself\b|\bhimself\b|\b\w+ing (their|her|his) "#,
+                                       options: .regularExpression) != nil
+        return selfPhrase ? 0.1 : 0
+    }
+
     /// Share of the request's words found in the item's title and text (0…1).
     public static func wordMatch(_ request: Request, _ item: Item) -> Float {
         let haystack = item.searchable.lowercased()
@@ -234,7 +248,7 @@ public enum SmartSearch {
             // videos above the two described as a person washing their hair (2026-11-02).
             let nameOnly = entry.item.kind.isVisual && entry.item.caption == nil
             let spotlight: Float = boosted.contains(entry.item.id) ? (nameOnly ? 0.1 : 0.3) : 0
-            return (entry.item, 0.7 * meaning + 0.3 * words + kindBonus + spotlight + you)
+            return (entry.item, 0.7 * meaning + 0.3 * words + kindBonus + spotlight + you + selfMatch(request, entry.item))
         }
         // Good on its own (0.4), or close to the best: "within 0.25 of the best" alone left one
         // result when a file Spotlight matched by name pulled far ahead (user's report:

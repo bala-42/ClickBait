@@ -118,4 +118,18 @@ struct SmartSearchTests {
         #expect(SmartSearch.stem("hair") == "hair")
         #expect(SmartSearch.stem("towel") == "towel")
     }
+
+    @Test func ownMeansThemselves() {
+        let request = SmartSearch.request(in: "find me videos of a girl shampooing her own hair")!
+        func item(_ caption: String) -> SmartSearch.Item {
+            var item = SmartSearch.Item(id: caption, kind: .video, title: "v.mp4", place: "x", text: "", file: "/x/v.mp4")
+            item.caption = caption
+            return item
+        }
+        #expect(SmartSearch.selfMatch(request, item("A video of a person washing their long, dark hair with white foam in a room.")) > 0)
+        #expect(SmartSearch.selfMatch(request, item("A video of a woman having her hair washed by a stylist at a salon.")) < 0)
+        #expect(SmartSearch.selfMatch(request, item("A video of a mannequin head being washed.")) < 0)
+        let plain = SmartSearch.request(in: "find shampoo videos")!
+        #expect(SmartSearch.selfMatch(plain, item("A video of a woman having her hair washed by a stylist.")) == 0)
+    }
 }
