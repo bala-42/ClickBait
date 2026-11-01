@@ -215,8 +215,11 @@ private final class CameraPreviewHost: NSView {
 /// The Mirror photo booth: the mirrored camera on the left; on the right the shutter (a 3-2-1
 /// countdown, then a flash), the last four shots (drag one out, or save them all to
 /// ~/Pictures/ClickBait) and the way back. Unsaved shots are deleted when it closes.
+/// The notch's Studio (was Mirror; user's ask, 2026-11-01): Mirror, the camera for quick checks
+/// and photos; Prompter, the script and the teleprompter that hangs under the camera.
 struct PhotoBooth: View {
     @StateObject private var camera = CameraMirrorModel()
+    @Bindable private var studio = StudioModel.shared
     let tabBeans: Namespace.ID
     let onClose: () -> Void
     @State private var count: Int?
@@ -232,27 +235,43 @@ struct PhotoBooth: View {
                         .matchedGeometryEffect(id: NotchController.Model.Tab.mirror, in: tabBeans)
                         .accessibilityHidden(true)
                 }
-                Text("Mirror").font(.system(size: 12, weight: .semibold))
+                Text("Studio").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Picker("", selection: $studio.mode) {
+                    Text("Mirror").tag(StudioModel.Mode.mirror)
+                    Text("Prompter").tag(StudioModel.Mode.prompter)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 170)
+                .accessibilityLabel("Studio mode")
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Close mirror")
+                .accessibilityLabel("Close Studio")
             }
             .foregroundStyle(NotchPalette.text)
             .padding(.horizontal, 16)
             .frame(height: 26)
-            HStack(alignment: .top, spacing: 10) {
-                viewfinder.frame(width: 420, height: 236)
-                controls
+            if studio.mode == .mirror {
+                HStack(alignment: .top, spacing: 10) {
+                    viewfinder.frame(width: 420, height: 236)
+                    controls
+                }
+                .padding(.horizontal, 10)
+            } else {
+                PrompterDesk(studio: studio)
+                    .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
         }
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .onAppear { camera.start() }
+        // The camera runs only in Mirror.
+        .onAppear { if studio.mode == .mirror { camera.start() } }
         .onDisappear { camera.stop() }
+        .onChange(of: studio.mode) { _, mode in if mode == .mirror { camera.start() } else { camera.stop() } }
     }
 
     private var viewfinder: some View {
@@ -377,5 +396,72 @@ private struct ShotTile: View {
             }
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// Studio's Prompter: the script (typed, pasted, dropped, or from a file), its cues, and the
+/// teleprompter's start and stop.
+private struct PrompterDesk: View {
+    @Bindable var studio: StudioModel
+    @State private var targeted = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(white: 0.06))
+                TextEditor(text: $studio.text)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(NotchPalette.text)
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
+                if studio.text.isEmpty {
+                    Text("Paste or type your script, or drop a file here: text, Markdown, Word, RTF, a web page or a PDF.\n\n# Headings, “Intro:” lines and --- dividers become cues.")
+                        .font(.system(size: 12.5)).foregroundStyle(NotchPalette.secondary)
+                        .padding(14).allowsHitTesting(false)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(targeted ? NotchPalette.highlight : Color.white.opacity(0.08), lineWidth: targeted ? 1.5 : 1))
+            .frame(width: 420, height: 236)
+            // A click makes the notch key, so the script can be typed in.
+            .simultaneousGesture(TapGesture().onEnded { ShelfDrop.focusNotch() })
+            .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in StudioModel.shared.load(url) }
+                }
+                return true
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(studio.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text).lineLimit(2)
+                Text(studio.script.cues.isEmpty ? "No cues yet" : "\(studio.script.cues.count) cues")
+                    .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+                Menu {
+                    ForEach(studio.script.cues) { cue in Button(cue.title) { studio.goTo(cue) } }
+                } label: {
+                    Label("Jump to a cue", systemImage: "list.bullet")
+                }
+                .menuStyle(.button).disabled(studio.script.cues.isEmpty).fixedSize()
+                Button { studio.chooseFile() } label: { Label("Open a script…", systemImage: "doc") }
+                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
+                Spacer(minLength: 0)
+                if let problem = studio.problem {
+                    Text(problem).font(.system(size: 11)).foregroundStyle(CompanionTone.problem).fixedSize(horizontal: false, vertical: true)
+                }
+                Button(studio.prompting ? "Stop prompter" : "Start prompter") {
+                    if studio.prompting { studio.stopPrompting() } else { studio.startPrompting() }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 14).frame(height: 28)
+                .background(studio.prompting ? Color.white.opacity(0.7) : Color.white, in: Capsule())
+                Text("Hangs under the camera. Invisible when you share your screen.")
+                    .font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary).fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 236)
+        }
     }
 }

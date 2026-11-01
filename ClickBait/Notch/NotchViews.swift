@@ -897,7 +897,7 @@ struct IslandPills: View {
         switch tab {
         case .ask: Pill(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed, tab: .ask)
         case .shelf: Pill(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen, tab: .shelf)
-        case .mirror: Pill(name: "Mirror", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
+        case .mirror: Pill(name: "Studio", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
         case .music: Pill(name: music?.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow, tab: .music)
         case .home, .settings: nil
         }
