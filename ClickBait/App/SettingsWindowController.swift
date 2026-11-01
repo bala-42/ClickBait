@@ -890,8 +890,9 @@ private struct FolderList: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        guard panel.runBelowNotch() == .OK else { return }
-        for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
+        panel.openFromNotch { urls in
+            for url in urls where !folders.contains(url.path) { folders.append(url.path) }
+        }
     }
 }
 
@@ -919,13 +920,15 @@ private struct YourPhotoRow: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.message = "Pick a photo of yourself (your face clear and big)."
-        guard panel.runBelowNotch() == .OK, let url = panel.url else { return }
-        if YourFace.setReference(from: url) {
-            isSet = true
-            problem = nil
-            reindex()
-        } else {
-            problem = "No face found in that photo. Try one where your face is clear."
+        panel.openFromNotch { urls in
+            guard let url = urls.first else { return }
+            if YourFace.setReference(from: url) {
+                isSet = true
+                problem = nil
+                reindex()
+            } else {
+                problem = "No face found in that photo. Try one where your face is clear."
+            }
         }
     }
 

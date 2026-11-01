@@ -94,8 +94,9 @@ struct SpeechModelSection: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.folder, .zip]
-        guard panel.runBelowNotch() == .OK, let url = panel.url else { return }
-        speech.importModel(from: url)
+        panel.openFromNotch { urls in
+            if let url = urls.first { speech.importModel(from: url) }
+        }
     }
 
     private var needsDownload: Bool {

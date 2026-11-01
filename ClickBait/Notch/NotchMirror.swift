@@ -399,9 +399,22 @@ private struct ShotTile: View {
 private struct PrompterDesk: View {
     @Bindable var studio: StudioModel
     @State private var targeted = false
+    /// Studio's own black script picker, in place of the editor.
+    @State private var picking = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            if picking {
+                ScriptPicker(studio: studio) { picking = false }
+                    .frame(width: 420, height: 236)
+            } else {
+                editor
+            }
+            controls
+        }
+    }
+
+    private var editor: some View {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(white: 0.06))
                 TextEditor(text: $studio.text)
@@ -428,6 +441,9 @@ private struct PrompterDesk: View {
                 }
                 return true
             }
+    }
+
+    private var controls: some View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(studio.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text).lineLimit(2)
                 Text(studio.script.cues.isEmpty ? "No cues yet" : "\(studio.script.cues.count) cues")
@@ -438,7 +454,7 @@ private struct PrompterDesk: View {
                     Label("Jump to a cue", systemImage: "list.bullet")
                 }
                 .menuStyle(.button).disabled(studio.script.cues.isEmpty).fixedSize()
-                Button { studio.chooseFile() } label: { Label("Open a script…", systemImage: "doc") }
+                Button { picking.toggle() } label: { Label(picking ? "Back to the script" : "Open a script…", systemImage: "doc") }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
                 // The local brain: rewrite it the way people talk (and make cues), or only add cues.
                 HStack(spacing: 10) {
@@ -476,7 +492,6 @@ private struct PrompterDesk: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 236)
-        }
     }
 }
 

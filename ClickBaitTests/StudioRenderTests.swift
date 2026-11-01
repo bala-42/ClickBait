@@ -44,3 +44,20 @@ struct StudioRenderTests {
         try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "switch.png"))
     }
 }
+
+/// Studio's own script picker, filled from this Mac, to look at (ClickBaitTests-studio/picker.png).
+@MainActor
+struct ScriptPickerRenderTests {
+    @Test func pickerDraws() async throws {
+        let view = ScriptPicker(studio: .shared) {}.frame(width: 420, height: 236).padding(12).background(Color(white: 0.08))
+        let host = NSHostingView(rootView: view)
+        host.frame.size = host.fittingSize
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        try await Task.sleep(for: .seconds(3))  // the Spotlight search
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.sharpRep())
+        let folder = FileManager.default.temporaryDirectory.appending(path: "ClickBaitTests-studio")
+        try rep.representation(using: .png, properties: [:])?.write(to: folder.appending(path: "picker.png"))
+    }
+}

@@ -209,8 +209,9 @@ final class StudioModel {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = Self.fileTypes
         panel.message = "Choose a script: text, Markdown, Word, RTF, a web page or a PDF."
-        guard panel.runBelowNotch() == .OK, let url = panel.url else { return }
-        load(url)
+        panel.openFromNotch { [weak self] urls in
+            if let url = urls.first { self?.load(url) }
+        }
     }
 
     func startPrompting() {

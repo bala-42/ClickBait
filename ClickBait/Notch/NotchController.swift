@@ -643,7 +643,8 @@ final class NotchController {
         guard on else { return }
         let escape: (NSEvent) -> Bool = { $0.keyCode == 53 }
         if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            guard escape(event) else { return event }
+            // A file picker sheet on the notch: Esc cancels it, not the notch under it.
+            guard escape(event), event.window?.attachedSheet == nil, !(event.window is NSOpenPanel) else { return event }
             MainActor.assumeIsolated { self?.apply(.escape) }
             return nil
         }) { escapeMonitors.append(local) }
