@@ -17,6 +17,8 @@ enum TranscriberError: LocalizedError {
 actor Transcriber {
     private var whisper: WhisperKit?
     private var loadedFolder: URL?
+    /// A multilingual model (Large Turbo): the language is detected, not assumed English.
+    private var multilingual = false
 
     /// Loads a model that is already on disk. `download: false` plus a tokenizer that's
     /// already in `tokenizerBase` means this never touches the network.
@@ -37,6 +39,7 @@ actor Transcriber {
         )
         whisper = try await WhisperKit(config)
         loadedFolder = modelFolder
+        multilingual = !modelFolder.lastPathComponent.contains(".en")
     }
 
     /// Whisper conditions on up to ~224 tokens; fewer keeps it fast and stops a prompt leaking in.
@@ -59,8 +62,9 @@ actor Transcriber {
         }
         let options = DecodingOptions(
             task: .transcribe,
-            language: "en",
+            language: multilingual ? nil : "en",
             temperature: 0,
+            detectLanguage: multilingual,
             skipSpecialTokens: true,
             withoutTimestamps: true,
             promptTokens: promptTokens,

@@ -9,10 +9,14 @@ enum SpeechModel: String, CaseIterable, Identifiable {
     case tinyEnglish = "tiny.en"
     case baseEnglish = "base.en"
     case smallEnglish = "small.en"
+    /// Whisper Large v3 Turbo: any language, detected as you speak. Measured 2026-11-01 on 12
+    /// spoken English sentences: the same 4.8% word errors as Small, twice as slow (0.44 s vs
+    /// 0.21 s), so English stays on Small; this is for speaking other languages.
+    case turbo = "large-v3-v20240930_turbo_632MB"
     /// Apple's on-device recognizer (`AppleSpeech`), macOS 26+.
     case apple = "apple"
 
-    static let whisper: [SpeechModel] = [.tinyEnglish, .baseEnglish, .smallEnglish]
+    static let whisper: [SpeechModel] = [.tinyEnglish, .baseEnglish, .smallEnglish, .turbo]
 
     /// What the picker shows: Apple's only where this Mac can run it.
     static var offered: [SpeechModel] {
@@ -25,13 +29,14 @@ enum SpeechModel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Where WhisperKit stores this model's tokenizer under the download base.
-    var tokenizerPath: String { "models/openai/whisper-\(rawValue)/tokenizer.json" }
+    var tokenizerPath: String { "models/openai/\(SpeechModelImport.tokenizerName(for: rawValue))/tokenizer.json" }
 
     var displayName: String {
         switch self {
         case .tinyEnglish: "Tiny (English, ~75 MB) — fastest"
         case .baseEnglish: "Base (English, ~145 MB) — recommended"
         case .smallEnglish: "Small (English, ~480 MB) — most accurate"
+        case .turbo: "Large Turbo (any language, ~630 MB) — for other languages"
         case .apple: "Apple on-device (English, macOS 26+)"
         }
     }

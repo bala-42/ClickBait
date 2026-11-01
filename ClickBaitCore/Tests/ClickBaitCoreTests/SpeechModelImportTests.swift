@@ -218,4 +218,9 @@ struct SpeechModelInstallTests {
             try SpeechModelImport.install(from: zip, into: work.appending(path: "base"), variants: variants, preferred: nil)
         }
     }
+
+    @Test func largeV3VariantsShareOneTokenizer() {
+        #expect(SpeechModelImport.tokenizerName(for: "large-v3-v20240930_turbo_632MB") == "whisper-large-v3")
+        #expect(SpeechModelImport.destination(for: "small.en").tokenizer == "models/openai/whisper-small.en")
+    }
 }

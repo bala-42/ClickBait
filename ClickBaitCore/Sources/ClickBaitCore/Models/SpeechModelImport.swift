@@ -29,13 +29,13 @@ public enum SpeechModelImportError: LocalizedError, Equatable, Sendable {
         case .noModel:
             "That isn't a speech model: no “openai_whisper-…” folder inside. Choose the SpeechModels folder (or a .zip of it) from a Mac where ClickBait downloaded the model."
         case .unsupported(let variant):
-            "That's the “\(variant)” model; ClickBait uses tiny.en, base.en or small.en."
+            "That's the “\(variant)” model; ClickBait uses tiny.en, base.en, small.en or Large Turbo."
         case .several(let variants):
             "That holds several models (\(variants.joined(separator: ", "))). Pick one in Settings → Speech recognition first, then import again."
         case .incomplete(let variant, let missing):
             "The \(variant) model is incomplete: \(missing.joined(separator: ", ")) missing. Copy the whole folder again."
         case .noTokenizer(let variant):
-            "The \(variant) model's tokenizer is missing (models/openai/whisper-\(variant)/tokenizer.json). Import the whole SpeechModels folder, not just the model inside it."
+            "The \(variant) model's tokenizer is missing (models/openai/\(SpeechModelImport.tokenizerName(for: variant))/tokenizer.json). Import the whole SpeechModels folder, not just the model inside it."
         case .badTokenizer:
             "The tokenizer file is damaged. Copy the folder again."
         }
@@ -47,6 +47,12 @@ public enum SpeechModelImportError: LocalizedError, Equatable, Sendable {
 /// so it's testable without the disk; `listing(of:)` makes one.
 public enum SpeechModelImport {
     static let modelPrefix = "openai_whisper-"
+
+    /// The tokenizer's folder name: Large v3's variants ("large-v3-v20240930_turbo_632MB")
+    /// share `whisper-large-v3`'s; the others have their own.
+    public static func tokenizerName(for variant: String) -> String {
+        variant.hasPrefix("large-v3") ? "whisper-large-v3" : "whisper-\(variant)"
+    }
     /// What WhisperKit loads, as the download leaves it.
     public static let modelParts = ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc",
                                     "config.json", "generation_config.json"]
@@ -56,7 +62,7 @@ public enum SpeechModelImport {
 
     /// Where the download puts a variant's parts, under the speech models folder.
     public static func destination(for variant: String) -> (model: String, tokenizer: String) {
-        ("models/argmaxinc/whisperkit-coreml/\(modelPrefix)\(variant)", "models/openai/whisper-\(variant)")
+        ("models/argmaxinc/whisperkit-coreml/\(modelPrefix)\(variant)", "models/openai/\(tokenizerName(for: variant))")
     }
 
     /// `paths`: files and folders, "/"-separated, relative to the picked item's parent (so
@@ -107,7 +113,7 @@ public enum SpeechModelImport {
             guard path.hasSuffix("/tokenizer.json") else { return nil }
             return String(path.dropLast("/tokenizer.json".count))
         }).filter(complete).sorted()
-        if let own = folders.first(where: { $0.hasSuffix("/whisper-\(variant)") || $0 == "whisper-\(variant)" }) { return own }
+        if let own = folders.first(where: { $0.hasSuffix("/" + tokenizerName(for: variant)) || $0 == tokenizerName(for: variant) }) { return own }
         if folders.contains(model) { return model }
         return folders.count == 1 ? folders[0] : nil
     }
