@@ -152,6 +152,7 @@ final class NotchController {
         searxng = SearXNGStatus(fetcher: settings.web)
         model = Model(note: Note(text: settings.notchNote, save: { [weak settings] in settings?.notchNote = $0 }))
         StudioModel.shared.foldNotch = { [weak self] in self?.apply(.escape) }
+        StudioModel.shared.notchChanged = { [weak self] in self?.prompterChanged() }
         music.spotifyArtworkAllowed = { [weak settings] in
             guard let settings else { return false }
             return settings.spotifyArtworkAlways || settings.internet.isOn
@@ -221,12 +222,35 @@ final class NotchController {
 
     // MARK: State
 
+    /// Prompting in the notch: its size (with the cue list when open), else nil.
+    static var prompter: (width: Double, height: Double)? {
+        let studio = StudioModel.shared
+        guard studio.inNotch else { return nil }
+        let cues = studio.cuesOpen ? 8 + PrompterController.cueListHeight(studio.script.cues.count) : 0
+        return (Double(studio.size.width), Double(studio.size.height + cues))
+    }
+
+    /// Studio started or stopped prompting, or resized it: the notch springs to the new shape;
+    /// while prompting it's hidden from screen sharing, like the floating prompter.
+    private func prompterChanged() {
+        let inNotch = StudioModel.shared.inNotch
+        for panel in panels.values { panel.sharingType = inNotch ? .none : .readOnly }
+        if inNotch, model.state != .expanded {
+            model.tab = .mirror
+            apply(.clicked)
+        }
+        place()
+    }
+
     private func apply(_ event: NotchPanel.Event) {
         let before = model.state
         var event = event
         if case .enabled(true) = event, NSScreen.screens.isEmpty { event = .displayAvailable(false) }
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }
+        // Prompting in the notch: nothing folds it (Esc in another app, the companion making
+        // room, a swipe, the pointer leaving) — only the prompter's own ✕ or Stop.
+        if StudioModel.shared.inNotch, after != .expanded, before == .expanded { return }
         #if DEBUG
         primaryPanel?.contentView.map { NotchFrameProbe.measure($0, label: "\(before) → \(after)") }
         #endif
@@ -372,13 +396,13 @@ final class NotchController {
                   let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                notch: notch, activity: model.activity, hud: hud,
                                                shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                               mirror: model.tab == .mirror, chat: model.showsChat) else {
+                                               mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) else {
                 // Displays without a physical notch still receive the same centered panel.
                 guard let displayID = Self.displayID(screen),
                       let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                    notch: nil, activity: model.activity, hud: hud,
                                                    shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                                   mirror: model.tab == .mirror, chat: model.showsChat) else { continue }
+                                                   mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) else { continue }
                 positionPanel(frame, notch: nil, displayID: displayID)
                 continue
             }
@@ -399,7 +423,7 @@ final class NotchController {
             if near, let open = NotchPanel.frame(.expanded, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                  notch: Self.notch(on: screen), activity: model.activity, hud: false,
                                                  shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                                 mirror: model.tab == .mirror, chat: model.showsChat) {
+                                                 mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) {
                 let width = max(open.width, target.width) * 1.12, height = max(open.height, target.height) * 1.12
                 room = CGRect(x: target.midX - width / 2, y: target.maxY - height, width: width, height: height)
             }
@@ -617,6 +641,11 @@ final class NotchController {
 
     /// Two fingers on the trackpad over the notch: down opens, up closes (`PullGesture`).
     private func scrolled(_ event: NSEvent) {
+        // Prompting in the notch: two fingers scroll the script, not pull the notch.
+        if StudioModel.shared.inNotch {
+            StudioModel.shared.scroll(by: -(event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 8))
+            return
+        }
         guard event.hasPreciseScrollingDeltas else { return }  // a mouse wheel isn't a pull
         let ended = event.phase == .ended || event.phase == .cancelled || event.momentumPhase == .began
         if let pulled = pull.add(deltaY: Double(event.scrollingDeltaY), inverted: event.isDirectionInvertedFromDevice, ended: ended) {
@@ -645,6 +674,11 @@ final class NotchController {
         if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             // A file picker sheet on the notch: Esc cancels it, not the notch under it.
             guard escape(event), event.window?.attachedSheet == nil, !(event.window is NSOpenPanel) else { return event }
+            // Esc in the prompting notch stops the prompter (and the notch goes back to Studio).
+            if StudioModel.shared.inNotch {
+                MainActor.assumeIsolated { StudioModel.shared.stopPrompting() }
+                return nil
+            }
             MainActor.assumeIsolated { self?.apply(.escape) }
             return nil
         }) { escapeMonitors.append(local) }

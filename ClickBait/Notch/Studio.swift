@@ -36,8 +36,12 @@ final class StudioModel {
     var prompting = false
     /// The morph: false while it grows out of the notch (and shrinks back into it).
     var shown = false
-    /// Set by the notch: folds it, so the notch itself seems to become the prompter.
+    /// Set by the notch: folds it (floating: the prompter is its own window).
     @ObservationIgnored var foldNotch: (() -> Void)?
+    /// Set by the notch: the prompter started, stopped or changed size in it.
+    @ObservationIgnored var notchChanged: (() -> Void)?
+    /// Prompting in the notch itself (not floating): the open notch is the prompter.
+    var inNotch: Bool { prompting && !floating }
     /// Scrolling by itself (phase 1: at `speed`; with voice-following, at your pace).
     var playing = false
     /// Points a second.
@@ -147,7 +151,15 @@ final class StudioModel {
     var floating = false {
         didSet {
             UserDefaults.standard.set(floating, forKey: Key.floating)
-            if floating != oldValue, prompting { PrompterController.shared.resize(to: size) }
+            guard floating != oldValue, prompting else { return }
+            // Out of the notch into its own window, or back into the notch.
+            if floating {
+                shown = true
+                PrompterController.shared.show()
+            } else {
+                PrompterController.shared.hide()
+            }
+            notchChanged?()
         }
     }
     var floatAt: CGPoint? {
@@ -220,15 +232,21 @@ final class StudioModel {
             return
         }
         problem = nil
-        // The notch folds and the prompter grows out of it (user's ask, 2026-11-01: "the notch
-        // should morph into the teleprompter").
-        foldNotch?()
         prompting = true
-        shown = false
-        PrompterController.shared.show()
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))  // the fold under way first
+        if floating {
+            // Its own window, growing out of the folding notch.
+            foldNotch?()
+            shown = false
+            PrompterController.shared.show()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(120))
+                shown = true
+            }
+        } else {
+            // The open notch itself springs into the prompter (user's ask, 2026-11-01: "the
+            // thing does not turn into the prompter … a separate notch situation").
             shown = true
+            notchChanged?()
         }
         startFollowing()  // it follows your voice from the start; ▶ scrolls at a set speed instead
     }
@@ -237,6 +255,13 @@ final class StudioModel {
         stopFollowing()
         playing = false
         cuesOpen = false
+        if !floating {
+            // The notch springs back to Studio.
+            prompting = false
+            shown = false
+            notchChanged?()
+            return
+        }
         shown = false  // shrinks back into the notch, then goes
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(420))

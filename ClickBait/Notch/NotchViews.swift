@@ -137,16 +137,17 @@ struct NotchView: View {
 
     var body: some View {
         let open = state == .expanded
+        let prompter = isHere ? NotchController.prompter : nil
         let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil,
                                     shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
-                                    chat: model.showsChat)
+                                    chat: model.showsChat, prompter: prompter)
         let ear = CGFloat(NotchPanel.ear)
         let shape = NotchShape(ear: ear, bottom: CGFloat(look.radius))
         // The open size for this tab, whatever the state: the open content is laid out at it
         // once and keeps it while it fades out, so closing fades instead of cutting off.
         let openLook = NotchPanel.shape(.expanded, notch: notch, activity: model.activity, hud: false,
                                         shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
-                                        chat: model.showsChat)
+                                        chat: model.showsChat, prompter: prompter)
         let openFrame = CGSize(width: CGFloat(openLook.width), height: CGFloat(openLook.height))
         let place = BeanPlace(state: state, tab: model.tab, mirror: model.tab == .mirror || model.showsChat, hud: hud != nil,
                               greeting: model.greeting, cover: music.hasTrack && music.artwork != nil, space: FocusCard.showsSpace(music),
@@ -188,7 +189,12 @@ struct NotchView: View {
             }
             Group {
                 if open {
-                    if model.tab == .mirror {
+                    if model.tab == .mirror, prompter != nil {
+                        // The notch *is* the prompter: the same window, sprung to its size.
+                        PrompterView(studio: .shared)
+                            .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
+                            .transition(.opacity)
+                    } else if model.tab == .mirror {
                         PhotoBooth(tabBeans: tabBeans) { onTabChange(.home) }
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)

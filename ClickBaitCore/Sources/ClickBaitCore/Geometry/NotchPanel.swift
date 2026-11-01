@@ -115,10 +115,13 @@ public enum NotchPanel {
     public static let closeCurve = (x1: 0.45, y1: 0.0, x2: 0.2, y2: 1.0, duration: 0.34)
 
     /// The black shape for a state: its size and bottom corner radius (not counting the ears).
+    /// `prompter`: Studio's prompter, prompting in the notch — the open notch *is* the prompter,
+    /// at its size (user's ask, 2026-11-01: "the thing does not turn into the prompter").
     public static func shape(_ state: State, notch: Rect?, activity: Bool, hud: Bool,
-                             shelf: Bool = false, settings: Bool = false, mirror: Bool = false, chat: Bool = false)
+                             shelf: Bool = false, settings: Bool = false, mirror: Bool = false, chat: Bool = false,
+                             prompter: (width: Double, height: Double)? = nil)
         -> (width: Double, height: Double, radius: Double) {
-        let expanded = settings ? settingsSize : mirror ? mirrorSize : chat ? chatSize : shelf ? shelfSize : expandedSize
+        let expanded = prompter ?? (settings ? settingsSize : mirror ? mirrorSize : chat ? chatSize : shelf ? shelfSize : expandedSize)
         guard let notch else {
             // The volume HUD keeps its full size without a notch (a second display): its wings
             // either side of an empty middle, and the corridor under them.
@@ -133,6 +136,7 @@ public enum NotchPanel {
         case .hidden:
             return (0, 0, 0)
         case .expanded:
+            if prompter != nil { return (max(expanded.width, notch.width + 24), expanded.height, openCorner) }
             return (max(expanded.width, notch.width + 2 * activityWing), expanded.height, openCorner)
         case .peek:
             if hud { return (notch.width + 2 * hudWing, notch.height + hudCorridor, compactCorner) }
@@ -149,10 +153,11 @@ public enum NotchPanel {
     /// covers, so menu-bar items either side stay clickable.
     public static func frame(_ state: State, screen: Rect, visible: Rect, notch: Rect?, activity: Bool = false,
                              hud: Bool = false, shelf: Bool = false,
-                             settings: Bool = false, mirror: Bool = false, chat: Bool = false) -> Rect? {
+                             settings: Bool = false, mirror: Bool = false, chat: Bool = false,
+                             prompter: (width: Double, height: Double)? = nil) -> Rect? {
         guard state != .hidden else { return nil }
         let look = shape(state, notch: notch, activity: activity, hud: hud,
-                         shelf: shelf, settings: settings, mirror: mirror, chat: chat)
+                         shelf: shelf, settings: settings, mirror: mirror, chat: chat, prompter: prompter)
         let width = min(look.width + 2 * ear, screen.width - 16)
         let centre = notch?.midX ?? screen.midX
         let x = min(max(centre - width / 2, screen.minX + 8), screen.maxX - 8 - width)

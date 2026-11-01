@@ -35,8 +35,9 @@ final class PrompterController {
         panel?.orderOut(nil)
     }
 
-    /// New size from a corner drag: still centred under the notch.
+    /// New size from a drag (or the cue list): in the notch, the notch springs to it.
     func resize(to size: CGSize) {
+        if StudioModel.shared.inNotch { StudioModel.shared.notchChanged?(); return }
         guard let panel else { return }
         place(panel, size: size)
     }
