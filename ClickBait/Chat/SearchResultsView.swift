@@ -11,6 +11,10 @@ import SwiftUI
 struct SearchResultsView: View {
     let items: [SmartSearch.Item]
     let answer: String
+    /// The picture whose description is being edited, right here in the card.
+    @State private var editing: SmartSearch.Item?
+    /// Descriptions saved in this card, shown at once.
+    @State private var edited: [String: String] = [:]
 
     private var pictures: [SmartSearch.Item] { items.filter { $0.kind == .image } }
     private var others: [SmartSearch.Item] { items.filter { $0.kind != .image } }
@@ -22,8 +26,17 @@ struct SearchResultsView: View {
             }
             if !pictures.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132, maximum: 180), spacing: 10)], alignment: .leading, spacing: 12) {
-                    ForEach(pictures) { PictureTile(item: $0) }
+                    ForEach(pictures) { picture in
+                        PictureTile(item: picture) { editing = withEdit(picture) }
+                    }
                 }
+            }
+            if let item = editing {
+                DescriptionEditor(item: item) { saved in
+                    if let saved { edited[item.id] = saved }
+                    editing = nil
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
             ForEach(others) { ResultRow(item: $0) }
             Button {
@@ -40,14 +53,125 @@ struct SearchResultsView: View {
 /// Right-click on a picture: correct what Vision Memory says it shows, or forget it.
 private struct PictureMenu: ViewModifier {
     let item: SmartSearch.Item
+    let edit: () -> Void
 
     func body(content: Content) -> some View {
         content.contextMenu {
             if item.kind == .image {
-                Button("Edit description…") { SearchResultActions.editDescription(item) }
+                Button("Edit description") { edit() }
                 Button("Forget this picture") { SearchResultActions.forget(item) }
             }
         }
+    }
+}
+
+extension SearchResultsView {
+    /// The item with any description saved in this card.
+    private func withEdit(_ item: SmartSearch.Item) -> SmartSearch.Item {
+        var copy = item
+        if let text = edited[item.id] { copy.caption = text.isEmpty ? nil : text }
+        return copy
+    }
+}
+
+/// Whether the results sit in the notch's Ask tab (solid dark) or the chat overlay (glass).
+private struct ResultsInNotchKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var resultsInNotch: Bool {
+        get { self[ResultsInNotchKey.self] }
+        set { self[ResultsInNotchKey.self] = newValue }
+    }
+}
+
+/// Correcting what a picture shows, inside the results card: the picture, its description in
+/// a field of several lines (the chat's own field look, in the notch or on glass), and
+/// Cancel, Describe again and Save. Your words are kept over ClickBait's.
+struct DescriptionEditor: View {
+    let item: SmartSearch.Item
+    let done: (String?) -> Void
+    @State private var text: String
+    @FocusState private var focused: Bool
+    @State private var anchor: NSView?
+    @Environment(\.resultsInNotch) private var inNotch
+
+    init(item: SmartSearch.Item, done: @escaping (String?) -> Void) {
+        self.item = item
+        self.done = done
+        _text = State(initialValue: item.caption ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Thumbnail(item: item, size: CGSize(width: 64, height: 64))
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What does this picture show?").font(.system(size: 13, weight: .semibold)).foregroundStyle(AquaDark.textPrimary)
+                    Text(item.title).font(.system(size: 11)).foregroundStyle(AquaDark.textSecondary).lineLimit(1)
+                    Text("Your words are kept over ClickBait's.").font(.system(size: 11)).foregroundStyle(AquaDark.textTertiary)
+                }
+            }
+            TextField("", text: $text, prompt: Text("Describe it in your own words").foregroundStyle(AquaDark.textTertiary), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundStyle(AquaDark.textPrimary)
+                .lineLimit(3...8)
+                .focused($focused)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background {
+                    let field = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    if inNotch {
+                        field.fill(NotchPalette.ink).overlay(field.stroke(Color.white.opacity(0.08), lineWidth: 1))
+                    } else {
+                        AquaWell(shape: field)
+                    }
+                }
+            HStack(spacing: 8) {
+                Button("Describe again") { save("") }
+                    .buttonStyle(ResultPillStyle())
+                    .help("Let ClickBait describe it again")
+                Spacer()
+                Button("Cancel") { done(nil) }
+                    .buttonStyle(ResultPillStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { save(text) }
+                    .buttonStyle(SaveStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05)))
+        .background(ViewGrabber(view: $anchor))
+        .onChange(of: anchor) { _, view in
+            // Its window (the chat card, or the notch, which doesn't take focus by itself)
+            // takes the keyboard, so the field can be typed in at once.
+            view?.window?.makeKey()
+            focused = true
+        }
+    }
+
+    private func save(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task { await SearchIndex.shared.setCaption(item.id, trimmed) }
+        done(trimmed)
+    }
+}
+
+/// Save: the chat's send blue, dark text, like the notch's send button.
+private struct SaveStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(enabled ? Color.black : AquaDark.textTertiary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(enabled ? AquaDark.link.opacity(configuration.isPressed ? 0.75 : 1) : Color.white.opacity(0.08)))
+            .contentShape(Capsule())
     }
 }
 
@@ -92,21 +216,6 @@ enum SearchResultActions {
         }
     }
 
-    static func editDescription(_ item: SmartSearch.Item) {
-        let alert = NSAlert()
-        alert.messageText = "What does this picture show?"
-        alert.informativeText = "Your words replace ClickBait's description and are never overwritten. Leave it empty to let ClickBait describe it again."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.stringValue = item.caption ?? ""
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let text = field.stringValue
-        Task { await SearchIndex.shared.setCaption(item.id, text) }
-    }
-
     static func forget(_ item: SmartSearch.Item) {
         Task { await SearchIndex.shared.forget(item.id) }
         NotificationCenter.default.post(name: .clickBaitForgetResult, object: item.id)
@@ -143,6 +252,7 @@ enum SearchResultActions {
 /// A picture: its thumbnail, name and where it is; Copy and Share on hover.
 private struct PictureTile: View {
     let item: SmartSearch.Item
+    let edit: () -> Void
     @State private var hovering = false
     @State private var copied = false
     @State private var anchor: NSView?
@@ -177,7 +287,7 @@ private struct PictureTile: View {
         .onHover { hovering = $0 }
         .onTapGesture { SearchResultActions.open(item) }
         .onDrag { SearchResultActions.dragItem(item) }
-        .modifier(PictureMenu(item: item))
+        .modifier(PictureMenu(item: item, edit: edit))
         .help(item.caption ?? item.file ?? item.title)
     }
 }

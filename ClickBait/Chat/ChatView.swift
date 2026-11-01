@@ -206,7 +206,7 @@ struct ChatView: View {
     private var transcriptContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(model.messages) { message in
-                MessageRow(message: message).id(message.id)
+                MessageRow(message: message).id(message.id).environment(\.resultsInNotch, inNotch)
             }
             if model.isBusy, model.messages.last?.role != .assistant {
                 HStack(spacing: 6) {
@@ -226,7 +226,7 @@ struct ChatView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(model.messages) { message in
-                        MessageRow(message: message).id(message.id)
+                        MessageRow(message: message).id(message.id).environment(\.resultsInNotch, inNotch)
                     }
                     if model.isBusy, model.messages.last?.role != .assistant {
                         HStack(spacing: 6) {

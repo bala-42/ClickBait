@@ -96,3 +96,5 @@ Settings ▸ **Vision Memory** (`VisionMemorySection`), rules in Core's `VisionM
 - **Storage**: vectors as half-precision bytes (`VisionMemory.pack`): this Mac's index went from
   30.9 MB to 8.2 MB (3,059 entries) with identical search results. **Delete Vision Memory…**
   empties it (pictures untouched).
+
+**Editing a description in place (2026-11-01, user's report: the dialog was "counter intuitive", one line, and had to be dragged).** Right-click ▸ **Edit description** now opens `DescriptionEditor` inside the results card, under the pictures: the picture, a field of 3–8 lines in the chat's own field look (glass in the overlay, solid dark in the notch: `resultsInNotch`), and Describe again / Cancel / Save (Return saves, Esc cancels). Its window takes the keyboard, the notch included. The Vision Memory settings use the standard rows: progress with a bar and a Pause menu, folders in an inset list with Add… / Exclude…, Delete as a row.

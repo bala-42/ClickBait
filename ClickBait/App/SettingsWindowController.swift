@@ -744,7 +744,7 @@ private struct VoiceSettingsSection: View {
 /// Vision Memory (user's asks, 2026-11-01): what ClickBait reads and describes in pictures,
 /// and the user's control over it — on/off and pause, folders in and out, screenshots,
 /// battery, the Photos library, "me", and what it all takes on disk.
-private struct VisionMemorySection: View {
+struct VisionMemorySection: View {
     @Bindable var settings: AppSettings
     @State private var stats: (pictures: Int, described: Int, bytes: Int) = (0, 0, 0)
     @State private var confirmDelete = false
@@ -756,27 +756,40 @@ private struct VisionMemorySection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             ToggleRow("Describe pictures", "Reads your pictures on this Mac (what they show, and any text) so smart search can find them by what's in them.",
                       isOn: $settings.visionDescribe)
-            Text("\(stats.described) of \(stats.pictures) pictures described · \(ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file)) on disk" + (pausedNote.map { " · " + $0 } ?? ""))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-            HStack {
+            Divider().overlay(SettingsLook.hairline)
+            // Progress, and pausing: one row, like the others.
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    RowLabel("\(stats.described.formatted()) of \(stats.pictures.formatted()) pictures described",
+                             ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file) + " on disk"
+                                + (pausedNote.map { " · " + $0 } ?? ""))
+                    ProgressView(value: Double(stats.described), total: Double(max(stats.pictures, 1)))
+                        .progressViewStyle(.linear).tint(SettingsLook.accent).frame(maxWidth: 260)
+                }
+                Spacer(minLength: 12)
                 if pausedNote != nil, settings.visionDescribe {
-                    Button("Resume") { settings.visionPausedUntil = nil }
+                    Button("Resume") { settings.visionPausedUntil = nil }.buttonStyle(PillButtonStyle())
                 } else {
-                    Button("Pause for an hour") { settings.visionPausedUntil = Date().addingTimeInterval(3_600) }
-                    Button("Pause until tomorrow") {
-                        settings.visionPausedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+                    Menu("Pause") {
+                        Button("For an hour") { settings.visionPausedUntil = Date().addingTimeInterval(3_600) }
+                        Button("Until tomorrow") {
+                            settings.visionPausedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+                        }
                     }
+                    .menuStyle(.button).buttonStyle(PillButtonStyle()).fixedSize()
+                    .disabled(!settings.visionDescribe)
                 }
             }
-            .disabled(!settings.visionDescribe)
+            .settingsRow()
             Divider().overlay(SettingsLook.hairline)
-            FolderList(title: "Folders it reads", detail: "Pictures in these folders and the folders inside them.",
-                       folders: $settings.visionFolders, add: "Add folder…")
+            FolderList(title: "Folders it reads", detail: "Pictures in these folders, and the folders inside them.",
+                       folders: $settings.visionFolders, add: "Add…", empty: "No folders: only the Photos library, if it's on.")
+            Divider().overlay(SettingsLook.hairline)
             FolderList(title: "Never look in", detail: "Left out completely, including from search results.",
-                       folders: $settings.visionExcluded, add: "Exclude folder…")
+                       folders: $settings.visionExcluded, add: "Exclude…", empty: "Nothing excluded.")
             Divider().overlay(SettingsLook.hairline)
             ToggleRow("Screenshots and documents", "Also describe screenshots, charts and documents. Text that looks like a password, card or ID number is never kept either way.",
                       isOn: $settings.visionScreenshots)
@@ -797,12 +810,8 @@ private struct VisionMemorySection: View {
             Divider().overlay(SettingsLook.hairline)
             YourPhotoRow(settings: settings)
             Divider().overlay(SettingsLook.hairline)
-            HStack {
-                Text("Right-click a picture in search results to correct its description or forget it.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button("Delete Vision Memory…") { confirmDelete = true }
-            }
+            ButtonRow("Delete Vision Memory", "Everything read and described; your pictures aren't touched. To fix one picture, right-click it in search results.",
+                      button: "Delete…", destructive: true) { confirmDelete = true }
         }
         .task { await reload() }
         .onChange(of: settings.visionFolders) { _, _ in AppDelegate.watchPictures(settings); refreshSoon() }
@@ -826,35 +835,56 @@ private struct VisionMemorySection: View {
     }
 }
 
-/// A list of folders with remove buttons and an add button (an open panel).
+/// A setting row with its folders listed in an inset box under it: a remove button on each,
+/// "Add…" (an open panel) on the row.
 private struct FolderList: View {
     let title: String
     let detail: String
     @Binding var folders: [String]
     let add: String
+    let empty: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 13, weight: .medium))
-            Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
-            ForEach(folders, id: \.self) { folder in
-                HStack {
-                    Image(systemName: "folder").foregroundStyle(.secondary)
-                    Text((folder as NSString).abbreviatingWithTildeInPath).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button { folders.removeAll { $0 == folder } } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.plain).help("Remove")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 16) {
+                RowLabel(title, detail)
+                Spacer(minLength: 12)
+                Button(add) { choose() }.buttonStyle(PillButtonStyle())
+            }
+            VStack(spacing: 0) {
+                if folders.isEmpty {
+                    Text(empty).font(.system(size: 12)).foregroundStyle(SettingsLook.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 9)
+                }
+                ForEach(Array(folders.enumerated()), id: \.element) { index, folder in
+                    if index > 0 { Divider().overlay(SettingsLook.hairline) }
+                    HStack(spacing: 8) {
+                        Image(systemName: "folder.fill").font(.system(size: 12)).foregroundStyle(SettingsLook.accent)
+                        Text((folder as NSString).abbreviatingWithTildeInPath)
+                            .font(.system(size: 12.5)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button { folders.removeAll { $0 == folder } } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(SettingsLook.secondary)
+                                .frame(width: 18, height: 18).background(Circle().fill(Color.white.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain).help("Remove \((folder as NSString).lastPathComponent)")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
                 }
             }
-            Button(add) {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false
-                panel.canChooseDirectories = true
-                panel.allowsMultipleSelection = true
-                guard panel.runModal() == .OK else { return }
-                for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
-            }
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black.opacity(0.18)))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(SettingsLook.hairline, lineWidth: 1))
         }
+        .settingsRow()
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls where !folders.contains(url.path) { folders.append(url.path) }
     }
 }
 
@@ -865,19 +895,17 @@ private struct YourPhotoRow: View {
     @State private var problem: String?
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Your photo, for “me”").font(.system(size: 13, weight: .medium))
-                Text(problem ?? (isSet ? "Set. “Find a picture of me…” looks for your face. Stays on this Mac."
+        HStack(spacing: 16) {
+            RowLabel("Your photo, for “me”",
+                     problem ?? (isSet ? "Set. “Find a picture of me…” looks for your face. Stays on this Mac."
                                        : "Pick a clear photo of your face, so “find a picture of me…” knows who you are."))
-                    .font(.system(size: 11)).foregroundStyle(problem == nil ? Color.secondary : Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            if isSet {
+                Button("Remove") { YourFace.clear(); isSet = false; reindex() }.buttonStyle(PillButtonStyle(destructive: true))
             }
-            Spacer()
-            if isSet { Button("Remove") { YourFace.clear(); isSet = false; reindex() } }
-            Button(isSet ? "Change…" : "Choose…") { choose() }
+            Button(isSet ? "Change…" : "Choose…") { choose() }.buttonStyle(PillButtonStyle())
         }
-        .padding(.vertical, 4)
+        .settingsRow()
     }
 
     private func choose() {
