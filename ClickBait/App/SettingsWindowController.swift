@@ -752,8 +752,10 @@ struct VisionMemorySection: View {
     private var pausedNote: String? {
         if !settings.visionDescribe { return "off" }
         guard let until = settings.visionPausedUntil, until > Date() else { return nil }
-        return "paused until " + until.formatted(date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened)
+        return "paused"
     }
+
+    private var allDone: Bool { stats.pictures > 0 && stats.described >= stats.pictures }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -771,17 +773,15 @@ struct VisionMemorySection: View {
                         .progressViewStyle(.linear).tint(SettingsLook.accent).frame(maxWidth: 260)
                 }
                 Spacer(minLength: 12)
-                if pausedNote != nil, settings.visionDescribe {
-                    Button("Resume") { settings.visionPausedUntil = nil }.buttonStyle(PillButtonStyle())
+                // One button (user's ask, 2026-11-01): Pause while learning, Learn while
+                // paused, Done! once every picture is described.
+                if allDone {
+                    Button("Done!") {}.buttonStyle(PillButtonStyle()).disabled(true)
+                } else if pausedNote != nil, settings.visionDescribe {
+                    Button("Learn") { settings.visionPausedUntil = nil }.buttonStyle(PillButtonStyle())
                 } else {
-                    Menu("Pause") {
-                        Button("For an hour") { settings.visionPausedUntil = Date().addingTimeInterval(3_600) }
-                        Button("Until tomorrow") {
-                            settings.visionPausedUntil = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
-                        }
-                    }
-                    .menuStyle(.button).buttonStyle(PillButtonStyle()).fixedSize()
-                    .disabled(!settings.visionDescribe)
+                    Button("Pause") { settings.visionPausedUntil = .distantFuture }.buttonStyle(PillButtonStyle())
+                        .disabled(!settings.visionDescribe)
                 }
             }
             .settingsRow()

@@ -70,7 +70,7 @@ Typed (chat, notch Ask tab) and spoken alike:
 
 ## Vision Memory: the user's control (2026-11-01, user's asks)
 Settings ▸ **Vision Memory** (`VisionMemorySection`), rules in Core's `VisionMemory`:
-- **Describe pictures** on/off; **Pause for an hour / until tomorrow / Resume**; a status line
+- **Describe pictures** on/off; one button: **Pause** while learning, **Learn** while paused, **Done!** when every picture is described; a status line
   ("1,240 of 3,000 pictures described · 8 MB on disk · paused until 3:00 PM").
 - **Folders it reads** (Desktop, Downloads, Documents, Pictures, the screenshot folder by
   default) and **Never look in**: excluded folders are skipped while walking and left out of
