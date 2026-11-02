@@ -63,7 +63,10 @@ final class NotchController {
         /// The HUD while it shows: the level (0…1), whether muted, and whether it's the
         /// brightness sky (else the volume's Pac-Man).
         var hud: (level: Double, muted: Bool, sky: Bool)?
-        var tab: Tab = .home
+        var tab: Tab = .home {
+            // Lookup opens on the last conversation when there is one (user's ask, 2026-11-02).
+            didSet { if tab == .ask, chat?.messages.isEmpty == false { chatting = true } }
+        }
         enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer, volume }
         /// The gallery's open page (nil: its tiles).
         var galleryPage: GalleryPage?

@@ -1051,7 +1051,7 @@ private struct AskCard: View {
             Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             if typing {
                 HStack(spacing: 8) {
-                    TextField("Type a question, then Return", text: $text)
+                    TextField("Type a question, or “find …” to look something up", text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($focused)

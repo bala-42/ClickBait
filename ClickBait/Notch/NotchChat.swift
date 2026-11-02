@@ -32,6 +32,38 @@ final class NotchChat {
     init() {
         model.offersLook = true
         model.onSend = { [weak self] text in self?.send(text) }
+        restore()
+    }
+
+    /// The conversation kept on this Mac, so Lookup opens on it after ClickBait restarts
+    /// (user's ask, 2026-11-02). Text only: a screenshot it was shown isn't kept.
+    private struct Saved: Codable {
+        struct Message: Codable { let role: String; let text: String; let results: [SmartSearch.Item] }
+        struct Said: Codable { let role: String; let text: String }
+        let messages: [Message]
+        let turns: [Said]
+    }
+
+    private static let file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appending(path: "ClickBait/lookup-chat.json")
+
+    private func save() {
+        let saved = Saved(
+            messages: model.messages.map { message in
+                let role = switch message.role { case .user: "user" case .assistant: "assistant" case .error: "error" }
+                return .init(role: role, text: message.text, results: message.results)
+            },
+            turns: turns.map { .init(role: $0.role, text: $0.text) })
+        try? JSONEncoder().encode(saved).write(to: Self.file, options: .atomic)
+    }
+
+    private func restore() {
+        guard let data = try? Data(contentsOf: Self.file), let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
+        model.messages = saved.messages.map { message in
+            let role: ChatModel.Message.Role = message.role == "user" ? .user : message.role == "error" ? .error : .assistant
+            return ChatModel.Message(role: role, text: message.text, results: message.results)
+        }
+        turns = saved.turns.map { Turn(role: $0.role, text: $0.text, image: nil) }
     }
 
     func send(_ text: String) {
@@ -51,9 +83,11 @@ final class NotchChat {
         model.messages = []
         model.isBusy = false
         model.looksAtScreen = false
+        try? FileManager.default.removeItem(at: Self.file)
     }
 
     private func answer(_ text: String, looking: Bool) async {
+        defer { save() }
         // Smart search, as in the overlay chat (it was lost when the notch got its own chat:
         // "now no smart search from vision memory?", 2026-11-02): finds on this Mac, not the model.
         if !looking, let settings = searchSettings() {

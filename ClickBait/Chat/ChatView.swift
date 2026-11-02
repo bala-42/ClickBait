@@ -317,7 +317,11 @@ struct ChatView: View {
         .padding(.bottom, 12)
     }
 
-    private var placeholder: String { model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…" }
+    private var placeholder: String {
+        // Lookup's note: "find …" searches this Mac (user's ask, 2026-11-02).
+        if inNotch { return model.messages.isEmpty ? "Ask, or type “find …” to look something up" : "Follow up, or “find …” to look something up" }
+        return model.messages.isEmpty ? "Ask ClickBait…" : "Ask a follow-up…"
+    }
 
     private var canSend: Bool {
         !model.isBusy && !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
