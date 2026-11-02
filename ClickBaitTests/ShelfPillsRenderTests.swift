@@ -1,3 +1,4 @@
+import ClickBaitCore
 import SwiftUI
 import Testing
 @testable import ClickBait
@@ -20,5 +21,21 @@ struct ShelfPillsRenderTests {
         let image = try #require(renderer.nsImage)
         let data = try #require(NSBitmapImageRep(data: image.tiffRepresentation!)?.representation(using: .png, properties: [:]))
         try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "shelf-pills.png"))
+    }
+
+    @Test func renderAirDropBean() throws {
+        let row = HStack(spacing: 22) {
+            BeanFace(mood: .idle, eyes: Bean.eyes(for: .idle, avoiding: nil), size: 40)
+            AirDropBean(look: .ready, size: 40)
+            AirDropBean(look: .eager, size: 40)
+            AirDropBean(look: .problem, size: 40)
+        }
+        .padding(16)
+        .background(Color(red: 0x14 / 255, green: 0x15 / 255, blue: 0x18 / 255))
+        let renderer = ImageRenderer(content: row)
+        renderer.scale = 3
+        let image = try #require(renderer.nsImage)
+        let data = try #require(NSBitmapImageRep(data: image.tiffRepresentation!)?.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "airdrop-bean.png"))
     }
 }

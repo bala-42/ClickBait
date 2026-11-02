@@ -492,3 +492,48 @@ final class MacVitals {
         return nil
     }
 }
+
+/// The shelf's AirDrop pad as a bean (user's ask, 2026-11-02): three eyes, faded lime, a
+/// sibling of the notch's bean. Pale, so it never reads as Shamrock (an action). Eyes: pills at
+/// rest, wide dots bouncing while something's dropped on it or a recipient is being chosen,
+/// dashes when sending failed.
+struct AirDropBean: View {
+    enum Look { case ready, eager, problem }
+    let look: Look
+    var size: CGFloat = 32
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hop = false
+
+    static let lime = Color(hex: 0xDCEDB4)
+    static let limeShade = Color(hex: 0xB8D38C)
+    private static let ink = Color(hex: 0x26272C)
+
+    var body: some View {
+        let eye: Bean.Eye = switch look {
+        case .ready: .pill(height: 0.8)
+        case .eager: .dot
+        case .problem: .dash()
+        }
+        ZStack {
+            BeanShape().fill(LinearGradient(colors: [Self.lime, Self.limeShade], startPoint: .top, endPoint: .bottom))
+            BeanShape().stroke(Color.white.opacity(0.35), lineWidth: 0.6)
+            HStack(spacing: size * 0.1) {
+                ForEach(0..<3, id: \.self) { _ in BeanEye(eye: eye, size: size * 0.8) }
+            }
+            .foregroundStyle(Self.ink)
+            .offset(y: -size * 0.04)
+        }
+        .frame(width: size, height: size * BeanShape.aspect)
+        .offset(y: hop ? -size * 0.12 : 0)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.5), value: hop)
+        .task(id: look) {
+            hop = false
+            guard look == .eager, !reduceMotion else { return }
+            while !Task.isCancelled {
+                hop.toggle()
+                try? await Task.sleep(for: .milliseconds(420))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}

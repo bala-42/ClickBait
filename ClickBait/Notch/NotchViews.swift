@@ -1178,11 +1178,7 @@ private struct AirDropPad: View {
             sender.send(items)
         } label: {
             VStack(spacing: 5) {
-                Image(systemName: symbol(sender.status))
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(NotchPalette.highlight)
-                    .symbolEffect(.pulse, isActive: targeted || isChoosing(sender.status))
-                    .contentTransition(.symbolEffect(.replace))
+                AirDropBean(look: beanLook(sender.status))
                 Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
                 Text(subtitle(sender.status, sending: items.count))
                     .font(.system(size: 10)).foregroundStyle(NotchPalette.secondary)
@@ -1222,11 +1218,9 @@ private struct AirDropPad: View {
         if case .choosing = status { true } else { false }
     }
 
-    private func symbol(_ status: AirDropSender.Status) -> String {
-        switch status {
-        case .failed: "exclamationmark.triangle.fill"
-        case .idle, .choosing: "dot.radiowaves.up.forward"
-        }
+    private func beanLook(_ status: AirDropSender.Status) -> AirDropBean.Look {
+        if case .failed = status { return .problem }
+        return targeted || isChoosing(status) ? .eager : .ready
     }
 
     /// `sending`: how many files a click hands over (`AirDropSender.sendable`), the one count shown.
