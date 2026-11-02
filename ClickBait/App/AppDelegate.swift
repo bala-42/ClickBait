@@ -1,6 +1,7 @@
 import ClickBaitCore
 import ScriptingBridge
 import AppKit
+import ScreenCaptureKit
 import SwiftUI
 
 @main
@@ -427,13 +428,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
             }
         }
-        // ⌥⇥ as if pressed, then ⌥ let go a moment later: live tests of the switcher.
+        // Every window ScreenCaptureKit lists, all Spaces, logged: tuning the switcher's filter.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.windows"), object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false) else { return }
+                for window in content.windows where window.windowLayer == 0 && window.frame.width >= 80 && window.frame.height >= 60 {
+                    guard let app = window.owningApplication, NSRunningApplication(processIdentifier: app.processID)?.activationPolicy == .regular else { continue }
+                    Log.app.notice("Window: \(window.isOnScreen ? "ON " : "off", privacy: .public) \(app.applicationName, privacy: .public) | \(window.title ?? "-", privacy: .public) | \(Int(window.frame.width), privacy: .public)x\(Int(window.frame.height), privacy: .public) active \(window.isActive, privacy: .public)")
+                }
+            }
+        }
+        // ⌥⇥ as if pressed, then Esc a moment later (nothing switches): live tests of the switcher.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.switcher"), object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 _ = WindowSwitcher.shared.handle(.tab(backwards: false))
                 Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(1.5))
-                    _ = WindowSwitcher.shared.handle(.released)
+                    try? await Task.sleep(for: .seconds(2.5))
+                    WindowSwitcher.shared.logState()
+                    _ = WindowSwitcher.shared.handle(.escape)
                 }
             }
         }

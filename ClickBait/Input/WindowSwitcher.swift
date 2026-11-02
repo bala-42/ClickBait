@@ -5,8 +5,9 @@ import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
-/// ⌥⇥ window switching (user's ask, 2026-11-02, after AltTab, no AltTab code): hold ⌥, press ⇥ —
-/// the windows on this Space as live thumbnails, front to back, the one behind the front
+/// ⌥⇥ window switching (user's asks, 2026-11-02, after AltTab, no AltTab code): hold ⌥, press ⇥ —
+/// on the screen the pointer is on (laptop or monitor), every app's windows on that screen, on
+/// any of its Spaces, minimised too, as thumbnails, most recent first, the one behind the front
 /// selected; ⇥ / ⇧⇥ / ← → move; ⌥ let go (or ↩, or a click) brings it forward; Esc cancels.
 /// Thumbnails come from ScreenCaptureKit (Screen Recording, which ClickBait has); bringing a
 /// window forward uses Accessibility.
@@ -16,7 +17,9 @@ final class WindowSwitcher {
     var enabled: () -> Bool = { true }
     private var panel: NSPanel?
     private let model = SwitcherModel()
-    var showing: Bool { panel != nil }
+    /// Up, or its windows being listed (keys then already belong to it).
+    private var opening = false
+    var showing: Bool { panel != nil || opening }
 
     /// A key from the tap: true when taken.
     func handle(_ key: InputInterceptor.SwitcherKey) -> Bool {
@@ -29,14 +32,28 @@ final class WindowSwitcher {
         case .right: guard showing else { return false }; model.move(backwards: false); return true
         case .escape: guard showing else { return false }; close(); return true
         case .choose: guard showing else { return false }; choose(); return true
-        case .released: if showing { choose() }; return false
+        case .released:
+            if opening { pendingChoose = true } else if showing { choose() }
+            return false
         }
     }
 
+    private var pendingChoose = false
+
     private func open(backwards: Bool) {
-        model.load(backwards: backwards)
-        guard !model.windows.isEmpty else { return }
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+        opening = true
+        pendingChoose = false
+        Task { @MainActor in
+            await model.load(on: screen, backwards: backwards)
+            opening = false
+            guard !model.windows.isEmpty else { return }
+            present(on: screen)
+            if pendingChoose { choose() }  // ⌥ already let go: a quick flick switches straight away
+        }
+    }
+
+    private func present(on screen: NSScreen) {
         let host = NSHostingView(rootView: SwitcherView(model: model, maxWidth: screen.visibleFrame.width - 80) { [weak self] index in
             self?.model.selected = index
             self?.choose()
@@ -55,6 +72,12 @@ final class WindowSwitcher {
         Task { await model.loadThumbnails() }
     }
 
+    #if DEBUG
+    func logState() {
+        Log.app.notice("Switcher up: \(self.model.windows.count, privacy: .public) windows from \(Set(self.model.windows.map(\.appName)).sorted().joined(separator: ", "), privacy: .public); \(self.model.windows.filter { $0.thumbnail != nil }.count, privacy: .public) pictured")
+    }
+    #endif
+
     private func close() {
         panel?.orderOut(nil)
         panel = nil
@@ -71,6 +94,7 @@ final class WindowSwitcher {
     /// The app forward, then its window matched by title and frame, raised as main.
     static func bringForward(_ window: SwitcherModel.Item) {
         guard let app = NSRunningApplication(processIdentifier: window.pid) else { return }
+        if app.isHidden { app.unhide() }
         app.activate()
         let element = AXUIElementCreateApplication(window.pid)
         var value: CFTypeRef?
@@ -89,8 +113,10 @@ final class WindowSwitcher {
             return point
         }
         let match = windows.first { title($0) == window.title && origin($0).map { abs($0.x - window.frame.minX) < 2 && abs($0.y - window.frame.minY) < 2 } ?? false }
-            ?? windows.first { title($0) == window.title } ?? windows.first
+            ?? windows.first { title($0) == window.title }
+        // A window on another Space isn't in the app's list: activating went there already.
         guard let match else { return }
+        AXUIElementSetAttributeValue(match, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         AXUIElementSetAttributeValue(match, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(match, kAXRaiseAction as CFString)
     }
@@ -112,30 +138,41 @@ final class SwitcherModel {
     private(set) var windows: [Item] = []
     var selected = 0
 
-    func load(backwards: Bool) {
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+    /// Every app's windows on `screen`, any Space, minimised too (ScreenCaptureKit lists them all;
+    /// the titled ones are real windows, the untitled ones helpers), in macOS's front-to-back order.
+    func load(on screen: NSScreen, backwards: Bool) async {
+        let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+        content.map { self.content = $0 }
+        let order = (CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .compactMap { $0[kCGWindowNumber as String] as? UInt32 }
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        // The screen in Core Graphics' top-left coordinates, as window frames come.
+        let primary = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let area = CGRect(x: screen.frame.minX, y: primary - screen.frame.maxY, width: screen.frame.width, height: screen.frame.height)
         let own = ProcessInfo.processInfo.processIdentifier
-        let raw = list.compactMap { info -> (WindowSwitch.Window, CGRect, String)? in
-            guard let id = info[kCGWindowNumber as String] as? UInt32, let pid = info[kCGWindowOwnerPID as String] as? Int32,
-                  let bounds = info[kCGWindowBounds as String] as? [String: Double] else { return nil }
-            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            let title = info[kCGWindowName as String] as? String ?? ""
-            return (WindowSwitch.Window(id: id, pid: pid, layer: info[kCGWindowLayer as String] as? Int ?? 0,
-                                        width: frame.width, height: frame.height, title: title), frame, title)
+        let candidates = (content?.windows ?? []).compactMap { window -> (WindowSwitch.Window, SCWindow)? in
+            guard let app = window.owningApplication, let title = window.title, !title.isEmpty,
+                  area.contains(CGPoint(x: window.frame.midX, y: window.frame.midY)) else { return nil }
+            return (WindowSwitch.Window(id: window.windowID, pid: app.processID, layer: window.windowLayer,
+                                        width: window.frame.width, height: window.frame.height, title: title), window)
         }
-        let kept = Set(WindowSwitch.eligible(raw.map(\.0), own: own).map(\.id))
-        windows = raw.filter { kept.contains($0.0.id) }.compactMap { window, frame, title in
-            guard let app = NSRunningApplication(processIdentifier: window.pid), app.activationPolicy == .regular else { return nil }
-            return Item(id: window.id, pid: window.pid, title: title, appName: app.localizedName ?? "", icon: app.icon, frame: frame)
-        }
+        let kept = Set(WindowSwitch.eligible(candidates.map(\.0), own: own).map(\.id))
+        windows = candidates.filter { kept.contains($0.0.id) }
+            .sorted { (rank[$0.0.id] ?? .max) < (rank[$1.0.id] ?? .max) }
+            .compactMap { window, scWindow in
+                guard let app = NSRunningApplication(processIdentifier: window.pid), app.activationPolicy == .regular else { return nil }
+                return Item(id: window.id, pid: window.pid, title: window.title, appName: app.localizedName ?? "", icon: app.icon, frame: scWindow.frame)
+            }
         selected = WindowSwitch.first(count: windows.count, backwards: backwards)
     }
+
+    @ObservationIgnored private var content: SCShareableContent?
 
     func move(backwards: Bool) { selected = WindowSwitch.step(selected, count: windows.count, backwards: backwards) }
 
     /// Each window's picture, small, as they come.
     func loadThumbnails() async {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
+        guard let content else { return }
         for index in windows.indices {
             guard let window = content.windows.first(where: { $0.windowID == windows[index].id }) else { continue }
             let configuration = SCStreamConfiguration()
@@ -168,11 +205,15 @@ struct SwitcherView: View {
                             if let thumbnail = window.thumbnail {
                                 Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fit)
                             } else {
-                                RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06))
+                                // On another Space, or minimised: no picture to take, so its app, large.
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06))
+                                    if let icon = window.icon { Image(nsImage: icon).resizable().frame(width: 64, height: 64) }
+                                }
                             }
                         }
                         .frame(width: cardWidth - 16, height: 120)
-                        if let icon = window.icon {
+                        if let icon = window.icon, window.thumbnail != nil {
                             Image(nsImage: icon).resizable().frame(width: 32, height: 32).offset(x: -4, y: 8)
                         }
                     }
