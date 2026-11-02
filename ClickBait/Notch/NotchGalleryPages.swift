@@ -9,8 +9,10 @@ import SwiftUI
 enum GalleryHooks {
     /// Starts a watch: folds the notch, then a box is dragged around what to watch.
     static var watch: (ScreenWatch.Rule) -> Void = { _ in }
-    /// The second row's tiles: Copy text, Keep awake, Colour (set by the app delegate).
+    /// The second row's tiles that act on a tap: Copy text, Colour (set by the app delegate).
     static var act: (GalleryPage) -> Void = { _ in }
+    /// A pill by the cursor (set by the app delegate).
+    static var say: (String) -> Void = { _ in }
 }
 
 // MARK: Clipboard
@@ -272,5 +274,98 @@ enum ColourText {
         guard let srgb = colour.usingColorSpace(.sRGB) else { return nil }
         let (r, g, b) = (Int((srgb.redComponent * 255).rounded()), Int((srgb.greenComponent * 255).rounded()), Int((srgb.blueComponent * 255).rounded()))
         return (String(format: "#%02X%02X%02X", r, g, b), "rgb(\(r), \(g), \(b))")
+    }
+}
+
+// MARK: Health
+
+/// Health (user's ask, 2026-11-02, after Vorssaint's System page; it took Keep awake's tile):
+/// CPU, GPU and memory; the battery with its health and cycles; the network both ways; free
+/// disk; what the Mac draws against the charger's rating; and how warm it runs. Keep awake is
+/// the cup at the top. Read every 2 s while it shows, on this Mac.
+struct HealthPage: View {
+    @State private var sampler = HealthSampler()
+    var awake = KeepAwake.shared
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Text("runs \(HealthFormat.heat(sampler.heat))").font(.system(size: 11))
+                    .foregroundStyle(sampler.heat >= 2 ? CompanionTone.problem : NotchPalette.secondary)
+                Spacer()
+                Button { GalleryHooks.say(awake.next()) } label: {
+                    Label(awake.left.map { "awake · \($0)" } ?? "keep awake", systemImage: awake.on ? "cup.and.saucer.fill" : "cup.and.saucer")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 8).frame(height: 20)
+                        .background(Color.white.opacity(awake.on ? 0.14 : 0.06), in: Capsule())
+                        .foregroundStyle(awake.on ? MoodyLook.cream : NotchPalette.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("An hour, then until off, then off")
+            }
+            HStack(spacing: 8) {
+                tile("CPU", "cpu", percent(sampler.cpu), sampler.cpu)
+                tile("GPU", "display", percent(sampler.gpu), sampler.gpu)
+                tile("Memory", "memorychip", sampler.memory.map { percent(Double($0.used) / Double($0.total)) } ?? "—",
+                     sampler.memory.map { Double($0.used) / Double($0.total) },
+                     sampler.memory.map { "\(gigabytes($0.used)) of \(gigabytes($0.total))" })
+            }
+            HStack(spacing: 8) {
+                if let battery = sampler.battery {
+                    tile("Battery", battery.charging ? "battery.100.bolt" : "battery.75", percent(battery.level), battery.level, batteryLine(battery))
+                }
+                tile("Network", "network", sampler.network.map { "↓ " + HealthFormat.rate($0.down) } ?? "—", nil,
+                     sampler.network.map { "↑ " + HealthFormat.rate($0.up) })
+            }
+            HStack(spacing: 8) {
+                tile("Available", "internaldrive", ByteCountFormatter.string(fromByteCount: sampler.disk.free, countStyle: .file),
+                     sampler.disk.total > 0 ? 1 - Double(sampler.disk.free) / Double(sampler.disk.total) : nil,
+                     sampler.disk.total > 0 ? "of \(ByteCountFormatter.string(fromByteCount: sampler.disk.total, countStyle: .file))" : nil)
+                if let battery = sampler.battery {
+                    tile("Power", "powerplug", battery.draw.map { "\(Int($0.rounded())) W" } ?? "—", nil,
+                         battery.charger.map { "charger \($0) W" } ?? (battery.onPower ? "on power" : "on battery"))
+                }
+            }
+        }
+        .foregroundStyle(NotchPalette.text)
+        .task {
+            while !Task.isCancelled {
+                sampler.sample()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func batteryLine(_ battery: MacStats.Battery) -> String {
+        var parts: [String] = []
+        if battery.charging { parts.append("charging") } else if battery.onPower { parts.append("on power") }
+        if let minutes = battery.minutesLeft { parts.append("\(minutes / 60):\(String(format: "%02d", minutes % 60)) \(battery.charging ? "to full" : "left")") }
+        if let health = battery.health { parts.append("health \(health)%") }
+        if let cycles = battery.cycles { parts.append("\(cycles) cycles") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func percent(_ value: Double?) -> String { value.map { "\(Int(($0 * 100).rounded()))%" } ?? "—" }
+    private func gigabytes(_ bytes: UInt64) -> String { String(format: "%.0f GB", Double(bytes) / 1_073_741_824) }
+
+    /// A card: the label, the big number, a bar when it's a share, and a line under it.
+    private func tile(_ title: String, _ symbol: String, _ value: String, _ share: Double?, _ note: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+            Text(value).font(.system(size: 20, weight: .medium).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
+            if let share {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.12))
+                        Capsule().fill(NotchPalette.text).frame(width: geometry.size.width * min(1, max(0, share)))
+                    }
+                }
+                .frame(height: 4)
+            }
+            if let note { Text(note).font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary).lineLimit(1) }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
     }
 }

@@ -439,7 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.app.notice("Health now: \(self.health.describeNow(), privacy: .public)")
             }
         }
-        // Presses a Quick panel tile that acts ("keepAwake", "colour", "copyText"): live tests.
+        // Presses a Quick panel tile that acts ("colour", "copyText"): live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.tile"), object: nil, queue: .main) { note in
             guard let name = note.object as? String, let page = GalleryPage.allCases.first(where: { "\($0)" == name }) else { return }
             MainActor.assumeIsolated { GalleryHooks.act(page) }
@@ -1053,6 +1053,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 overlay.showJobResult("watching \(rule.summary)", tone: .idle, force: true)
             }
         }
+        GalleryHooks.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .idle, force: true) }
         GalleryHooks.act = { [weak self] page in
             guard let self else { return }
             switch page {
@@ -1073,8 +1074,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                    tone: .action, force: true)
                     }
                 }
-            case .keepAwake:
-                overlay.showJobResult(KeepAwake.shared.next(), tone: .idle, force: true)
             case .colour:
                 notch.makeRoom()
                 NSColorSampler().show { [weak self] colour in
