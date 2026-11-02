@@ -1075,6 +1075,9 @@ private struct AskCard: View {
                         .buttonStyle(AquaButtonStyle(selected: false))
                         .accessibilityLabel("Ask by typing")
                     VoiceButton(voice: voice, level: model.micLevel, action: tapVoice)
+                    // The note beside the choices too (user's ask, 2026-11-02).
+                    Text("or type “find …” to look something up")
+                        .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(1)
                 }
             }
         }
