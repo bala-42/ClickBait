@@ -304,6 +304,11 @@ private struct BeanPlace {
             (x, y, size, visible) = (corner, 42 + FocusCard.coverCentre.y + FocusCard.coverSize / 2 - 6, 24, true)
         case .expanded where !mirror && tab == .home: (x, y, size, visible) = (62, cardCentre, 66, true)
         case .expanded where !mirror && tab == .ask: (x, y, size, visible) = (25, 25, 18, false)
+        // The bubbles' pages: the pearl bean itself flies up to the top-left, as a tab's mini bean
+        // does (user's ask, 2026-11-02): the header's slot (16 in, 36 tall under 8), or in
+        // Settings the slot before its Back pill (14 in, 22 down, a 28 row).
+        case .expanded where !mirror && [.gallery, .timer, .volume].contains(tab): (x, y, size, visible) = (16 + 9, 8 + 18, 18, true)
+        case .expanded where !mirror && tab == .settings: (x, y, size, visible) = (14 + 9, 22 + 14, 18, true)
         case .peek where !hud: (x, y, size, visible) = (40, height / 2, 20, true)
         default: (x, y, size, visible) = (46, 16, 6, false)
         }
@@ -464,6 +469,9 @@ private struct OpenNotch: View {
                     .padding(.leading, 16)
                     .padding(.trailing, -8)
                     .accessibilityHidden(true)
+            } else if [.gallery, .timer, .volume].contains(model.tab) {
+                // Where the pearl bean lands (`BeanPlace`).
+                Color.clear.frame(width: 18, height: 18).padding(.leading, 16).padding(.trailing, -8)
             }
             // A cheer in place of the tabs (Ask and Shelf are pills): clicked, it goes home, or
             // at home says something new. Same type as the companion's pills.

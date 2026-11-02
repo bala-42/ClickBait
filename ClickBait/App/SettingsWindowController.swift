@@ -77,6 +77,8 @@ struct SettingsView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
+                // Where the notch's pearl bean lands, flown up from Home (`BeanPlace`).
+                Color.clear.frame(width: 18, height: 18)
                 Button(action: onBack) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
