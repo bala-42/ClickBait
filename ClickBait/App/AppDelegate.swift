@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let notchChat = NotchChat()
     private let agents = AgentWatcher()
     private let health = HealthWatcher()
+    private let nextUp = NextUpWatcher()
     /// Shelf archives already offered a peek: never asked twice.
     private var offeredPeeks: Set<URL> = []
     private let confirm = ConfirmController()
@@ -422,6 +423,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
+            }
+        }
+        // Next Up's view of the calendar, logged: live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.nextup"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Log.app.notice("Next up now: \(self.nextUp.describeNow(), privacy: .public)")
             }
         }
         // One health reading, logged: live tests.
@@ -1030,6 +1038,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         health.enabled = { [weak self] in self?.settings.healthAlerts ?? false }
         health.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
         health.start()
+        nextUp.show = { [weak self] text, button, action in
+            guard let self else { return }
+            confirm.show(text, at: overlay.companionTopLeft, confirm: button, cancel: "later",
+                         hint: nil, tone: .idle, waitTime: .seconds(60)) { yes in if yes { action() } }
+        }
+        nextUp.start()
         GalleryHooks.watch = { [weak self] rule in
             guard let self else { return }
             notch.makeRoom()
