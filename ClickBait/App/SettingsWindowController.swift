@@ -156,6 +156,9 @@ struct SettingsView: View {
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Mac health alerts", "A pill by the cursor when your Mac works hard for two minutes, runs hot, or is low on disk space or battery. Once each, then quiet for an hour.",
                           isOn: $settings.healthAlerts)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Switch windows with ⌥⇥", "Hold ⌥ and press ⇥ to see this Space's windows; keep pressing to move, let go to switch. ⇧⇥ goes back, Esc cancels.",
+                          isOn: $settings.windowSwitcher)
             }
             SettingsGroup("Vision Memory") {
                 VisionMemorySection(settings: settings)

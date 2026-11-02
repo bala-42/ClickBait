@@ -25,6 +25,11 @@ final class InputInterceptor {
     var onVolumeKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
     /// The brightness keys, when the notch's sky takes them (true: swallowed, as the volume's).
     var onBrightnessKey: (_ key: VolumeStep.Key, _ fine: Bool) -> Bool = { _, _ in false }
+    /// ⌥⇥ window switching (user's ask, 2026-11-02, after AltTab): a key while ⌥ is held, or ⌥
+    /// let go. True: taken (the app in front never sees it).
+    var onSwitcher: (_ key: SwitcherKey) -> Bool = { _ in false }
+    enum SwitcherKey { case tab(backwards: Bool), left, right, escape, choose, released }
+    fileprivate var swallowSwitcherUp: Int64?
     /// ⌃⌘ + P, arrows while Studio's prompter is up (true: taken, the app in front never sees it).
     var onPrompterKey: (_ keyCode: Int64) -> Bool = { _ in false }
     fileprivate var swallowPrompterUp: Int64?
@@ -49,6 +54,7 @@ final class InputInterceptor {
             | CGEventMask(1 << CGEventType.rightMouseDown.rawValue)
             | CGEventMask(1 << CGEventType.rightMouseUp.rawValue)
             | CGEventMask(1 << 14)  // NX_SYSDEFINED: the volume keys
+            | CGEventMask(1 << CGEventType.flagsChanged.rawValue)  // ⌥ let go: the switcher chooses
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: escapeTapCallback,
@@ -136,6 +142,39 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
             return true
         }
         return taken ? nil : Unmanaged.passUnretained(event)
+    }
+    // ⌥⇥: the window switcher. ⇥ with ⌥ (not ⌘ or ⌃) opens it and moves on; while it's up,
+    // ← → Esc ↩ steer it; ⌥ let go chooses.
+    if type == .flagsChanged {
+        if !event.flags.contains(.maskAlternate) {
+            MainActor.assumeIsolated { _ = interceptor.onSwitcher(.released) }
+        }
+        return Unmanaged.passUnretained(event)
+    }
+    if type == .keyDown || type == .keyUp {
+        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        let flags = event.flags
+        let key: InputInterceptor.SwitcherKey? = switch code {
+        case 48 where flags.contains(.maskAlternate) && !flags.contains(.maskCommand) && !flags.contains(.maskControl):
+            .tab(backwards: flags.contains(.maskShift))
+        case 123: .left
+        case 124: .right
+        case 53: .escape
+        case 36: .choose
+        default: nil
+        }
+        if let key {
+            let taken = MainActor.assumeIsolated { () -> Bool in
+                if type == .keyUp {
+                    defer { if interceptor.swallowSwitcherUp == code { interceptor.swallowSwitcherUp = nil } }
+                    return interceptor.swallowSwitcherUp == code
+                }
+                guard interceptor.onSwitcher(key) else { return false }
+                interceptor.swallowSwitcherUp = code
+                return true
+            }
+            if taken { return nil }
+        }
     }
     // Studio's prompter shortcuts: ⌃⌘P pause/carry on, ⌃⌘↑ ↓ cues, ⌃⌘← → slower/faster.
     if type == .keyDown || type == .keyUp {

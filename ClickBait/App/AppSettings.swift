@@ -15,6 +15,7 @@ final class AppSettings {
         static let agentNotices = "settings.agentNotices"
         static let agentNoticesAsked = "settings.agentNoticesAsked"
         static let healthAlerts = "settings.healthAlerts"
+        static let windowSwitcher = "settings.windowSwitcher"
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
         static let searchPhotos = "settings.searchPhotos"
@@ -136,6 +137,10 @@ final class AppSettings {
     var healthAlerts: Bool {
         didSet { defaults.set(healthAlerts, forKey: Key.healthAlerts) }
     }
+    /// ⌥⇥ window switching (`WindowSwitcher`); on unless turned off.
+    var windowSwitcher: Bool {
+        didSet { defaults.set(windowSwitcher, forKey: Key.windowSwitcher) }
+    }
     /// Asked once whether to add the hooks (yes or no, never again).
     var agentNoticesAsked: Bool {
         didSet { defaults.set(agentNoticesAsked, forKey: Key.agentNoticesAsked) }
@@ -253,6 +258,7 @@ final class AppSettings {
         agentNotices = defaults.bool(forKey: Key.agentNotices)
         agentNoticesAsked = defaults.bool(forKey: Key.agentNoticesAsked)
         healthAlerts = defaults.object(forKey: Key.healthAlerts) as? Bool ?? true
+        windowSwitcher = defaults.object(forKey: Key.windowSwitcher) as? Bool ?? true
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)

@@ -381,6 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
         StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
         // Studio's prompter shortcuts, only while it's up: ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →.
+        WindowSwitcher.shared.enabled = { [weak self] in self?.settings.windowSwitcher ?? false }
+        escape.onSwitcher = { key in WindowSwitcher.shared.handle(key) }
         escape.onPrompterKey = { code in
             let studio = StudioModel.shared
             guard studio.prompting else { return false }
@@ -423,6 +425,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
+            }
+        }
+        // ⌥⇥ as if pressed, then ⌥ let go a moment later: live tests of the switcher.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.switcher"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                _ = WindowSwitcher.shared.handle(.tab(backwards: false))
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    _ = WindowSwitcher.shared.handle(.released)
+                }
             }
         }
         // Next Up's view of the calendar, logged: live tests.
