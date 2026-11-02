@@ -13,6 +13,8 @@ enum GalleryHooks {
     /// Snipping is hold-to-draw (⌥⌘): the tile says how.
     static var snip: () -> Void = {}
     static var screenshot: (ScreenshotKind) -> Void = { _ in }
+    /// Starts a watch: folds the notch, then a box is dragged around what to watch.
+    static var watch: (ScreenWatch.Rule) -> Void = { _ in }
     /// Opens Lookup with these words in its field.
     static var lookup: (String) -> Void = { _ in }
 }

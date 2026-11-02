@@ -416,6 +416,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // A watch on the main screen's top-right corner for a word: live tests of Watch.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.watch"), object: nil, queue: .main) { [weak self] note in
+            guard let word = note.object as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self, let screen = NSScreen.screens.first else { return }
+                // "word" watches the top-right corner (the menu bar); "word@middle" the screen's middle.
+                let parts = word.split(separator: "@").map(String.init)
+                let area = parts.count > 1
+                    ? CGRect(x: screen.frame.midX - 400, y: screen.frame.midY - 150, width: 800, height: 300)
+                    : CGRect(x: screen.frame.maxX - 340, y: screen.frame.maxY - 26, width: 340, height: 26)
+                ScreenWatcher.shared.start(area: area, rule: .says(parts[0]), blocklist: self.settings.blocklist)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(6))
+                    Log.app.notice("Debug watch: reads \(ScreenWatcher.shared.reading.prefix(60), privacy: .public), watching \(ScreenWatcher.shared.watching, privacy: .public)")
+                }
+            }
+        }
         // The shelf's "peek at it?" offer for a file, and an answer to it ("yes"/"no"): live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.peekoffer"), object: nil, queue: .main) { [weak self] note in
             guard let path = note.object as? String else { return }
@@ -979,6 +996,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: .milliseconds(400))  // the notch out of the picture
                 _ = await coordinator.perform(ActionRequest(name: "screenshot", argument: kind.rawValue), speak: false)
             }
+        }
+        GalleryHooks.watch = { [weak self] rule in
+            guard let self else { return }
+            notch.makeRoom()
+            WatchAreaPicker.pick { [weak self] area in
+                guard let self, let area else { return }
+                ScreenWatcher.shared.start(area: area, rule: rule, blocklist: settings.blocklist)
+                overlay.showJobResult("watching \(rule.summary)", tone: .idle, force: true)
+            }
+        }
+        ScreenWatcher.shared.onDone = { [weak self] text in
+            guard let self else { return }
+            SoundCues.play(.done, enabled: settings.soundCues)
+            overlay.showJobResult(text, tone: .idle, force: true)
         }
         GalleryHooks.lookup = { [weak self] words in
             guard let self else { return }

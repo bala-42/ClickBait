@@ -7,7 +7,7 @@ import SwiftUI
 /// bean buttons don't already open (Lookup, Shelf, Studio, the player) and not the timer (its
 /// own bubble). Pages join as they're built.
 enum GalleryPage: String, CaseIterable, Identifiable {
-    case controls, agents, jobs, notes, reminders, snips, tools, clipboard
+    case controls, agents, jobs, watch, notes, reminders, snips, tools, clipboard
 
     var id: String { rawValue }
     var title: String {
@@ -15,6 +15,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         case .controls: "Controls"
         case .agents: "AI Agents"
         case .jobs: "Jobs"
+        case .watch: "Watch"
         case .notes: "Notes"
         case .reminders: "Reminders"
         case .snips: "Recent snips"
@@ -27,6 +28,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         case .controls: "slider.horizontal.3"
         case .agents: "sparkles"
         case .jobs: "tray.full"
+        case .watch: "eye"
         case .notes: "note.text"
         case .reminders: "checklist"
         case .snips: "camera.viewfinder"
@@ -42,6 +44,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         case .jobs, .reminders: (640, 280)
         case .notes: (640, 300)
         case .clipboard: (640, 260)
+        case .watch: (640, 190)
         case .snips, .tools: (640, 180)
         }
     }
@@ -68,6 +71,7 @@ struct GalleryView: View {
                 case .controls: ControlsPage(settings: settings)
                 case .agents: NotchAgentsPage()
                 case .jobs: JobsPage()
+                case .watch: WatchPage { rule in GalleryHooks.watch(rule) }
                 case .notes: NotesPage()
                 case .reminders: RemindersPage()
                 case .snips: SnipsPage()
