@@ -381,7 +381,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if peeking { self.showOfferResult(request, files: [file], outcome: outcome) }
             }
         }
-        coordinator.overlayQuietDone = { [weak self] in self?.overlay.dismissAnswer() }
+        coordinator.overlayQuietDone = { [weak self] in
+            self?.overlay.endWorking()
+            self?.overlay.dismissAnswer()
+        }
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
         StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
         // Studio's prompter shortcuts, only while it's up: ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →.
@@ -419,6 +422,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let found = await SearchIndex.shared.search(request, notchNote: "", options: options)
                     Log.app.notice("Debug search: kind \(request.kind.rawValue, privacy: .public), terms \(request.terms.joined(separator: " "), privacy: .public) → \(found.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "), privacy: .public)")
                 }
+            }
+        }
+        // Opens a bubble page ("gallery", "gallery:watch", "timer", "volume"): live tests of fitting.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.page"), object: nil, queue: .main) { [weak self] note in
+            let parts = (note.object as? String ?? "gallery").split(separator: ":").map(String.init)
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
             }
         }
         // The timer's end without waiting: the ruby notch and a sound ("timer", "pleasant", "striking").

@@ -67,12 +67,27 @@ final class NotchController {
         enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer, volume }
         /// The gallery's open page (nil: its tiles).
         var galleryPage: GalleryPage?
-        /// A size of its own for this tab and page (the gallery's pages), else nil.
+        /// A size of its own for this tab and page (the bubbles' pages), else nil: its content's
+        /// measured height (`fitted`) under the header, its fixed size until measured and as a
+        /// ceiling (lists scroll inside it) — every page sized to its content (user's ask, 2026-11-02).
         var pageSize: (width: Double, height: Double)? {
-            if tab == .volume { return (640, 260) }
-            guard tab == .gallery else { return nil }
-            return galleryPage?.size ?? GalleryPage.gridSize
+            let most: (width: Double, height: Double)
+            switch tab {
+            case .volume: most = (640, 260)
+            case .timer: most = (NotchPanel.expandedSize.width, NotchPanel.expandedSize.height)
+            case .gallery: most = galleryPage?.size ?? GalleryPage.gridSize
+            default: return nil
+            }
+            guard let content = fitted[pageKey] else { return most }
+            return (most.width, min(most.height, Self.chrome + content))
         }
+        /// The open notch around a page: 8 top, the 36 header, 12 bottom.
+        static let chrome = 8.0 + 36 + 12
+        /// Each page's measured content height (by `pageKey`), kept so it opens at it next time.
+        var fitted: [String: Double] = [:]
+        var pageKey: String { "\(tab)-\(galleryPage.map { "\($0)" } ?? "tiles")" }
+        /// A page's content measured, by its key (set by the controller: it re-fits the window).
+        var fitPage: @MainActor (String, Double) -> Void = { _, _ in }
         /// Opens a gallery page, or its tiles (set by the controller: it re-fits the window).
         var openGallery: @MainActor (GalleryPage?) -> Void = { _ in }
         /// The bean's mood, read from the companion (set by the app delegate).
@@ -179,6 +194,15 @@ final class NotchController {
             guard let self else { return }
             model.galleryPage = page
             place()
+        }
+        model.fitPage = { [weak self] key, height in
+            guard let self else { return }
+            // On the 4 pt grid, and only a real change re-fits (no loop on sub-point jitter).
+            let snapped = (height / 4).rounded(.up) * 4
+            guard model.fitted[key] != snapped else { return }
+            model.fitted[key] = snapped
+            Log.app.notice("Notch page fitted: \(key, privacy: .public) → \(Int(snapped), privacy: .public) pt of content")
+            if key == model.pageKey { place() }
         }
         // File actions can work on the shelf's selected files, and put what they make on it.
         FileActions.shelfSelection = { [weak self] in
@@ -358,6 +382,16 @@ final class NotchController {
             self?.stopAlarm()
         }
     }
+
+    #if DEBUG
+    /// Opens a bubble page from a live test (`org.clickbait.debug.page`).
+    func debugOpen(tab: String, page: String?) {
+        model.tab = tab == "timer" ? .timer : tab == "volume" ? .volume : .gallery
+        model.galleryPage = page.flatMap { name in GalleryPage.allCases.first { "\($0)" == name } }
+        apply(.clicked)
+        place()
+    }
+    #endif
 
     func stopAlarm() {
         guard model.alarm else { return }

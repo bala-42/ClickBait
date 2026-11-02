@@ -292,6 +292,12 @@ final class OverlayController {
         }
     }
 
+    /// A working pill ("looking inside…") done with nothing to say: back to idle. A quiet action
+    /// (peek's offer, whose result is its own card) left it up forever (user's report, 2026-11-02).
+    func endWorking() {
+        if case .working = model.bubble { model.bubble = .idle }
+    }
+
     func dismissAnswer() {
         dismissTask?.cancel()
         dismissTask = nil

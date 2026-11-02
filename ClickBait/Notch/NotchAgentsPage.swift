@@ -14,7 +14,9 @@ struct NotchAgentsPage: View {
     @State private var pickedDay: Int?
 
     var body: some View {
+        // Capped at the page's old height: it measures to its content, but a long list scrolls.
         ScrollView(.vertical, showsIndicators: true) { cards }
+            .frame(maxHeight: GalleryPage.agents.size.height - NotchController.Model.chrome - 32)
         .scrollIndicators(.automatic)
         .task {
             while !Task.isCancelled {

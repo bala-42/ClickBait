@@ -424,9 +424,9 @@ private struct OpenNotch: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .shelf: ShelfView(shelf: shelf, note: model.note, onEditing: { model.editing = $0 }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .music: MusicPanel(music: music, onOpen: { music.openPlayer(); onCollapse() }).transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .gallery: GalleryView(model: model, settings: settings).transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .timer: NotchTimerView().transition(.opacity.combined(with: .scale(scale: 0.97)))
-                case .volume: NotchVolumePage().transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .gallery: GalleryView(model: model, settings: settings).fitsNotch(model).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .timer: NotchTimerView().fitsNotch(model).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .volume: NotchVolumePage().fitsNotch(model).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings, .mirror: EmptyView()
                 }
             }
@@ -1758,5 +1758,26 @@ private struct NearbyPill: View {
         } isTargeted: { targeted = $0 }
         .help("Send to \(peer.name), Mac to Mac")
         .accessibilityLabel("Send to \(peer.name)")
+    }
+}
+
+/// A bubble page's content height, as it would be with no room limit, told to the notch so it
+/// fits the page (`Model.fitPage`).
+private struct PageHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private extension View {
+    /// The key is the page's own, taken when it's built: a page fading out still measures, and
+    /// must not size the page fading in.
+    func fitsNotch(_ model: NotchController.Model) -> some View {
+        let key = model.pageKey
+        return fixedSize(horizontal: false, vertical: true)
+            .background(GeometryReader { Color.clear.preference(key: PageHeightKey.self, value: $0.size.height) })
+            .onPreferenceChange(PageHeightKey.self) { height in
+                guard height > 0 else { return }
+                MainActor.assumeIsolated { model.fitPage(key, Double(height)) }
+            }
     }
 }
