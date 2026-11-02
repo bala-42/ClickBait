@@ -176,11 +176,13 @@ struct ChatView: View {
     @ViewBuilder private var closeButton: some View {
         if inNotch {
             if model.offersLook {
-                NotchHeaderIcon(symbol: model.looksAtScreen ? "eye.fill" : "eye", label: model.looksAtScreen
-                                ? "Your screen goes with the next message" : "Look at my screen with the next message") {
+                // An open eye: it will look at the screen; closed: it won't (user's ask, 2026-11-03:
+                // the plain outline read as neither).
+                NotchHeaderIcon(symbol: model.looksAtScreen ? "eye.fill" : "eye.half.closed", label: model.looksAtScreen
+                                ? "Seeing your screen with the next message" : "Not seeing your screen — click to show it") {
                     model.looksAtScreen.toggle()
                 }
-                .help(model.looksAtScreen ? "Your screen goes with the next message" : "Look at my screen with the next message")
+                .help(model.looksAtScreen ? "Seeing your screen with the next message — click to stop" : "Not seeing your screen — click to show it with the next message")
             }
             if let clear = model.onClear, !model.messages.isEmpty {
                 // A fresh start, not deleting anything: a refresh arrow (user's pick, 2026-11-02).
