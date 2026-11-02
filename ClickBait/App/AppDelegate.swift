@@ -491,23 +491,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let yes = (note.object as? String) == "yes"
             MainActor.assumeIsolated { self?.confirm.debugAnswer(yes) }
         }
-        // A watch on the main screen's top-right corner for a word: live tests of Watch.
-        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.watch"), object: nil, queue: .main) { [weak self] note in
-            guard let word = note.object as? String else { return }
-            MainActor.assumeIsolated {
-                guard let self, let screen = NSScreen.screens.first else { return }
-                // "word" watches the top-right corner (the menu bar); "word@middle" the screen's middle.
-                let parts = word.split(separator: "@").map(String.init)
-                let area = parts.count > 1
-                    ? CGRect(x: screen.frame.midX - 400, y: screen.frame.midY - 150, width: 800, height: 300)
-                    : CGRect(x: screen.frame.maxX - 340, y: screen.frame.maxY - 26, width: 340, height: 26)
-                ScreenWatcher.shared.start(area: area, rule: .says(parts[0]), blocklist: self.settings.blocklist)
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(6))
-                    Log.app.notice("Debug watch: reads \(ScreenWatcher.shared.reading.prefix(60), privacy: .public), watching \(ScreenWatcher.shared.watching, privacy: .public)")
-                }
-            }
-        }
         // The shelf's "peek at it?" offer for a file, and an answer to it ("yes"/"no"): live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.peekoffer"), object: nil, queue: .main) { [weak self] note in
             guard let path = note.object as? String else { return }
@@ -1071,21 +1054,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          hint: nil, tone: .idle, waitTime: .seconds(60)) { yes in if yes { action() } }
         }
         nextUp.start()
-        GalleryHooks.watch = { [weak self] rule in
-            guard let self else { return }
-            notch.makeRoom()
-            WatchAreaPicker.pick { [weak self] area in
-                guard let self, let area else { return }
-                ScreenWatcher.shared.start(area: area, rule: rule, blocklist: settings.blocklist)
-                overlay.showJobResult("watching \(rule.summary)", tone: .idle, force: true)
-            }
-        }
         GalleryHooks.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .idle, force: true) }
         ScreenRecorder.shared.onSaved = { [weak self] file in
             self?.overlay.showJobResult("saved the recording ✓ in Movies", tone: .action, force: true)
             NSWorkspace.shared.activateFileViewerSelecting([file])
         }
         ScreenRecorder.shared.onProblem = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
+        CleaningMode.shared.lock = { [weak self] on in self?.escape.lockKeys = on }
+        GalleryHooks.tool = { [weak self] action in
+            guard let self else { return }
+            notch.makeRoom()
+            switch action {
+            case .cleaning:
+                CleaningMode.shared.start()
+            case .uninstall:
+                guard let app = AppRemover.choose() else { return }
+                switch AppRemover.plan(for: app) {
+                case .refused(let why):
+                    overlay.showJobResult(why, tone: .error, force: true)
+                case .ready(let plan):
+                    let size = ByteCountFormatter.string(fromByteCount: plan.bytes, countStyle: .file)
+                    let kinds = Set(plan.leftovers.map { $0.deletingLastPathComponent().lastPathComponent }).sorted().prefix(4).joined(separator: ", ")
+                    confirm.show("move \(plan.name) and \(plan.leftovers.count) leftover\(plan.leftovers.count == 1 ? "" : "s") (\(size)) to the Trash?",
+                                 at: overlay.companionTopLeft, confirm: "move to Trash", cancel: "keep",
+                                 hint: kinds.isEmpty ? nil : kinds, tone: .error, waitTime: .seconds(30)) { [weak self] yes in
+                        guard yes else { return }
+                        Task { @MainActor in
+                            let said = await AppRemover.remove(plan)
+                            self?.overlay.showJobResult(said, tone: said.hasSuffix("✓") ? .action : .error, force: true)
+                        }
+                    }
+                }
+            }
+        }
         GalleryHooks.capture = { [weak self] tool in
             guard let self else { return }
             notch.makeRoom()
@@ -1108,8 +1109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 WatchAreaPicker.pick { [weak self] area in
                     guard let self, let area else { return }
                     Task { @MainActor in
-                        guard let image = await ScreenWatcher.picture(of: area, blocklist: self.settings.blocklist),
-                              let found = await ScreenWatcher.copyableText(in: image) else {
+                        guard let image = await ScreenArea.picture(of: area, blocklist: self.settings.blocklist),
+                              let found = await ScreenArea.copyableText(in: image) else {
                             self.overlay.showJobResult("no text there", tone: .error, force: true)
                             return
                         }
@@ -1128,11 +1129,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     overlay.showJobResult("copied \(text.hex) · \(text.rgb)", tone: .idle, force: true)
                 }
             }
-        }
-        ScreenWatcher.shared.onDone = { [weak self] text in
-            guard let self else { return }
-            SoundCues.play(.done, enabled: settings.soundCues)
-            overlay.showJobResult(text, tone: .idle, force: true)
         }
     }
 

@@ -96,6 +96,14 @@ final class WindowSwitcher {
     /// "frontmost" was quietly refused: "doesn't take me anywhere", user's report, 2026-11-02),
     /// then the window itself raised as main, unminimised.
     static func bringForward(_ window: SwitcherModel.Item) {
+        if window.id == 0 {
+            // The desktop: Mission Control's own show desktop.
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/System/Applications/Mission Control.app/Contents/MacOS/Mission Control")
+            process.arguments = ["1"]
+            try? process.run()
+            return
+        }
         guard let app = NSRunningApplication(processIdentifier: window.pid) else { return }
         if app.isHidden { app.unhide() }
         raise(window)  // first, so the app comes forward on this window's Space
@@ -181,6 +189,11 @@ final class SwitcherModel {
                 guard let app = NSRunningApplication(processIdentifier: window.pid), app.activationPolicy == .regular else { return nil }
                 return Item(id: window.id, pid: window.pid, title: window.title, appName: app.localizedName ?? "", icon: app.icon, frame: scWindow.frame)
             }
+        // The desktop, last (user's ask, 2026-11-02: "why is desktop not shown"): its wallpaper as
+        // its picture; choosing it clears the windows away, as Mission Control's show desktop does.
+        let wallpaper = NSWorkspace.shared.desktopImageURL(for: screen).flatMap { NSImage(contentsOf: $0) }
+        windows.append(Item(id: 0, pid: 0, title: "Desktop", appName: "Desktop",
+                            icon: NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app"), frame: screen.frame, thumbnail: wallpaper))
         selected = WindowSwitch.first(count: windows.count, backwards: backwards)
     }
 
@@ -192,7 +205,7 @@ final class SwitcherModel {
     /// Each window's picture: the last one taken (`WindowPictures`) at once, then a fresh one
     /// wherever macOS allows it (ScreenCaptureKit's on-screen flag isn't reliable, so each is tried).
     func loadThumbnails() async {
-        for index in windows.indices { windows[index].thumbnail = WindowPictures.shared.picture(of: windows[index].id) }
+        for index in windows.indices where windows[index].id != 0 { windows[index].thumbnail = WindowPictures.shared.picture(of: windows[index].id) }
         guard let content else { return }
         for index in windows.indices {
             guard let window = content.windows.first(where: { $0.windowID == windows[index].id }),

@@ -45,26 +45,29 @@ struct NotchVolumePage: View {
     }
 
     private var sliders: some View {
-        HStack(alignment: .top, spacing: 20) {
+        // The main slider stays put; the apps, evenly spaced, scroll past it (user's reference,
+        // 2026-11-02: Vorssaint's mixer).
+        HStack(alignment: .top, spacing: 16) {
             VStack(spacing: 8) {
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 13)).frame(height: 24)
                 VolumeBar(value: mixer.mainVolume, maximum: 1, interactive: interactive) { mixer.setMainVolume($0) }
                 Text("\(Int((mixer.mainVolume * 100).rounded()))%").font(.system(size: 11).monospacedDigit()).foregroundStyle(NotchPalette.secondary)
             }
+            .frame(width: 64)
             Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1).padding(.vertical, 4)
             if mixer.apps.isEmpty {
                 Text("Apps using sound show up here.").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 20) {
-                        ForEach(mixer.apps) { app in appColumn(app) }
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(mixer.apps) { app in appColumn(app).frame(width: 96) }
                     }
                 }
             }
         }
         .foregroundStyle(NotchPalette.text)
-        .frame(height: 170)
+        .frame(height: 212)
     }
 
     private func appColumn(_ app: SystemAudio.PlayingApp) -> some View {
@@ -151,7 +154,7 @@ struct NotchVolumePage: View {
         }
         .font(.system(size: 12))
         .foregroundStyle(NotchPalette.text)
-        .frame(height: 170, alignment: .top)
+        .frame(height: 212, alignment: .top)
     }
 
     private func settingRow<Picker: View>(_ title: String, _ symbol: String, @ViewBuilder picker: () -> Picker) -> some View {
@@ -202,7 +205,7 @@ private struct VolumeBar: View {
                 }
             }
         }
-        .frame(width: 30, height: 112)
+        .frame(width: 28, height: 148)
         .accessibilityElement()
         .accessibilityValue("\(Int((value * 100).rounded())) percent")
         .accessibilityAdjustableAction { direction in set(min(maximum, max(0, value + (direction == .increment ? 0.05 : -0.05)))) }

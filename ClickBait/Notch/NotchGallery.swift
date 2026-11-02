@@ -9,7 +9,7 @@ import SwiftUI
 enum GalleryPage: String, CaseIterable, Identifiable {
     // What nothing else in ClickBait does (user's calls, 2026-11-02: the rest repeated the ⚙
     // bubble, the dock, Home's note, the shortcuts and the shelf).
-    case agents, watch, clipboard, capture, health, colour
+    case agents, tools, clipboard, capture, health, colour
 
     /// Acts on a tap instead of opening a page.
     var acts: Bool { self == .colour }
@@ -18,7 +18,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .agents: "AI Agents"
-        case .watch: "Watch"
+        case .tools: "Tools"
         case .capture: "Capture"
         case .colour: "Colour"
         case .health: "Health"
@@ -28,7 +28,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .agents: "sparkles"
-        case .watch: "eye"
+        case .tools: "wrench.and.screwdriver"
         case .capture: "camera.viewfinder"
         case .colour: "eyedropper"
         case .health: "heart.text.square"
@@ -43,7 +43,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         switch self {
         case .agents: (640, 440)
         case .clipboard: (640, 260)
-        case .watch: (640, 190)
+        case .tools: (640, 240)
         case .health: (640, 420)
         case .capture: (640, 200)
         case .colour: GalleryPage.gridSize
@@ -70,7 +70,7 @@ struct GalleryView: View {
                 }
                 switch page {
                 case .agents: NotchAgentsPage()
-                case .watch: WatchPage { rule in GalleryHooks.watch(rule) }
+                case .tools: ToolsPage()
                 case .clipboard: ClipboardPage()
                 case .health: HealthPage()
                 case .capture: CapturePage()

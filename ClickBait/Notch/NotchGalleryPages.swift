@@ -7,8 +7,8 @@ import SwiftUI
 /// What the gallery's pages reach in the rest of the app (set by the app delegate).
 @MainActor
 enum GalleryHooks {
-    /// Starts a watch: folds the notch, then a box is dragged around what to watch.
-    static var watch: (ScreenWatch.Rule) -> Void = { _ in }
+    /// Tools' Cleaning mode and Uninstaller (set by the app delegate).
+    static var tool: (ToolAction) -> Void = { _ in }
     /// Capture's tools (set by the app delegate).
     static var capture: (CaptureTool) -> Void = { _ in }
     /// A pill by the cursor (set by the app delegate).

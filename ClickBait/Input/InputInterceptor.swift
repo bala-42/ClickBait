@@ -30,6 +30,8 @@ final class InputInterceptor {
     var onSwitcher: (_ key: SwitcherKey) -> Bool = { _ in false }
     enum SwitcherKey { case tab(backwards: Bool), left, right, escape, choose, released }
     fileprivate var swallowSwitcherUp: Int64?
+    /// Cleaning mode: every key, modifier and media key taken while it's on.
+    var lockKeys = false
     /// ⌃⌘ + P, arrows while Studio's prompter is up (true: taken, the app in front never sees it).
     var onPrompterKey: (_ keyCode: Int64) -> Bool = { _ in false }
     fileprivate var swallowPrompterUp: Int64?
@@ -108,6 +110,10 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         MainActor.assumeIsolated { interceptor.reenable() }
         return Unmanaged.passUnretained(event)
+    }
+    if MainActor.assumeIsolated({ interceptor.lockKeys }),
+       [.keyDown, .keyUp, .flagsChanged].contains(type) || type.rawValue == 14 {
+        return nil
     }
     if type.rawValue == 14 {
         // Media keys: subtype 8; key code in data1's top 16 bits, state 0xA down / 0xB up.

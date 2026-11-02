@@ -19,7 +19,7 @@ struct CopyTextTests {
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
             ("Invoice 2041 paid" as NSString).draw(at: CGPoint(x: 30, y: 80), withAttributes: [.font: NSFont.systemFont(ofSize: 40), .foregroundColor: NSColor.black])
         }
-        let found = try #require(await ScreenWatcher.copyableText(in: image))
+        let found = try #require(await ScreenArea.copyableText(in: image))
         #expect(!found.isCode && found.text.contains("Invoice 2041"))
     }
 
@@ -28,7 +28,7 @@ struct CopyTextTests {
         filter.setValue(Data("https://clickbait.example/qr".utf8), forKey: "inputMessage")
         let code = try #require(filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 6, y: 6)))
         let image = try #require(CIContext().createCGImage(code, from: code.extent))
-        let found = try #require(await ScreenWatcher.copyableText(in: image))
+        let found = try #require(await ScreenArea.copyableText(in: image))
         #expect(found.isCode && found.text == "https://clickbait.example/qr")
     }
 }

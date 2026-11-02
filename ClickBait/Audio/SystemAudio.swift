@@ -191,3 +191,34 @@ extension SystemAudio {
         AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &level)
     }
 }
+
+extension SystemAudio {
+    /// The microphone (the default input) muted — its own mute where it has one, else its level
+    /// at 0, the level before kept to come back to (Tools → Mute mic).
+    static var inputMuted: Bool {
+        guard let device = defaultInput else { return false }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var muted: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+        if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &muted) == noErr { return muted == 1 }
+        return (inputVolume() ?? 1) == 0
+    }
+
+    private static let levelBeforeMute = "systemAudio.inputLevelBeforeMute"
+
+    static func setInputMuted(_ mute: Bool) {
+        guard let device = defaultInput else { return }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var settable: DarwinBoolean = false
+        if AudioObjectIsPropertySettable(device, &address, &settable) == noErr, settable.boolValue {
+            var value: UInt32 = mute ? 1 : 0
+            AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value)
+            return
+        }
+        if mute {
+            UserDefaults.standard.set(inputVolume() ?? 0.75, forKey: levelBeforeMute)
+            setInputVolume(0)
+        } else {
+            setInputVolume(UserDefaults.standard.object(forKey: levelBeforeMute) as? Double ?? 0.75)
+        }
+    }
+}
