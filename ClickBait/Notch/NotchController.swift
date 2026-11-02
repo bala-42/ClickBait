@@ -159,6 +159,9 @@ final class NotchController {
     private var escapeMonitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
 
+    /// Where the notch is on screen now, each display's (cards keep clear of it).
+    var visibleFrames: [CGRect] { panels.values.filter(\.isVisible).map(\.frame) }
+
     private var primaryPanel: Panel? {
         if let screen = Self.screen, let id = Self.displayID(screen), let panel = panels[id] { return panel }
         return panels.values.first

@@ -10,6 +10,9 @@ import SwiftUI
 final class ConfirmController {
     var onAnswer: ((Bool) -> Void)?
     private var panel: NSPanel?
+    /// The notch's windows on screen (set by the app delegate): cards keep clear of them.
+    static var notchFrames: () -> [CGRect] = { [] }
+    static let notchGap: CGFloat = 16
     private var timeout: Task<Void, Never>?
     static let waitTime: Duration = .seconds(20)
 
@@ -90,9 +93,7 @@ final class ConfirmController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // Above the open notch: a card shown by the cursor while it's on the notch (peek's
-        // "extract", from the shelf) was hidden under it (user's report, 2026-11-02).
-        panel.level = WindowLayers.dock
+        panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -102,6 +103,11 @@ final class ConfirmController {
             var frame = panel.frame
             frame.origin.x = min(max(frame.minX, screen.visibleFrame.minX), screen.visibleFrame.maxX - frame.width)
             frame.origin.y = min(max(frame.minY, screen.visibleFrame.minY), screen.visibleFrame.maxY - frame.height)
+            // Never on or touching the notch: down the screen, below it with a gap (a card by the
+            // cursor while it was on the shelf hid under the notch; user's report, 2026-11-02).
+            for notch in Self.notchFrames() where notch.insetBy(dx: -Self.notchGap, dy: -Self.notchGap).intersects(frame) {
+                frame.origin.y = max(notch.minY - Self.notchGap - frame.height, screen.visibleFrame.minY)
+            }
             panel.setFrame(frame, display: false)
         }
         panel.orderFrontRegardless()

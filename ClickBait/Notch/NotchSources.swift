@@ -800,9 +800,9 @@ final class AirDropSender: NSObject, NSSharingServiceDelegate, NSSharingServiceP
         let size = NSSize(width: 460, height: 340)
         let screen: NSScreen, top: CGFloat, midX: CGFloat
         if let pad = padView, let notch = pad.window, let padScreen = notch.screen {
-            let padRect = notch.convertToScreen(pad.convert(pad.bounds, to: nil))
             screen = padScreen
-            top = padRect.minY - 10 - 10
+            // Below the notch's bottom edge with a gap, never on it (user's ask, 2026-11-02).
+            top = notch.frame.minY - 16
             midX = notch.frame.midX
         } else {
             screen = NSScreen.main ?? NSScreen.screens[0]
@@ -823,8 +823,7 @@ final class AirDropSender: NSObject, NSSharingServiceDelegate, NSSharingServiceP
         window.isMovable = false
         window.isReleasedWhenClosed = false
         window.backgroundColor = .black
-        // Above the open notch, which covered it (user's report, 2026-11-02); AirDrop's sheet goes with it.
-        window.level = WindowLayers.dock
+        window.level = .floating
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         let label = NSTextField(labelWithString: Self.label(count))
         label.font = .systemFont(ofSize: 12, weight: .semibold)

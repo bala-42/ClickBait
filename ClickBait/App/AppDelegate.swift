@@ -1015,6 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 _ = await coordinator.perform(ActionRequest(name: "screenshot", argument: kind.rawValue), speak: false)
             }
         }
+        ConfirmController.notchFrames = { [weak self] in self?.notch.visibleFrames ?? [] }
         GalleryHooks.watch = { [weak self] rule in
             guard let self else { return }
             notch.makeRoom()
