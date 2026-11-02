@@ -18,7 +18,7 @@ struct ActionPolicyTests {
         for action: ResolvedAction in [.openApp("Notes"), .quitApp("Safari"), .makeNote("milk"), .addReminder("call mum"),
                                        .setVolume(percent: 30), .setMuted(true), .setDarkMode(true), .setWiFi(true),
                                        .newFolder(in: nil, name: nil), .runShortcut("Focus"), .lockScreen, .sleepDisplay,
-                                       .file(.compress), .file(.copyTo(.desktop)), .file(.moveToTrash)] {
+                                       .file(.compress(.together)), .file(.copyTo(.desktop)), .file(.moveToTrash)] {
             #expect(ActionPolicy.decide(action, from: .modelGuess) == .ask, "\(action)")
         }
     }
@@ -30,7 +30,7 @@ struct ActionPolicyTests {
     }
 
     @Test func fileOrdersAlwaysAskFirst() {
-        for action: ResolvedAction in [.file(.shrink(toBytes: 50_000_000)), .file(.convert(to: .mp4)), .file(.compress), .file(.rename(to: "X"))] {
+        for action: ResolvedAction in [.file(.shrink(toBytes: 50_000_000)), .file(.convert(to: .mp4)), .file(.compress(.together)), .file(.rename(to: "X"))] {
             #expect(ActionPolicy.decide(action, from: .clearOrder) == .ask, "\(action)")
         }
     }
@@ -38,7 +38,7 @@ struct ActionPolicyTests {
     @Test func everyAskedActionHasItsOwnQuestion() {
         let asked: [ResolvedAction] = [.openApp("Notes"), .makeNote("milk"), .addReminder("call mum"), .setVolume(percent: 30),
                                        .setMuted(false), .setDarkMode(false), .setWiFi(true), .newFolder(in: .downloads, name: "X"),
-                                       .file(.compress), .file(.merge), .file(.shrink(toBytes: nil)), .file(.convert(to: .png)),
+                                       .file(.compress(.together)), .file(.merge), .file(.shrink(toBytes: nil)), .file(.convert(to: .png)),
                                        .file(.copyTo(.desktop)), .file(.copyToFolder("Old"))]
         for action in asked {
             #expect(ActionCatalog.confirmationQuestion(for: action, fileCount: 2) != "Go ahead?", "\(action)")

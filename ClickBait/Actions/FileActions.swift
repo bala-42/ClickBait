@@ -39,7 +39,7 @@ enum FileActions {
     /// Where the files for `action` come from right now, without asking Finder; nil means Finder.
     @MainActor
     static func otherSource(for action: FileAction, frontmostPID: pid_t?, frontmostBundleID: String?) -> (files: [URL], shelf: Bool)? {
-        guard action.makesCopies else { return nil }
+        guard action.worksBeyondFinder else { return nil }
         let shelf = shelfSelection()
         if !shelf.isEmpty { return (shelf, true) }
         if frontmostBundleID != FileAction.requiredFrontmostApp, let document = AXInspector.openDocument(frontmostPID: frontmostPID) {
@@ -71,7 +71,11 @@ enum FileActions {
 
     static func perform(_ action: FileAction, on files: [URL]) async throws -> (String, [URL]) {
         switch action {
-        case .compress: return try compress(files)
+        case .compress(.together): return try compress(files)
+        case .compress(.each): return try compressEach(files)
+        case .compress(.dated): return try compress(files, dated: true)
+        case .extract(let place): return try extract(files, into: place.map { try Places.url(for: $0) })
+        case .peek: return try peek(files)
         case .merge: return try merge(files)
         case .convert(let format): return try await convert(files, to: format)
         case .moveIntoNewFolder(let name): return try moveIntoNewFolder(files, name: name)
@@ -87,9 +91,10 @@ enum FileActions {
 
     // MARK: - Actions
 
-    private static func compress(_ files: [URL]) throws -> (String, [URL]) {
+    private static func compress(_ files: [URL], dated: Bool = false) throws -> (String, [URL]) {
         let folder = try commonFolder(of: files)
-        let base = files.count == 1 ? files[0].lastPathComponent : "Archive"
+        var base = files.count == 1 ? files[0].lastPathComponent : "Archive"
+        if dated { base += " " + Date().formatted(.iso8601.year().month().day()) }
         let output = folder.appending(path: try uniqueName(base: base, extension: "zip", in: folder))
         // zip keeps paths relative when run from the folder; arguments never go through a shell.
         let process = Process()
@@ -100,6 +105,97 @@ enum FileActions {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw FileActionError.failed("zip exited with \(process.terminationStatus)") }
         return ("Compressed \(count(files)) into \(output.lastPathComponent)", [output])
+    }
+
+    /// Each item in its own zip beside it ("Report.pdf" → "Report.pdf.zip").
+    private static func compressEach(_ files: [URL]) throws -> (String, [URL]) {
+        var outputs: [URL] = []
+        for file in files { outputs += try compress([file]).1 }
+        return ("Zipped \(count(files)) one by one", outputs)
+    }
+
+    // MARK: Archives (macOS's own tar, libarchive: zip, tar, gz, bz2, xz, 7z, iso, cpio, xar…)
+
+    static let archiveExtensions: Set<String> = ["zip", "tar", "gz", "tgz", "bz2", "tbz", "tbz2", "xz", "txz", "7z", "rar",
+                                                 "iso", "cpio", "xar", "lz", "lzma", "zst", "jar", "cbz", "cbr"]
+
+    private static func isArchive(_ file: URL) -> Bool {
+        archiveExtensions.contains(file.pathExtension.lowercased())
+    }
+
+    /// Runs a tool with arguments (never through a shell): its exit status, output and errors.
+    private static func run(_ tool: String, _ arguments: [String]) throws -> (status: Int32, output: String, errors: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        let output = Pipe(), errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        process.standardInput = FileHandle.nullDevice  // never waits for typing
+        try process.run()
+        let out = output.fileHandleForReading.readDataToEndOfFile(), err = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: out, as: UTF8.self), String(decoding: err, as: UTF8.self))
+    }
+
+    /// tar asks for a locked archive's password on the terminal and waits forever (a test hung on
+    /// it): a stand-in password makes it fail at once with "Incorrect passphrase" instead.
+    private static let noPassword = ["--passphrase", "clickbait-no-password"]
+
+    /// A password-locked archive says so in tar's errors ("Encrypted", "passphrase").
+    private static func isLocked(_ errors: String) -> Bool {
+        let lower = errors.lowercased()
+        return lower.contains("encrypt") || lower.contains("passphrase") || lower.contains("password")
+    }
+
+    /// Each archive into a new folder named after it (never spilling loose files), next to it
+    /// or in `place`. A failed one leaves nothing behind.
+    private static func extract(_ files: [URL], into place: URL?) throws -> (String, [URL]) {
+        let archives = files.filter(isArchive)
+        guard !archives.isEmpty else { throw FileActionError.unsupported("None of the selected files are archives.") }
+        var outputs: [URL] = []
+        var locked: [String] = []
+        for archive in archives {
+            let parent = place ?? archive.deletingLastPathComponent()
+            var base = archive.deletingPathExtension().lastPathComponent
+            if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }  // "x.tar.gz" → "x"
+            let folder = parent.appending(path: try uniqueName(base: base, extension: "", in: parent))
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            let result = try run("/usr/bin/tar", ["-xf", archive.path, "-C", folder.path] + noPassword)
+            if result.status != 0 {
+                try? FileManager.default.removeItem(at: folder)
+                if isLocked(result.errors) { locked.append(archive.lastPathComponent); continue }
+                throw FileActionError.failed("couldn't open \(archive.lastPathComponent): \(result.errors.split(separator: "\n").first ?? "")")
+            }
+            outputs.append(folder)
+        }
+        if outputs.isEmpty, !locked.isEmpty {
+            throw FileActionError.unsupported("\(locked.joined(separator: ", ")) \(locked.count == 1 ? "is" : "are") password-locked; I can't open \(locked.count == 1 ? "it" : "them") without the password.")
+        }
+        var message = "Extracted \(count(archives.filter { !locked.contains($0.lastPathComponent) }))"
+        if !locked.isEmpty { message += "; \(locked.joined(separator: ", ")) \(locked.count == 1 ? "is" : "are") password-locked" }
+        return (message, outputs)
+    }
+
+    /// What's inside, without extracting: how many items, their total size, the first few names.
+    private static func peek(_ files: [URL]) throws -> (String, [URL]) {
+        let archives = files.filter(isArchive)
+        guard !archives.isEmpty else { throw FileActionError.unsupported("None of the selected files are archives.") }
+        var lines: [String] = []
+        for archive in archives {
+            let result = try run("/usr/bin/tar", ["-tvf", archive.path] + noPassword)
+            guard result.status == 0 else {
+                lines.append(isLocked(result.errors) ? "\(archive.lastPathComponent) is password-locked" : "couldn't read \(archive.lastPathComponent)")
+                continue
+            }
+            let entries = ArchiveListing.entries(result.output)
+            let files = entries.filter { !$0.isFolder }
+            let total = ByteCountFormatter.string(fromByteCount: files.reduce(0) { $0 + $1.bytes }, countStyle: .file)
+            let names = ArchiveListing.topLevel(entries).prefix(6).joined(separator: ", ")
+            let more = ArchiveListing.topLevel(entries).count > 6 ? ", …" : ""
+            lines.append("\(archive.lastPathComponent): \(files.count == 1 ? "1 file" : "\(files.count) files"), \(total): \(names)\(more)")
+        }
+        return (lines.joined(separator: "\n"), [])
     }
 
     private static func merge(_ files: [URL]) throws -> (String, [URL]) {

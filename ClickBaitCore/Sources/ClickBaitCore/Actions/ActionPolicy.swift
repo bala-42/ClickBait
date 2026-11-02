@@ -30,12 +30,13 @@ public enum ActionPolicy {
             switch action {
             // Every file order asks first, said clearly or not (user's ask, 2026-11-02: "a
             // confirmation pill before the work of file manipulation begins").
+            case .file(.peek): .run  // only reads
             case .quitApp, .file: .ask
             default: .run
             }
         case .modelGuess:
             switch action {
-            case .screenshot, .media, .openPlace, .newFinderWindow, .showDesktop: .run
+            case .screenshot, .media, .openPlace, .newFinderWindow, .showDesktop, .file(.peek): .run
             default: .ask
             }
         }

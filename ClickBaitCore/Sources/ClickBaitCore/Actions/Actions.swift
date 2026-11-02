@@ -43,7 +43,13 @@ public enum ResolvedAction: Equatable, Sendable {
 /// Things ClickBait can do with the files selected in Finder. Every action except
 /// `moveToTrash` leaves the originals untouched and creates something new.
 public enum FileAction: Equatable, Sendable {
-    case compress
+    /// A zip: everything in one, each item in its own, or one named with today's date (user's
+    /// ask, 2026-11-02, after MacPacker's menu).
+    case compress(ZipStyle)
+    /// Archives opened into a new folder named after each, next to it or in `to`.
+    case extract(to: Place?)
+    /// What's inside an archive, without opening it: read-only.
+    case peek
     /// PDFs and images become one PDF; text files become one text file.
     case merge
     /// Any file to another format, by what it is (user's ask, 2026-11-01: "convert mov to mp4 …
@@ -75,8 +81,24 @@ public enum FileAction: Equatable, Sendable {
     /// Finder-only: "delete this" in a text editor must never touch files.
     public var makesCopies: Bool {
         switch self {
-        case .compress, .merge, .convert, .shrink: true
+        case .compress, .extract, .merge, .convert, .shrink: true
         default: false
+        }
+    }
+
+    /// May use files from the shelf or the document in front, not only Finder's selection:
+    /// everything that makes copies, and peeking, which only reads.
+    public var worksBeyondFinder: Bool { makesCopies || self == .peek }
+}
+
+public enum ZipStyle: String, Equatable, Sendable {
+    case together, each, dated
+
+    public static func named(_ word: String) -> ZipStyle {
+        switch word {
+        case "each", "separately", "individually": .each
+        case "dated", "date", "today": .dated
+        default: .together
         }
     }
 }
@@ -205,7 +227,11 @@ public enum ActionCatalog {
         case "sleep_display":
             return .success(.sleepDisplay)
         case "compress":
-            return .success(.file(.compress))
+            return .success(.file(.compress(ZipStyle.named(argument.lowercased()))))
+        case "extract":
+            return .success(.file(.extract(to: place)))
+        case "peek":
+            return .success(.file(.peek))
         case "merge":
             return .success(.file(.merge))
         case "convert", "convert_images", "convert_videos":
@@ -279,7 +305,11 @@ public enum ActionCatalog {
         case .file(.moveIntoNewFolder(let name)): "Move \(files) into a new folder\(name.map { " called “\($0)”" } ?? "")?"
         case .file(.copyTo(let place)): "Copy \(files) to \(place.displayName)?"
         case .file(.copyToFolder(let folder)): "Copy \(files) into “\(folder)”?"
-        case .file(.compress): "Zip \(files)?"
+        case .file(.compress(.together)): "Zip \(files)?"
+        case .file(.compress(.each)): "Zip \(files), each on its own?"
+        case .file(.compress(.dated)): "Zip \(files), named with today's date?"
+        case .file(.extract(let place)): "Extract \(files)\(place.map { " into \($0.displayName)" } ?? "")?"
+        case .file(.peek): "Look inside \(files)?"
         case .file(.merge): "Combine \(files) into one PDF?"
         case .file(.convert(let format)): "Convert \(files) to \(format.label)?"
         case .file(.shrink(let target)): "Make smaller copies of \(files)\(target.map { " under \(FileSize.label($0))" } ?? "")?"

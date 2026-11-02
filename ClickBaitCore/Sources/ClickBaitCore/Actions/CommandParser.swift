@@ -17,6 +17,9 @@ public enum CommandParser {
     public static func parse(_ transcript: String, allowedShortcuts: [String]) -> ActionRequest? {
         var words = normalize(transcript)
         guard !words.isEmpty else { return nil }
+        // "What's in this zip?", "peek inside it", "look inside this archive": asked as a
+        // question, so before questions are turned away.
+        if let peek = peek(words) { return peek }
 
         // "Can I…?" / "How do I…?" are questions; "can you…" is a polite order.
         if words.count > 1, ["can", "could"].contains(words[0]), ["i", "we"].contains(words[1]) { return nil }
@@ -228,6 +231,20 @@ public enum CommandParser {
         return nil
     }
 
+    static let archiveWords: Set<String> = ["zip", "zips", "archive", "archives", "rar", "7z", "tar", "tgz", "gz", "iso"]
+
+    /// "what's in this zip", "what is inside the archive", "peek inside it", "look inside this".
+    static func peek(_ words: [String]) -> ActionRequest? {
+        let text = " " + words.joined(separator: " ") + " "
+        let asksInside = text.contains(" peek ") || text.contains(" look inside ") || text.contains(" see inside ")
+            || text.contains(" whats in ") || text.contains(" what is in ") || text.contains(" whats inside ") || text.contains(" what is inside ")
+            || text.contains(" list the contents ") || text.contains(" show the contents ")
+        guard asksInside else { return nil }
+        // An archive, or "this/it": "what's in this email" isn't one (the app checks the file).
+        let refersToFile = !Set(words).isDisjoint(with: archiveWords.union(["it", "this", "that", "file"]))
+        return refersToFile ? ActionRequest(name: "peek") : nil
+    }
+
     /// Orders about "these/this/the selected files". The app only runs them while
     /// Finder is frontmost (see `FileAction.requiredFrontmostApp`).
     private static func file(_ words: [String], transcript: String) -> ActionRequest? {
@@ -248,7 +265,17 @@ public enum CommandParser {
         case "compress", "zip":
             // "Compress this to 200 MB" wants a smaller file, not a zip.
             if verb == "compress", let bytes = FileSize.bytes(in: transcript) { return ActionRequest(name: "shrink", argument: String(bytes)) }
+            // "zip each of these separately", "zip it with today's date"
+            if !rest.isDisjoint(with: ["each", "separately", "individually"]) { return ActionRequest(name: "compress", argument: "each") }
+            if !rest.isDisjoint(with: ["date", "dated", "today", "todays"]) { return ActionRequest(name: "compress", argument: "dated") }
             return ActionRequest(name: "compress")
+        // "unzip this", "extract it into Downloads", "open this zip"; "extract the audio" names a
+        // format, so it falls through to a conversion below.
+        case "unzip", "unpack", "decompress",
+             "extract" where !words.dropFirst().contains(where: { FileFormat.named($0) != nil }),
+             "open" where !rest.isDisjoint(with: Self.archiveWords):
+            let place = words.indices.dropFirst().lazy.compactMap { Place.named(at: words[$0...], strict: false)?.0 }.first
+            return ActionRequest(name: "extract", argument: place?.rawValue)
         case "merge", "combine", "join":
             return ActionRequest(name: "merge")
         case "convert", "make", "turn", "save", "export", "extract", "get", "pull":

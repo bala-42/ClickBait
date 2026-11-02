@@ -1193,7 +1193,9 @@ extension AskCoordinator {
         case .showDesktop: "Showing the desktop…"
         case .file(let file):
             switch file {
-            case .compress: "Compressing…"
+            case .compress: "Zipping…"
+            case .extract: "Extracting…"
+            case .peek: "Looking inside…"
             case .merge: "Merging…"
             case .convert(let format): format == .gif ? "Making a GIF…" : "Converting to \(format.label)…"
             case .moveIntoNewFolder: "Making a new folder…"
