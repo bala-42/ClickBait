@@ -1053,7 +1053,8 @@ extension AskCoordinator {
         }
     }
 
-    func perform(_ request: ActionRequest, speak: Bool = true) async -> ActionOutcome {
+    /// `quiet`: no done pill or spoken confirmation; the caller shows the result.
+    func perform(_ request: ActionRequest, speak: Bool = true, files: [URL]? = nil, quiet: Bool = false) async -> ActionOutcome {
         guard settings.commandsEnabled else { return .failure("Commands are turned off in Settings.") }
         var request = request
         // A day said with a reminder ("…by Friday"), read before a page or selection
@@ -1111,21 +1112,21 @@ extension AskCoordinator {
             // Copy-making file jobs can take minutes (a big video): they go to the dock as a
             // Shamrock tile and ClickBait is free at once (user's ask, 2026-11-02).
             if case .file(let file) = action, file.makesCopies, let jobs = backgroundJobs, jobs.hasRoom {
-                return startFileJob(file, title: Self.workingMessage(for: action), jobs: jobs, speak: speak)
+                return startFileJob(file, title: Self.workingMessage(for: action), jobs: jobs, speak: speak, files: files)
             }
             onActionStarted?(Self.workingMessage(for: action))
             do {
                 let confirmation = try await ActionExecutor.run(action, blocklist: settings.blocklist,
-                                                                ignoreClickBait: settings.ignoreNotchInCaptures)
+                                                                ignoreClickBait: settings.ignoreNotchInCaptures, files: files)
                 Log.ask.notice("Action done: \(request.name, privacy: .public)")
                 if let started = answerStartedAt {
                     Log.ask.notice("Command finished \(String(describing: ContinuousClock.now - started), privacy: .public) after release")
                 }
-                if speak {
+                if speak, !quiet {
                     speaker.speak(confirmation + ".")
                     state = .speaking
                 }
-                onActionDone?(confirmation)
+                if quiet { overlayQuietDone?() } else { onActionDone?(confirmation) }
                 return .success(confirmation)
             } catch {
                 Log.ask.error("Action failed: \(request.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -1139,13 +1140,13 @@ extension AskCoordinator {
 
     /// Runs a file job as a dock tile: the files are read now (from where they're chosen), the
     /// card shows the result and its "show me!" reveals the new files.
-    private func startFileJob(_ file: FileAction, title: String, jobs: BackgroundJobs, speak: Bool) -> ActionOutcome {
+    private func startFileJob(_ file: FileAction, title: String, jobs: BackgroundJobs, speak: Bool, files: [URL]? = nil) -> ActionOutcome {
         let front = NSWorkspace.shared.frontmostApplication
         let job = BackgroundJob(question: String(title.dropLast()), kind: .files, homeBundleID: front?.bundleIdentifier,
                                 homePID: front.map { Int32($0.processIdentifier) }, conversation: Conversation())
         let task = Task { @MainActor [weak jobs] in
             do {
-                let (message, made) = try await FileActions.run(file, reveal: false)
+                let (message, made) = try await FileActions.run(file, reveal: false, files: files)
                 guard !Task.isCancelled else { return }
                 jobs?.setMadeFiles(made, for: job.id)
                 jobs?.complete(job.id, answer: message, conversation: Conversation())

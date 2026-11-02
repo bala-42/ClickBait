@@ -82,7 +82,7 @@ extension AskCoordinator {
                 show(error: message)
                 return message
             }
-            pendingAction = (proposal, speak, chatShown)
+            pendingAction = (proposal, speak, chatShown, nil)
             let question = ActionCatalog.confirmationQuestion(for: action, fileCount: count)
             Log.ask.notice("Order \(proposal.name, privacy: .public) (\(source.rawValue, privacy: .public)): asking first")
             if speak { speaker.speak(question) }
@@ -220,18 +220,34 @@ extension AskCoordinator {
         Task { await resolvePending(yes) }
     }
 
-    func resolvePending(_ yes: Bool) async {
-        guard let pending = pendingAction else { return }
+    @discardableResult
+    func resolvePending(_ yes: Bool) async -> ActionOutcome? {
+        guard let pending = pendingAction else { return nil }
         pendingAction = nil
         onConfirmEnd?()
         guard yes else {
             Log.ask.notice("Proposed action cancelled")
             if pending.speak { speaker.speak("Okay, I won't.") }
             if state == .thinking { state = .idle }
-            return
+            return nil
         }
-        let outcome = await perform(pending.request, speak: pending.speak)
+        // An offer about given files ("peek at it?") shows its result itself (`onOfferResult`),
+        // answered by click, voice or typing alike.
+        let isOffer = pending.files != nil
+        let outcome = await perform(pending.request, speak: pending.speak, files: pending.files, quiet: isOffer)
         if pending.inChat, chatShown, case .success(let confirmation) = outcome { onChatReply?(confirmation + ".") }
+        if isOffer, let files = pending.files { onOfferResult?(pending.request, files, outcome) }
+        return outcome
+    }
+
+    /// "peek at it?" for an archive just dropped on the shelf (user's idea, 2026-11-02): an offer,
+    /// answered like a confirmation (click, "peek", "yes"). False when ClickBait is busy or
+    /// already asking something.
+    func offerPeek(_ file: URL) -> Bool {
+        guard !isBusy, pendingAction == nil, settings.commandsEnabled else { return false }
+        pendingAction = (ActionRequest(name: "peek"), false, false, [file])
+        Log.ask.notice("Offered a peek inside a shelf archive")
+        return true
     }
 
     func dropPending() {

@@ -52,7 +52,9 @@ public enum CommandParser {
     public static func confirmation(_ transcript: String) -> Bool? {
         let text = strippingLeadIns(normalize(transcript)).joined(separator: " ")
         let yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "confirm", "yes please", "please do",
-                   "go", "yes do it", "sure go ahead", "ok do it", "okay do it"]
+                   "go", "yes do it", "sure go ahead", "ok do it", "okay do it",
+                   // an offer to look inside ("peek at it?")
+                   "peek", "peek at it", "take a peek", "look inside", "show me", "yes peek"]
         let no = ["no", "nope", "cancel", "dont", "don't", "stop", "no thanks", "never mind", "nevermind", "no dont", "abort"]
         if yes.contains(text) { return true }
         if no.contains(text) { return false }

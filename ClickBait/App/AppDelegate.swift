@@ -38,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chat = ChatController()
     /// The notch's own Ask conversation, separate from the overlay chat.
     private let notchChat = NotchChat()
+    /// Shelf archives already offered a peek: never asked twice.
+    private var offeredPeeks: Set<URL> = []
     private let confirm = ConfirmController()
     private let escape = InputInterceptor()
     /// The "let's see! / later." pill is up.
@@ -350,6 +352,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onPeelRefused = { [weak self] in self?.overlay.showShortAnswer("three's a crowd") }
         // Drops on the notch's shelf say how they went in the companion's pill.
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
+        ShelfDrop.offerPeek = { [weak self] archive in self?.offerPeek(archive) }
+        coordinator.onOfferResult = { [weak self] request, files, outcome in self?.showOfferResult(request, files: files, outcome: outcome) }
+        coordinator.overlayQuietDone = { [weak self] in self?.overlay.dismissAnswer() }
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
         StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
         // Studio's prompter shortcuts, only while it's up: ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →.
@@ -388,6 +393,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.app.notice("Debug search: kind \(request.kind.rawValue, privacy: .public), terms \(request.terms.joined(separator: " "), privacy: .public) → \(found.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "), privacy: .public)")
                 }
             }
+        }
+        // The shelf's "peek at it?" offer for a file, and an answer to it ("yes"/"no"): live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.peekoffer"), object: nil, queue: .main) { [weak self] note in
+            guard let path = note.object as? String else { return }
+            MainActor.assumeIsolated { self?.offerPeek(URL(fileURLWithPath: path)) }
+        }
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.answer"), object: nil, queue: .main) { [weak self] note in
+            let yes = (note.object as? String) == "yes"
+            MainActor.assumeIsolated { Task { @MainActor in await self?.coordinator.resolvePending(yes) } }
         }
         // An order from the outside ("convert this to mp4"), as if typed: for live dock tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.order"), object: nil, queue: .main) { [weak self] note in
@@ -915,6 +929,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 try? await Task.sleep(for: .milliseconds(500))
             }
+        }
+    }
+
+    /// "peek at it?" by the companion for an archive dropped on the shelf: an offer in the idle
+    /// look, answered by click, "peek" or "yes"; never twice for one file. Taken, it turns green
+    /// while it looks (the working pill), then the contents with an extract button.
+    private func offerPeek(_ archive: URL) {
+        guard !offeredPeeks.contains(archive), coordinator.offerPeek(archive) else { return }
+        offeredPeeks.insert(archive)
+        confirm.show("peek at it?", at: overlay.companionTopLeft, confirm: "peek", cancel: "not now",
+                     hint: "or say “peek”", tone: .idle, waitTime: .seconds(8)) { [weak self] yes in
+            Task { @MainActor in await self?.coordinator.resolvePending(yes) }
+        }
+    }
+
+    /// A taken peek: the contents in a green card with an extract button (straight to the
+    /// dock, being the answer it asked for).
+    private func showOfferResult(_ request: ActionRequest, files: [URL], outcome: AskCoordinator.ActionOutcome) {
+        guard request.name == "peek", case .success(let contents) = outcome else { return }
+        confirm.show(contents, at: overlay.companionTopLeft, confirm: "extract", cancel: "done",
+                     hint: nil, tone: .action, waitTime: .seconds(20)) { [weak self] extract in
+            guard extract, let self else { return }
+            Task { @MainActor in _ = await self.coordinator.perform(ActionRequest(name: "extract"), speak: false, files: files) }
         }
     }
 

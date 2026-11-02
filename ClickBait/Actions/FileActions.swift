@@ -50,9 +50,11 @@ enum FileActions {
 
     /// `reveal` false (a dock job): nothing is brought forward; the card shows the files later.
     @MainActor
-    static func run(_ action: FileAction, reveal: Bool = true) async throws -> (message: String, made: [URL]) {
+    /// `files`: these exactly (an offer about one shelf file), treated as shelf files.
+    static func run(_ action: FileAction, reveal: Bool = true, files: [URL]? = nil) async throws -> (message: String, made: [URL]) {
         let front = NSWorkspace.shared.frontmostApplication
-        let source = otherSource(for: action, frontmostPID: front?.processIdentifier, frontmostBundleID: front?.bundleIdentifier)
+        let source = files.map { ($0, true) }
+            ?? otherSource(for: action, frontmostPID: front?.processIdentifier, frontmostBundleID: front?.bundleIdentifier)
         let selection: [URL]
         if let source { selection = source.files } else { selection = try await FinderSelection.read() }
         guard !selection.isEmpty else { throw FileActionError.nothingSelected }
@@ -119,7 +121,7 @@ enum FileActions {
     static let archiveExtensions: Set<String> = ["zip", "tar", "gz", "tgz", "bz2", "tbz", "tbz2", "xz", "txz", "7z", "rar",
                                                  "iso", "cpio", "xar", "lz", "lzma", "zst", "jar", "cbz", "cbr"]
 
-    private static func isArchive(_ file: URL) -> Bool {
+    static func isArchive(_ file: URL) -> Bool {
         archiveExtensions.contains(file.pathExtension.lowercased())
     }
 

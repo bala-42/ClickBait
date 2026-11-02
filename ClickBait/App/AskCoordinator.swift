@@ -309,7 +309,12 @@ final class AskCoordinator {
     var routeCache = IntentRouter.Cache()
     var shadowTask: Task<Void, Never>?
     /// A risky action the model proposed, waiting for the user's yes.
-    @ObservationIgnored var pendingAction: (request: ActionRequest, speak: Bool, inChat: Bool)?
+    /// `files`: the exact files it's about (an offer like "peek at it?"), else the usual ones.
+    @ObservationIgnored var pendingAction: (request: ActionRequest, speak: Bool, inChat: Bool, files: [URL]?)?
+    /// An accepted offer's result (its request, its files, how it went), for the app to show.
+    @ObservationIgnored var onOfferResult: ((ActionRequest, [URL], ActionOutcome) -> Void)?
+    /// A quiet action finished: the working pill goes (its result shows elsewhere).
+    @ObservationIgnored var overlayQuietDone: (() -> Void)?
     /// A reminder waiting for its day (Today / Tomorrow / a spoken or typed day).
     @ObservationIgnored var pendingReminder: (request: ActionRequest, speak: Bool, inChat: Bool)?
     /// A reminder's "when?" card should be shown: the question, the buttons, a hint.

@@ -35,6 +35,8 @@ struct ModelActionTests {
     @Test func yesAndNo() {
         #expect(CommandParser.confirmation("Yes.") == true)
         #expect(CommandParser.confirmation("Go ahead") == true)
+        // "peek at it?" (2026-11-02): looking inside is a yes.
+        #expect(CommandParser.confirmation("Peek") == true && CommandParser.confirmation("Take a peek.") == true)
         #expect(CommandParser.confirmation("No, cancel") == nil)
         #expect(CommandParser.confirmation("Cancel.") == false)
         #expect(CommandParser.confirmation("Move these to documents") == nil)

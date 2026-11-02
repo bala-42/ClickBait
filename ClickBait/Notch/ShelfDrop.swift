@@ -15,6 +15,8 @@ enum ShelfDrop {
 
     /// Set by the app delegate: a line in the companion's pill.
     static var say: ((String, CompanionTone) -> Void)?
+    /// An archive just landed on the shelf: the app offers "peek at it?".
+    static var offerPeek: ((URL) -> Void)?
     /// Set by the notch: whether Internet Mode is on.
     static var internetOn: () -> Bool = { false }
 
@@ -109,6 +111,10 @@ enum ShelfDrop {
                 say?(refusal ?? "couldn't add that", .error)
             }
             Log.app.notice("Shelf drop: \(added.count, privacy: .public) added, \(providers.count, privacy: .public) dragged")
+            if let archive = added.first(where: FileActions.isArchive) {
+                try? await Task.sleep(for: .seconds(1.4))  // after "added … ✓" has been read
+                offerPeek?(archive)
+            }
         }
         return true
     }

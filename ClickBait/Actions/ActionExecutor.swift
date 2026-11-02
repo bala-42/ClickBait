@@ -51,7 +51,7 @@ enum ActionExecutor {
     }
 
     static func run(_ action: ResolvedAction, blocklist: AppBlocklist = .defaults,
-                    ignoreClickBait: Bool = true) async throws -> String {
+                    ignoreClickBait: Bool = true, files: [URL]? = nil) async throws -> String {
         switch action {
         case .openApp(let name):
             guard let url = AppLocator.url(forAppNamed: name) else { throw ActionExecutionError.appNotFound(name) }
@@ -162,7 +162,7 @@ enum ActionExecutor {
             return "Showing the desktop"
 
         case .file(let action):
-            return try await FileActions.run(action).message
+            return try await FileActions.run(action, files: files).message
         }
     }
 }
