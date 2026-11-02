@@ -62,11 +62,12 @@ final class NotchController {
         var hud: (level: Double, muted: Bool, sky: Bool)?
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
-        enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer }
+        enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer, volume }
         /// The gallery's open page (nil: its tiles).
         var galleryPage: GalleryPage?
         /// A size of its own for this tab and page (the gallery's pages), else nil.
         var pageSize: (width: Double, height: Double)? {
+            if tab == .volume { return (640, 260) }
             guard tab == .gallery else { return nil }
             return galleryPage?.size ?? (640, 220)
         }
@@ -439,7 +440,7 @@ final class NotchController {
 
     /// Shown with the open notch on Home and on the pages they open; tucked otherwise.
     private func placeBubbles() {
-        let tabs: Set<Model.Tab> = [.home, .gallery, .timer]
+        let tabs: Set<Model.Tab> = [.home, .gallery, .timer, .volume]
         let active = model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)
         let frame = active.flatMap { targets[$0] }
         let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && frame != nil
@@ -460,10 +461,8 @@ final class NotchController {
             },
         ], right: [
             .init(id: "settings", symbol: "gearshape", label: "ClickBait settings") { go(.settings) },
-            .init(id: "sounds", symbol: settings.soundCues ? "speaker.wave.2" : "speaker.slash", label: settings.soundCues ? "Sound cues on" : "Sound cues off",
-                  on: settings.soundCues) { [weak self] in
-                self?.settings.soundCues.toggle()
-                self?.placeBubbles()
+            .init(id: "volume", symbol: "speaker.wave.2", label: "Volume mixer", on: model.tab == .volume) { [weak self] in
+                go(self?.model.tab == .volume ? .home : .volume)
             },
         ])
     }

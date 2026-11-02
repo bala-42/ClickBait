@@ -70,3 +70,4 @@ version 3 or later; ClickBait is AGPL-3.0, which GPL-3.0 code may be combined wi
 AI Agents page, notch bubbles, gallery, timer and Claude Code / Codex usage reading follow
 Vorssaint's design and approach (the `get_usage` control request, `codex app-server`'s
 `account/read`, reading session logs for counters only), written anew for ClickBait.
+The volume mixer follows Vorssaint's (a process tap per app, no driver), written anew for ClickBait.

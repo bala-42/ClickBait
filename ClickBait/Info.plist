@@ -26,6 +26,8 @@
 	<false/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>ClickBait sets each app's volume in its mixer: it takes that app's sound and plays it at the level you choose. Nothing is recorded or leaves your Mac.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>With Morning suggestions on, ClickBait reads today's events on this Mac to suggest what to ask.</string>
 	<key>NSCameraUsageDescription</key>

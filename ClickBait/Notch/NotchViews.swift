@@ -124,7 +124,7 @@ struct NotchView: View {
         switch tab {
         case .shelf: "Back to Shelf"
         case .ask: "Back to Lookup"
-        case .home, .settings, .mirror, .music, .gallery, .timer: "Back to Home"
+        case .home, .settings, .mirror, .music, .gallery, .timer, .volume: "Back to Home"
         }
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -430,6 +430,7 @@ private struct OpenNotch: View {
                 case .music: MusicPanel(music: music, onOpen: { music.openPlayer(); onCollapse() }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .gallery: GalleryView(model: model, settings: settings).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .timer: NotchTimerView().transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .volume: NotchVolumePage().transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings, .mirror: EmptyView()
                 }
             }
@@ -904,7 +905,7 @@ struct IslandPills: View {
         case .shelf: Pill(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen, tab: .shelf)
         case .mirror: Pill(name: "Studio", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
         case .music: Pill(name: music?.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow, tab: .music)
-        case .home, .settings, .gallery, .timer: nil
+        case .home, .settings, .gallery, .timer, .volume: nil
         }
     }
 

@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Lets Ollama free the models it kept loaded for ClickBait.
     func applicationWillTerminate(_ notification: Notification) {
+        AppVolumeMixer.shared.stopAll()  // every app's own sound back, untapped
         guard !Self.isHostingTests else { return }
         backgroundJobs.removeAll()
         capsules.removeAll()

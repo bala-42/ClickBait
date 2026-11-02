@@ -89,6 +89,8 @@ private struct ControlsPage: View {
             toggle("Voice answers", "speaker.wave.2", on: settings.speakAnswers) { settings.speakAnswers.toggle() }
             toggle("Internet Mode", "globe", on: settings.internet.isOn) { settings.internet.toggle() }
             toggle("Work on battery", "battery.75percent", on: settings.visionOnBattery) { settings.visionOnBattery.toggle() }
+            // Moved from the right-hand bubble, which now opens the volume mixer.
+            toggle("Sound cues", "bell", on: settings.soundCues) { settings.soundCues.toggle() }
             toggle("Dark mode", "moon", on: dark) {
                 dark.toggle()
                 let want = dark
