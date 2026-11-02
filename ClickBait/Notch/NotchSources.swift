@@ -823,7 +823,8 @@ final class AirDropSender: NSObject, NSSharingServiceDelegate, NSSharingServiceP
         window.isMovable = false
         window.isReleasedWhenClosed = false
         window.backgroundColor = .black
-        window.level = .floating
+        // Above the open notch, which covered it (user's report, 2026-11-02); AirDrop's sheet goes with it.
+        window.level = WindowLayers.dock
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         let label = NSTextField(labelWithString: Self.label(count))
         label.font = .systemFont(ofSize: 12, weight: .semibold)

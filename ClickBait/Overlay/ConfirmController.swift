@@ -90,7 +90,9 @@ final class ConfirmController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .floating
+        // Above the open notch: a card shown by the cursor while it's on the notch (peek's
+        // "extract", from the shelf) was hidden under it (user's report, 2026-11-02).
+        panel.level = WindowLayers.dock
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
