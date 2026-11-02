@@ -3,13 +3,15 @@ import SwiftUI
 
 /// The AI Agents page (user's references: Vorssaint's AI page): Claude and Codex limits with
 /// their resets, spending, what's working now, the trend, models, projects, thirteen weeks of
-/// activity and Codex's banked resets (shown only). Claude in the teleprompter's cream, Codex in
-/// the notch's sky blue: data colours, not ClickBait's state colours.
+/// activity and Codex's banked resets (shown only). Claude in Claude's orange, Codex in Codex's
+/// blue (user's rule, 2026-11-02): the tools' own colours on their own sections.
 struct NotchAgentsPage: View {
     @Bindable var service = AgentUsageService.shared
     @State private var period: AgentSummary.Period = .today
-    private static let claudeColor = MoodyLook.cream
-    private static let codexColor = NotchPalette.highlight
+    static let claudeColor = Color(hex: 0xD97757)
+    static let codexColor = Color(hex: 0x7B8CF6)
+    /// The Activity square under the pointer or clicked: its day shows in place of the busiest.
+    @State private var pickedDay: Int?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) { cards }
@@ -152,10 +154,15 @@ struct NotchAgentsPage: View {
                     ForEach(0..<13, id: \.self) { week in
                         VStack(spacing: 2) {
                             ForEach(0..<7, id: \.self) { day in
-                                let cost = days.days[week * 7 + day]
+                                let index = week * 7 + day
+                                let cost = days.days[index]
                                 RoundedRectangle(cornerRadius: 1.5)
                                     .fill(cost > 0 ? NotchPalette.text.opacity(0.25 + 0.75 * cost / peak) : Color.white.opacity(0.07))
+                                    .overlay(RoundedRectangle(cornerRadius: 1.5).strokeBorder(NotchPalette.text, lineWidth: pickedDay == index ? 1 : 0))
                                     .frame(width: 8, height: 8)
+                                    .contentShape(Rectangle())
+                                    .onHover { inside in if inside { pickedDay = index } else if pickedDay == index { pickedDay = nil } }
+                                    .onTapGesture { pickedDay = pickedDay == index ? nil : index }
                             }
                         }
                     }
@@ -165,7 +172,13 @@ struct NotchAgentsPage: View {
                     Text("13 weeks").font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary)
                     Spacer(minLength: 4)
                     row("Active days", "\(days.activeDays)")
-                    row("Busiest day", days.busiest.map { "\($0.date.formatted(.dateTime.month(.abbreviated).day())) · \($0.cost.formatted(.currency(code: "USD")))" } ?? "–")
+                    // A picked square: its day, date and cost; else the busiest day (as Vorssaint's).
+                    if let picked = pickedDay {
+                        let date = Calendar.current.date(byAdding: .day, value: picked - 90, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+                        row(date.formatted(.dateTime.weekday(.wide)), "\(date.formatted(.dateTime.month(.abbreviated).day())) · \(days.days[picked].formatted(.currency(code: "USD")))")
+                    } else {
+                        row("Busiest day", days.busiest.map { "\($0.date.formatted(.dateTime.month(.abbreviated).day())) · \($0.cost.formatted(.currency(code: "USD")))" } ?? "–")
+                    }
                 }
             }
         }
