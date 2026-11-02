@@ -189,7 +189,9 @@ struct NotchAgentsPage: View {
     private var resets: some View {
         Card {
             HStack {
-                Label("Resets", systemImage: "chevron.left.forwardslash.chevron.right").cardTitle()
+                // Codex's resets: its logo in Codex blue.
+                Label { Text("Resets") } icon: { Image(systemName: "chevron.left.forwardslash.chevron.right").foregroundStyle(Self.codexColor) }
+                    .cardTitle()
                 Spacer()
                 if let count = service.codexResets?.count, count > 0 {
                     Text("\(count)").font(.system(size: 10, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 0)
@@ -237,7 +239,9 @@ private struct LimitsCard: View {
     var body: some View {
         Card {
             HStack {
-                Label(name, systemImage: symbol).cardTitle().foregroundStyle(NotchPalette.text)
+                // The logo in its own colour, Claude orange or Codex blue (user's ask, 2026-11-02).
+                Label { Text(name).foregroundStyle(NotchPalette.text) } icon: { Image(systemName: symbol).foregroundStyle(color) }
+                    .cardTitle()
                 Spacer()
                 if let plan = limits?.plan {
                     Text(plan).font(.system(size: 10, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 0)
