@@ -1179,7 +1179,8 @@ private struct AirDropPad: View {
         } label: {
             VStack(spacing: 5) {
                 AirDropBean(look: beanLook(sender.status))
-                Text("AirDrop").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
+                // The alien's pad (user's name for it, 2026-11-02); it still sends by AirDrop.
+                Text("airea 51").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
                 Text(subtitle(sender.status, sending: items.count))
                     .font(.system(size: 10)).foregroundStyle(NotchPalette.secondary)
                     .multilineTextAlignment(.center).lineLimit(2)
@@ -1209,7 +1210,7 @@ private struct AirDropPad: View {
         } isTargeted: { targeted = $0 }
         .background(ViewAnchor { sender.padView = $0 })
         .help("Drop files to AirDrop them, or click to AirDrop the shelf's files")
-        .accessibilityLabel("AirDrop")
+        .accessibilityLabel("airea 51, AirDrop")
         .accessibilityValue(subtitle(sender.status, sending: items.count))
         .accessibilityHint("Opens the AirDrop window to choose a person or device nearby")
     }
