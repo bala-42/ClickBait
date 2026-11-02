@@ -15,6 +15,11 @@ public enum PillCase {
         "Control", "Centre", "Center", "Mission", "Launchpad", "Firefox", "Arc", "Zoom", "Word", "Excel", "Pages",
         "Numbers", "Keynote", "FaceTime", "WhatsApp", "Telegram", "Discord", "Notion", "Figma", "GitHub",
         "Ollama", "Gemma", "Option", "Command", "Accessibility", "Microphone", "Screen", "Recording", "Camera",
+        "QuickTime", "Studio", "Lookup", "Shelf", "Vision", "Memory",
+        // Days and months are names too: "Friday works?" keeps its capital.
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+        "November", "December",
     ]
 
     public static func lowered(_ text: String, names: Set<String> = []) -> String {

@@ -178,8 +178,6 @@ struct TinyPill: View {
     var isProblem = false
     /// Brief answers are deliberately kept to a single compact line.
     var singleLine = false
-    /// Answer pills use lowercase text as part of their visual treatment.
-    var lowercase = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -187,7 +185,8 @@ struct TinyPill: View {
                 Image(systemName: symbol)
                     .font(.system(size: 10, weight: .bold))
             }
-            let shown = lowercase ? text.lowercased() : PillCase.lowered(text, names: AppLocator.pillNames)
+            // Every pill: small letters, names kept ("lowercase" answers lost them: "safari").
+            let shown = PillCase.lowered(text, names: AppLocator.pillNames)
             Text(shown)
                 .font(.system(size: 12, weight: .semibold))
                 .modifier(PillTextLayout(text: shown, singleLine: singleLine))
@@ -601,11 +600,11 @@ struct CompanionBubbleView: View {
             TinyPill(text: "“\(heard)”", tone: model.tone)
         case .working(let message):
             // A lowercase verb, names as they are: "opening Safari…", "moving to Documents…".
-            TinyPill(text: message.prefix(1).lowercased() + message.dropFirst(), symbol: "gearshape.fill", tone: model.tone)
+            TinyPill(text: message, symbol: "gearshape.fill", tone: model.tone)
         case .idle, .listening, .thinking, .explaining:
             EmptyView()
         case .answer(let text):
-            TinyPill(text: text, tone: .idle, singleLine: true, lowercase: true)  // brief replies are lowercase Azure-blue lines
+            TinyPill(text: text, tone: .idle, singleLine: true)  // brief replies: small-letter Azure-blue lines
         case .done(let text):
             TinyPill(text: text, symbol: "checkmark", tone: model.tone)
         case .error(let message):

@@ -1,4 +1,5 @@
 import AppKit
+import ClickBaitCore
 import SwiftUI
 
 /// Asks before an action the model proposed that moves, renames, bins or quits
@@ -22,9 +23,13 @@ final class ConfirmController {
               answer: ((Bool) -> Void)? = nil) {
         hide()
         oneOffAnswer = answer
-        let view = ConfirmCard(question: question, confirm: confirm, cancel: cancel, hint: hint, tone: tone) { [weak self] yes in self?.answer(yes) }
+        // Pills are small letters, names as they are (user's rule, 2026-11-02): "convert 1 item to MP4?".
+        let view = ConfirmCard(question: Self.cased(question), confirm: Self.cased(confirm), cancel: Self.cased(cancel),
+                               hint: hint.map(Self.cased), tone: tone) { [weak self] yes in self?.answer(yes) }
         present(NSHostingView(rootView: view), at: topLeft, waitTime: waitTime) { [weak self] in self?.answer(false) }
     }
+
+    private static func cased(_ text: String) -> String { PillCase.lowered(text, names: AppLocator.pillNames) }
 
     enum ChoiceAnswer {
         case option(Int)
@@ -41,7 +46,7 @@ final class ConfirmController {
         hide()
         choiceAnswer = answer
         let view = ChoiceCard(
-            question: question, options: options, hint: hint, datePicker: datePicker, tone: tone,
+            question: Self.cased(question), options: options.map(Self.cased), hint: hint.map(Self.cased), datePicker: datePicker, tone: tone,
             choose: { [weak self] index in self?.answerChoice(.option(index)) },
             chooseDate: { [weak self] date in self?.answerChoice(.date(date)) },
             calendarShown: { [weak self] in self?.restartTimeout(after: Self.browsingTime) },

@@ -22,4 +22,13 @@ struct PillCaseTests {
     @Test func iIsSmall() {
         #expect(PillCase.lowered("I opened it, and I'm done") == "i opened it, and i'm done")
     }
+
+    @Test func pillWordingFromThisSession() {
+        #expect(PillCase.lowered("Convert 1 item to MP4?") == "convert 1 item to MP4?")
+        #expect(PillCase.lowered("On it, in the dock") == "on it, in the dock")
+        #expect(PillCase.lowered("Make smaller copies of 1 item under 50 MB?") == "make smaller copies of 1 item under 50 MB?")
+        #expect(PillCase.lowered("Friday works?") == "Friday works?")
+        #expect(PillCase.lowered("Do it") == "do it")
+        #expect(PillCase.lowered("Opening Safari…") == "opening Safari…")
+    }
 }

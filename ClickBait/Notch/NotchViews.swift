@@ -123,7 +123,7 @@ struct NotchView: View {
     private static func backLabel(_ tab: NotchController.Model.Tab) -> String {
         switch tab {
         case .shelf: "Back to Shelf"
-        case .ask: "Back to Ask"
+        case .ask: "Back to Lookup"
         case .home, .settings, .mirror, .music: "Back to Home"
         }
     }
@@ -902,7 +902,7 @@ struct IslandPills: View {
     /// Each square's look, in one place for the square and its tab's header.
     static func pill(for tab: NotchController.Model.Tab, music: MusicBridge?) -> Pill? {
         switch tab {
-        case .ask: Pill(name: "Ask", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed, tab: .ask)
+        case .ask: Pill(name: "Lookup", mood: .thinking, eyes: .both(.pill()), tint: NotchPalette.windowsRed, tab: .ask)
         case .shelf: Pill(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen, tab: .shelf)
         case .mirror: Pill(name: "Studio", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
         case .music: Pill(name: music?.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow, tab: .music)
@@ -1060,7 +1060,7 @@ private struct AskCard: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(text.isEmpty)
-                    .accessibilityLabel("Ask")
+                    .accessibilityLabel("Look up")
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 30)
@@ -1095,7 +1095,7 @@ private struct AskCard: View {
         case .starting: "Starting the microphone…"
         case .transcribing: "Working out what you said…"
         case .failed(let reason): reason
-        case .ready: "Ask ClickBait"
+        case .ready: "Lookup"
         }
     }
 
