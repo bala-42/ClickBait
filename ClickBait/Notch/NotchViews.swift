@@ -476,6 +476,12 @@ private struct OpenNotch: View {
                 // Where the pearl bean lands (`BeanPlace`).
                 Color.clear.frame(width: 18, height: 18).padding(.leading, 16).padding(.trailing, -8)
             }
+            // The morning greeting's narrow notch puts the camera over the middle of the header:
+            // only the bean and ✕, clear of it either side (user's report, 2026-11-02).
+            if model.morning != nil {
+                Spacer()
+                NotchHeaderIcon(symbol: "xmark", label: "Close") { onCollapse() }.padding(.trailing, 16)
+            } else {
             // A cheer in place of the tabs (Ask and Shelf are pills): clicked, it goes home, or
             // at home says something new. Same type as the companion's pills.
             Button {
@@ -505,6 +511,7 @@ private struct OpenNotch: View {
                 }
             }
             .padding(.trailing, 16)
+            }
         }
         .frame(maxHeight: .infinity)
     }
@@ -1796,29 +1803,53 @@ private extension View {
     }
 }
 
-/// The morning greeting, typed out a letter at a time; the notch grows a line at a time as it
-/// wraps (`fitsNotch`). Reduce Motion: all at once.
+/// The morning greeting, typed out a letter at a time: its first sentence as the headline
+/// ("Good morning, Balaji."), the rest under it as the body, with room around both (user's
+/// report, 2026-11-02: "not spaced, designed, formatted properly"). The notch grows a line at a
+/// time as they wrap (`fitsNotch`). Reduce Motion: all at once.
 struct MorningCard: View {
     let text: String
+    /// All at once (renders).
+    var instant = false
     static let perCharacter = 0.03
     @State private var shown = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The first sentence, and the rest.
+    private var parts: (headline: String, body: String) {
+        guard let end = text.range(of: #"[.!?](\s|$)"#, options: .regularExpression) else { return (text, "") }
+        return (String(text[..<end.upperBound]).trimmingCharacters(in: .whitespaces),
+                String(text[end.upperBound...]).trimmingCharacters(in: .whitespaces))
+    }
+
     var body: some View {
-        Text(String(text.prefix(shown)))
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(NotchPalette.text)
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8).padding(.bottom, 4)
-            .accessibilityLabel(text)
-            .task(id: text) {
-                if reduceMotion { shown = text.count; return }
-                shown = 0
-                while shown < text.count, !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(Self.perCharacter))
-                    shown += 1
-                }
+        let (headline, rest) = parts
+        let visible = instant ? text.count : shown
+        let headShown = min(visible, headline.count)
+        let bodyShown = max(0, visible - headline.count)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(headline.prefix(headShown)))
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(NotchPalette.text)
+            if !rest.isEmpty {
+                Text(String(rest.prefix(bodyShown)))
+                    .font(.system(size: 13))
+                    .foregroundStyle(NotchPalette.secondary)
+                    .lineSpacing(4)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .task(id: text) {
+            let total = headline.count + rest.count
+            if reduceMotion { shown = total; return }
+            shown = 0
+            while shown < total, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.perCharacter))
+                shown += 1
+            }
+        }
     }
 }

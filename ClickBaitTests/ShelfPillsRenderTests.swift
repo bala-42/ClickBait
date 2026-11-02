@@ -90,4 +90,15 @@ struct ShelfPillsRenderTests {
         let data = try #require(NSBitmapImageRep(data: image.tiffRepresentation!)?.representation(using: .png, properties: [:]))
         try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "gallery.png"))
     }
+
+    @Test func renderMorning() throws {
+        // At the greeting's real width (420 less the 12 sides), typed out (Reduce Motion shows it all).
+        let view = MorningCard(text: "Good morning, Balaji. You have the Atlas standup at 9:30, and paying the rent is due today. Have a lovely day.", instant: true)
+            .frame(width: 396).padding(12).background(Color.black)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let tiff = try #require(renderer.nsImage?.tiffRepresentation)
+        let data = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "morning.png"))
+    }
 }
