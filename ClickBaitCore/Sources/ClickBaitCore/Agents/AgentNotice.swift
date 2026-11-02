@@ -68,7 +68,9 @@ public struct AgentNotice: Equatable, Sendable {
 /// ClickBait's hooks in Claude Code's settings (`~/.claude/settings.json`): added beside the
 /// user's own, never replacing them, and found again by the script's name to take out.
 public enum AgentHooks {
-    public static let events = ["Notification", "Stop"]
+    /// Needs you and finished (notices), and before each tool and each prompt (the live view,
+    /// `AgentLive`; user's choice, 2026-11-02).
+    public static let events = ["Notification", "Stop", "PreToolUse", "UserPromptSubmit"]
     public static let marker = "clickbait-agent-event"
 
     /// `settings` with ClickBait's hook for each event (once), the rest as it was.

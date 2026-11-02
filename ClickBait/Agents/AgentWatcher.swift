@@ -1,5 +1,6 @@
 import ClickBaitCore
 import Foundation
+import Observation
 import OSLog
 
 /// Claude Code and Codex speaking up (user's ask, 2026-11-02): Claude Code's hooks append lines
@@ -37,6 +38,7 @@ final class AgentWatcher {
     private func check() {
         for line in Self.newLines(in: Self.eventsFile, from: &eventsOffset) {
             if let notice = AgentNotice.fromHookLine(line) { onNotice?(notice) }
+            AgentLiveStore.shared.see(line)
         }
         // The events file stays small: emptied once read past 256 KB.
         if eventsOffset > 262_144 { try? Data().write(to: Self.eventsFile); eventsOffset = 0 }
@@ -134,4 +136,17 @@ enum AgentHookInstaller {
         guard FileManager.default.fileExists(atPath: settingsFile.path), !FileManager.default.fileExists(atPath: backup.path) else { return }
         try? FileManager.default.copyItem(at: settingsFile, to: backup)
     }
+}
+
+/// Claude Code live, for the AI Agents page (`AgentLive` in Core). Memory only.
+@MainActor @Observable
+final class AgentLiveStore {
+    static let shared = AgentLiveStore()
+    private(set) var live = AgentLive()
+    private init() {}
+
+    func see(_ line: String) { live.see(line) }
+
+    /// Sessions busy in the last two hours, the working ones first.
+    var recent: [AgentLive.Session] { live.ordered.filter { $0.lastActive > Date().addingTimeInterval(-7200) } }
 }

@@ -30,6 +30,7 @@ struct NotchAgentsPage: View {
     var cards: some View {
         let summary = AgentSummary.of(service.records, period: period, prices: service.prices)
         return VStack(spacing: 8) {
+                LiveCard(color: Self.claudeColor)
                 HStack(spacing: 8) {
                     LimitsCard(name: "Claude", symbol: "sparkle", color: Self.claudeColor, limits: service.claudeLimits,
                                empty: service.loading ? "reading…" : "Claude Code isn't signed in")
@@ -320,4 +321,93 @@ private struct Card<Content: View>: View {
 
 private extension View {
     func cardTitle() -> some View { font(.system(size: 12, weight: .semibold)) }
+}
+
+/// Claude Code live (user's choice, 2026-11-02, after Pulsar's): each session busy lately — its
+/// project, what it's doing now, its last steps, the files it changed with their diffs (a click
+/// opens one). Claude orange, as the page's other Claude parts.
+private struct LiveCard: View {
+    let color: Color
+    var store = AgentLiveStore.shared
+    @State private var openFile: String?
+
+    var body: some View {
+        Card {
+            HStack {
+                Label { Text("Live") } icon: { Image(systemName: "sparkle").foregroundStyle(color) }.cardTitle()
+                Spacer()
+                if store.recent.contains(where: \.working) {
+                    Circle().fill(color).frame(width: 6, height: 6)
+                    Text("working").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+                }
+            }
+            if store.recent.isEmpty {
+                Text("What Claude Code does shows up here as it works: each step, and every file it changes.")
+                    .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+            }
+            ForEach(store.recent.prefix(2)) { session in sessionView(session) }
+        }
+    }
+
+    private func sessionView(_ session: AgentLive.Session) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(session.project.isEmpty ? "Claude Code" : session.project).font(.system(size: 12, weight: .semibold))
+                if let prompt = session.prompt {
+                    Text(prompt).font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary).lineLimit(1)
+                }
+            }
+            ForEach(session.steps.suffix(4)) { step in
+                HStack(spacing: 8) {
+                    Image(systemName: step.symbol).font(.system(size: 10)).frame(width: 14)
+                        .foregroundStyle(step.running ? color : NotchPalette.tertiary)
+                    Text(step.text).font(.system(size: 11)).lineLimit(1)
+                        .foregroundStyle(step.running ? NotchPalette.text : NotchPalette.secondary)
+                    if step.running { ProgressView().controlSize(.mini) }
+                }
+            }
+            if !session.files.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(session.files) { file in
+                            Button { openFile = openFile == file.path ? nil : file.path } label: {
+                                HStack(spacing: 4) {
+                                    Text(file.name)
+                                    Text("+\(file.added)").foregroundStyle(Color.green.opacity(0.85))
+                                    Text("−\(file.removed)").foregroundStyle(Color.red.opacity(0.85))
+                                }
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .padding(.horizontal, 8).frame(height: 20)
+                                .background(Color.white.opacity(openFile == file.path ? 0.16 : 0.08), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if let path = openFile, let file = session.files.first(where: { $0.path == path }) { DiffView(file: file) }
+            }
+        }
+    }
+}
+
+/// A file's edits, lines out in red and in in green, the last 40 lines.
+private struct DiffView: View {
+    let file: AgentLive.File
+
+    var body: some View {
+        let lines = file.changes.flatMap { change in change.removed.map { ("−", $0) } + change.added.map { ("+", $0) } }.suffix(40)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text("\(line.0) \(line.1)")
+                    .font(.system(size: 10, design: .monospaced)).lineLimit(1)
+                    .foregroundStyle(line.0 == "+" ? Color.green.opacity(0.9) : Color.red.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .background((line.0 == "+" ? Color.green : Color.red).opacity(0.08))
+            }
+        }
+        .padding(.vertical, 4)
+        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+        .textSelection(.enabled)
+    }
 }
