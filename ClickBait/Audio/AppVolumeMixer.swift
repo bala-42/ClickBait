@@ -1,4 +1,5 @@
 import AppKit
+import ClickBaitCore
 import CoreAudio
 import Foundation
 import Observation
@@ -26,7 +27,19 @@ final class AppVolumeMixer {
     /// Why the last volume change didn't take, if it didn't ("allow ClickBait to record…").
     private(set) var problem: String?
 
+    /// Apps kept first in the row (bundle identifiers), kept between launches.
+    private(set) var pinned: [String] = UserDefaults.standard.stringArray(forKey: "mixerPinned") ?? []
+    /// Headphones out, the speakers start quiet (`HeadphoneGuard`); on unless turned off.
+    var lowerWhenHeadphonesOut = UserDefaults.standard.object(forKey: "mixerLowerOnHeadphonesOut") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(lowerWhenHeadphonesOut, forKey: "mixerLowerOnHeadphonesOut") }
+    }
+
     @ObservationIgnored private var taps: [String: AppVolumeTap] = [:]
+    @ObservationIgnored private var lastKind: HeadphoneGuard.Output?
+    @ObservationIgnored private var watchedDevice = AudioObjectID(kAudioObjectUnknown)
+    @ObservationIgnored private let changed: AudioObjectPropertyListenerBlock = { _, _ in
+        Task { @MainActor in AppVolumeMixer.shared.outputChanged() }
+    }
     @ObservationIgnored private var tappedOutput: AudioObjectID?
 
     private init() {}
@@ -48,7 +61,11 @@ final class AppVolumeMixer {
         input = SystemAudio.defaultInput
         inputVolume = SystemAudio.inputVolume()
         if let level = SystemAudio.outputVolume() { mainVolume = level }
-        apps = SystemAudio.playingApps()
+        let pins = pinned
+        apps = SystemAudio.playingApps().sorted { a, b in
+            let ia = pins.firstIndex(of: a.bundleID) ?? .max, ib = pins.firstIndex(of: b.bundleID) ?? .max
+            return ia != ib ? ia < ib : a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
         // The Mac's output changed: taps playing to it are made again for the new one.
         if let output, output != tappedOutput {
             tappedOutput = output
@@ -106,6 +123,41 @@ final class AppVolumeMixer {
     }
 
     func reset(_ app: SystemAudio.PlayingApp) { setVolume(1, for: app) }
+
+    func togglePin(_ app: SystemAudio.PlayingApp) {
+        if let index = pinned.firstIndex(of: app.bundleID) { pinned.remove(at: index) } else { pinned.append(app.bundleID) }
+        UserDefaults.standard.set(pinned, forKey: "mixerPinned")
+        refresh()
+    }
+
+    // MARK: Headphones out
+
+    /// Listens for the Mac's output changing (another device, or the jack's plug pulled), from
+    /// launch, the page open or not.
+    func startHeadphoneGuard() {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, changed)
+        outputChanged()
+    }
+
+    private func outputChanged() {
+        guard let device = SystemAudio.defaultOutput else { return }
+        if device != watchedDevice {
+            // The built-in output's plug: its data source changes, not the device.
+            var source = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDataSource,
+                                                    mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+            if watchedDevice != kAudioObjectUnknown { AudioObjectRemovePropertyListenerBlock(watchedDevice, &source, .main, changed) }
+            AudioObjectAddPropertyListenerBlock(device, &source, .main, changed)
+            watchedDevice = device
+        }
+        let kind = SystemAudio.outputKind(device)
+        defer { lastKind = kind }
+        guard lowerWhenHeadphonesOut, let old = lastKind, let current = SystemAudio.outputVolume(),
+              let quiet = HeadphoneGuard.volume(after: current, from: old, to: kind) else { return }
+        setMainVolume(quiet)
+        Log.app.notice("Volume: headphones out, speakers at \(Int(quiet * 100), privacy: .public)%")
+    }
 
     func choose(output device: AudioObjectID) { SystemAudio.setDefaultOutput(device); refresh() }
     func choose(systemOutput device: AudioObjectID) { SystemAudio.setDefaultSystemOutput(device); refresh() }

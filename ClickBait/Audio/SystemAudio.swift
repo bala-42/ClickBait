@@ -1,4 +1,5 @@
 import AppKit
+import ClickBaitCore
 import AudioToolbox
 import CoreAudio
 import Foundation
@@ -68,6 +69,19 @@ extension SystemAudio {
             setScalar(device, AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,
                                                          mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain), value)
         }
+    }
+
+    /// Headphones, the Mac's speakers or something else (`HeadphoneGuard`): the device's
+    /// transport, and the built-in output's data source (headphone jack or speakers).
+    static func outputKind(_ device: AudioObjectID) -> HeadphoneGuard.Output {
+        func code(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope) -> String? {
+            var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+            var value: UInt32 = 0, size = UInt32(MemoryLayout<UInt32>.size)
+            guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr else { return nil }
+            return String(bytes: withUnsafeBytes(of: value.bigEndian, Array.init), encoding: .ascii)
+        }
+        return HeadphoneGuard.kind(transport: code(kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal) ?? "",
+                                   dataSource: code(kAudioDevicePropertyDataSource, kAudioObjectPropertyScopeOutput))
     }
 
     // MARK: Apps using sound

@@ -67,7 +67,7 @@ struct ShelfPillsRenderTests {
 
     @Test func renderVolume() throws {
         AppVolumeMixer.shared.refresh()
-        let view = NotchVolumePage().frame(width: 608, height: 220).padding(12).background(Color.black)
+        let view = NotchVolumePage(interactive: false).frame(width: 608, height: 220).padding(12).background(Color.black)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         let image = try #require(renderer.nsImage)

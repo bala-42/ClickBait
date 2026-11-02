@@ -1012,6 +1012,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.activateFileViewerSelecting(files)
         }
         NearbyMacs.shared.start()
+        AppVolumeMixer.shared.startHeadphoneGuard()
         GalleryHooks.watch = { [weak self] rule in
             guard let self else { return }
             notch.makeRoom()
