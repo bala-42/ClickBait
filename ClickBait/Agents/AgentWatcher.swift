@@ -47,6 +47,7 @@ final class AgentWatcher {
             var cwd = codexFolders[file]
             for line in Self.newLines(in: file, from: &offset) {
                 if let notice = AgentNotice.fromCodexLine(line, cwd: &cwd) { onNotice?(notice) }
+                AgentLiveStore.shared.seeCodex(line, session: file.lastPathComponent, cwd: cwd)
             }
             codexOffsets[file] = offset
             codexFolders[file] = cwd
@@ -138,7 +139,7 @@ enum AgentHookInstaller {
     }
 }
 
-/// Claude Code live, for the AI Agents page (`AgentLive` in Core). Memory only.
+/// Claude Code and Codex live, for the AI Agents page (`AgentLive` in Core). Memory only.
 @MainActor @Observable
 final class AgentLiveStore {
     static let shared = AgentLiveStore()
@@ -146,6 +147,7 @@ final class AgentLiveStore {
     private init() {}
 
     func see(_ line: String) { live.see(line) }
+    func seeCodex(_ line: String, session: String, cwd: String?) { live.seeCodex(line, session: session, cwd: cwd) }
 
     /// Sessions busy in the last two hours, the working ones first.
     var recent: [AgentLive.Session] { live.ordered.filter { $0.lastActive > Date().addingTimeInterval(-7200) } }

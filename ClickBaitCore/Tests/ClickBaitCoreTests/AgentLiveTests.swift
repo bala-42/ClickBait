@@ -42,4 +42,19 @@ struct AgentLiveTests {
         let turn = AgentLive.turn(records, project: "ClickBait", since: start, prices: AgentPrices(json: Data()))
         #expect(turn.written == 1200 && turn.model != nil)  // before the task and another project left out
     }
+
+    @Test func followsACodexTask() throws {
+        var live = AgentLive()
+        let cwd = "/Applications/ClickBait"
+        live.seeCodex(#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}"#, session: "c1", cwd: cwd)
+        live.seeCodex(#"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"<in-app-browser-context source=\"x\">page</in-app-browser-context>\nmake the key easy to find"}]}}}"#, session: "c1", cwd: cwd)
+        live.seeCodex(#"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","command":["/bin/zsh","-lc","git status --short"]}}}"#, session: "c1", cwd: cwd)
+        live.seeCodex(#"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"FileChange","changes":{"/a/Settings.swift":{"type":"update","unified_diff":"@@ -1,2 +1,2 @@\n-old line\n+new line\n+another"}}}}}"#, session: "c1", cwd: cwd)
+        let session = try #require(live.sessions.first)
+        #expect(session.tool == .codex && session.project == "ClickBait" && session.prompt == "make the key easy to find")
+        #expect(session.now == "Editing Settings.swift" && session.turnStarted != nil)
+        #expect(session.files.first?.removed == 1 && session.files.first?.added == 2)
+        live.seeCodex(#"{"type":"event_msg","payload":{"type":"task_complete"}}"#, session: "c1", cwd: cwd)
+        #expect(live.sessions.first?.working == false && live.sessions.first?.turnStarted == nil)
+    }
 }

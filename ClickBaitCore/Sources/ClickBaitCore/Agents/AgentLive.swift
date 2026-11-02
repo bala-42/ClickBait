@@ -29,6 +29,8 @@ public struct AgentLive: Sendable {
 
     public struct Session: Equatable, Sendable, Identifiable {
         public let id: String
+        /// Claude Code (its hooks) or Codex (its session logs).
+        public var tool: AgentNotice.Tool = .claude
         public var project: String
         /// What it was asked, first line, short.
         public var prompt: String?
@@ -92,6 +94,69 @@ public struct AgentLive: Sendable {
         return true
     }
 
+    /// A line of a Codex session log (`~/.codex/sessions/…`, user's ask, 2026-11-02: "live
+    /// should show both Claude and Codex"): a task starting and finishing, the prompt, and each
+    /// step as it completes — commands, tool calls, and file changes with their diffs. `session`
+    /// names the log. Codex writes a step once done, so the latest is the one shown as current.
+    @discardableResult
+    public mutating func seeCodex(_ line: String, session id: String, cwd: String?, at now: Date = Date()) -> Bool {
+        guard line.contains("task_") || line.contains("item_completed"),
+              let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["type"] as? String == "event_msg", let payload = object["payload"] as? [String: Any] else { return false }
+        var session = sessions.first { $0.id == id } ?? Session(id: id, tool: .codex, project: "", lastActive: now)
+        if let cwd { session.project = (cwd as NSString).lastPathComponent }
+        session.lastActive = now
+        switch payload["type"] as? String {
+        case "task_started":
+            settle(&session)
+            (session.working, session.turnStarted) = (true, now)
+        case "task_complete":
+            settle(&session)
+            (session.working, session.turnStarted) = (false, nil)
+        case "item_completed":
+            guard let item = payload["item"] as? [String: Any] else { return false }
+            switch item["type"] as? String {
+            case "UserMessage":
+                let texts = (item["content"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+                // Codex's app adds context blocks ("<in-app-browser-context …>…</…>"): the words after them.
+                let said = texts.map { $0.replacingOccurrences(of: #"(?s)<([a-z-]+)[^>]*>.*?</\1>"#, with: "", options: .regularExpression) }
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.last
+                if let said { session.prompt = Self.firstLine(said) }
+            case "CommandExecution":
+                let command = (item["command"] as? [String])?.last ?? ""
+                step(&session, "Running: \(Self.short(command))", "terminal")
+            case "McpToolCall":
+                let what = (item["arguments"] as? [String: Any])?["title"] as? String ?? item["tool"] as? String ?? "a tool"
+                step(&session, Self.short(what), "wrench.and.screwdriver")
+            case "FileChange":
+                for (path, value) in item["changes"] as? [String: Any] ?? [:] {
+                    let diff = (value as? [String: Any])?["unified_diff"] as? String ?? ""
+                    let lines = diff.components(separatedBy: "\n")
+                    let change = Change(removed: lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.map { String($0.dropFirst()) },
+                                        added: lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.map { String($0.dropFirst()) })
+                    step(&session, "Editing \((path as NSString).lastPathComponent)", "pencil")
+                    if let index = session.files.firstIndex(where: { $0.path == path }) { session.files[index].changes.append(change) }
+                    else { session.files.append(File(path: path, changes: [change])) }
+                }
+            default:
+                return false
+            }
+        default:
+            return false
+        }
+        if let index = sessions.firstIndex(where: { $0.id == id }) { sessions[index] = session } else { sessions.append(session) }
+        return true
+    }
+
+    private mutating func step(_ session: inout Session, _ text: String, _ symbol: String) {
+        settle(&session)
+        if session.turnStarted == nil { (session.working, session.turnStarted) = (true, session.lastActive) }
+        session.steps.append(Step(id: nextStep, text: text, symbol: symbol, running: true))
+        nextStep += 1
+        if session.steps.count > Self.keptSteps { session.steps.removeFirst(session.steps.count - Self.keptSteps) }
+    }
+
     /// The Now card's clock: "5:34", "1:02:03".
     public static func clock(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds)), hours = total / 3600
@@ -100,8 +165,9 @@ public struct AgentLive: Sendable {
 
     /// The Now card's bottom line for a running task: its model, the tokens it wrote and their
     /// cost, from Claude Code's usage since the task began in that project.
-    public static func turn(_ records: [AgentUsageRecord], project: String, since: Date, prices: AgentPrices) -> (model: String?, written: Int, cost: Double) {
-        let mine = records.filter { $0.tool == .claude && $0.project == project && $0.date >= since }
+    public static func turn(_ records: [AgentUsageRecord], tool: AgentNotice.Tool = .claude, project: String, since: Date,
+                            prices: AgentPrices) -> (model: String?, written: Int, cost: Double) {
+        let mine = records.filter { $0.tool == tool && $0.project == project && $0.date >= since }
         return (mine.max { $0.date < $1.date }.map { AgentPrices.displayName($0.model) },
                 mine.reduce(0) { $0 + $1.output }, mine.reduce(0) { $0 + prices.cost($1) })
     }

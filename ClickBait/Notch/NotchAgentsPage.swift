@@ -31,7 +31,7 @@ struct NotchAgentsPage: View {
     var cards: some View {
         let summary = AgentSummary.of(service.records, period: period, prices: service.prices)
         return VStack(spacing: 8) {
-                LiveCard(color: Self.claudeColor)
+                LiveCard()
                 HStack(spacing: 8) {
                     LimitsCard(name: "Claude", symbol: "sparkle", color: Self.claudeColor, limits: service.claudeLimits,
                                empty: service.loading ? "reading…" : "Claude Code isn't signed in")
@@ -86,21 +86,24 @@ struct NotchAgentsPage: View {
         let running = AgentLiveStore.shared.recent.filter { $0.working && $0.turnStarted != nil }
         return Card {
             HStack {
-                Label { Text("Now") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(running.isEmpty ? NotchPalette.text : Self.claudeColor) }.cardTitle()
+                Label("Now", systemImage: "waveform.path.ecg").cardTitle()
                 Spacer()
-                if !running.isEmpty { Circle().fill(Self.claudeColor).frame(width: 6, height: 6) }
+                ForEach([AgentNotice.Tool.claude, .codex], id: \.self) { tool in
+                    if running.contains(where: { $0.tool == tool }) { Circle().fill(tool == .claude ? Self.claudeColor : Self.codexColor).frame(width: 6, height: 6) }
+                }
             }
             ForEach(running) { session in
-                let turn = AgentLive.turn(service.records, project: session.project, since: session.turnStarted ?? Date(), prices: service.prices)
+                let turn = AgentLive.turn(service.records, tool: session.tool, project: session.project, since: session.turnStarted ?? Date(), prices: service.prices)
+                let color = session.tool == .claude ? Self.claudeColor : Self.codexColor
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Image(systemName: "sparkle").foregroundStyle(Self.claudeColor).frame(width: 14)
-                        Text(session.project.isEmpty ? "Claude Code" : session.project).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Image(systemName: session.tool == .claude ? "sparkle" : "chevron.left.forwardslash.chevron.right").foregroundStyle(color).frame(width: 14)
+                        Text(session.project.isEmpty ? (session.tool == .claude ? "Claude Code" : "Codex") : session.project).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                         Spacer()
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(AgentLive.clock(context.date.timeIntervalSince(session.turnStarted ?? context.date)))
                                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(Self.claudeColor)
+                                .foregroundStyle(color)
                         }
                     }
                     Text([turn.model, turn.written > 0 ? "\(Self.tokens(turn.written)) written" : nil,
@@ -357,36 +360,39 @@ private extension View {
     func cardTitle() -> some View { font(.system(size: 12, weight: .semibold)) }
 }
 
-/// Claude Code live (user's choice, 2026-11-02, after Pulsar's): each session busy lately — its
-/// project, what it's doing now, its last steps, the files it changed with their diffs (a click
-/// opens one). Claude orange, as the page's other Claude parts.
+/// Claude Code and Codex live (user's choices, 2026-11-02, after Pulsar's): each session busy
+/// lately — its project, what it's doing now, its last steps, the files it changed with their
+/// diffs (a click opens one). Claude's in Claude orange, Codex's in Codex blue.
 private struct LiveCard: View {
-    let color: Color
     var store = AgentLiveStore.shared
     @State private var openFile: String?
 
     var body: some View {
         Card {
             HStack {
-                Label { Text("Live") } icon: { Image(systemName: "sparkle").foregroundStyle(color) }.cardTitle()
+                Label("Live", systemImage: "dot.radiowaves.left.and.right").cardTitle()
                 Spacer()
-                if store.recent.contains(where: \.working) {
-                    Circle().fill(color).frame(width: 6, height: 6)
-                    Text("working").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+                ForEach([AgentNotice.Tool.claude, .codex], id: \.self) { tool in
+                    if store.recent.contains(where: { $0.working && $0.tool == tool }) { Circle().fill(Self.color(tool)).frame(width: 6, height: 6) }
                 }
             }
             if store.recent.isEmpty {
-                Text("What Claude Code does shows up here as it works: each step, and every file it changes.")
+                Text("What Claude Code and Codex do shows up here as they work: each step, and every file they change.")
                     .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
             }
             ForEach(store.recent.prefix(2)) { session in sessionView(session) }
         }
     }
 
+    static func color(_ tool: AgentNotice.Tool) -> Color { tool == .claude ? NotchAgentsPage.claudeColor : NotchAgentsPage.codexColor }
+    static func symbol(_ tool: AgentNotice.Tool) -> String { tool == .claude ? "sparkle" : "chevron.left.forwardslash.chevron.right" }
+
     private func sessionView(_ session: AgentLive.Session) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let color = Self.color(session.tool)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(session.project.isEmpty ? "Claude Code" : session.project).font(.system(size: 12, weight: .semibold))
+                Image(systemName: Self.symbol(session.tool)).font(.system(size: 11)).foregroundStyle(color)
+                Text(session.project.isEmpty ? (session.tool == .claude ? "Claude Code" : "Codex") : session.project).font(.system(size: 12, weight: .semibold))
                 if let prompt = session.prompt {
                     Text(prompt).font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary).lineLimit(1)
                 }
