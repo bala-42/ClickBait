@@ -36,6 +36,9 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         case .clipboard: "doc.on.clipboard"
         }
     }
+    /// The notch's size on the tiles: 3 rows of 72 with 8 between, under the 36 header,
+    /// inside the open notch's 8 top and 12 bottom.
+    static let gridSize: (width: Double, height: Double) = (448, 8 + 36 + 3 * 72 + 2 * 8 + 12)
     /// The notch's size on this page.
     var size: (width: Double, height: Double) {
         switch self {
@@ -79,13 +82,14 @@ struct GalleryView: View {
                 case .clipboard: ClipboardPage()
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 8)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+            // The nine tiles, 3 × 3 (user's ask, 2026-11-02); the notch fits them (`gridSize`).
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(GalleryPage.allCases) { page in
                     Button { model.openGallery(page) } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: page.symbol).font(.system(size: 18, weight: .regular))
+                        VStack(spacing: 8) {
+                            Image(systemName: page.symbol).font(.system(size: 18, weight: .regular)).frame(height: 24)
                             Text(page.title).font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(NotchPalette.text)
@@ -97,7 +101,7 @@ struct GalleryView: View {
                     .buttonStyle(PlayerPressStyle())
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 8)
         }
     }
 }
@@ -127,7 +131,7 @@ private struct ControlsPage: View {
 
     private func toggle(_ name: String, _ symbol: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 17))
                 Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
             }

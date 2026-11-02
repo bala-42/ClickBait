@@ -346,7 +346,7 @@ private struct GhostParade: View {
     static let colours = [0xFF0000, 0xFFB8FF, 0x00FFFF, 0xFFB852].map { Color(hex: UInt32($0)) }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             ForEach(0..<4, id: \.self) { index in
                 let t = time + Double(index) * 0.73
                 PixelGhost(colour: frightened ? Color(hex: 0x2121FF) : Self.colours[index],

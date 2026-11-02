@@ -78,10 +78,13 @@ struct ShelfPillsRenderTests {
     @Test func renderGallery() throws {
         let model = NotchController.Model(note: NotchController.Note(text: "", save: { _ in }))
         let view = VStack(spacing: 14) {
+            // The tiles at the notch's real content size: `gridSize` less the 12 sides, 36 header, 8 top, 12 bottom.
             GalleryView(model: model, settings: AppSettings())
-            ToolsPage()
+                .frame(width: GalleryPage.gridSize.width - 24, height: GalleryPage.gridSize.height - 8 - 36 - 12, alignment: .top)
+                .border(Color.red.opacity(0.5))
+            ToolsPage().frame(width: 608)
         }
-        .frame(width: 608).padding(12).background(Color.black)
+        .padding(12).background(Color.black)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         let image = try #require(renderer.nsImage)

@@ -136,7 +136,7 @@ struct PrompterView: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             prompter
             // Like Moody's: a small bar under the prompter — previous, "2 / 7" (the list), next —
             // and the list hanging under it.
@@ -218,7 +218,7 @@ struct PrompterView: View {
     /// The script, scrolling up; lines fade in at the bottom and out under the notch.
     private var text: some View {
         TimelineView(.animation(paused: !studio.playing && !studio.following)) { timeline in
-            VStack(alignment: .center, spacing: 6) {
+            VStack(alignment: .center, spacing: 8) {
                 ForEach(lines, id: \.index) { line in
                     // A blank line between sections is a small gap, not a whole empty line of
                     // big text (user: "why the dead space?"). Monospaced like the cues and
@@ -291,7 +291,7 @@ struct PrompterView: View {
     /// On hover: play or pause, slower and faster, the cues, text size, close; and the
     /// bottom-right corner resizes.
     private var controls: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             // The voice button, alone (user: a voice and a play button were "confusing", and
             // wanted "that voice button thing BACK"): cream with a waveform while it follows
             // your voice at your pace; a tap (or ⌃⌘P) pauses or carries on.
@@ -313,10 +313,10 @@ struct PrompterView: View {
             }
             PrompterButton(symbol: "xmark", help: "Close the prompter") { studio.stopPrompting() }
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 34)  // room for the corner's resize grip
+        .padding(.leading, 16)
+        .padding(.trailing, 36)  // room for the corner's resize grip
         .padding(.bottom, 8)
-        .padding(.top, 18)
+        .padding(.top, 20)
         // A dark band behind them, so they don't sit on the text.
         .background(LinearGradient(colors: [.clear, .black.opacity(0.85), .black], startPoint: .top, endPoint: .bottom))
     }
@@ -396,8 +396,8 @@ private struct ResizeEdges: View {
 
     var body: some View {
         ZStack {
-            handle(.left).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 30)
-            handle(.right).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 30)
+            handle(.left).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 32)
+            handle(.right).frame(width: Self.grip).frame(maxWidth: .infinity, alignment: .trailing).padding(.top, 32)
             handle(.bottom).frame(height: Self.grip).frame(maxHeight: .infinity, alignment: .bottom).padding(.horizontal, 16)
             // Inside the rounded corners: right in them, the rounding clipped the grips away and
             // the corner couldn't be dragged (user's report, 2026-11-01). A mark shows on hover.
@@ -408,7 +408,7 @@ private struct ResizeEdges: View {
             if studio.hovering {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 9, weight: .bold)).foregroundStyle(MoodyLook.cream.opacity(0.55))
-                    .padding([.trailing, .bottom], 10)
+                    .padding([.trailing, .bottom], 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .allowsHitTesting(false)
             }
@@ -466,11 +466,11 @@ private struct CueList: View {
     var body: some View {
         let cues = studio.script.cues
         let current = studio.script.cue(atLine: studio.readingLine)
-        let rows = VStack(spacing: 2) {
+        let rows = VStack(spacing: 4) {
             ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
                 let chosen = cue == current
                 Button { studio.goTo(cue) } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Text("\(index + 1)").font(.system(size: 11.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(chosen ? Color.black.opacity(0.55) : MoodyLook.quiet)
                             .frame(width: 18, alignment: .trailing)
@@ -478,7 +478,7 @@ private struct CueList: View {
                             .foregroundStyle(chosen ? Color.black : MoodyLook.cream).lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 10).frame(height: 28)
+                    .padding(.horizontal, 12).frame(height: 28)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(chosen ? MoodyLook.cream : hovered == index ? MoodyLook.row : Color.clear))
                     .contentShape(Rectangle())
@@ -487,7 +487,7 @@ private struct CueList: View {
                 .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
             }
         }
-        .padding(6)
+        .padding(8)
         // Up to six, no scroll view: in the notch (no focus of its own) a scroll view swallowed
         // the first click, and cues couldn't be picked (user's report, 2026-11-01).
         Group {
@@ -551,13 +551,13 @@ struct CueBar: View {
                     Text("\(current + 1)/\(cues.count)").font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     Image(systemName: studio.cuesOpen ? "chevron.down" : "chevron.up").font(.system(size: 8, weight: .bold))
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 8)
             }
             .buttonStyle(CueBarButton(wide: true, on: studio.cuesOpen)).help(studio.cuesOpen ? "Close the cues" : "All cues")
             Button { studio.nextCue(1) } label: { Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(CueBarButton()).disabled(current >= cues.count - 1).help("Next cue (⌃⌘↓)")
         }
-        .padding(3)
+        .padding(4)
         .background(Capsule().fill(Color.black))
         .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
         .frame(height: Self.height)

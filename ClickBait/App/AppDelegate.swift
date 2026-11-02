@@ -359,9 +359,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wireGallery()
         ClipboardHistory.shared.start()
         // The timer bubble's countdown or Pomodoro phase ended: a pill by the cursor.
-        NotchTimerClock.shared.onFinish = { [weak self] text in
+        NotchTimerClock.shared.onFinish = { [weak self] text, alarm in
             guard let self else { return }
-            SoundCues.play(.done, enabled: settings.soundCues)
+            // Alarms the user set ring whatever the sound-cues switch says.
+            switch alarm {
+            case .timer:
+                TimerSounds.ring(.timer)
+                notch.ringAlarm()
+            case .pleasant: TimerSounds.ring(.pleasant)
+            case .striking: TimerSounds.ring(.striking)
+            }
             overlay.showJobResult(text, tone: .idle, force: true)
         }
         startAgentNotices()
@@ -414,6 +421,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let found = await SearchIndex.shared.search(request, notchNote: "", options: options)
                     Log.app.notice("Debug search: kind \(request.kind.rawValue, privacy: .public), terms \(request.terms.joined(separator: " "), privacy: .public) → \(found.map { "[\($0.kind.rawValue)] \($0.title)" }.joined(separator: " | "), privacy: .public)")
                 }
+            }
+        }
+        // The timer's end without waiting: the ruby notch and a sound ("timer", "pleasant", "striking").
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.alarm"), object: nil, queue: .main) { note in
+            let kind = note.object as? String ?? "timer"
+            MainActor.assumeIsolated {
+                let alarm: NotchTimerClock.Alarm = kind == "pleasant" ? .pleasant : kind == "striking" ? .striking : .timer
+                NotchTimerClock.shared.onFinish?("debug: \(kind)", alarm)
             }
         }
         // Presses the showing card's button ("yes"/"no"): live tests of cards like peek's extract.

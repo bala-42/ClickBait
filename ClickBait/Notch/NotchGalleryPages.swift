@@ -41,7 +41,7 @@ struct JobsPage: View {
                                 Text(job.status).foregroundStyle(NotchPalette.tertiary)
                             }
                             .font(.system(size: 12))
-                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                             .contentShape(Rectangle())
                         }
@@ -70,13 +70,13 @@ struct NotesPage: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                     ForEach(notes) { note in
                         Button { NSWorkspace.shared.open(note.id) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(note.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                                 Text(note.line).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(2)
                                 Text(note.modified.formatted(.relative(presentation: .named))).font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(9)
+                            .padding(8)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
                             .contentShape(Rectangle())
                         }
@@ -133,7 +133,7 @@ struct RemindersPage: View {
                                     .foregroundStyle(due < Date() ? CompanionTone.problem : NotchPalette.tertiary)
                             }
                         }
-                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                     }
                 }
@@ -231,7 +231,7 @@ struct ToolsPage: View {
 
     private func tool(_ name: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Image(systemName: symbol).font(.system(size: 17))
                 Text(name).font(.system(size: 11, weight: .medium))
             }
@@ -323,7 +323,7 @@ struct ClipboardPage: View {
                                     .foregroundStyle(NotchPalette.tertiary)
                             }
                             .font(.system(size: 12))
-                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .padding(.horizontal, 12).padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
                             .contentShape(Rectangle())
                         }
@@ -347,6 +347,6 @@ private struct EmptyPage: View {
             Text(text).font(.system(size: 12)).foregroundStyle(NotchPalette.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 32)
     }
 }

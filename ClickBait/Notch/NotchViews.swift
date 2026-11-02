@@ -153,6 +153,9 @@ struct NotchView: View {
             // on the same spring (half-see-through for the first frames).
             shape.fill(Color.black.opacity(resting ? 0 : 1))
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: resting)
+            if model.alarm, state != .expanded {
+                RubyGlow(shape: shape)
+            }
             if resting {
                 // Only when the pointer comes near: faded out quickly otherwise (user's ask).
                 Capsule()
@@ -334,7 +337,7 @@ private struct PeekContent: View {
             if music.hasTrack {
                 Visualizer(playing: music.isPlaying && music.soundOut, color: NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.music))
                     .frame(width: 18, height: 14)
-                    .padding(.trailing, 22)
+                    .padding(.trailing, 24)
             }
         }
         .frame(maxHeight: .infinity)
@@ -360,11 +363,11 @@ private struct ActivityWings: View {
             }
                 .matchedGeometryEffect(id: "art", in: art)
                 .frame(width: 22, height: 22)
-                .padding(.leading, 9)
+                .padding(.leading, 8)
             Spacer(minLength: 0)
             Visualizer(playing: music.isPlaying && music.soundOut, color: NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.music))
                 .frame(width: 18, height: 14)
-                .padding(.trailing, 11)
+                .padding(.trailing, 12)
         }
         .frame(maxHeight: .infinity)
     }
@@ -379,7 +382,7 @@ private struct Visualizer: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !playing || reduceMotion)) { context in
             let time = context.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 2.5) {
+            HStack(alignment: .center, spacing: 4) {
                 ForEach(0..<4, id: \.self) { index in
                     let wave = playing && !reduceMotion ? (sin(time * (6 + Double(index) * 1.9) + Double(index) * 1.3) + 1) / 2 : 0.35
                     Capsule().fill(color).frame(width: 2.5, height: 5 + 9 * wave)
@@ -409,13 +412,13 @@ private struct OpenNotch: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header.frame(height: 34)
+            header.frame(height: 36)
             Group {
                 switch model.tab {
                 case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .ask where model.chatting:
-                    if let chat = model.chat { ChatView(model: chat, inNotch: true).padding(.bottom, 2).transition(.opacity) }
+                    if let chat = model.chat { ChatView(model: chat, inNotch: true).padding(.bottom, 4).transition(.opacity) }
                 case .ask:
                     AskCard(model: model)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -428,10 +431,10 @@ private struct OpenNotch: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
         }
         .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.bottom, 12)
         .foregroundStyle(NotchPalette.text)
         // The ⓘ card hangs under its button over the cards, as HeyClicky's does.
         .overlay(alignment: .topTrailing) {
@@ -458,7 +461,7 @@ private struct OpenNotch: View {
             if let pill = IslandPills.pill(for: model.tab, music: music) {
                 TabBean(pill: pill, size: 18)
                     .matchedGeometryEffect(id: model.tab, in: tabBeans)
-                    .padding(.leading, 14)
+                    .padding(.leading, 16)
                     .padding(.trailing, -8)
                     .accessibilityHidden(true)
             }
@@ -480,7 +483,7 @@ private struct OpenNotch: View {
             .help(model.tab == .home ? "Something new" : "Back to Home")
             .accessibilityLabel(model.tab == .home ? cheer : "Back to Home: \(cheer)")
             Spacer()
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
                 InternetSwitch(internet: settings.internet)
                 NotchHeaderIcon(symbol: model.showsKeys ? "info.circle.fill" : "info.circle", label: "Shortcuts", on: model.showsKeys) {
                     model.showsKeys.toggle()
@@ -496,7 +499,7 @@ private struct OpenNotch: View {
     }
 
     private var home: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             FocusCard(music: music, mood: model.mood(), health: model.health, onOpen: { music.openPlayer(); onCollapse() })
                 .frame(width: 322)
                 .notchCard(wash: FocusCard.wash(for: model.mood()))
@@ -555,29 +558,29 @@ private struct FocusCard: View {
             SpaceScene()
             // Only when something needs fixing (the model, a permission): no "ready" line.
             if let modelNote {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Circle().fill(modelNote.color).frame(width: 7, height: 7)
                     Text(modelNote.shortWords).font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(1)
                 }
-                .padding(.top, 10)
+                .padding(.top, 12)
                 .padding(.leading, 12)
             }
             if music.hasTrack {
                 Button { music.send("playpause") } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: "play.fill").font(.system(size: 8, weight: .bold))
                         Text(music.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
                     }
                     .foregroundStyle(NotchPalette.text)
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 8)
                     .frame(height: 20)
                     .background(Color.white.opacity(0.1), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play \(music.title)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(.leading, 10)
-                .padding(.bottom, 9)
+                .padding(.leading, 12)
+                .padding(.bottom, 8)
                 .frame(maxWidth: 120, alignment: .leading)  // clear of the bean in the middle
             }
         }
@@ -606,20 +609,20 @@ private struct FocusCard: View {
             }
             // As boring.notch's player: the title bold, the artist under it in the cover's
             // colour, then the progress and the buttons.
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 MarqueeText(text: music.hasTrack ? music.title : "ClickBait", font: .system(size: 12, weight: .semibold))
-                    .padding(.trailing, 30)
+                    .padding(.trailing, 32)
                 Text(music.hasTrack ? music.artist : modelNote?.shortWords ?? Self.status(mood))
                     .font(.system(size: 11))
                     .foregroundStyle(music.hasTrack ? accent : NotchPalette.secondary)
                     .lineLimit(1)
-                    .padding(.trailing, 30)
+                    .padding(.trailing, 32)
                 PlayerControls(music: music, accent: accent)
                     .frame(height: 44, alignment: .top)
-                    .padding(.top, 5)
+                    .padding(.top, 4)
                     .padding(.trailing, 12)
             }
-            .padding(.top, 6)
+            .padding(.top, 8)
             .padding(.leading, 108)
             .padding(.top, 4)
             if music.sourceName != nil {
@@ -635,7 +638,7 @@ private struct FocusCard: View {
                 .help("Stop the music")
                 .accessibilityLabel("Stop the music")
                 .padding(.top, 8)
-                .padding(.trailing, 10)
+                .padding(.trailing, 12)
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
@@ -671,7 +674,7 @@ private struct PlayerControls: View {
     var body: some View {
         // YouTube: no shuffle or repeat; its time only when the browser lets ClickBait read it.
         let youtube = music.youtubeTab != nil && music.player == nil
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 4) {
             if !youtube || music.duration > 0 {
                 TimelineView(.animation(minimumInterval: 0.5, paused: !live || !music.isPlaying)) { context in
                     PlayerProgress(position: music.currentPosition(at: context.date), duration: music.duration,
@@ -764,7 +767,7 @@ private struct KeysCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "keyboard").font(.system(size: 10))
                 Text("Shortcuts").font(.system(size: 11, weight: .semibold))
                 Spacer()
@@ -776,11 +779,11 @@ private struct KeysCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.bottom, 5)
-            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1).padding(.bottom, 5)
-            VStack(spacing: 3) {
+            .padding(.bottom, 4)
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1).padding(.bottom, 4)
+            VStack(spacing: 4) {
                 ForEach(ShortcutList.items.filter { ["Push to talk", "Explain", "Text mode", "Dictate"].contains($0.title) }) { item in
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Text(item.short).font(.system(size: 10, weight: .semibold)).foregroundStyle(NotchPalette.text)
                         Spacer(minLength: 6)
                         ShortcutKeys(item: item, compact: true)
@@ -788,7 +791,7 @@ private struct KeysCard: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(width: 260)
         .background(Color(hex: 0x1C1D21), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -807,8 +810,8 @@ private struct MusicPanel: View {
 
     var body: some View {
         let accent = NotchPalette.lifted(music.tint, 0.45, fallback: NotchPalette.bubblegum)
-        HStack(spacing: 10) {
-            HStack(spacing: 14) {
+        HStack(spacing: 12) {
+            HStack(spacing: 16) {
                 Artwork(music: music, corner: Look.Corner.tile)
                     .frame(width: 76, height: 76)
                     .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
@@ -819,17 +822,17 @@ private struct MusicPanel: View {
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel("Open \(music.sourceName ?? "the player")")
                     .accessibilityAction { onOpen() }
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     MarqueeText(text: music.hasTrack ? music.title : "Nothing playing", font: .system(size: 14, weight: .semibold))
                     Text(music.hasTrack ? music.artist : "Pick a player on the right")
                         .font(.system(size: 11)).foregroundStyle(music.hasTrack ? accent : NotchPalette.secondary).lineLimit(1)
                     if music.hasTrack {
-                        PlayerControls(music: music, accent: accent).padding(.top, 5)
+                        PlayerControls(music: music, accent: accent).padding(.top, 4)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 12)
             .frame(width: 430)
             .frame(maxHeight: .infinity)
             .notchCard(wash: music.hasTrack ? accent.opacity(0.22) : nil)
@@ -840,7 +843,7 @@ private struct MusicPanel: View {
                     if music.youtubeTab != nil { music.openPlayer() } else { MusicBridge.openYouTube() }
                 }
             }
-            .padding(6)
+            .padding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .notchCard()
         }
@@ -849,7 +852,7 @@ private struct MusicPanel: View {
 
     private func source(_ name: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Circle().fill(on ? NotchPalette.bubblegum : NotchPalette.tertiary.opacity(0.5)).frame(width: 6, height: 6)
                 Text(name).font(.system(size: 11, weight: .semibold))
                 Spacer(minLength: 0)
@@ -858,7 +861,7 @@ private struct MusicPanel: View {
                 }
             }
             .foregroundStyle(on ? NotchPalette.text : NotchPalette.secondary)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(on ? NotchPalette.bubblegum.opacity(0.14) : NotchPalette.ink, in: Capsule())
             .contentShape(Capsule())
@@ -1054,12 +1057,12 @@ private struct AskCard: View {
                     .disabled(text.isEmpty)
                     .accessibilityLabel("Look up")
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .frame(height: 30)
                 .background(NotchPalette.ink, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.06), lineWidth: 1))
             } else {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Button { typing = true; focused = true } label: { Label("text", systemImage: "character.cursor.ibeam") }
                         .buttonStyle(AquaButtonStyle(selected: false))
                         .accessibilityLabel("Ask by typing")
@@ -1169,7 +1172,7 @@ private struct AirDropPad: View {
         Button {
             sender.send(items)
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 AirDropBean(look: beanLook(sender.status))
                 // The alien's pad (user's name for it, 2026-11-02); it still sends by AirDrop.
                 Text("airea 51").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
@@ -1251,7 +1254,7 @@ private struct ShelfView: View {
     @State private var cleared: String?
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             files
             AirDropPad(shelf: shelf)
             noteCard
@@ -1261,7 +1264,7 @@ private struct ShelfView: View {
 
     /// Files: a count, select all and drag-the-selection, and the drop area.
     private var files: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let hovered = hoveredFile, shelf.files.contains(hovered), renaming == nil {
                 ShelfActionPills(file: hovered).frame(height: 16)
             } else {
@@ -1269,14 +1272,14 @@ private struct ShelfView: View {
             }
             filesArea
         }
-        .padding(10)
+        .padding(12)
         .frame(width: 250)
         .notchCard(wash: targeted ? NotchPalette.highlight.opacity(0.35) : nil)
         .onHover { inside in if !inside { hoveredFile = nil } }
     }
 
     private var filesHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text("Files").font(.system(size: 12, weight: .semibold))
             Text("\(shelf.files.count)/12").font(.system(size: 10).monospacedDigit()).foregroundStyle(NotchPalette.tertiary)
             Spacer(minLength: 4)
@@ -1300,7 +1303,7 @@ private struct ShelfView: View {
                     Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(NotchPalette.highlight)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
                         .allowsHitTesting(false)
                 }
                 .fixedSize()
@@ -1324,8 +1327,8 @@ private struct ShelfView: View {
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) { ForEach(shelf.files, id: \.self) { file($0) } }
-                        .padding(.horizontal, 5)
+                    HStack(spacing: 8) { ForEach(shelf.files, id: \.self) { file($0) } }
+                        .padding(.horizontal, 4)
                 }
             }
         }
@@ -1372,12 +1375,12 @@ private struct ShelfView: View {
                     Text("Write a note…")
                         .font(.system(size: 13))
                         .foregroundStyle(NotchPalette.tertiary)
-                        .padding(.leading, 5).padding(.top, 2)
+                        .padding(.leading, 4).padding(.top, 4)
                         .allowsHitTesting(false)
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .notchCard()
         .overlay(RoundedRectangle(cornerRadius: Look.Corner.card, style: .continuous)
@@ -1457,13 +1460,13 @@ private struct ShelfView: View {
 
     private func file(_ url: URL) -> some View {
         let selected = shelf.selectedFiles.contains(url)
-        return VStack(spacing: 2) {
+        return VStack(spacing: 4) {
             FileThumbnail(url: url).frame(width: 32, height: 32)
             if renaming == url {
                 TextField("Name", text: $newName)
                     .textFieldStyle(.plain).font(.system(size: 9, weight: .medium)).foregroundStyle(NotchPalette.text)
                     .multilineTextAlignment(.center).frame(width: 54)
-                    .padding(.vertical, 1).background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    .padding(.vertical, 0).background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
                     .focused($renameFocused)
                     .onSubmit { finishRename(url) }
                     .onExitCommand { renaming = nil }
@@ -1527,7 +1530,7 @@ struct InternetSwitch: View {
                 Capsule()
                     .fill(LinearGradient(colors: [Self.onTop, Self.onBottom], startPoint: .top, endPoint: .bottom))
                     .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.04)],
-                                                           startPoint: .top, endPoint: .center)).padding(1))
+                                                           startPoint: .top, endPoint: .center)).padding(0))
                     .overlay(Capsule().strokeBorder(Self.rim.opacity(0.6), lineWidth: 0.7))
                 Text(on ? "online" : "local")
                     .font(.system(size: 10, weight: .semibold))
@@ -1540,7 +1543,7 @@ struct InternetSwitch: View {
                     .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
                     .overlay(Image(systemName: on ? "globe" : "lock.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.black))
                     .frame(width: Self.height - 4, height: Self.height - 4)
-                    .padding(2)
+                    .padding(4)
             }
             .frame(width: Self.width, height: Self.height)
             .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.75), value: on)
@@ -1645,7 +1648,7 @@ struct ShelfActionPills: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Text(file.deletingPathExtension().lastPathComponent)
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(NotchPalette.tertiary)
                 .lineLimit(1).truncationMode(.middle)
@@ -1657,7 +1660,7 @@ struct ShelfActionPills: View {
                     Text(PillCase.lowered(action.label))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(CompanionTone.action.color)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(CompanionTone.action.color.opacity(0.18), in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1674,5 +1677,27 @@ struct ShelfActionPills: View {
         if let image = NSImage(contentsOf: file) { objects.insert(image, at: 0) }
         board.writeObjects(objects)
         ShelfDrop.say?("copied \(file.lastPathComponent) ✓", .action)
+    }
+}
+
+/// The timer's end: a ruby backlight pulsing along the folded notch's edges and up from its
+/// bottom (user's ask, 2026-11-02). Reduce Motion: steady.
+private struct RubyGlow: View {
+    let shape: NotchShape
+    static let ruby = Color(hex: 0xE0115F)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bright = false
+
+    var body: some View {
+        ZStack {
+            shape.fill(LinearGradient(colors: [.clear, Self.ruby.opacity(bright ? 0.55 : 0.3)], startPoint: .top, endPoint: .bottom))
+            shape.stroke(Self.ruby.opacity(bright ? 1 : 0.6), lineWidth: 2)
+                .blur(radius: 1.5)
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            guard !reduceMotion else { bright = true; return }
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { bright = true }
+        }
     }
 }

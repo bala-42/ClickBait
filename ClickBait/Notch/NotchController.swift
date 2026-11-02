@@ -57,6 +57,9 @@ final class NotchController {
         var notch: Rect?
         /// Music playing: the artwork and visualizer in the wings.
         var activity = false
+        /// The timer just ended: the folded notch glows ruby until it's opened or 30 s pass
+        /// (user's ask, 2026-11-02). Set through `ringAlarm()`.
+        var alarm = false
         /// The HUD while it shows: the level (0…1), whether muted, and whether it's the
         /// brightness sky (else the volume's Pac-Man).
         var hud: (level: Double, muted: Bool, sky: Bool)?
@@ -68,7 +71,7 @@ final class NotchController {
         var pageSize: (width: Double, height: Double)? {
             if tab == .volume { return (640, 260) }
             guard tab == .gallery else { return nil }
-            return galleryPage?.size ?? (640, 260)
+            return galleryPage?.size ?? GalleryPage.gridSize
         }
         /// Opens a gallery page, or its tiles (set by the controller: it re-fits the window).
         var openGallery: @MainActor (GalleryPage?) -> Void = { _ in }
@@ -288,6 +291,7 @@ final class NotchController {
         // Opening from folded: on the display the pointer is on; it stays there until it folds.
         if before == .collapsed || before == .hidden, !StudioModel.shared.inNotch { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
+        if after == .expanded || after == .peek { stopAlarm() }
         if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
@@ -335,6 +339,25 @@ final class NotchController {
         }
     }
 
+    /// Lights the notch ruby: the timer is done. Off when the notch opens, or after 30 s.
+    func ringAlarm() {
+        model.alarm = true
+        place()
+        alarmTask?.cancel()
+        alarmTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            self?.stopAlarm()
+        }
+    }
+
+    func stopAlarm() {
+        guard model.alarm else { return }
+        alarmTask?.cancel()
+        model.alarm = false
+        place()
+    }
+
     private func setActivity(_ on: Bool) {
         guard wantsActivity != on else { return }
         wantsActivity = on
@@ -343,6 +366,7 @@ final class NotchController {
 
     /// Music is playing; the wings show it unless an app's window is in their place.
     private var wantsActivity = false
+    private var alarmTask: Task<Void, Never>?
     /// An app's window is in the strip beside the notch (`appOwnsTop`).
     private var topTaken = false
 
@@ -408,7 +432,8 @@ final class NotchController {
         // The window list only matters for the music wings (off since 2026-10-25); read on
         // every placement, on the main thread, it froze it up to 249 ms (stall trap).
         topTaken = wantsActivity && Self.appOwnsTop(of: primary)
-        let activity = wantsActivity && !topTaken
+        // The ruby alarm shows in the activity wings' shape: room for its glow beside the camera.
+        let activity = (wantsActivity && !topTaken) || model.alarm
         if model.activity != activity { model.activity = activity }
         let connectedIDs = Set(screens.compactMap(Self.displayID))
         for displayID in panels.keys.filter({ !connectedIDs.contains($0) }) {
@@ -882,7 +907,7 @@ final class NotchController {
         }
         // Every mood with each of its eye pairs, large, then at header size; still (no breathing or blink).
         let moods = Bean.Mood.allCases.map { mood in
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 HStack(spacing: 4) {
                     ForEach(Bean.eyePairs(for: mood), id: \.self) { BeanFace(mood: mood, eyes: $0, size: 64) }
                 }
@@ -891,13 +916,13 @@ final class NotchController {
         }
         let sheet = VStack(alignment: .leading, spacing: 20) {
             ForEach(0..<3, id: \.self) { row in
-                HStack(alignment: .top, spacing: 22) { ForEach(Array(moods.indices).filter { $0 % 3 == row }, id: \.self) { moods[$0] } }
+                HStack(alignment: .top, spacing: 24) { ForEach(Array(moods.indices).filter { $0 % 3 == row }, id: \.self) { moods[$0] } }
             }
-            HStack(spacing: 22) {
+            HStack(spacing: 24) {
                 ForEach(Bean.Mood.allCases, id: \.self) { BeanFace(mood: $0, eyes: Bean.eyePairs(for: $0)[0], size: 26) }
             }
             // The Mirror pill's chrome bean through its shimmer, large then at pill size.
-            HStack(spacing: 22) {
+            HStack(spacing: 24) {
                 ForEach([0.0, 0.8, 1.6, 2.4], id: \.self) {
                     BeanFace(mood: .idle, eyes: .both(.dot), size: 64, badge: false, solid: true, holo: true, sheen: $0)
                 }

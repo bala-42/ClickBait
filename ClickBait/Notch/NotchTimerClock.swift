@@ -1,3 +1,4 @@
+import AppKit
 import ClickBaitCore
 import Foundation
 import Observation
@@ -23,8 +24,13 @@ final class NotchTimerClock {
     private(set) var pomodorosDone = 0
     var phase: NotchTimer.Phase { NotchTimer.pomodoroPhase(after: pomodorosDone) }
 
-    /// Said when a countdown or a Pomodoro phase ends ("timer's done ✓", "time for a break").
-    @ObservationIgnored var onFinish: ((String) -> Void)?
+    /// Said when a countdown or a Pomodoro phase ends ("timer's done ✓", "time for a break"),
+    /// with how it should sound.
+    @ObservationIgnored var onFinish: ((String, Alarm) -> Void)?
+
+    /// The countdown ends (the ruby notch); a work session ends (pleasant: time for a break);
+    /// a break ends (striking: back to work) — user's ask, 2026-11-02.
+    enum Alarm { case timer, pleasant, striking }
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     private init() {}
@@ -102,9 +108,32 @@ final class NotchTimerClock {
         if mode == .pomodoro {
             let was = phase
             pomodorosDone += 1
-            onFinish?(was == .work ? (phase == .longBreak ? "time for a long break ✓" : "time for a break ✓") : "back to work")
+            if was == .work {
+                onFinish?(phase == .longBreak ? "session done ✓ time for a long break" : "session done ✓ time for a break", .pleasant)
+            } else {
+                onFinish?("break's over: back to work", .striking)
+            }
         } else {
-            onFinish?("timer's done ✓")
+            onFinish?("timer's done ✓", .timer)
+        }
+    }
+}
+
+/// The timer's sounds, macOS's own: a pleasant chime when a work session ends ("Glass", twice,
+/// softly apart), a striking alarm when a break ends ("Sosumi", three times close together), and
+/// the countdown's end ("Hero", twice).
+@MainActor
+enum TimerSounds {
+    static func ring(_ alarm: NotchTimerClock.Alarm) {
+        let (name, times, gap): (String, Int, Double) = switch alarm {
+        case .pleasant: ("Glass", 2, 0.9)
+        case .striking: ("Sosumi", 3, 0.45)
+        case .timer: ("Hero", 2, 0.7)
+        }
+        for index in 0..<times {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * gap) {
+                NSSound(named: NSSound.Name(name))?.play()
+            }
         }
     }
 }

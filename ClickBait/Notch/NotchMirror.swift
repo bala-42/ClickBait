@@ -228,7 +228,7 @@ struct PhotoBooth: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 // The Mirror square's holo bean, flown up from Home.
                 if let pill = IslandPills.pill(for: .mirror, music: nil) {
                     TabBean(pill: pill, size: 18)
@@ -251,14 +251,14 @@ struct PhotoBooth: View {
             StudioSwitch(mode: $studio.mode)
                 .frame(height: 28)
             if studio.mode == .mirror {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
                     viewfinder.frame(width: 420, height: 236)
                     controls
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
             } else {
                 PrompterDesk(studio: studio)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 12)
             }
         }
         .padding(.top, 8)
@@ -299,7 +299,7 @@ struct PhotoBooth: View {
 
     private var controls: some View {
         let ready = if case .ready = camera.state { true } else { false }
-        return VStack(spacing: 10) {
+        return VStack(spacing: 12) {
             Button(action: shoot) {
                 ZStack {
                     Circle().fill(.white).frame(width: 52, height: 52)
@@ -311,7 +311,7 @@ struct PhotoBooth: View {
             .disabled(!ready || count != nil)
             .opacity(ready && count == nil ? 1 : 0.4)
             .accessibilityLabel("Take a photo")
-            LazyVGrid(columns: [GridItem(.fixed(84), spacing: 6), GridItem(.fixed(84), spacing: 6)], spacing: 6) {
+            LazyVGrid(columns: [GridItem(.fixed(84), spacing: 8), GridItem(.fixed(84), spacing: 8)], spacing: 8) {
                 ForEach(0..<CameraMirrorModel.maxShots, id: \.self) { index in
                     shotTile(index < camera.shots.count ? camera.shots[index] : nil)
                 }
@@ -385,7 +385,7 @@ private struct ShotTile: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.5))
                 }
                 .buttonStyle(.plain)
-                .padding(3)
+                .padding(4)
                 .opacity(hovering ? 1 : 0)
                 .accessibilityLabel("Delete photo")
             }
@@ -403,7 +403,7 @@ private struct PrompterDesk: View {
     @State private var picking = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 12) {
             if picking {
                 ScriptPicker(studio: studio) { picking = false }
                     .frame(width: 420, height: 236)
@@ -421,11 +421,11 @@ private struct PrompterDesk: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(NotchPalette.text)
                     .scrollContentBackground(.hidden)
-                    .padding(10)
+                    .padding(12)
                 if studio.text.isEmpty {
                     Text("Paste or type your script, or drop a file here: text, Markdown, Word, RTF, a web page or a PDF.\n\n# Headings, “Intro:” lines and --- dividers become cues.")
                         .font(.system(size: 12.5)).foregroundStyle(NotchPalette.secondary)
-                        .padding(14).allowsHitTesting(false)
+                        .padding(16).allowsHitTesting(false)
                 }
             }
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -457,7 +457,7 @@ private struct PrompterDesk: View {
                 Button { picking.toggle() } label: { Label(picking ? "Back to the script" : "Open a script…", systemImage: "doc") }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
                 // The local brain: rewrite it the way people talk (and make cues), or only add cues.
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Button { studio.rewrite(.speakable) } label: { Label("Make it speakable", systemImage: "waveform.and.mic") }
                         .help("The local brain rewrites it the way people actually talk, and makes the cues")
                     Button { studio.rewrite(.cuesOnly) } label: { Label("Add cues", systemImage: "list.bullet") }
@@ -466,7 +466,7 @@ private struct PrompterDesk: View {
                 .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.highlight)
                 .disabled(studio.rewriting != nil || studio.text.isEmpty)
                 if let job = studio.rewriting {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         ProgressView().controlSize(.mini)
                         Text(job == .speakable ? "Rewriting…" : "Sorting into cues…")
                     }
@@ -485,7 +485,7 @@ private struct PrompterDesk: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.black)
-                .padding(.horizontal, 14).frame(height: 28)
+                .padding(.horizontal, 16).frame(height: 28)
                 .background(studio.prompting ? Color.white.opacity(0.7) : Color.white, in: Capsule())
                 Text("Hangs under the camera. Invisible when you share your screen.")
                     .font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary).fixedSize(horizontal: false, vertical: true)
@@ -502,11 +502,11 @@ struct StudioSwitch: View {
     @Namespace private var pill
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             option("Mirror", .mirror)
             option("Prompter", .prompter)
         }
-        .padding(2)
+        .padding(4)
         .background(Capsule().fill(NotchPalette.ink))
         .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
         .accessibilityElement(children: .contain)

@@ -168,7 +168,7 @@ struct PlayerProgress: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Text(Self.format(fraction * duration)).frame(minWidth: 26, alignment: .trailing)
             PlayerBar(fraction: fraction, accent: accent, enabled: duration > 0,
                       onChange: { dragFraction = $0 },
@@ -200,7 +200,7 @@ struct PlayerVolume: View {
     var body: some View {
         let symbol = volume == 0 ? "speaker.slash.fill" : volume < 34 ? "speaker.wave.1.fill"
             : volume < 67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(NotchPalette.tertiary)
                 .frame(width: 13, alignment: .trailing)
             PlayerBar(fraction: Double(volume) / 100, accent: accent, enabled: true,

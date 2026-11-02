@@ -10,11 +10,11 @@ struct NotchTimerView: View {
     private let cream = MoodyLook.cream
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 20) {
                 ForEach(NotchTimer.Mode.allCases, id: \.self) { mode in
                     Button { clock.choose(mode) } label: {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 4) {
                             Text(mode.rawValue.capitalized)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(clock.mode == mode ? NotchPalette.text : NotchPalette.tertiary)
@@ -35,12 +35,12 @@ struct NotchTimerView: View {
                     Text(clock.running ? "Pause" : clock.leftWhenPaused != nil || clock.elapsedBefore > 0 ? "Resume" : "Start")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(cream)
-                        .padding(.horizontal, 18).padding(.vertical, 6)
+                        .padding(.horizontal, 20).padding(.vertical, 8)
                         .background(cream.opacity(0.16), in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
-            HStack(alignment: .bottom, spacing: 14) {
+            HStack(alignment: .bottom, spacing: 16) {
                 Group {
                     switch clock.mode {
                     case .timer: MinuteRuler(minutes: $clock.minutes, cream: cream, interactive: interactive).disabled(clock.running || clock.leftWhenPaused != nil)
@@ -59,7 +59,7 @@ struct NotchTimerView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 }
 
@@ -122,7 +122,7 @@ private struct PomodoroDots: View {
     private var workDone: Int { min(4, (done % 8 + 1) / 2) }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             ForEach(0..<4, id: \.self) { index in
                 Circle()
                     .fill(cream.opacity(index < workDone ? 0.9 : 0.18))

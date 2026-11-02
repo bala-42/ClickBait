@@ -38,21 +38,21 @@ struct ScriptPicker: View {
                 Button(action: close) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                     .buttonStyle(.plain).foregroundStyle(NotchPalette.secondary).accessibilityLabel("Close the picker")
             }
-            .padding(.horizontal, 10).frame(height: 30)
+            .padding(.horizontal, 12).frame(height: 30)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NotchPalette.ink))
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 4) {
                     if loading {
-                        ProgressView().controlSize(.small).padding(.top, 30)
+                        ProgressView().controlSize(.small).padding(.top, 32)
                     } else if shown.isEmpty {
                         Text(query.isEmpty ? "No scripts found on this Mac." : "Nothing called that. Press Return to search inside files.")
-                            .font(.system(size: 11.5)).foregroundStyle(NotchPalette.secondary).padding(.top, 30)
+                            .font(.system(size: 11.5)).foregroundStyle(NotchPalette.secondary).padding(.top, 32)
                     }
                     ForEach(shown, id: \.self) { file in row(file) }
                 }
             }
         }
-        .padding(10)
+        .padding(12)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.black))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .task {
@@ -65,9 +65,9 @@ struct ScriptPicker: View {
 
     private func row(_ file: URL) -> some View {
         Button { open(file) } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: file.path)).resizable().frame(width: 22, height: 22)
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(file.deletingPathExtension().lastPathComponent).font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(NotchPalette.text).lineLimit(1)
                     Text(Self.details(file)).font(.system(size: 10.5)).foregroundStyle(NotchPalette.tertiary).lineLimit(1)

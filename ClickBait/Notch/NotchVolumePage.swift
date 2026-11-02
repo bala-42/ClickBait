@@ -29,7 +29,7 @@ struct NotchVolumePage: View {
                 Text(problem).font(.system(size: 10)).foregroundStyle(CompanionTone.problem).lineLimit(2)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .task {
             while !Task.isCancelled {
                 mixer.refresh()
@@ -39,8 +39,8 @@ struct NotchVolumePage: View {
     }
 
     private var sliders: some View {
-        HStack(alignment: .top, spacing: 18) {
-            VStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(spacing: 8) {
                 Image(systemName: "speaker.wave.2.fill").font(.system(size: 13)).frame(height: 24)
                 VolumeBar(value: mixer.mainVolume, maximum: 1) { mixer.setMainVolume($0) }
                 Text("\(Int((mixer.mainVolume * 100).rounded()))%").font(.system(size: 11).monospacedDigit()).foregroundStyle(NotchPalette.secondary)
@@ -51,7 +51,7 @@ struct NotchVolumePage: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 18) {
+                    HStack(alignment: .top, spacing: 20) {
                         ForEach(mixer.apps) { app in appColumn(app) }
                     }
                 }
@@ -63,7 +63,7 @@ struct NotchVolumePage: View {
 
     private func appColumn(_ app: SystemAudio.PlayingApp) -> some View {
         let level = mixer.volume(of: app)
-        return VStack(spacing: 6) {
+        return VStack(spacing: 8) {
             Group {
                 if let icon = app.icon { Image(nsImage: icon).resizable() } else { Image(systemName: "app.fill").resizable() }
             }
@@ -85,12 +85,12 @@ struct NotchVolumePage: View {
     }
 
     private var settings: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             settingRow("Output", "speaker.wave.2") { deviceMenu(mixer.outputs, chosen: mixer.output) { mixer.choose(output: $0) } }
             settingRow("System sounds", "bell") { deviceMenu(mixer.outputs, chosen: mixer.systemOutput) { mixer.choose(systemOutput: $0) } }
             settingRow("Microphone", "mic") { deviceMenu(mixer.inputs, chosen: mixer.input) { mixer.choose(input: $0) } }
             if let level = mixer.inputVolume {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Image(systemName: "mic.fill").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
                     Slider(value: Binding(get: { level }, set: { mixer.setInputVolume($0) }), in: 0...1).controlSize(.small).tint(NotchPalette.text)
                     Text("\(Int((level * 100).rounded()))%").font(.system(size: 11).monospacedDigit()).foregroundStyle(NotchPalette.secondary)

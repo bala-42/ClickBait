@@ -65,7 +65,7 @@ struct NotchAgentsPage: View {
                 .menuStyle(.borderlessButton).fixedSize()
                 .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(summary.cost, format: .currency(code: "USD")).font(.system(size: 26, weight: .medium).monospacedDigit())
                 Text("API value").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
             }
@@ -100,7 +100,7 @@ struct NotchAgentsPage: View {
                     .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
             }
             let peak = max(summary.trend.map { $0.values.reduce(0, +) }.max() ?? 0, 0.01)
-            HStack(alignment: .bottom, spacing: 3) {
+            HStack(alignment: .bottom, spacing: 4) {
                 ForEach(summary.trend.indices, id: \.self) { index in
                     let claude = summary.trend[index][.claude] ?? 0, codex = summary.trend[index][.codex] ?? 0
                     VStack(spacing: 0) {
@@ -149,10 +149,10 @@ struct NotchAgentsPage: View {
                 Spacer()
                 if days.streak > 0 { Text("🔥 \(days.streak)").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary) }
             }
-            HStack(alignment: .top, spacing: 14) {
-                HStack(spacing: 2) {
+            HStack(alignment: .top, spacing: 16) {
+                HStack(spacing: 4) {
                     ForEach(0..<13, id: \.self) { week in
-                        VStack(spacing: 2) {
+                        VStack(spacing: 4) {
                             ForEach(0..<7, id: \.self) { day in
                                 let index = week * 7 + day
                                 let cost = days.days[index]
@@ -190,7 +190,7 @@ struct NotchAgentsPage: View {
                 Label("Resets", systemImage: "chevron.left.forwardslash.chevron.right").cardTitle()
                 Spacer()
                 if let count = service.codexResets?.count, count > 0 {
-                    Text("\(count)").font(.system(size: 10, weight: .semibold)).padding(.horizontal, 6).padding(.vertical, 1)
+                    Text("\(count)").font(.system(size: 10, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 0)
                         .background(Self.codexColor.opacity(0.2), in: Capsule()).foregroundStyle(Self.codexColor)
                 }
             }
@@ -238,7 +238,7 @@ private struct LimitsCard: View {
                 Label(name, systemImage: symbol).cardTitle().foregroundStyle(NotchPalette.text)
                 Spacer()
                 if let plan = limits?.plan {
-                    Text(plan).font(.system(size: 10, weight: .semibold)).padding(.horizontal, 6).padding(.vertical, 1)
+                    Text(plan).font(.system(size: 10, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 0)
                         .background(color.opacity(0.2), in: Capsule()).foregroundStyle(color)
                 }
             }
@@ -254,7 +254,7 @@ private struct LimitsCard: View {
 
     private func window(_ title: String, _ window: AgentLimits.Window, length: TimeInterval) -> some View {
         let elapsed = window.resets.map { min(1, max(0, 1 - $0.timeIntervalSinceNow / length)) }
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Text(title)
                 if let resets = window.resets {
@@ -290,7 +290,7 @@ private struct SplitBar: View {
     var body: some View {
         let total = max(parts.map(\.0).reduce(0, +), 0.0001)
         GeometryReader { geometry in
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 ForEach(parts.indices.filter { parts[$0].0 > 0 }, id: \.self) { index in
                     Capsule().fill(parts[index].1).frame(width: max(3, (geometry.size.width - 2) * parts[index].0 / total))
                 }
@@ -304,9 +304,9 @@ private struct Card<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) { content }
+        VStack(alignment: .leading, spacing: 8) { content }
             .foregroundStyle(NotchPalette.text)
-            .padding(10)
+            .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
     }

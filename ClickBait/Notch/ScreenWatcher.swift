@@ -173,7 +173,7 @@ struct WatchPage: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if watcher.watching, let rule = watcher.rule {
                 HStack {
                     Image(systemName: "eye").foregroundStyle(NotchPalette.text)
@@ -204,7 +204,7 @@ struct WatchPage: View {
                     Spacer()
                     Button { if let rule { pick(rule) } } label: {
                         Label("Drag a box around it", systemImage: "viewfinder").font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
                             .background(NotchPalette.text.opacity(rule == nil ? 0.05 : 0.14), in: Capsule())
                     }
                     .buttonStyle(.plain).disabled(rule == nil)
