@@ -441,13 +441,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         // ⌥⇥ as if pressed, then Esc a moment later (nothing switches): live tests of the switcher.
-        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.switcher"), object: nil, queue: .main) { _ in
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.switcher"), object: nil, queue: .main) { note in
+            let go = (note.object as? String) == "go"  // "go": ⌥ let go, so it switches
             MainActor.assumeIsolated {
                 _ = WindowSwitcher.shared.handle(.tab(backwards: false))
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(2.5))
                     WindowSwitcher.shared.logState()
-                    _ = WindowSwitcher.shared.handle(.escape)
+                    _ = WindowSwitcher.shared.handle(go ? .released : .escape)
                 }
             }
         }
@@ -465,10 +466,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.app.notice("Health now: \(self.health.describeNow(), privacy: .public)")
             }
         }
-        // Presses a Quick panel tile that acts ("colour", "copyText"): live tests.
+        // Uses a Capture tool ("screenshot", "recording", "text", "colour"): live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.tile"), object: nil, queue: .main) { note in
-            guard let name = note.object as? String, let page = GalleryPage.allCases.first(where: { "\($0)" == name }) else { return }
-            MainActor.assumeIsolated { GalleryHooks.act(page) }
+            guard let name = note.object as? String, let tool = CaptureTool(rawValue: name) else { return }
+            MainActor.assumeIsolated { GalleryHooks.capture(tool) }
         }
         // The morning greeting now, whatever the day: live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.morning"), object: nil, queue: .main) { [weak self] _ in
@@ -1080,11 +1081,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         GalleryHooks.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .idle, force: true) }
-        GalleryHooks.act = { [weak self] page in
+        ScreenRecorder.shared.onSaved = { [weak self] file in
+            self?.overlay.showJobResult("saved the recording ✓ in Movies", tone: .action, force: true)
+            NSWorkspace.shared.activateFileViewerSelecting([file])
+        }
+        ScreenRecorder.shared.onProblem = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
+        GalleryHooks.capture = { [weak self] tool in
             guard let self else { return }
-            switch page {
-            case .copyText:
-                notch.makeRoom()
+            notch.makeRoom()
+            switch tool {
+            case .screenshot:
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))  // the notch out of the picture
+                    do {
+                        let said = try await Screenshots.take(.area, blocklist: self.settings.blocklist, ignoreClickBait: true)
+                        self.overlay.showJobResult(said, tone: .action, force: true)
+                    } catch {
+                        self.overlay.showJobResult(error.localizedDescription, tone: .error, force: true)
+                    }
+                }
+            case .recording:
+                Task { @MainActor in
+                    if ScreenRecorder.shared.recording { await ScreenRecorder.shared.stop() } else { await ScreenRecorder.shared.start(blocklist: self.settings.blocklist) }
+                }
+            case .text:
                 WatchAreaPicker.pick { [weak self] area in
                     guard let self, let area else { return }
                     Task { @MainActor in
@@ -1101,14 +1121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             case .colour:
-                notch.makeRoom()
                 NSColorSampler().show { [weak self] colour in
                     guard let self, let colour, let text = ColourText.describe(colour) else { return }
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text.hex, forType: .string)
                     overlay.showJobResult("copied \(text.hex) · \(text.rgb)", tone: .idle, force: true)
                 }
-            default: break
             }
         }
         ScreenWatcher.shared.onDone = { [weak self] text in

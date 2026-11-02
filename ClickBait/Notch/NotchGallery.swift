@@ -8,20 +8,20 @@ import SwiftUI
 /// own bubble). Pages join as they're built.
 enum GalleryPage: String, CaseIterable, Identifiable {
     // What nothing else in ClickBait does (user's calls, 2026-11-02: the rest repeated the ⚙
-    // bubble, the dock, Home's note, the shortcuts and the shelf). The second row acts at once.
-    case agents, watch, clipboard, copyText, health, colour
+    // bubble, the dock, Home's note, the shortcuts and the shelf).
+    case agents, watch, clipboard, capture, health, colour
 
     /// Acts on a tap instead of opening a page.
-    var acts: Bool { [.copyText, .colour].contains(self) }
+    var acts: Bool { self == .colour }
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .agents: "AI Agents"
         case .watch: "Watch"
-        case .copyText: "Copy text"
-        case .health: "Health"
+        case .capture: "Capture"
         case .colour: "Colour"
+        case .health: "Health"
         case .clipboard: "Clipboard"
         }
     }
@@ -29,9 +29,9 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         switch self {
         case .agents: "sparkles"
         case .watch: "eye"
-        case .copyText: "text.viewfinder"
-        case .health: "heart.text.square"
+        case .capture: "camera.viewfinder"
         case .colour: "eyedropper"
+        case .health: "heart.text.square"
         case .clipboard: "doc.on.clipboard"
         }
     }
@@ -45,7 +45,8 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         case .clipboard: (640, 260)
         case .watch: (640, 190)
         case .health: (640, 420)
-        case .copyText, .colour: GalleryPage.gridSize
+        case .capture: (640, 200)
+        case .colour: GalleryPage.gridSize
         }
     }
 }
@@ -72,7 +73,8 @@ struct GalleryView: View {
                 case .watch: WatchPage { rule in GalleryHooks.watch(rule) }
                 case .clipboard: ClipboardPage()
                 case .health: HealthPage()
-                case .copyText, .colour: EmptyView()  // they act on a tap
+                case .capture: CapturePage()
+                case .colour: EmptyView()  // acts on a tap
                 }
             }
             .padding(.horizontal, 8)
@@ -80,7 +82,7 @@ struct GalleryView: View {
             // The tiles, two rows of three (user's asks, 2026-11-02); the notch fits them (`gridSize`).
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                 ForEach(GalleryPage.allCases) { page in
-                    Button { page.acts ? GalleryHooks.act(page) : model.openGallery(page) } label: {
+                    Button { page.acts ? GalleryHooks.capture(.colour) : model.openGallery(page) } label: {
                         VStack(spacing: 8) {
                             Image(systemName: page.symbol).font(.system(size: 18, weight: .regular)).frame(height: 24)
                             Text(page.title).font(.system(size: 11, weight: .medium))

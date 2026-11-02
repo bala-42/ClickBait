@@ -91,11 +91,30 @@ final class WindowSwitcher {
         Self.bringForward(window)
     }
 
-    /// The app forward, then its window matched by title and frame, raised as main.
+    /// Its app brought forward the way the Dock does it (Launch Services: allowed from the
+    /// background, and macOS goes to that app's Space — a plain `activate()` or Accessibility's
+    /// "frontmost" was quietly refused: "doesn't take me anywhere", user's report, 2026-11-02),
+    /// then the window itself raised as main, unminimised.
     static func bringForward(_ window: SwitcherModel.Item) {
         guard let app = NSRunningApplication(processIdentifier: window.pid) else { return }
         if app.isHidden { app.unhide() }
-        app.activate()
+        raise(window)  // first, so the app comes forward on this window's Space
+        if let url = app.bundleURL {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+                Task { @MainActor in
+                    raise(window)  // again once in front: the right one of its windows on top
+                    Log.app.notice("Switcher: to \(app.localizedName ?? "?", privacy: .public), front \(NSWorkspace.shared.frontmostApplication?.processIdentifier == window.pid, privacy: .public)")
+                }
+            }
+        } else {
+            app.activate()
+        }
+    }
+
+    /// The window, matched by title and position through Accessibility: unminimised, main, raised.
+    private static func raise(_ window: SwitcherModel.Item) {
         let element = AXUIElementCreateApplication(window.pid)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success,
@@ -112,10 +131,9 @@ final class WindowSwitcher {
             AXValueGetValue(position as! AXValue, .cgPoint, &point)  // an AXValue of cgPoint, as asked
             return point
         }
-        let match = windows.first { title($0) == window.title && origin($0).map { abs($0.x - window.frame.minX) < 2 && abs($0.y - window.frame.minY) < 2 } ?? false }
-            ?? windows.first { title($0) == window.title }
-        // A window on another Space isn't in the app's list: activating went there already.
-        guard let match else { return }
+        // A window on another Space may not be in the app's list: coming forward goes there anyway.
+        guard let match = windows.first(where: { title($0) == window.title && origin($0).map { abs($0.x - window.frame.minX) < 2 && abs($0.y - window.frame.minY) < 2 } ?? false })
+            ?? windows.first(where: { title($0) == window.title }) else { return }
         AXUIElementSetAttributeValue(match, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         AXUIElementSetAttributeValue(match, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(match, kAXRaiseAction as CFString)

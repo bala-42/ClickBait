@@ -9,8 +9,8 @@ import SwiftUI
 enum GalleryHooks {
     /// Starts a watch: folds the notch, then a box is dragged around what to watch.
     static var watch: (ScreenWatch.Rule) -> Void = { _ in }
-    /// The second row's tiles that act on a tap: Copy text, Colour (set by the app delegate).
-    static var act: (GalleryPage) -> Void = { _ in }
+    /// Capture's tools (set by the app delegate).
+    static var capture: (CaptureTool) -> Void = { _ in }
     /// A pill by the cursor (set by the app delegate).
     static var say: (String) -> Void = { _ in }
 }
@@ -367,5 +367,67 @@ struct HealthPage: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+    }
+}
+
+// MARK: Capture
+
+enum CaptureTool: String, CaseIterable, Identifiable {
+    case screenshot, recording, text, colour
+    var id: String { rawValue }
+    /// Capture's own three; Colour is its own tile (user's call, 2026-11-02).
+    static let captureTools: [CaptureTool] = [.screenshot, .recording, .text]
+    var title: String {
+        switch self {
+        case .screenshot: "Screenshot"
+        case .recording: "Screen recording"
+        case .text: "Copy text"
+        case .colour: "Colour"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .screenshot: "camera.viewfinder"
+        case .recording: "record.circle"
+        case .text: "text.viewfinder"
+        case .colour: "eyedropper"
+        }
+    }
+    var note: String {
+        switch self {
+        case .screenshot: "drag an area, or space for a window"
+        case .recording: "this screen, with its sound"
+        case .text: "a box's text or QR code to the clipboard"
+        case .colour: "click any colour for its HEX"
+        }
+    }
+}
+
+/// Capture (user's asks, 2026-11-02, after Vorssaint's capture selector; it took Copy text's
+/// tile): screenshot, screen recording and copy text, in a row. Each folds the notch first.
+struct CapturePage: View {
+    var recorder = ScreenRecorder.shared
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(CaptureTool.captureTools) { tool in
+                let stop = tool == .recording && recorder.recording
+                Button { GalleryHooks.capture(tool) } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: stop ? "stop.circle.fill" : tool.symbol).font(.system(size: 20))
+                            .foregroundStyle(stop ? Color.red : NotchPalette.text).frame(height: 24)
+                        Text(stop ? "Stop recording" : tool.title).font(.system(size: 12, weight: .semibold))
+                        Text(tool.note).font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary)
+                            .multilineTextAlignment(.center).lineLimit(2)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, minHeight: 104)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PlayerPressStyle())
+            }
+        }
+        .foregroundStyle(NotchPalette.text)
     }
 }
