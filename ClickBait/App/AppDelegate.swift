@@ -383,6 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }
         // Studio's prompter shortcuts, only while it's up: ⌃⌘P, ⌃⌘↑ ↓, ⌃⌘← →.
         WindowSwitcher.shared.enabled = { [weak self] in self?.settings.windowSwitcher ?? false }
+        WindowPictures.shared.blocked = { [weak self] bundleID in self?.settings.blocklist.isBlocked(bundleID: bundleID) ?? true }
+        if settings.windowSwitcher { WindowPictures.shared.watch() }
         escape.onSwitcher = { key in WindowSwitcher.shared.handle(key) }
         escape.onPrompterKey = { code in
             let studio = StudioModel.shared

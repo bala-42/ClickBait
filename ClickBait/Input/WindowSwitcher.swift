@@ -171,20 +171,81 @@ final class SwitcherModel {
     func move(backwards: Bool) { selected = WindowSwitch.step(selected, count: windows.count, backwards: backwards) }
 
     /// Each window's picture, small, as they come.
+    /// Each window's picture: the last one taken (`WindowPictures`) at once, then a fresh one
+    /// wherever macOS allows it (ScreenCaptureKit's on-screen flag isn't reliable, so each is tried).
     func loadThumbnails() async {
+        for index in windows.indices { windows[index].thumbnail = WindowPictures.shared.picture(of: windows[index].id) }
         guard let content else { return }
         for index in windows.indices {
-            guard let window = content.windows.first(where: { $0.windowID == windows[index].id }) else { continue }
-            let configuration = SCStreamConfiguration()
-            let scale = 360 / max(window.frame.width, 1)
-            configuration.width = Int(window.frame.width * scale * 2)
-            configuration.height = Int(window.frame.height * scale * 2)
-            configuration.showsCursor = false
-            if let image = try? await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration),
-               windows.indices.contains(index), windows[index].id == window.windowID {
-                windows[index].thumbnail = NSImage(cgImage: image, size: NSSize(width: image.width / 2, height: image.height / 2))
+            guard let window = content.windows.first(where: { $0.windowID == windows[index].id }),
+                  let picture = await WindowPictures.capture(window) else { continue }
+            WindowPictures.shared.keep(picture, for: window.windowID)
+            if windows.indices.contains(index), windows[index].id == window.windowID { windows[index].thumbnail = picture }
+        }
+    }
+}
+
+/// The windows' last pictures (user's report, 2026-11-02: "some only show app logos"): macOS
+/// lets a window be captured only while it's on screen, so each is taken whenever it is — on
+/// switching Space or app (`watch()`) and when the switcher opens — and shown from here when its
+/// window is on another Space or minimised. Memory only, the newest 80; blocked apps never.
+@MainActor
+final class WindowPictures {
+    static let shared = WindowPictures()
+    var blocked: (String) -> Bool = { _ in false }
+    private var pictures: [UInt32: NSImage] = [:]
+    private var order: [UInt32] = []
+    private var pending: Task<Void, Never>?
+
+    func picture(of window: UInt32) -> NSImage? { pictures[window] }
+
+    func keep(_ picture: NSImage, for window: UInt32) {
+        pictures[window] = picture
+        order.removeAll { $0 == window }
+        order.append(window)
+        while order.count > 80 { pictures[order.removeFirst()] = nil }
+    }
+
+    /// Takes the on-screen windows' pictures a moment after each Space or app switch.
+    func watch() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.soon() }
             }
         }
+        soon()
+    }
+
+    private func soon() {
+        pending?.cancel()
+        pending = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.takeOnScreen()
+        }
+    }
+
+    private func takeOnScreen() async {
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return }
+        let own = ProcessInfo.processInfo.processIdentifier
+        for window in content.windows where window.windowLayer == 0 && !(window.title ?? "").isEmpty
+            && window.frame.width >= 80 && window.frame.height >= 60 {
+            guard let app = window.owningApplication, app.processID != own, !blocked(app.bundleIdentifier) else { continue }
+            if let picture = await Self.capture(window) { keep(picture, for: window.windowID) }
+        }
+    }
+
+    /// A window's picture, 360 pt wide (at 2×).
+    static func capture(_ window: SCWindow) async -> NSImage? {
+        let configuration = SCStreamConfiguration()
+        let scale = 360 / max(window.frame.width, 1)
+        configuration.width = Int(window.frame.width * scale * 2)
+        configuration.height = Int(window.frame.height * scale * 2)
+        configuration.showsCursor = false
+        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration)
+        else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width / 2, height: image.height / 2))
     }
 }
 
