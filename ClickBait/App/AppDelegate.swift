@@ -416,6 +416,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // Presses the showing card's button ("yes"/"no"): live tests of cards like peek's extract.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.card"), object: nil, queue: .main) { [weak self] note in
+            let yes = (note.object as? String) == "yes"
+            MainActor.assumeIsolated { self?.confirm.debugAnswer(yes) }
+        }
         // A watch on the main screen's top-right corner for a word: live tests of Watch.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.watch"), object: nil, queue: .main) { [weak self] note in
             guard let word = note.object as? String else { return }

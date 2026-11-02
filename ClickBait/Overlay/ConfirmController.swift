@@ -133,6 +133,11 @@ final class ConfirmController {
         choiceAnswer(answer)
     }
 
+    #if DEBUG
+    /// Presses the showing card's button from a live test (`org.clickbait.debug.card`).
+    func debugAnswer(_ yes: Bool) { answer(yes) }
+    #endif
+
     private func answer(_ yes: Bool) {
         guard panel != nil else { return }
         hide()

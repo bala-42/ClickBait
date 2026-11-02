@@ -1111,7 +1111,10 @@ extension AskCoordinator {
         case .success(let action):
             // Copy-making file jobs can take minutes (a big video): they go to the dock as a
             // Shamrock tile and ClickBait is free at once (user's ask, 2026-11-02).
-            if case .file(let file) = action, file.makesCopies, let jobs = backgroundJobs, jobs.hasRoom {
+            if case .file(let file) = action, file.makesCopies, let jobs = backgroundJobs {
+                // The dock full: still in the background, never holding the companion green
+                // (user's ask, 2026-11-02); a pill says when it's done.
+                guard jobs.hasRoom else { return runFileQuietly(file, files: files, speak: speak) }
                 return startFileJob(file, title: Self.workingMessage(for: action), jobs: jobs, speak: speak, files: files)
             }
             onActionStarted?(Self.workingMessage(for: action))
@@ -1171,6 +1174,28 @@ extension AskCoordinator {
             state = .idle
         }
         onActionDone?(note)
+        return .success(note)
+    }
+
+    /// A file job without a dock tile (the dock is full): ClickBait is free at once; the result
+    /// is a pill by the cursor.
+    private func runFileQuietly(_ file: FileAction, files: [URL]?, speak: Bool) -> ActionOutcome {
+        Log.ask.notice("File job started without a tile (the dock is full)")
+        Task { @MainActor [weak self] in
+            do {
+                let (message, _) = try await FileActions.run(file, reveal: false, files: files)
+                self?.onActionDone?(message)
+            } catch {
+                self?.show(error: error.localizedDescription)
+            }
+        }
+        let note = "On it"
+        if speak {
+            speaker.speak(note + ".")
+            state = .speaking
+        } else if state == .thinking {
+            state = .idle
+        }
         return .success(note)
     }
 

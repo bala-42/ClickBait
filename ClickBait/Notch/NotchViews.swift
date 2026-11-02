@@ -119,14 +119,6 @@ struct NotchView: View {
     /// top left (user's idea, 2026-10-24), and back into its square on the way home.
     @Namespace private var tabBeans
 
-    /// Settings' way back, named after the tab it came from.
-    private static func backLabel(_ tab: NotchController.Model.Tab) -> String {
-        switch tab {
-        case .shelf: "Back to Shelf"
-        case .ask: "Back to Lookup"
-        case .home, .settings, .mirror, .music, .gallery, .timer, .volume: "Back to Home"
-        }
-    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Open (or showing a HUD) on this display; the others draw folded.
@@ -203,8 +195,9 @@ struct NotchView: View {
                         SettingsView(settings: settings, speech: speech, speaker: speaker,
                                      searxng: searxng, menu: model.menuBar, health: model.health,
                                      permissions: model.permissions, startPage: model.settingsPage,
-                                     returnLabel: Self.backLabel(model.settingsReturnTab),
-                                     onBack: { onTabChange(model.settingsReturnTab) }, onCollapse: onCollapse)
+                                     // Closing Settings, back or ✕, lands on Home (user's ask, 2026-11-02).
+                                     returnLabel: "Back to Home",
+                                     onBack: { onTabChange(.home) }, onCollapse: { onTabChange(.home) })
                             .frame(width: openFrame.width, height: openFrame.height, alignment: .top)
                             .transition(.opacity)
                     }

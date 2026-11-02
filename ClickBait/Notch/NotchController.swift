@@ -61,7 +61,6 @@ final class NotchController {
         /// brightness sky (else the volume's Pac-Man).
         var hud: (level: Double, muted: Bool, sky: Bool)?
         var tab: Tab = .home
-        var settingsReturnTab: Tab = .home
         enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer, volume }
         /// The gallery's open page (nil: its tiles).
         var galleryPage: GalleryPage?
@@ -125,7 +124,11 @@ final class NotchController {
         /// Typing, in Settings, the mirror or a conversation: only Esc, ✕ or a click elsewhere folds it.
         /// Open until ✕ or Esc, not folded when the pointer leaves: the shelf too (user's ask,
         /// 2026-10-25), so files can be dragged in and out at leisure.
-        var holdsOpen: Bool { editing || tab == .settings || tab == .mirror || tab == .shelf || showsChat }
+        /// The bubbles' pages (gallery, timer, volume) stay open with their bubbles until left
+        /// (user's ask, 2026-11-02), like Settings and the shelf.
+        var holdsOpen: Bool {
+            editing || [.settings, .mirror, .shelf, .gallery, .timer, .volume].contains(tab) || showsChat
+        }
         let note: Note
         init(note: Note) { self.note = note }
     }
@@ -440,13 +443,14 @@ final class NotchController {
 
     /// Shown with the open notch on Home and on the pages they open; tucked otherwise.
     private func placeBubbles() {
-        let tabs: Set<Model.Tab> = [.home, .gallery, .timer, .volume]
+        // Settings is a bubble's page too: the bubbles stay beside it until it's left.
+        let tabs: Set<Model.Tab> = [.home, .gallery, .timer, .volume, .settings]
         let active = model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)
         let frame = active.flatMap { targets[$0] }
         let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && frame != nil
         let go: (Model.Tab) -> Void = { [weak self] tab in
             guard let self else { return }
-            if tab == .settings { model.settingsReturnTab = model.tab; model.settingsPage = .general }
+            if tab == .settings { model.settingsPage = .general }
             if tab != .gallery { model.galleryPage = nil }
             model.tab = tab
             place()
@@ -614,7 +618,6 @@ final class NotchController {
             onDragIn: { [weak self] in self?.dragArrived() },
             onTabChange: { [weak self] tab in
                 guard let self else { return }
-                if tab == .settings, model.tab != .settings { model.settingsReturnTab = model.tab }
                 model.editing = false  // the field it was typing in is gone
                 model.tab = tab
                 self.place()
