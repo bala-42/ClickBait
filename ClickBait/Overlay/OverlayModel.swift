@@ -19,6 +19,9 @@ enum CompanionTone: Equatable {
     /// Wine (`problem`): something went wrong. The companion turns Wine with its problem pill,
     /// so the two always match (user's rule, 2026-10-24).
     case error
+    /// Claude orange (#D97757) and Codex blue (#7B8CF6): their notices, as on the AI Agents
+    /// page (user's ask, 2026-11-02).
+    case claude, codex
 
     /// Wine (#9B1B48): something went wrong — the bean and the companion's problem pills
     /// (user's pick, 2026-10-21). Not one of the states, so a problem never reads as one.
@@ -30,6 +33,8 @@ enum CompanionTone: Equatable {
         case .processing: Color(red: 1.0, green: 117.0 / 255, blue: 24.0 / 255)
         case .action: Color(red: 0.0, green: 0.62, blue: 0.38)
         case .capture: Color(red: 0.98, green: 0.22, blue: 0.36)
+        case .claude: Color(hex: 0xD97757)
+        case .codex: Color(hex: 0x7B8CF6)
         case .tutorial: Color(red: 181.0 / 255, green: 126.0 / 255, blue: 220.0 / 255)
         case .error: Self.problem
         }

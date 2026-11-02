@@ -35,4 +35,11 @@ struct AgentNoticeTests {
         #expect(NSDictionary(dictionary: removed).isEqual(to: users))
         #expect(AgentHooks.removing(from: AgentHooks.adding(command: "clickbait-agent-event", to: [:])).isEmpty)
     }
+
+    @Test func keepsOnlyWellFormedTTY() {
+        let good = #"{"tool":"claude","app":"com.apple.Terminal","tty":"ttys003","event":{"hook_event_name":"Stop","cwd":"/x/ClickBait"}}"#
+        #expect(AgentNotice.fromHookLine(good)?.tty == "ttys003")
+        let bad = #"{"tool":"claude","tty":"ttys0\" & do shell script \"x","event":{"hook_event_name":"Stop"}}"#
+        #expect(AgentNotice.fromHookLine(bad)?.tty == nil)
+    }
 }

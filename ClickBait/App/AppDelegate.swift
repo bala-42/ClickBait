@@ -1088,25 +1088,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// By the cursor (user's rule: notices at the companion). Skipped while the app it runs in is
     /// in front: the person is watching it. "Needs you" is a card whose [go there] brings that
     /// app forward; "finished" is a pill.
+    /// Terminal's tab on `tty` selected, its window in front, Terminal active. `tty` is checked
+    /// well-formed (`AgentNotice`), so it's safe inside the script.
+    private static func bringTerminalTab(_ tty: String) {
+        let script = """
+            tell application "Terminal"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "/dev/\(tty)" then
+                            set selected of t to true
+                            set index of w to 1
+                        end if
+                    end repeat
+                end repeat
+                activate
+            end tell
+            """
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error { Log.app.error("Go there: \(error, privacy: .public)") }
+    }
+
     private func showAgentNotice(_ notice: AgentNotice) {
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if let app = notice.app, app == front { return }
         if notice.app == nil, notice.tool == .codex, front == "com.openai.codex" { return }
         Log.app.notice("Agent notice: \(notice.toolName, privacy: .public) \(String(describing: notice.kind), privacy: .private)")
+        let tone: CompanionTone = notice.tool == .claude ? .claude : .codex
         switch notice.kind {
         case .finished:
             SoundCues.play(.done, enabled: settings.soundCues)
-            overlay.showJobResult(notice.line, tone: .idle, force: !coordinator.isBusy)
+            overlay.showJobResult(notice.line, tone: tone, force: !coordinator.isBusy)
         case .needsYou(let detail):
             SoundCues.play(.needsYou, enabled: settings.soundCues)
             guard !coordinator.isBusy, coordinator.pendingAction == nil, let app = notice.app,
                   let running = NSRunningApplication.runningApplications(withBundleIdentifier: app).first else {
-                overlay.showJobResult(notice.line, tone: .processing, force: true)
+                overlay.showJobResult(notice.line, tone: tone, force: true)
                 return
             }
             confirm.show(notice.line, at: overlay.companionTopLeft, confirm: "go there", cancel: "later",
-                         hint: detail, tone: .processing, waitTime: .seconds(15)) { yes in
-                if yes { running.activate() }
+                         hint: detail, tone: tone, waitTime: .seconds(15)) { yes in
+                guard yes else { return }
+                // Terminal: that very tab, on whichever display its window is (user's ask, 2026-11-02).
+                if app == "com.apple.Terminal", let tty = notice.tty {
+                    Self.bringTerminalTab(tty)
+                } else {
+                    running.activate()
+                }
             }
         }
     }

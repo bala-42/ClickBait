@@ -19,6 +19,9 @@ public struct AgentNotice: Equatable, Sendable {
     public let project: String?
     /// The app it runs in (Terminal, iTerm, VS Code, the Claude app), as its bundle identifier.
     public let app: String?
+    /// The terminal tab it runs in ("ttys000"), so "go there" can bring that very tab forward
+    /// (user's ask, 2026-11-02). Only a well-formed tty name is kept.
+    public var tty: String? = nil
 
     public var toolName: String { tool == .claude ? "Claude Code" : "Codex" }
 
@@ -40,9 +43,10 @@ public struct AgentNotice: Equatable, Sendable {
               let event = object["event"] as? [String: Any] else { return nil }
         let app = (object["app"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let project = (event["cwd"] as? String).map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
+        let tty = (object["tty"] as? String).flatMap { $0.range(of: #"^ttys?\d{1,4}$"#, options: .regularExpression) != nil ? $0 : nil }
         switch event["hook_event_name"] as? String {
-        case "Notification": return AgentNotice(tool: tool, kind: .needsYou(detail: event["message"] as? String), project: project, app: app)
-        case "Stop": return AgentNotice(tool: tool, kind: .finished, project: project, app: app)
+        case "Notification": return AgentNotice(tool: tool, kind: .needsYou(detail: event["message"] as? String), project: project, app: app, tty: tty)
+        case "Stop": return AgentNotice(tool: tool, kind: .finished, project: project, app: app, tty: tty)
         default: return nil
         }
     }
