@@ -1165,21 +1165,38 @@ private struct ViewAnchor: NSViewRepresentable {
 private struct AirDropPad: View {
     let shelf: ShelfStore
     @State private var targeted = false
+    private let nearby = NearbyMacs.shared
 
     var body: some View {
-        let sender = shelf.airDrop
         let items = AirDropSender.sendable(NotchPanel.airDropItems(shelf: shelf.files, selected: shelf.selectedFiles))
-        Button {
+        pad(items)
+            // The other Macs running ClickBait nearby, by name (user's choice, 2026-11-02):
+            // click one to send it the shelf's files, or drop files on it. AirDrop stays the
+            // bean's click, for iPhones and other people's Macs.
+            .overlay(alignment: .bottom) {
+                if !nearby.peers.isEmpty {
+                    VStack(spacing: 4) {
+                        ForEach(nearby.peers.prefix(2)) { peer in NearbyPill(peer: peer, shelf: shelf, items: items) }
+                    }
+                    .padding(.bottom, 8)
+                }
+            }
+    }
+
+    private func pad(_ items: [URL]) -> some View {
+        let sender = shelf.airDrop
+        return Button {
             sender.send(items)
         } label: {
             VStack(spacing: 4) {
                 AirDropBean(look: beanLook(sender.status))
                 // The alien's pad (user's name for it, 2026-11-02); it still sends by AirDrop.
                 Text("airea 51").font(.system(size: 12, weight: .semibold)).foregroundStyle(NotchPalette.text)
-                Text(subtitle(sender.status, sending: items.count))
+                Text(nearbySubtitle ?? subtitle(sender.status, sending: items.count))
                     .font(.system(size: 10)).foregroundStyle(NotchPalette.secondary)
-                    .multilineTextAlignment(.center).lineLimit(2)
+                    .multilineTextAlignment(.center).lineLimit(nearby.peers.isEmpty ? 2 : 1)
                     .padding(.horizontal, 8)
+                if !nearby.peers.isEmpty { Spacer().frame(height: CGFloat(min(nearby.peers.count, 2)) * 24) }
             }
             .frame(width: 120)
             .frame(maxHeight: .infinity)
@@ -1208,6 +1225,17 @@ private struct AirDropPad: View {
         .accessibilityLabel("airea 51, AirDrop")
         .accessibilityValue(subtitle(sender.status, sending: items.count))
         .accessibilityHint("Opens the AirDrop window to choose a person or device nearby")
+    }
+
+    /// How a send to a nearby Mac is going, while it is.
+    private var nearbySubtitle: String? {
+        switch nearby.status {
+        case .idle: nil
+        case .waiting(let name): "waiting for \(name)…"
+        case .sending(let name, let progress): "to \(name) · \(Int(progress * 100))%"
+        case .sent(let name, let count): "sent \(count) to \(name) ✓"
+        case .failed(let why): why
+        }
     }
 
     private func isChoosing(_ status: AirDropSender.Status) -> Bool {
@@ -1701,5 +1729,34 @@ private struct RubyGlow: View {
             guard !reduceMotion else { bright = true; return }
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { bright = true }
         }
+    }
+}
+
+/// One nearby Mac in the pad: click to send the shelf's selection (all of it when nothing is
+/// selected), or drop files on it.
+private struct NearbyPill: View {
+    let peer: NearbyMacs.Peer
+    let shelf: ShelfStore
+    let items: [URL]
+    @State private var targeted = false
+
+    var body: some View {
+        Button { NearbyMacs.shared.send(items, to: peer) } label: {
+            Label(peer.name, systemImage: "laptopcomputer")
+                .font(.system(size: 10, weight: .semibold)).lineLimit(1)
+                .padding(.horizontal, 8).frame(height: 20)
+                .frame(maxWidth: 104)
+                .background(NotchPalette.highlight.opacity(targeted ? 0.6 : 0.22), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(NotchPalette.text)
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = AirDropSender.sendable(urls)
+            guard !files.isEmpty else { return false }
+            NearbyMacs.shared.send(files, to: peer)
+            return true
+        } isTargeted: { targeted = $0 }
+        .help("Send to \(peer.name), Mac to Mac")
+        .accessibilityLabel("Send to \(peer.name)")
     }
 }

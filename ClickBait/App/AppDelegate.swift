@@ -1016,6 +1016,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         ConfirmController.notchFrames = { [weak self] in self?.notch.visibleFrames ?? [] }
+        NearbyMacs.shared.ask = { [weak self] question, answer in
+            guard let self else { return answer(false) }
+            confirm.show(question, at: overlay.companionTopLeft, confirm: "accept", cancel: "no",
+                         hint: nil, tone: .action, waitTime: .seconds(60)) { answer($0) }
+        }
+        NearbyMacs.shared.onReceived = { [weak self] from, files in
+            guard let self else { return }
+            SoundCues.play(.done, enabled: settings.soundCues)
+            overlay.showJobResult("got \(files.count == 1 ? "1 file" : "\(files.count) files") from \(from) ✓ in Downloads", tone: .idle, force: true)
+            NSWorkspace.shared.activateFileViewerSelecting(files)
+        }
+        NearbyMacs.shared.start()
         GalleryHooks.watch = { [weak self] rule in
             guard let self else { return }
             notch.makeRoom()

@@ -28,12 +28,18 @@
 	<string>ClickBait controls Finder, Notes and System Events to carry out your commands, like making a note or switching Dark Mode, and Music or Spotify from its notch panel.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>ClickBait sets each app's volume in its mixer: it takes that app's sound and plays it at the level you choose. Nothing is recorded or leaves your Mac.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_clickbait-send._tcp</string>
+	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>With Morning suggestions on, ClickBait reads today's events on this Mac to suggest what to ask.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>ClickBait shows your camera in its notch Mirror while you have it open. Photos you take are kept only if you save or drag them out.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 ClickBait contributors. GNU AGPL-3.0.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ClickBait finds the other Macs running ClickBait on your network, so airea 51 can send them files straight from Mac to Mac.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ClickBait listens while you hold Control+Option so it can hear your question, or fn+Control so it can type what you say.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
