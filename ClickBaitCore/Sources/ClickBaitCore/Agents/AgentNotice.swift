@@ -45,7 +45,14 @@ public struct AgentNotice: Equatable, Sendable {
         let project = (event["cwd"] as? String).map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
         let tty = (object["tty"] as? String).flatMap { $0.range(of: #"^ttys?\d{1,4}$"#, options: .regularExpression) != nil ? $0 : nil }
         switch event["hook_event_name"] as? String {
-        case "Notification": return AgentNotice(tool: tool, kind: .needsYou(detail: event["message"] as? String), project: project, app: app, tty: tty)
+        case "Notification":
+            // Claude Code's idle reminder, a minute after it finished ("Claude is waiting for your
+            // input"): "finished" already said so (user's report, 2026-11-03: a second notice).
+            let message = event["message"] as? String
+            if event["notification_type"] as? String == "idle_prompt" || message?.localizedCaseInsensitiveContains("waiting for your input") == true {
+                return nil
+            }
+            return AgentNotice(tool: tool, kind: .needsYou(detail: message), project: project, app: app, tty: tty)
         case "Stop": return AgentNotice(tool: tool, kind: .finished, project: project, app: app, tty: tty)
         default: return nil
         }

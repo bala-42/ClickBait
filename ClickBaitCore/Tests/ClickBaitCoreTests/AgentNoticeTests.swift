@@ -42,4 +42,11 @@ struct AgentNoticeTests {
         let bad = #"{"tool":"claude","tty":"ttys0\" & do shell script \"x","event":{"hook_event_name":"Stop"}}"#
         #expect(AgentNotice.fromHookLine(bad)?.tty == nil)
     }
+
+    @Test func skipsTheIdleReminder() {
+        let idle = #"{"tool":"claude","event":{"hook_event_name":"Notification","message":"Claude is waiting for your input","notification_type":"idle_prompt"}}"#
+        #expect(AgentNotice.fromHookLine(idle) == nil)
+        let ask = #"{"tool":"claude","event":{"hook_event_name":"Notification","message":"Claude needs your permission","notification_type":"permission_prompt"}}"#
+        #expect(AgentNotice.fromHookLine(ask)?.kind == .needsYou(detail: "Claude needs your permission"))
+    }
 }
