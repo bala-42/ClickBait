@@ -3,6 +3,7 @@ import ClickBaitCore
 import Observation
 import OSLog
 import SwiftUI
+import Vision
 
 /// Watch (user's ask, 2026-11-02): an area of the screen read every 2 s (`TextReader`, on this
 /// Mac; a picture's rough fingerprint where it holds no text) until `ScreenWatch` says it's done,
@@ -54,14 +55,30 @@ final class ScreenWatcher {
 
     /// The area's text (or, holding none, its picture's fingerprint), or nil when it couldn't be read.
     private func read(_ area: CGRect, blocklist: AppBlocklist) async -> String? {
+        guard let image = await Self.picture(of: area, blocklist: blocklist, with: capturer) else { return nil }
+        let text = await TextReader.read(image).map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? Self.fingerprint(image) : text
+    }
+
+    /// That part of the screen (global points), at full resolution; ClickBait's own windows left out.
+    static func picture(of area: CGRect, blocklist: AppBlocklist, with capturer: ScreenCapturer = ScreenCapturer()) async -> CGImage? {
         guard let capture = try? await capturer.captureDisplayUnderCursor(excluding: blocklist, at: NSPoint(x: area.midX, y: area.midY)) else { return nil }
         let scale = capture.backingScale
         let crop = CGRect(x: (area.minX - capture.displayFrame.minX) * scale,
                           y: (capture.displayFrame.maxY - area.maxY) * scale,
                           width: area.width * scale, height: area.height * scale).integral
-        guard let image = capture.image.cropping(to: crop) else { return nil }
-        let text = await TextReader.read(image).map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? Self.fingerprint(image) : text
+        return capture.image.cropping(to: crop)
+    }
+
+    /// Copy text (user's ask, 2026-11-02, after Vorssaint's): a QR code's contents, else the
+    /// area's text, line by line; nil when there's nothing to read.
+    static func copyableText(in image: CGImage) async -> (text: String, isCode: Bool)? {
+        let request = VNDetectBarcodesRequest()
+        request.symbologies = [.qr]
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        if let code = request.results?.first?.payloadStringValue, !code.isEmpty { return (code, true) }
+        let text = await TextReader.read(image).map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : (text, false)
     }
 
     /// A 16 × 16 grey thumbnail as text: the same while the picture holds still.

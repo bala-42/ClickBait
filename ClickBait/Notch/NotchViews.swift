@@ -476,11 +476,14 @@ private struct OpenNotch: View {
                 // Where the pearl bean lands (`BeanPlace`).
                 Color.clear.frame(width: 18, height: 18).padding(.leading, 16).padding(.trailing, -8)
             }
-            // The morning greeting's narrow notch puts the camera over the middle of the header:
-            // only the bean and ✕, clear of it either side (user's report, 2026-11-02).
-            if model.morning != nil {
+            // A narrow notch puts the camera over the middle of the header: only the bean and ✕,
+            // clear of it either side (user's reports, 2026-11-02).
+            if model.compactHeader {
                 Spacer()
-                NotchHeaderIcon(symbol: "xmark", label: "Close") { onCollapse() }.padding(.trailing, 16)
+                NotchHeaderIcon(symbol: "xmark", label: model.tab == .home ? "Close" : "Back to Home") {
+                    if model.tab == .home { onCollapse() } else { onTabChange(.home) }
+                }
+                .padding(.trailing, 16)
             } else {
             // A cheer in place of the tabs (Ask and Shelf are pills): clicked, it goes home, or
             // at home says something new. Same type as the companion's pills.

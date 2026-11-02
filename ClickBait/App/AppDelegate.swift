@@ -121,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Lets Ollama free the models it kept loaded for ClickBait.
     func applicationWillTerminate(_ notification: Notification) {
         AppVolumeMixer.shared.stopAll()  // every app's own sound back, untapped
+        KeepAwake.shared.stop()
         guard !Self.isHostingTests else { return }
         backgroundJobs.removeAll()
         capsules.removeAll()
@@ -421,6 +422,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
             }
+        }
+        // Presses a Quick panel tile that acts ("keepAwake", "colour", "copyText"): live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.tile"), object: nil, queue: .main) { note in
+            guard let name = note.object as? String, let page = GalleryPage.allCases.first(where: { "\($0)" == name }) else { return }
+            MainActor.assumeIsolated { GalleryHooks.act(page) }
         }
         // The morning greeting now, whatever the day: live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.morning"), object: nil, queue: .main) { [weak self] _ in
@@ -1020,6 +1026,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let area else { return }
                 ScreenWatcher.shared.start(area: area, rule: rule, blocklist: settings.blocklist)
                 overlay.showJobResult("watching \(rule.summary)", tone: .idle, force: true)
+            }
+        }
+        GalleryHooks.act = { [weak self] page in
+            guard let self else { return }
+            switch page {
+            case .copyText:
+                notch.makeRoom()
+                WatchAreaPicker.pick { [weak self] area in
+                    guard let self, let area else { return }
+                    Task { @MainActor in
+                        guard let image = await ScreenWatcher.picture(of: area, blocklist: self.settings.blocklist),
+                              let found = await ScreenWatcher.copyableText(in: image) else {
+                            self.overlay.showJobResult("no text there", tone: .error, force: true)
+                            return
+                        }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(found.text, forType: .string)
+                        let words = found.text.split(whereSeparator: \.isWhitespace).count
+                        self.overlay.showJobResult(found.isCode ? "copied the code: \(found.text.prefix(40))" : "copied \(words == 1 ? "1 word" : "\(words) words") ✓",
+                                                   tone: .action, force: true)
+                    }
+                }
+            case .keepAwake:
+                overlay.showJobResult(KeepAwake.shared.next(), tone: .idle, force: true)
+            case .colour:
+                notch.makeRoom()
+                NSColorSampler().show { [weak self] colour in
+                    guard let self, let colour, let text = ColourText.describe(colour) else { return }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text.hex, forType: .string)
+                    overlay.showJobResult("copied \(text.hex) · \(text.rgb)", tone: .idle, force: true)
+                }
+            default: break
             }
         }
         ScreenWatcher.shared.onDone = { [weak self] text in

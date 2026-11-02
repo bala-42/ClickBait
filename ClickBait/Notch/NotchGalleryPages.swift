@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.pwr_mgt
 import ClickBaitCore
 import Observation
 import SwiftUI
@@ -8,6 +9,8 @@ import SwiftUI
 enum GalleryHooks {
     /// Starts a watch: folds the notch, then a box is dragged around what to watch.
     static var watch: (ScreenWatch.Rule) -> Void = { _ in }
+    /// The second row's tiles: Copy text, Keep awake, Colour (set by the app delegate).
+    static var act: (GalleryPage) -> Void = { _ in }
 }
 
 // MARK: Clipboard
@@ -113,5 +116,70 @@ private struct EmptyPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
+    }
+}
+
+// MARK: Keep awake
+
+/// Keep awake (user's ask, 2026-11-02, after Vorssaint's): a tap keeps the Mac and its screen
+/// awake for an hour, another until turned off, a third lets it sleep again — macOS's own power
+/// assertion, dropped when ClickBait quits. Not with the lid closed (that needs an administrator
+/// setting).
+@MainActor @Observable
+final class KeepAwake {
+    static let shared = KeepAwake()
+    private(set) var endsAt: Date?
+    private(set) var on = false
+    /// The tile's words while on: "59 min", "on".
+    private(set) var left: String?
+    @ObservationIgnored private var assertion: IOPMAssertionID = 0
+    @ObservationIgnored private var ticker: Task<Void, Never>?
+
+    private init() {}
+
+    /// Off → an hour → until off → off. What it says.
+    func next() -> String {
+        if !on { start(until: Date().addingTimeInterval(3600)); return "awake for an hour ✓" }
+        if endsAt != nil { start(until: nil); return "awake until you turn it off ✓" }
+        stop()
+        return "your Mac can sleep again"
+    }
+
+    private func start(until end: Date?) {
+        if !on {
+            IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+                                        IOPMAssertionLevel(kIOPMAssertionLevelOn), "ClickBait: Keep awake" as CFString, &assertion)
+        }
+        (on, endsAt) = (true, end)
+        ticker?.cancel()
+        ticker = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled, on {
+                if let endsAt {
+                    let minutes = Int((endsAt.timeIntervalSinceNow / 60).rounded(.up))
+                    if minutes <= 0 { stop(); return }
+                    left = "\(minutes) min"
+                } else {
+                    left = "awake"
+                }
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+    }
+
+    func stop() {
+        ticker?.cancel()
+        if on { IOPMAssertionRelease(assertion) }
+        (on, endsAt, left) = (false, nil, nil)
+    }
+}
+
+// MARK: Colour
+
+/// "#A3CD6D" and "rgb(163, 205, 109)" for a picked colour, in sRGB.
+enum ColourText {
+    static func describe(_ colour: NSColor) -> (hex: String, rgb: String)? {
+        guard let srgb = colour.usingColorSpace(.sRGB) else { return nil }
+        let (r, g, b) = (Int((srgb.redComponent * 255).rounded()), Int((srgb.greenComponent * 255).rounded()), Int((srgb.blueComponent * 255).rounded()))
+        return (String(format: "#%02X%02X%02X", r, g, b), "rgb(\(r), \(g), \(b))")
     }
 }

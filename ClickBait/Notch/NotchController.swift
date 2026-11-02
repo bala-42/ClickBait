@@ -85,6 +85,9 @@ final class NotchController {
             guard let content = fitted[pageKey] else { return most }
             return (most.width, min(most.height, Self.chrome + content))
         }
+        /// A narrow open notch (the tiles, the morning greeting): the camera sits over the middle
+        /// of the header, so it holds only the bean and ✕ (user's reports, 2026-11-02).
+        var compactHeader: Bool { morning != nil || (pageSize?.width ?? 640) < 560 }
         /// The open notch around a page: 8 top, the 36 header, 12 bottom.
         static let chrome = 8.0 + 36 + 12
         /// Each page's measured content height (by `pageKey`), kept so it opens at it next time.
