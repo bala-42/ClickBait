@@ -22,6 +22,16 @@ public enum NotchTimer {
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, secs) : String(format: "%d:%02d", minutes, secs)
     }
 
+    /// The stopwatch's readout, to the millisecond (user's ask, 2026-11-02): "0:07.042",
+    /// "1:02:03.500". Cut, not rounded, so it never shows a time not yet reached.
+    public static func preciseReadout(_ seconds: TimeInterval) -> String {
+        let millis = max(0, Int((seconds * 1000).rounded(.down)))
+        let total = millis / 1000, hours = total / 3600, minutes = total % 3600 / 60, secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d.%03d", hours, minutes, secs, millis % 1000)
+            : String(format: "%d:%02d.%03d", minutes, secs, millis % 1000)
+    }
+
     public enum Phase: Equatable, Sendable { case work, shortBreak, longBreak }
 
     /// Pomodoro's phases in order: work, break, work, break, work, break, work, long break.

@@ -31,6 +31,17 @@ struct NotchTimerView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(NotchPalette.secondary)
                 }
+                if clock.ringing {
+                    Button { clock.onStopAlarm?() } label: {
+                        Text("Stop alarm")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20).padding(.vertical, 8)
+                            .background(Color(hex: 0xE0115F), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+                }
                 Button { clock.startOrPause() } label: {
                     Text(clock.running ? "Pause" : clock.leftWhenPaused != nil || clock.elapsedBefore > 0 ? "Resume" : "Start")
                         .font(.system(size: 13, weight: .semibold))
@@ -40,12 +51,21 @@ struct NotchTimerView: View {
                 }
                 .buttonStyle(.plain)
             }
+            if clock.mode == .stopwatch {
+                // Centred, to the millisecond, redrawn every frame while running (user's ask, 2026-11-02).
+                TimelineView(.animation(paused: !clock.running)) { context in
+                    Text(NotchTimer.preciseReadout(clock.shown(at: context.date)))
+                        .font(.system(size: 36, weight: .light).monospacedDigit())
+                        .foregroundStyle(cream)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
             HStack(alignment: .bottom, spacing: 16) {
                 Group {
                     switch clock.mode {
                     case .timer: MinuteRuler(minutes: $clock.minutes, cream: cream, interactive: interactive).disabled(clock.running || clock.leftWhenPaused != nil)
                     case .pomodoro: PomodoroDots(done: clock.pomodorosDone, phase: clock.phase, cream: cream)
-                    case .stopwatch: Spacer()
+                    case .stopwatch: EmptyView()
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -56,6 +76,7 @@ struct NotchTimerView: View {
                         .contentTransition(.numericText())
                 }
                 .frame(minWidth: 96, alignment: .trailing)
+            }
             }
         }
         .padding(.horizontal, 16)

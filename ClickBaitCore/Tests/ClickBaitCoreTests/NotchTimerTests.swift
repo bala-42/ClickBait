@@ -22,4 +22,11 @@ struct NotchTimerTests {
         #expect(phases == [.work, .shortBreak, .work, .shortBreak, .work, .shortBreak, .work, .longBreak])
         #expect(NotchTimer.length(of: .work) == 1500)
     }
+
+    @Test func preciseReadout() {
+        #expect(NotchTimer.preciseReadout(0) == "0:00.000")
+        #expect(NotchTimer.preciseReadout(7.0429) == "0:07.042")
+        #expect(NotchTimer.preciseReadout(3723.5) == "1:02:03.500")
+        #expect(NotchTimer.preciseReadout(59.9999) == "0:59.999")
+    }
 }

@@ -57,8 +57,8 @@ final class NotchController {
         var notch: Rect?
         /// Music playing: the artwork and visualizer in the wings.
         var activity = false
-        /// The timer just ended: the folded notch glows ruby until it's opened or 30 s pass
-        /// (user's ask, 2026-11-02). Set through `ringAlarm()`.
+        /// The timer just ended: the notch glows ruby, folded or open, until the alarm's Stop
+        /// (user's asks, 2026-11-02). Set through `ringAlarm()`.
         var alarm = false
         /// The HUD while it shows: the level (0…1), whether muted, and whether it's the
         /// brightness sky (else the volume's Pac-Man).
@@ -294,7 +294,6 @@ final class NotchController {
         // Opening from folded: on the display the pointer is on; it stays there until it folds.
         if before == .collapsed || before == .hidden, !StudioModel.shared.inNotch { model.activeDisplay = Self.displayUnderPointer() }
         model.state = after
-        if after == .expanded || after == .peek { stopAlarm() }
         if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
         if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
@@ -342,10 +341,14 @@ final class NotchController {
         }
     }
 
-    /// The timer is done: the notch lights ruby and the alarm rings on, like a phone's, until
-    /// the notch is opened (hovered or clicked) or 2 minutes pass (user's ask, 2026-11-02).
+    /// The timer is done: the notch lights ruby, folded or open, on the Timer page, and the alarm
+    /// rings on, like a phone's, until its Stop or 2 minutes pass (user's asks, 2026-11-02).
     func ringAlarm() {
         model.alarm = true
+        model.editing = false
+        model.tab = .timer
+        NotchTimerClock.shared.ringing = true
+        NotchTimerClock.shared.onStopAlarm = { [weak self] in self?.stopAlarm() }
         place()
         TimerSounds.startAlarm()
         alarmTask?.cancel()
@@ -360,6 +363,7 @@ final class NotchController {
         guard model.alarm else { return }
         alarmTask?.cancel()
         TimerSounds.stopAlarm()
+        NotchTimerClock.shared.ringing = false
         model.alarm = false
         place()
     }

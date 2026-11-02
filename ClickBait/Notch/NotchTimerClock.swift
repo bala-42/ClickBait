@@ -17,8 +17,9 @@ final class NotchTimerClock {
     private(set) var endsAt: Date?
     /// A countdown's time left while paused.
     private(set) var leftWhenPaused: TimeInterval?
-    /// The stopwatch: when it started (running) and what it had before.
-    private(set) var startedAt: Date?
+    /// The stopwatch: when it started (running; the Mac's uptime, which never jumps with the
+    /// clock, to the sub-millisecond) and what it had before.
+    private(set) var startedAt: TimeInterval?
     private(set) var elapsedBefore: TimeInterval = 0
     /// Pomodoro: phases finished so far, and the one running or next.
     private(set) var pomodorosDone = 0
@@ -32,6 +33,10 @@ final class NotchTimerClock {
     /// a break ends (striking: back to work) — user's ask, 2026-11-02.
     enum Alarm { case timer, pleasant, striking }
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    /// The timer's alarm is ringing: the page shows Stop (set by the notch).
+    var ringing = false
+    /// Stops the ringing alarm (set by the notch).
+    @ObservationIgnored var onStopAlarm: (() -> Void)?
 
     private init() {}
 
@@ -39,7 +44,7 @@ final class NotchTimerClock {
     func shown(at now: Date) -> TimeInterval {
         switch mode {
         case .stopwatch:
-            return elapsedBefore + (startedAt.map { now.timeIntervalSince($0) } ?? 0)
+            return elapsedBefore + (startedAt.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0)
         case .timer, .pomodoro:
             if let endsAt { return endsAt.timeIntervalSince(now) }
             if let leftWhenPaused { return leftWhenPaused }
@@ -54,7 +59,7 @@ final class NotchTimerClock {
     func start() {
         let now = Date()
         switch mode {
-        case .stopwatch: startedAt = now
+        case .stopwatch: startedAt = ProcessInfo.processInfo.systemUptime
         case .timer, .pomodoro: endsAt = now.addingTimeInterval(shown(at: now))
         }
         leftWhenPaused = nil
