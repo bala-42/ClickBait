@@ -60,3 +60,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ```
+
+## Vorssaint
+
+`ClickBait/Agents/agent-prices.json` is Vorssaint's list of the providers' published API prices
+(https://github.com/vorssaint/vorssaint-utils, `Resources/agent-prices.json`, updated 2026-10-30),
+copied unchanged. Vorssaint is © 2026 Vorssaint, licensed under the GNU General Public License,
+version 3 or later; ClickBait is AGPL-3.0, which GPL-3.0 code may be combined with. ClickBait's
+AI Agents page, notch bubbles, gallery, timer and Claude Code / Codex usage reading follow
+Vorssaint's design and approach (the `get_usage` control request, `codex app-server`'s
+`account/read`, reading session logs for counters only), written anew for ClickBait.

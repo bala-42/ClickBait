@@ -6,7 +6,7 @@ import Foundation
 /// ClickBait's events file; Codex from its session logs (`task_complete`), since its single
 /// `notify` setting already belongs to another app.
 public struct AgentNotice: Equatable, Sendable {
-    public enum Tool: String, Sendable { case claude, codex }
+    public enum Tool: String, Sendable, Codable { case claude, codex }
     public enum Kind: Equatable, Sendable {
         /// Waiting on the user: a permission, a question. `detail`: what it said, if anything.
         case needsYou(detail: String?)

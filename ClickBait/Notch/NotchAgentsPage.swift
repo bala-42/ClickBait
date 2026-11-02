@@ -1,0 +1,304 @@
+import ClickBaitCore
+import SwiftUI
+
+/// The AI Agents page (user's references: Vorssaint's AI page): Claude and Codex limits with
+/// their resets, spending, what's working now, the trend, models, projects, thirteen weeks of
+/// activity and Codex's banked resets (shown only). Claude in the teleprompter's cream, Codex in
+/// the notch's sky blue: data colours, not ClickBait's state colours.
+struct NotchAgentsPage: View {
+    @Bindable var service = AgentUsageService.shared
+    @State private var period: AgentSummary.Period = .today
+    private static let claudeColor = MoodyLook.cream
+    private static let codexColor = NotchPalette.highlight
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: true) { cards }
+        .scrollIndicators(.automatic)
+        .task {
+            while !Task.isCancelled {
+                service.refresh()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+
+    /// Every card, top to bottom (without its scroll view, to draw it to an image too).
+    var cards: some View {
+        let summary = AgentSummary.of(service.records, period: period, prices: service.prices)
+        return VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    LimitsCard(name: "Claude", symbol: "sparkle", color: Self.claudeColor, limits: service.claudeLimits,
+                               empty: service.loading ? "reading…" : "Claude Code isn't signed in")
+                    LimitsCard(name: "Codex", symbol: "chevron.left.forwardslash.chevron.right", color: Self.codexColor, limits: service.codexLimits,
+                               empty: service.codexLimits?.plan.map { "no limits on the \($0) plan" } ?? (service.loading ? "reading…" : "Codex not found"))
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    spending(summary)
+                    now
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                trend(summary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    ranked("Models", "cpu", summary.models)
+                    ranked("Projects", "folder", summary.projects)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                activity.fixedSize(horizontal: false, vertical: true)
+                resets.fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 8)
+    }
+
+    private func spending(_ summary: AgentSummary) -> some View {
+        Card {
+            HStack {
+                Label("Spending", systemImage: "dollarsign.circle").cardTitle()
+                Spacer()
+                Menu(period.rawValue.capitalized) {
+                    ForEach(AgentSummary.Period.allCases, id: \.self) { choice in
+                        Button(choice.rawValue.capitalized) { period = choice }
+                    }
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(summary.cost, format: .currency(code: "USD")).font(.system(size: 26, weight: .medium).monospacedDigit())
+                Text("API value").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+            }
+            SplitBar(parts: [(summary.costByTool[.claude] ?? 0, Self.claudeColor), (summary.costByTool[.codex] ?? 0, Self.codexColor)])
+            Text("\(Self.compact(summary.tokens)) tokens · \(Int((summary.cacheShare * 100).rounded()))% from cache")
+                .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+        }
+    }
+
+    private var now: some View {
+        Card {
+            Label("Now", systemImage: "waveform.path.ecg").cardTitle()
+            ForEach([(AgentNotice.Tool.claude, "Claude", "sparkle", Self.claudeColor), (.codex, "Codex", "chevron.left.forwardslash.chevron.right", Self.codexColor)], id: \.1) { tool, name, symbol, color in
+                HStack {
+                    Image(systemName: symbol).foregroundStyle(color).frame(width: 14)
+                    Text(name)
+                    Spacer()
+                    Text(Self.when(service.lastUse(of: tool))).foregroundStyle(NotchPalette.tertiary)
+                }
+                .font(.system(size: 12))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func trend(_ summary: AgentSummary) -> some View {
+        Card {
+            HStack {
+                Label("Trend", systemImage: "chart.bar").cardTitle()
+                Spacer()
+                Text("\(period.rawValue.capitalized) · \(summary.cost.formatted(.currency(code: "USD")))")
+                    .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+            }
+            let peak = max(summary.trend.map { $0.values.reduce(0, +) }.max() ?? 0, 0.01)
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(summary.trend.indices, id: \.self) { index in
+                    let claude = summary.trend[index][.claude] ?? 0, codex = summary.trend[index][.codex] ?? 0
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Rectangle().fill(Self.codexColor).frame(height: 56 * codex / peak)
+                        Rectangle().fill(Self.claudeColor).frame(height: 56 * claude / peak)
+                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                }
+            }
+            .frame(height: 58)
+            HStack {
+                Text(period == .today ? "12 AM" : "\(summary.trend.count) days ago")
+                Spacer()
+                Text(period == .today ? "11 PM" : "today")
+            }
+            .font(.system(size: 9)).foregroundStyle(NotchPalette.tertiary)
+        }
+    }
+
+    private func ranked(_ title: String, _ symbol: String, _ rows: [(name: String, cost: Double)]) -> some View {
+        Card {
+            Label(title, systemImage: symbol).cardTitle()
+            let top = max(rows.first?.cost ?? 0, 0.01)
+            ForEach(rows, id: \.name) { row in
+                HStack(spacing: 8) {
+                    Text(row.name).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Capsule().fill(NotchPalette.text.opacity(0.85)).frame(width: max(4, 44 * row.cost / top), height: 3)
+                    Text(row.cost, format: .currency(code: "USD")).monospacedDigit().foregroundStyle(NotchPalette.tertiary).frame(width: 64, alignment: .trailing)
+                }
+                .font(.system(size: 11))
+            }
+            if rows.isEmpty { Text("nothing yet").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary) }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var activity: some View {
+        let days = AgentActivity.of(service.records, prices: service.prices)
+        let peak = max(days.days.max() ?? 0, 0.01)
+        return Card {
+            HStack {
+                Label("Activity", systemImage: "square.grid.3x3.fill").cardTitle()
+                Spacer()
+                if days.streak > 0 { Text("🔥 \(days.streak)").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary) }
+            }
+            HStack(alignment: .top, spacing: 14) {
+                HStack(spacing: 2) {
+                    ForEach(0..<13, id: \.self) { week in
+                        VStack(spacing: 2) {
+                            ForEach(0..<7, id: \.self) { day in
+                                let cost = days.days[week * 7 + day]
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(cost > 0 ? NotchPalette.text.opacity(0.25 + 0.75 * cost / peak) : Color.white.opacity(0.07))
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(days.total, format: .currency(code: "USD").precision(.fractionLength(0))).font(.system(size: 18, weight: .medium).monospacedDigit())
+                    Text("13 weeks").font(.system(size: 10)).foregroundStyle(NotchPalette.tertiary)
+                    Spacer(minLength: 4)
+                    row("Active days", "\(days.activeDays)")
+                    row("Busiest day", days.busiest.map { "\($0.date.formatted(.dateTime.month(.abbreviated).day())) · \($0.cost.formatted(.currency(code: "USD")))" } ?? "–")
+                }
+            }
+        }
+    }
+
+    private var resets: some View {
+        Card {
+            HStack {
+                Label("Resets", systemImage: "chevron.left.forwardslash.chevron.right").cardTitle()
+                Spacer()
+                if let count = service.codexResets?.count, count > 0 {
+                    Text("\(count)").font(.system(size: 10, weight: .semibold)).padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Self.codexColor.opacity(0.2), in: Capsule()).foregroundStyle(Self.codexColor)
+                }
+            }
+            Group {
+                if let resets = service.codexResets, resets.count > 0 {
+                    Text(resets.nextExpiry.map { "Next expires \($0.formatted(.relative(presentation: .named)))" } ?? "\(resets.count) banked")
+                } else {
+                    Text(service.codexLimits?.plan.map { "No banked resets on the \($0) plan" } ?? "No banked resets")
+                }
+            }
+            .font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+        }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack { Text(label).foregroundStyle(NotchPalette.tertiary); Spacer(); Text(value).monospacedDigit() }.font(.system(size: 11))
+    }
+
+    static func compact(_ tokens: Int) -> String {
+        tokens >= 1_000_000_000 ? String(format: "%.1fB", Double(tokens) / 1e9)
+            : tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1e6)
+            : tokens >= 1_000 ? String(format: "%.0fK", Double(tokens) / 1e3) : "\(tokens)"
+    }
+
+    /// "working" within two minutes, else how long ago.
+    static func when(_ date: Date?) -> String {
+        guard let date else { return "–" }
+        if Date().timeIntervalSince(date) < 120 { return "working" }
+        return date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
+    }
+}
+
+/// One tool's limits: its plan, the session and the week, each with how much is used, a tick for
+/// how far through its window it is, and when it starts afresh.
+private struct LimitsCard: View {
+    let name: String
+    let symbol: String
+    let color: Color
+    let limits: AgentLimits?
+    let empty: String
+
+    var body: some View {
+        Card {
+            HStack {
+                Label(name, systemImage: symbol).cardTitle().foregroundStyle(NotchPalette.text)
+                Spacer()
+                if let plan = limits?.plan {
+                    Text(plan).font(.system(size: 10, weight: .semibold)).padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(color.opacity(0.2), in: Capsule()).foregroundStyle(color)
+                }
+            }
+            if limits?.session == nil, limits?.week == nil {
+                Text(empty).font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+                Spacer(minLength: 0)
+            } else {
+                if let session = limits?.session { window("Session", session, length: 5 * 3600) }
+                if let week = limits?.week { window("Week", week, length: 7 * 86_400) }
+            }
+        }
+    }
+
+    private func window(_ title: String, _ window: AgentLimits.Window, length: TimeInterval) -> some View {
+        let elapsed = window.resets.map { min(1, max(0, 1 - $0.timeIntervalSinceNow / length)) }
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(title)
+                if let resets = window.resets {
+                    Text("↻ \(Self.left(resets))").foregroundStyle(NotchPalette.tertiary)
+                }
+                Spacer()
+                Text("\(Int(window.percent.rounded()))%").monospacedDigit().fontWeight(.semibold)
+            }
+            .font(.system(size: 11))
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule().fill(color).frame(width: geometry.size.width * min(1, window.percent / 100))
+                    if let elapsed { Rectangle().fill(NotchPalette.text.opacity(0.7)).frame(width: 1.5).offset(x: geometry.size.width * elapsed) }
+                }
+            }
+            .frame(height: 5)
+        }
+    }
+
+    /// "35m", "2h 2m", "3d 2h".
+    static func left(_ date: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSinceNow))
+        let days = seconds / 86_400, hours = seconds % 86_400 / 3600, minutes = seconds % 3600 / 60
+        return days > 0 ? "\(days)d \(hours)h" : hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+}
+
+/// Two shares side by side in one bar (Claude's and Codex's spending).
+private struct SplitBar: View {
+    let parts: [(Double, Color)]
+
+    var body: some View {
+        let total = max(parts.map(\.0).reduce(0, +), 0.0001)
+        GeometryReader { geometry in
+            HStack(spacing: 2) {
+                ForEach(parts.indices.filter { parts[$0].0 > 0 }, id: \.self) { index in
+                    Capsule().fill(parts[index].1).frame(width: max(3, (geometry.size.width - 2) * parts[index].0 / total))
+                }
+            }
+        }
+        .frame(height: 4)
+    }
+}
+
+private struct Card<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) { content }
+            .foregroundStyle(NotchPalette.text)
+            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+    }
+}
+
+private extension View {
+    func cardTitle() -> some View { font(.system(size: 12, weight: .semibold)) }
+}

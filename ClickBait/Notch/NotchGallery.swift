@@ -7,23 +7,26 @@ import SwiftUI
 /// bean buttons don't already open (Lookup, Shelf, Studio, the player) and not the timer (its
 /// own bubble). Pages join as they're built.
 enum GalleryPage: String, CaseIterable, Identifiable {
-    case controls
+    case controls, agents
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .controls: "Controls"
+        case .agents: "AI Agents"
         }
     }
     var symbol: String {
         switch self {
         case .controls: "slider.horizontal.3"
+        case .agents: "sparkles"
         }
     }
     /// The notch's size on this page.
     var size: (width: Double, height: Double) {
         switch self {
         case .controls: (640, 200)
+        case .agents: (640, 440)
         }
     }
 }
@@ -47,6 +50,7 @@ struct GalleryView: View {
                 }
                 switch page {
                 case .controls: ControlsPage(settings: settings)
+                case .agents: NotchAgentsPage()
                 }
             }
             .padding(.horizontal, 6)
