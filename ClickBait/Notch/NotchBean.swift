@@ -493,10 +493,11 @@ final class MacVitals {
     }
 }
 
-/// The shelf's AirDrop pad as a bean (user's ask, 2026-11-02): three eyes, faded lime, a
-/// sibling of the notch's bean. Pale, so it never reads as Shamrock (an action). Eyes: pills at
-/// rest, wide dots bouncing while something's dropped on it or a recipient is being chosen,
-/// dashes when sending failed.
+/// The shelf's AirDrop pad as a little alien (user's asks, 2026-11-02: "a cute bean with three
+/// eyes", "faded … the green on the shelf button", "it should look like an alien"): the bean's
+/// body in a faded Shelf green (`NotchPalette.windowsGreen` toward white), two antennae and
+/// three big glossy eyes. Eyes: almonds at rest, wide and round (hopping) while files are dropped
+/// on it or a recipient is being chosen, dashes when sending failed.
 struct AirDropBean: View {
     enum Look { case ready, eager, problem }
     let look: Look
@@ -504,26 +505,27 @@ struct AirDropBean: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hop = false
 
-    static let lime = Color(hex: 0xDCEDB4)
-    static let limeShade = Color(hex: 0xB8D38C)
-    private static let ink = Color(hex: 0x26272C)
+    /// #7CB82F faded: 55% and 30% of the way to white.
+    static let lime = Color(hex: 0xC4DFA1)
+    static let limeShade = Color(hex: 0xA3CD6D)
+    private static let ink = Color(hex: 0x1E2318)
 
     var body: some View {
-        let eye: Bean.Eye = switch look {
-        case .ready: .pill(height: 0.8)
-        case .eager: .dot
-        case .problem: .dash()
-        }
-        ZStack {
-            BeanShape().fill(LinearGradient(colors: [Self.lime, Self.limeShade], startPoint: .top, endPoint: .bottom))
-            BeanShape().stroke(Color.white.opacity(0.35), lineWidth: 0.6)
-            HStack(spacing: size * 0.1) {
-                ForEach(0..<3, id: \.self) { _ in BeanEye(eye: eye, size: size * 0.8) }
+        let height = size * BeanShape.aspect
+        ZStack(alignment: .top) {
+            antennae
+            ZStack {
+                BeanShape().fill(LinearGradient(colors: [Self.lime, Self.limeShade], startPoint: .top, endPoint: .bottom))
+                BeanShape().stroke(Color.white.opacity(0.35), lineWidth: 0.6)
+                HStack(spacing: size * 0.07) {
+                    ForEach(0..<3, id: \.self) { index in eye(big: index == 1) }
+                }
+                .offset(y: -size * 0.02)
             }
-            .foregroundStyle(Self.ink)
-            .offset(y: -size * 0.04)
+            .frame(width: size, height: height)
+            .padding(.top, size * 0.22)
         }
-        .frame(width: size, height: size * BeanShape.aspect)
+        .frame(width: size, height: height + size * 0.22)
         .offset(y: hop ? -size * 0.12 : 0)
         .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.5), value: hop)
         .task(id: look) {
@@ -535,5 +537,42 @@ struct AirDropBean: View {
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Two stalks leaning out, each with a round tip.
+    private var antennae: some View {
+        let tip = size * 0.12
+        return ZStack {
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                Path { path in
+                    path.move(to: CGPoint(x: size / 2 + side * size * 0.12, y: size * 0.28))
+                    path.addQuadCurve(to: CGPoint(x: size / 2 + side * size * 0.28, y: tip * 0.6),
+                                      control: CGPoint(x: size / 2 + side * size * 0.14, y: size * 0.08))
+                }
+                .stroke(Self.limeShade, style: StrokeStyle(lineWidth: size * 0.05, lineCap: .round))
+                Circle().fill(Self.lime)
+                    .frame(width: tip, height: tip)
+                    .position(x: size / 2 + side * size * 0.28, y: tip * 0.6)
+            }
+        }
+        .frame(width: size, height: size * 0.3)
+    }
+
+    /// A big glossy alien eye (the middle one larger), or a dash when something went wrong.
+    @ViewBuilder private func eye(big: Bool) -> some View {
+        let width = size * (big ? 0.2 : 0.17)
+        switch look {
+        case .problem:
+            Capsule().fill(Self.ink).frame(width: width, height: size * 0.045)
+        case .ready, .eager:
+            let height = look == .eager ? width : width * 1.35
+            Ellipse().fill(Self.ink)
+                .frame(width: width, height: height)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color.white.opacity(0.9))
+                        .frame(width: width * 0.3, height: width * 0.3)
+                        .offset(x: -width * 0.15, y: height * 0.14)
+                }
+        }
     }
 }
