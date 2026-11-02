@@ -154,14 +154,23 @@ public enum Dictation {
     public enum Delivery: Equatable, Sendable {
         /// Pasted into the focused field.
         case paste
-        /// Only copied ("transcribed · ⌘V to paste"): no text field, a password field, or the
-        /// app in front changed while it was being written.
+        /// Only copied ("transcribed · ⌘V to paste"): somewhere surely not for typing, a
+        /// password field, or the app in front changed while it was being written.
         case copyOnly
     }
 
-    /// Paste only into an editable text field that isn't a password field.
+    /// What's focused when it's surely not a place to type: buttons, lists, tables, Finder's icons.
+    static let notTyping: Set<String> = ["AXButton", "AXCheckBox", "AXRadioButton", "AXPopUpButton", "AXMenuButton", "AXMenu",
+                                         "AXMenuItem", "AXMenuBar", "AXMenuBarItem", "AXList", "AXOutline", "AXTable", "AXRow",
+                                         "AXCell", "AXImage", "AXSlider", "AXIncrementor", "AXDockItem", "AXTabGroup", "AXToolbar"]
+
+    /// Typed wherever it could be a place to type, as macOS's own dictation (user's report,
+    /// 2026-11-03: "it is supposed to type out anywhere"): web pages and Electron apps (Chrome,
+    /// Claude, Telegram…) often don't say which box has focus, and were only copied. Copied only
+    /// for a password field, a focus surely not for typing, or another app now in front.
     public static func delivery(role: String?, subrole: String?, editable: Bool, sameApp: Bool) -> Delivery {
-        guard sameApp, editable, subrole != "AXSecureTextField", role != "AXSecureTextField" else { return .copyOnly }
-        return .paste
+        guard sameApp, subrole != "AXSecureTextField", role != "AXSecureTextField" else { return .copyOnly }
+        if editable { return .paste }
+        return role.map(notTyping.contains) == true ? .copyOnly : .paste
     }
 }

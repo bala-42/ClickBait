@@ -101,5 +101,10 @@ struct DictationTests {
         #expect(Dictation.delivery(role: "AXTextField", subrole: "AXSecureTextField", editable: true, sameApp: true) == .copyOnly)
         #expect(Dictation.delivery(role: "AXButton", subrole: nil, editable: false, sameApp: true) == .copyOnly)
         #expect(Dictation.delivery(role: "AXTextArea", subrole: nil, editable: true, sameApp: false) == .copyOnly)
+        // A web page or Electron app that doesn't say which box has focus: typed, not just copied.
+        #expect(Dictation.delivery(role: "AXWebArea", subrole: nil, editable: false, sameApp: true) == .paste)
+        #expect(Dictation.delivery(role: nil, subrole: nil, editable: false, sameApp: true) == .paste)
+        #expect(Dictation.delivery(role: "AXGroup", subrole: nil, editable: false, sameApp: true) == .paste)
+        #expect(Dictation.delivery(role: "AXList", subrole: nil, editable: false, sameApp: true) == .copyOnly)
     }
 }

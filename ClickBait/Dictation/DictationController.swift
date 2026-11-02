@@ -113,6 +113,7 @@ final class DictationController {
         let sameApp = app != nil && NSWorkspace.shared.frontmostApplication?.processIdentifier == app?.processIdentifier
         let delivery = Dictation.delivery(role: target.role, subrole: target.subrole, editable: target.editable, sameApp: sameApp)
         overlay.setDictating(false)
+        let appName = app?.localizedName ?? "?"
         switch delivery {
         case .paste: Clipboard.paste(text)
         case .copyOnly:
@@ -121,6 +122,7 @@ final class DictationController {
         }
         Log.ask.notice("""
             Dictation: \(text.count, privacy: .public) characters \(delivery == .paste ? "pasted" : "copied", privacy: .public) \
+            into \(target.role ?? "nothing focused", privacy: .public) of \(appName, privacy: .public) \
             (heard in \(String(describing: heardAt - started), privacy: .public), \
             tidied \(tidied == nil ? "no (raw)" : "yes", privacy: .public) in \(String(describing: ContinuousClock.now - heardAt), privacy: .public))
             """)
