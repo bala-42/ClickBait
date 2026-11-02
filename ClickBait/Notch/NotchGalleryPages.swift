@@ -145,8 +145,18 @@ struct RemindersPage: View {
 
     private func load() async {
         guard allowed else { return }
+        let found = await Self.fetch()
+        // Overdue and today first (by due date), then the rest.
+        items = found.sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }.prefix(6).map { $0 }
+    }
+
+    /// Off the main actor: EventKit answers on its own queue, and a completion written in this
+    /// main-actor view was checked to run on the main thread there — ClickBait quit on opening
+    /// Reminders (user's report, 2026-11-02).
+    nonisolated private static func fetch() async -> [Item] {
+        let store = EKEventStore()  // its own: a store can't be handed across actors
         let predicate = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
-        let found: [Item] = await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             store.fetchReminders(matching: predicate) { reminders in
                 continuation.resume(returning: (reminders ?? []).compactMap { reminder in
                     guard let title = reminder.title, !title.isEmpty else { return nil }
@@ -154,8 +164,6 @@ struct RemindersPage: View {
                 })
             }
         }
-        // Overdue and today first (by due date), then the rest.
-        items = found.sorted { ($0.due ?? .distantFuture) < ($1.due ?? .distantFuture) }.prefix(6).map { $0 }
     }
 
     private func complete(_ item: Item) {
