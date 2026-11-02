@@ -13,14 +13,18 @@ extension SystemAudio {
         let name: String
     }
 
+    /// An app using sound, with all its Core Audio process objects (a browser's audio helper
+    /// counts as the browser): what a tap is made from.
     struct PlayingApp: Identifiable, Equatable {
-        /// The Core Audio process object (what a tap is made from).
-        let id: AudioObjectID
+        var id: String { bundleID }
+        let processes: [AudioObjectID]
         let pid: pid_t
         let bundleID: String
         let name: String
         let icon: NSImage?
-        static func == (a: PlayingApp, b: PlayingApp) -> Bool { a.id == b.id && a.pid == b.pid }
+        /// Sending sound out right now.
+        let playing: Bool
+        static func == (a: PlayingApp, b: PlayingApp) -> Bool { a.bundleID == b.bundleID && a.processes == b.processes && a.playing == b.playing }
     }
 
     // MARK: Devices
@@ -66,9 +70,12 @@ extension SystemAudio {
         }
     }
 
-    // MARK: Apps playing sound
+    // MARK: Apps using sound
 
-    /// Apps sending sound to an output right now (their Core Audio process objects), ClickBait aside.
+    /// Apps with sound (Core Audio clients, as Vorssaint's mixer lists them), ClickBait aside,
+    /// one row each: a helper process goes to the app it belongs to (by bundle identifier
+    /// prefix: "com.google.Chrome.helper" → Chrome); background processes without an app are
+    /// left out. By name.
     static func playingApps() -> [PlayingApp] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
                                                  mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
@@ -77,18 +84,26 @@ extension SystemAudio {
         var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &objects) == noErr else { return [] }
         let me = ProcessInfo.processInfo.processIdentifier
-        var seen = Set<String>()
-        return objects.compactMap { object -> PlayingApp? in
-            guard uint32(object, kAudioProcessPropertyIsRunningOutput) == 1,
-                  let pid = int32(object, kAudioProcessPropertyPID), pid != me else { return nil }
+        let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.processIdentifier != me }
+        var grouped: [String: (owner: NSRunningApplication, processes: [AudioObjectID], playing: Bool)] = [:]
+        for object in objects {
+            guard let pid = int32(object, kAudioProcessPropertyPID), pid != me else { continue }
             let running = NSRunningApplication(processIdentifier: pid)
-            // A helper process (a browser's audio service) belongs to its app.
-            let bundleID = string(object, kAudioProcessPropertyBundleID) ?? running?.bundleIdentifier ?? "pid.\(pid)"
-            let owner = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first ?? running
-            let name = owner?.localizedName ?? bundleID
-            guard seen.insert("\(bundleID)|\(pid)").inserted else { return nil }
-            return PlayingApp(id: object, pid: pid, bundleID: bundleID, name: name, icon: owner?.icon)
+            let bundleID = string(object, kAudioProcessPropertyBundleID) ?? running?.bundleIdentifier ?? ""
+            let owner = apps.first { $0.processIdentifier == pid }
+                ?? apps.filter { app in app.bundleIdentifier.map { !bundleID.isEmpty && bundleID.hasPrefix($0) } ?? false }
+                    .max { ($0.bundleIdentifier?.count ?? 0) < ($1.bundleIdentifier?.count ?? 0) }
+            guard let owner, let key = owner.bundleIdentifier else { continue }
+            var entry = grouped[key] ?? (owner, [], false)
+            entry.processes.append(object)
+            entry.playing = entry.playing || uint32(object, kAudioProcessPropertyIsRunningOutput) == 1
+            grouped[key] = entry
         }
+        return grouped.map { key, entry in
+            PlayingApp(processes: entry.processes, pid: entry.owner.processIdentifier, bundleID: key,
+                       name: entry.owner.localizedName ?? key, icon: entry.owner.icon, playing: entry.playing)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     // MARK: Core Audio plumbing

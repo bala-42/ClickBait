@@ -33,6 +33,12 @@ final class AppVolumeMixer {
 
     func volume(of app: SystemAudio.PlayingApp) -> Double { volumes[app.bundleID] ?? 1 }
 
+    /// By app (bundle identifier): the output it plays to instead of the Mac's (Vorssaint's
+    /// per-app output: music on the speakers while a call uses the headset).
+    private(set) var appOutputs: [String: String] = [:]
+
+    func output(of app: SystemAudio.PlayingApp) -> String? { appOutputs[app.bundleID] }
+
     /// Read again (once a second while the page shows).
     func refresh() {
         outputs = SystemAudio.outputs()
@@ -42,21 +48,15 @@ final class AppVolumeMixer {
         input = SystemAudio.defaultInput
         inputVolume = SystemAudio.inputVolume()
         if let level = SystemAudio.outputVolume() { mainVolume = level }
-        // Tapped apps stay listed while tapped (a tapped app no longer counts as playing).
-        let playing = SystemAudio.playingApps()
-        let kept = apps.filter { taps[$0.bundleID] != nil && !playing.contains($0) }
-        apps = (playing + kept).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        // The output changed: taps play to the old one, so they're made again.
-        if let output, output != tappedOutput, !taps.isEmpty {
-            let wanted = taps.keys.compactMap { key in apps.first { $0.bundleID == key }.map { ($0, volumes[key] ?? 1) } }
-            stopAll()
-            for (app, level) in wanted { setVolume(level, for: app) }
+        apps = SystemAudio.playingApps()
+        // The Mac's output changed: taps playing to it are made again for the new one.
+        if let output, output != tappedOutput {
+            tappedOutput = output
+            for app in apps where taps[app.bundleID] != nil && appOutputs[app.bundleID] == nil { retap(app) }
         }
-        // An app gone from the Mac: its tap goes.
-        let running = Set(NSWorkspace.shared.runningApplications.map(\.processIdentifier))
-        for app in apps where taps[app.bundleID] != nil && !running.contains(app.pid) {
-            taps.removeValue(forKey: app.bundleID)?.stop()
-        }
+        // An app gone: its tap goes.
+        let listed = Set(apps.map(\.bundleID))
+        for key in taps.keys where !listed.contains(key) { taps.removeValue(forKey: key)?.stop() }
     }
 
     func setMainVolume(_ level: Double) {
@@ -71,24 +71,38 @@ final class AppVolumeMixer {
 
     func setVolume(_ level: Double, for app: SystemAudio.PlayingApp) {
         let level = min(Self.maximum, max(0, level))
-        volumes[app.bundleID] = level
-        problem = nil
-        // Back at 100%: the app plays as it always does, untapped.
-        if abs(level - 1) < 0.01 {
-            volumes[app.bundleID] = nil
-            taps.removeValue(forKey: app.bundleID)?.stop()
+        volumes[app.bundleID] = abs(level - 1) < 0.01 ? nil : level
+        if let tap = taps[app.bundleID], tap.processes == app.processes, volumes[app.bundleID] != nil {
+            tap.setGain(Float(level))
             return
         }
-        if let tap = taps[app.bundleID] { tap.setGain(Float(level)); return }
-        guard let output, let uid = outputs.first(where: { $0.id == output })?.uid,
-              let tap = AppVolumeTap(process: app.id, outputUID: uid, gain: Float(level)) else {
+        retap(app)
+    }
+
+    /// `uid`: nil plays to the Mac's output.
+    func setOutput(_ uid: String?, for app: SystemAudio.PlayingApp) {
+        appOutputs[app.bundleID] = uid
+        retap(app)
+    }
+
+    /// The app's tap as its volume and output want it: none at 100% on the Mac's output (the app
+    /// plays as it always does), else one to its output at its gain.
+    private func retap(_ app: SystemAudio.PlayingApp) {
+        problem = nil
+        taps.removeValue(forKey: app.bundleID)?.stop()
+        let level = volumes[app.bundleID] ?? 1
+        let chosen = appOutputs[app.bundleID]
+        guard abs(level - 1) >= 0.01 || chosen != nil else { return }
+        guard let uid = chosen ?? output.flatMap({ id in outputs.first { $0.id == id }?.uid }),
+              let tap = AppVolumeTap(processes: app.processes, outputUID: uid, gain: Float(level)) else {
             volumes[app.bundleID] = nil
-            problem = "couldn't change \(app.name)'s volume — allow ClickBait in System Settings → Privacy & Security → Screen & System Audio Recording"
+            appOutputs[app.bundleID] = nil
+            problem = "couldn't change \(app.name)'s sound — allow ClickBait in System Settings → Privacy & Security → Screen & System Audio Recording"
             return
         }
         taps[app.bundleID] = tap
         tappedOutput = output
-        Log.app.notice("Volume: \(app.name, privacy: .public) at \(Int(level * 100), privacy: .public)%")
+        Log.app.notice("Volume: \(app.name, privacy: .public) at \(Int(level * 100), privacy: .public)%\(chosen == nil ? "" : " on its own output", privacy: .public)")
     }
 
     func reset(_ app: SystemAudio.PlayingApp) { setVolume(1, for: app) }
@@ -97,7 +111,7 @@ final class AppVolumeMixer {
     func choose(systemOutput device: AudioObjectID) { SystemAudio.setDefaultSystemOutput(device); refresh() }
     func choose(input device: AudioObjectID) { SystemAudio.setDefaultInput(device); refresh() }
 
-    /// Every app back to normal (ClickBait quitting, the output changing).
+    /// Every app back to normal (ClickBait quitting).
     func stopAll() {
         for tap in taps.values { tap.stop() }
         taps = [:]

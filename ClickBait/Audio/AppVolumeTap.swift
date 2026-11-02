@@ -9,7 +9,9 @@ import OSLog
 /// through a soft limiter. Made only while the app's slider is off 100%; anything unexpected
 /// tears it down at once, so an app is never left silent.
 final class AppVolumeTap {
-    let process: AudioObjectID
+    let processes: [AudioObjectID]
+    /// The output it plays to.
+    let outputUID: String
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
     private var proc: AudioDeviceIOProcID?
@@ -19,11 +21,12 @@ final class AppVolumeTap {
     /// Buffers played through so far (to check it's running).
     var framesProcessed: Int { frames.pointee }
 
-    init?(process: AudioObjectID, outputUID: String, gain level: Float) {
-        self.process = process
+    init?(processes: [AudioObjectID], outputUID: String, gain level: Float) {
+        self.processes = processes
+        self.outputUID = outputUID
         gain.initialize(to: level)
         frames.initialize(to: 0)
-        let description = CATapDescription(stereoMixdownOfProcesses: [process])
+        let description = CATapDescription(stereoMixdownOfProcesses: processes)
         description.uuid = UUID()
         description.muteBehavior = .mutedWhenTapped
         description.isPrivate = true

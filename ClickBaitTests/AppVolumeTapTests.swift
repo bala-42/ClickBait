@@ -21,7 +21,7 @@ struct AppVolumeTapTests {
         print("TAP playing apps: \(SystemAudio.playingApps().map(\.name)); afplay found: \(app != nil)")
         let output = try #require(SystemAudio.outputs().first { $0.id == SystemAudio.defaultOutput })
         let found = try #require(app)
-        let tap = AppVolumeTap(process: found.id, outputUID: output.uid, gain: 0.5)
+        let tap = AppVolumeTap(processes: found.processes, outputUID: output.uid, gain: 0.5)
         print("TAP made: \(tap != nil) on \(output.name)")
         try await Task.sleep(for: .milliseconds(600))
         print("TAP buffers played: \(tap?.framesProcessed ?? -1)")

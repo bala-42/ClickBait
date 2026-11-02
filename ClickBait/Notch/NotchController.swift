@@ -77,7 +77,7 @@ final class NotchController {
             let most: (width: Double, height: Double)
             switch tab {
             case .home where morning != nil: most = (420, 220)
-            case .volume: most = (640, 260)
+            case .volume: most = (640, 300)
             case .timer: most = (NotchPanel.expandedSize.width, NotchPanel.expandedSize.height)
             case .gallery: most = galleryPage?.size ?? GalleryPage.gridSize
             default: return nil

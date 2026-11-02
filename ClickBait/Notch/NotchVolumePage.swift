@@ -2,15 +2,19 @@ import ClickBaitCore
 import CoreAudio
 import SwiftUI
 
-/// The Volume page behind the bottom-right bubble (user's references: Vorssaint's mixer): the
-/// output, a main slider, and one per app playing sound (↺ back to 100%, boost to 150% in the
-/// teleprompter's cream); its settings: output, system sounds, microphone and its level.
+/// The Volume page behind the bottom-right bubble (user's references: Vorssaint's notch mixer): the
+/// output, a main slider, and a column per app using sound — a green dot while it plays, ⋯ for
+/// its own output, ↺ back to 100%, boost to 150% in the teleprompter's cream, 🔈 to mute — in a
+/// row that scrolls sideways; its settings: output, system sounds, microphone and its level.
 struct NotchVolumePage: View {
     @Bindable var mixer = AppVolumeMixer.shared
     @State private var showsSettings = false
+    /// Each muted app's level before, to come back to.
+    @State private var unmuted: [String: Double] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text("Volume mixer").font(.system(size: 13, weight: .semibold)).foregroundStyle(NotchPalette.text)
             HStack {
                 deviceMenu(mixer.outputs, chosen: mixer.output) { mixer.choose(output: $0) }
                     .font(.system(size: 12, weight: .medium))
@@ -47,7 +51,7 @@ struct NotchVolumePage: View {
             }
             Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1).padding(.vertical, 4)
             if mixer.apps.isEmpty {
-                Text("Apps playing sound show up here.").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
+                Text("Apps using sound show up here.").font(.system(size: 11)).foregroundStyle(NotchPalette.tertiary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -63,12 +67,38 @@ struct NotchVolumePage: View {
 
     private func appColumn(_ app: SystemAudio.PlayingApp) -> some View {
         let level = mixer.volume(of: app)
+        let own = mixer.output(of: app)
         return VStack(spacing: 8) {
-            Group {
-                if let icon = app.icon { Image(nsImage: icon).resizable() } else { Image(systemName: "app.fill").resizable() }
+            HStack(spacing: 8) {
+                Group {
+                    if let icon = app.icon { Image(nsImage: icon).resizable() } else { Image(systemName: "app.fill").resizable() }
+                }
+                .frame(width: 24, height: 24)
+                .overlay(alignment: .bottomTrailing) {
+                    // Playing now.
+                    if app.playing {
+                        Circle().fill(CompanionTone.action.color).frame(width: 8, height: 8)
+                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5)).offset(x: 2, y: 2)
+                    }
+                }
+                .help(app.name)
+                // Its own output (per app: music on the speakers while a call uses the headset).
+                Menu {
+                    Button { mixer.setOutput(nil, for: app) } label: { Label("Mac's output", systemImage: own == nil ? "checkmark" : "") }
+                    ForEach(mixer.outputs) { device in
+                        Button { mixer.setOutput(device.uid, for: app) } label: { Label(device.name, systemImage: own == device.uid ? "checkmark" : "") }
+                    }
+                    if abs(level - 1) > 0.01 || own != nil {
+                        Divider()
+                        Button("Back to normal") { mixer.setOutput(nil, for: app); mixer.reset(app) }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(own == nil ? NotchPalette.secondary : MoodyLook.cream)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help(own.flatMap { uid in mixer.outputs.first { $0.uid == uid }?.name }.map { "Plays to \($0)" } ?? "Output for \(app.name)")
             }
-            .frame(width: 24, height: 24)
-            .help(app.name)
             VolumeBar(value: level, maximum: AppVolumeMixer.maximum) { mixer.setVolume($0, for: app) }
             HStack(spacing: 4) {
                 if abs(level - 1) > 0.01 {
@@ -76,6 +106,16 @@ struct NotchVolumePage: View {
                         .buttonStyle(.plain).accessibilityLabel("\(app.name) back to 100%")
                 }
                 Text("\(level > 1.01 ? "⚡︎" : "")\(Int((level * 100).rounded()))%").monospacedDigit()
+                Button {
+                    if level == 0 {
+                        mixer.setVolume(unmuted[app.bundleID] ?? 1, for: app)
+                    } else {
+                        unmuted[app.bundleID] = level
+                        mixer.setVolume(0, for: app)
+                    }
+                } label: { Image(systemName: level == 0 ? "speaker.slash.fill" : "speaker.wave.1") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(level == 0 ? "Unmute \(app.name)" : "Mute \(app.name)")
             }
             .font(.system(size: 11))
             .foregroundStyle(level > 1.01 ? MoodyLook.cream : NotchPalette.secondary)
