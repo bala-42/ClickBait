@@ -34,6 +34,7 @@ enum Uninstaller {
     }
 
     private static func run() {
+        AgentHookInstaller.remove()  // Claude Code's settings without ClickBait's hooks
         let bundleID = Bundle.main.bundleIdentifier ?? "org.clickbait.ClickBait"
         // Only ClickBait's own entries: `tccutil reset All <bundle id>`.
         let reset = Process()

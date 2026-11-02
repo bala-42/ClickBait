@@ -148,6 +148,9 @@ struct SettingsView: View {
                 ToggleRow("Greetings", "A hello by the cursor each time your Mac wakes or you unlock it.", isOn: $settings.greetings)
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Sounds", "A soft sound when a background ClickBait is done or needs your yes.", isOn: $settings.soundCues)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Claude Code and Codex notices", "A pill by the cursor when Claude Code needs you or finishes, and when Codex finishes, unless you're already looking at it. Adds two small hooks to Claude Code's settings while on; nothing is sent anywhere.",
+                          isOn: $settings.agentNotices)
             }
             SettingsGroup("Vision Memory") {
                 VisionMemorySection(settings: settings)

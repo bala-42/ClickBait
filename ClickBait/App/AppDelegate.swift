@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chat = ChatController()
     /// The notch's own Ask conversation, separate from the overlay chat.
     private let notchChat = NotchChat()
+    private let agents = AgentWatcher()
     /// Shelf archives already offered a peek: never asked twice.
     private var offeredPeeks: Set<URL> = []
     private let confirm = ConfirmController()
@@ -353,6 +354,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Drops on the notch's shelf say how they went in the companion's pill.
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         ShelfDrop.offerPeek = { [weak self] archive in self?.offerPeek(archive) }
+        agents.onNotice = { [weak self] notice in self?.showAgentNotice(notice) }
+        startAgentNotices()
         coordinator.onOfferResult = { [weak self] request, files, outcome in self?.showOfferResult(request, files: files, outcome: outcome) }
         // A shelf hover pill: straight away on that file (the click was the asking); a peek shows
         // its contents card, the rest go to the dock and come back onto the shelf.
@@ -938,6 +941,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    /// Claude Code and Codex notices (user's ask, 2026-11-02). Asked once, the first launch after
+    /// this arrived, whether to add the hooks; the switch in Settings adds or removes them after.
+    private func startAgentNotices() {
+        if !settings.agentNoticesAsked {
+            settings.agentNoticesAsked = true
+            let alert = NSAlert()
+            alert.messageText = "Tell you when Claude Code or Codex needs you?"
+            alert.informativeText = "ClickBait shows a pill by the cursor when Claude Code needs you or finishes, and when Codex finishes, unless you're already looking at it. For Claude Code it adds two small hooks to its settings (~/.claude/settings.json), beside your own; switching this off in Settings takes them out. Nothing is sent anywhere."
+            alert.addButton(withTitle: "Turn on")
+            alert.addButton(withTitle: "Not now")
+            NSApp.activate()
+            settings.agentNotices = alert.runModal() == .alertFirstButtonReturn
+        }
+        startObservingAgentSetting()
+    }
+
+    /// Applies the switch now and again whenever it changes.
+    private func startObservingAgentSetting() {
+        applyAgentNotices()
+        withObservationTracking { _ = settings.agentNotices } onChange: { [weak self] in
+            Task { @MainActor in self?.startObservingAgentSetting() }
+        }
+    }
+
+    private func applyAgentNotices() {
+        if settings.agentNotices {
+            if !AgentHookInstaller.isInstalled { AgentHookInstaller.install() }
+            agents.start()
+        } else {
+            agents.stop()
+            AgentHookInstaller.remove()
+        }
+    }
+
+    /// By the cursor (user's rule: notices at the companion). Skipped while the app it runs in is
+    /// in front: the person is watching it. "Needs you" is a card whose [go there] brings that
+    /// app forward; "finished" is a pill.
+    private func showAgentNotice(_ notice: AgentNotice) {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        if let app = notice.app, app == front { return }
+        if notice.app == nil, notice.tool == .codex, front == "com.openai.codex" { return }
+        Log.app.notice("Agent notice: \(notice.toolName, privacy: .public) \(String(describing: notice.kind), privacy: .private)")
+        switch notice.kind {
+        case .finished:
+            SoundCues.play(.done, enabled: settings.soundCues)
+            overlay.showJobResult(notice.line, tone: .idle, force: !coordinator.isBusy)
+        case .needsYou(let detail):
+            SoundCues.play(.needsYou, enabled: settings.soundCues)
+            guard !coordinator.isBusy, coordinator.pendingAction == nil, let app = notice.app,
+                  let running = NSRunningApplication.runningApplications(withBundleIdentifier: app).first else {
+                overlay.showJobResult(notice.line, tone: .processing, force: true)
+                return
+            }
+            confirm.show(notice.line, at: overlay.companionTopLeft, confirm: "go there", cancel: "later",
+                         hint: detail, tone: .processing, waitTime: .seconds(15)) { yes in
+                if yes { running.activate() }
             }
         }
     }

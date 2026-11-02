@@ -12,6 +12,8 @@ final class AppSettings {
         static let notchVolumeHUD = "settings.notchVolumeHUD"
         static let notchBrightnessHUD = "settings.notchBrightnessHUD"
         static let soundCues = "settings.soundCues"
+        static let agentNotices = "settings.agentNotices"
+        static let agentNoticesAsked = "settings.agentNoticesAsked"
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
         static let searchPhotos = "settings.searchPhotos"
@@ -123,6 +125,15 @@ final class AppSettings {
     var soundCues: Bool {
         didSet { defaults.set(soundCues, forKey: Key.soundCues) }
     }
+    /// Claude Code and Codex notices by the cursor ("needs you", "finished"): ClickBait's hooks
+    /// in Claude Code's settings are added while this is on and taken out when it's off.
+    var agentNotices: Bool {
+        didSet { defaults.set(agentNotices, forKey: Key.agentNotices) }
+    }
+    /// Asked once whether to add the hooks (yes or no, never again).
+    var agentNoticesAsked: Bool {
+        didSet { defaults.set(agentNoticesAsked, forKey: Key.agentNoticesAsked) }
+    }
     /// Vision Memory (`SearchIndex`'s pictures): reading and describing pictures at all.
     var visionDescribe: Bool {
         didSet { defaults.set(visionDescribe, forKey: Key.visionDescribe) }
@@ -233,6 +244,8 @@ final class AppSettings {
         notchVolumeHUD = defaults.object(forKey: Key.notchVolumeHUD) as? Bool ?? true
         notchBrightnessHUD = defaults.object(forKey: Key.notchBrightnessHUD) as? Bool ?? true
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
+        agentNotices = defaults.bool(forKey: Key.agentNotices)
+        agentNoticesAsked = defaults.bool(forKey: Key.agentNoticesAsked)
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)
