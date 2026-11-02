@@ -6,20 +6,25 @@ public enum ArchiveListing {
     public struct Entry: Equatable, Sendable {
         public let path: String
         public let bytes: Int64
+        /// tar's date as it printed it ("Nov  2 18:07", "Mar  4  2024").
+        public var date: String = ""
         public var isFolder: Bool { path.hasSuffix("/") }
+
+        public init(path: String, bytes: Int64, date: String = "") { (self.path, self.bytes, self.date) = (path, bytes, date) }
     }
 
     /// One entry per line: permissions, links, owner, group, size, three date fields, the name
     /// (which may hold spaces). Finder's own leftovers (__MACOSX, .DS_Store) are left out.
     public static func entries(_ listing: String) -> [Entry] {
-        let line = try? NSRegularExpression(pattern: #"^\S{10}\s+\d+\s+\S+\s+\S+\s+(\d+)\s+\S+\s+\S+\s+\S+\s(.+)$"#)
+        let line = try? NSRegularExpression(pattern: #"^\S{10}\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\S+\s+\S+\s+\S+)\s(.+)$"#)
         return listing.split(separator: "\n").compactMap { raw in
             let text = String(raw)
             guard let match = line?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                  let size = Range(match.range(at: 1), in: text), let name = Range(match.range(at: 2), in: text) else { return nil }
+                  let size = Range(match.range(at: 1), in: text), let date = Range(match.range(at: 2), in: text),
+                  let name = Range(match.range(at: 3), in: text) else { return nil }
             let path = String(text[name])
             guard !path.hasPrefix("__MACOSX"), !path.hasSuffix(".DS_Store") else { return nil }
-            return Entry(path: path, bytes: Int64(text[size]) ?? 0)
+            return Entry(path: path, bytes: Int64(text[size]) ?? 0, date: String(text[date]))
         }
     }
 

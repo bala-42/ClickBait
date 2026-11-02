@@ -370,15 +370,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay.showJobResult(text, tone: .idle, force: true)
         }
         startAgentNotices()
-        coordinator.onOfferResult = { [weak self] request, files, outcome in self?.showOfferResult(request, files: files, outcome: outcome) }
-        // A shelf hover pill: straight away on that file (the click was the asking); a peek shows
-        // its contents card, the rest go to the dock and come back onto the shelf.
+        // Every peek opens the archive browser (MacPacker-style), however it was asked for.
+        FileActions.onPeek = { archives in archives.first.map(ArchiveBrowser.shared.show) }
+        // A shelf hover pill: straight away on that file (the click was the asking); a peek opens
+        // the archive browser, the rest go to the dock and come back onto the shelf.
         ShelfDrop.runAction = { [weak self] request, file in
             guard let self else { return }
             Task { @MainActor in
-                let peeking = request.name == "peek"
-                let outcome = await self.coordinator.perform(request, speak: false, files: [file], quiet: peeking)
-                if peeking { self.showOfferResult(request, files: [file], outcome: outcome) }
+                _ = await self.coordinator.perform(request, speak: false, files: [file], quiet: request.name == "peek")
             }
         }
         coordinator.overlayQuietDone = { [weak self] in
@@ -1164,15 +1163,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A taken peek: the contents in a green card with an extract button (straight to the
     /// dock, being the answer it asked for).
-    private func showOfferResult(_ request: ActionRequest, files: [URL], outcome: AskCoordinator.ActionOutcome) {
-        guard request.name == "peek", case .success(let contents) = outcome else { return }
-        confirm.show(contents, at: overlay.companionTopLeft, confirm: "extract", cancel: "done",
-                     hint: nil, tone: .action, waitTime: .seconds(20)) { [weak self] extract in
-            guard extract, let self else { return }
-            Task { @MainActor in _ = await self.coordinator.perform(ActionRequest(name: "extract"), speak: false, files: files) }
-        }
-    }
-
     /// `then`: once the chat is open in the home context (a clicked suggestion is sent then).
     private func goThere(_ id: UUID, then: (() -> Void)? = nil) {
         guard !coordinator.isBusy,

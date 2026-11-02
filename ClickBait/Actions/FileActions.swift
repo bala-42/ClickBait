@@ -142,10 +142,10 @@ enum FileActions {
 
     /// tar asks for a locked archive's password on the terminal and waits forever (a test hung on
     /// it): a stand-in password makes it fail at once with "Incorrect passphrase" instead.
-    private static let noPassword = ["--passphrase", "clickbait-no-password"]
+    static let noPassword = ["--passphrase", "clickbait-no-password"]
 
     /// A password-locked archive says so in tar's errors ("Encrypted", "passphrase").
-    private static func isLocked(_ errors: String) -> Bool {
+    static func isLocked(_ errors: String) -> Bool {
         let lower = errors.lowercased()
         return lower.contains("encrypt") || lower.contains("passphrase") || lower.contains("password")
     }
@@ -159,17 +159,15 @@ enum FileActions {
         var locked: [String] = []
         for archive in archives {
             let parent = place ?? archive.deletingLastPathComponent()
-            var base = archive.deletingPathExtension().lastPathComponent
-            if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }  // "x.tar.gz" → "x"
-            let folder = parent.appending(path: try uniqueName(base: base, extension: "", in: parent))
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
-            let result = try run("/usr/bin/tar", ["-xf", archive.path, "-C", folder.path] + noPassword)
+            let staging = parent.appending(path: ".clickbait-extract-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
+            let result = try run("/usr/bin/tar", ["-xf", archive.path, "-C", staging.path] + noPassword)
             if result.status != 0 {
-                try? FileManager.default.removeItem(at: folder)
+                try? FileManager.default.removeItem(at: staging)
                 if isLocked(result.errors) { locked.append(archive.lastPathComponent); continue }
                 throw FileActionError.failed("couldn't open \(archive.lastPathComponent): \(result.errors.split(separator: "\n").first ?? "")")
             }
-            outputs.append(folder)
+            outputs.append(try placeExtracted(staging, beside: parent, named: archiveBase(archive.lastPathComponent)))
         }
         if outputs.isEmpty, !locked.isEmpty {
             throw FileActionError.unsupported("\(locked.joined(separator: ", ")) \(locked.count == 1 ? "is" : "are") password-locked; I can't open \(locked.count == 1 ? "it" : "them") without the password.")
@@ -180,9 +178,14 @@ enum FileActions {
     }
 
     /// What's inside, without extracting: how many items, their total size, the first few names.
+    /// Opens the archive browser for a peek (set by the app delegate): every peek, by click,
+    /// voice or typing, shows the archive's insides, not just a summary.
+    nonisolated(unsafe) static var onPeek: (@MainActor ([URL]) -> Void)?
+
     private static func peek(_ files: [URL]) throws -> (String, [URL]) {
         let archives = files.filter(isArchive)
         guard !archives.isEmpty else { throw FileActionError.unsupported("None of the selected files are archives.") }
+        if let open = onPeek { Task { @MainActor in open(archives) } }
         var lines: [String] = []
         for archive in archives {
             let result = try run("/usr/bin/tar", ["-tvf", archive.path] + noPassword)
@@ -777,6 +780,35 @@ enum FileActions {
         let folders = Set(files.map { $0.deletingLastPathComponent().standardizedFileURL })
         guard folders.count == 1, let folder = folders.first else { throw FileActionError.differentFolders }
         return folder
+    }
+
+    /// "x.zip" → "x", "x.tar.gz" → "x".
+    static func archiveBase(_ name: String) -> String {
+        var base = (name as NSString).deletingPathExtension
+        if base.lowercased().hasSuffix(".tar") { base = String(base.dropLast(4)) }
+        return base
+    }
+
+    /// Smart extraction (after MacPacker's, user's ask, 2026-11-02): what was unpacked into
+    /// `staging` lands beside the archive — one item as itself, several in a folder named after
+    /// the archive, so a zip of one folder never becomes "photos/photos". Finder's leftovers
+    /// (__MACOSX, .DS_Store) are dropped. Returns what landed.
+    static func placeExtracted(_ staging: URL, beside parent: URL, named base: String) throws -> URL {
+        let manager = FileManager.default
+        for junk in ["__MACOSX", ".DS_Store"] { try? manager.removeItem(at: staging.appending(path: junk)) }
+        let items = try manager.contentsOfDirectory(at: staging, includingPropertiesForKeys: nil)
+        if items.count == 1, let only = items.first {
+            let name = only.lastPathComponent
+            let ext = only.hasDirectoryPath ? "" : only.pathExtension
+            let stem = ext.isEmpty ? name : (name as NSString).deletingPathExtension
+            let target = parent.appending(path: try uniqueName(base: stem, extension: ext, in: parent))
+            try manager.moveItem(at: only, to: target)
+            try? manager.removeItem(at: staging)
+            return target
+        }
+        let target = parent.appending(path: try uniqueName(base: base, extension: "", in: parent))
+        try manager.moveItem(at: staging, to: target)
+        return target
     }
 
     private static func uniqueName(base: String, extension ext: String, in folder: URL) throws -> String {
