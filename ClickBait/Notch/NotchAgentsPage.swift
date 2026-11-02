@@ -21,7 +21,8 @@ struct NotchAgentsPage: View {
         .task {
             while !Task.isCancelled {
                 service.refresh()
-                try? await Task.sleep(for: .seconds(60))
+                // A task running: its tokens and cost keep up (the logs are read incrementally).
+                try? await Task.sleep(for: .seconds(AgentLiveStore.shared.recent.contains(where: \.working) ? 10 : 60))
             }
         }
     }
@@ -78,20 +79,53 @@ struct NotchAgentsPage: View {
         }
     }
 
+    /// Running tasks, each with its clock since it began and its model, tokens written and cost
+    /// so far (user's ask, 2026-11-02, after Vorssaint's Now); no clock without one — then when
+    /// each was last used.
     private var now: some View {
-        Card {
-            Label("Now", systemImage: "waveform.path.ecg").cardTitle()
-            ForEach([(AgentNotice.Tool.claude, "Claude", "sparkle", Self.claudeColor), (.codex, "Codex", "chevron.left.forwardslash.chevron.right", Self.codexColor)], id: \.1) { tool, name, symbol, color in
-                HStack {
-                    Image(systemName: symbol).foregroundStyle(color).frame(width: 14)
-                    Text(name)
-                    Spacer()
-                    Text(Self.when(service.lastUse(of: tool))).foregroundStyle(NotchPalette.tertiary)
+        let running = AgentLiveStore.shared.recent.filter { $0.working && $0.turnStarted != nil }
+        return Card {
+            HStack {
+                Label { Text("Now") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(running.isEmpty ? NotchPalette.text : Self.claudeColor) }.cardTitle()
+                Spacer()
+                if !running.isEmpty { Circle().fill(Self.claudeColor).frame(width: 6, height: 6) }
+            }
+            ForEach(running) { session in
+                let turn = AgentLive.turn(service.records, project: session.project, since: session.turnStarted ?? Date(), prices: service.prices)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "sparkle").foregroundStyle(Self.claudeColor).frame(width: 14)
+                        Text(session.project.isEmpty ? "Claude Code" : session.project).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Spacer()
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(AgentLive.clock(context.date.timeIntervalSince(session.turnStarted ?? context.date)))
+                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(Self.claudeColor)
+                        }
+                    }
+                    Text([turn.model, turn.written > 0 ? "\(Self.tokens(turn.written)) written" : nil,
+                          turn.cost > 0 ? turn.cost.formatted(.currency(code: "USD")) : nil].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 11)).foregroundStyle(NotchPalette.secondary).lineLimit(1)
                 }
-                .font(.system(size: 12))
+            }
+            if running.isEmpty {
+                ForEach([(AgentNotice.Tool.claude, "Claude", "sparkle", Self.claudeColor), (.codex, "Codex", "chevron.left.forwardslash.chevron.right", Self.codexColor)], id: \.1) { tool, name, symbol, color in
+                    HStack {
+                        Image(systemName: symbol).foregroundStyle(color).frame(width: 14)
+                        Text(name)
+                        Spacer()
+                        Text(Self.when(service.lastUse(of: tool))).foregroundStyle(NotchPalette.tertiary)
+                    }
+                    .font(.system(size: 12))
+                }
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// "17K", "1.2M".
+    private static func tokens(_ count: Int) -> String {
+        count >= 1_000_000 ? String(format: "%.1fM", Double(count) / 1_000_000) : count >= 1000 ? "\(count / 1000)K" : "\(count)"
     }
 
     private func trend(_ summary: AgentSummary) -> some View {

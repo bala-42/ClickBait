@@ -36,6 +36,8 @@ public struct AgentLive: Sendable {
         public var files: [File] = []
         public var working = false
         public var lastActive: Date
+        /// When the running task began (its prompt), nil between tasks: the Now card's clock.
+        public var turnStarted: Date?
         /// What it's doing now, or nil between turns.
         public var now: String? { working ? steps.last(where: \.running)?.text : nil }
     }
@@ -66,12 +68,14 @@ public struct AgentLive: Sendable {
         case "UserPromptSubmit":
             session.prompt = (event["prompt"] as? String).map(Self.firstLine)
             session.working = true
+            session.turnStarted = now
             settle(&session)
         case "PreToolUse":
             let tool = event["tool_name"] as? String ?? "Tool"
             let input = event["tool_input"] as? [String: Any] ?? [:]
             settle(&session)
             session.working = true
+            if session.turnStarted == nil { session.turnStarted = now }  // started before ClickBait was watching
             let (text, symbol) = Self.describe(tool, input)
             session.steps.append(Step(id: nextStep, text: text, symbol: symbol, running: true))
             nextStep += 1
@@ -80,11 +84,26 @@ public struct AgentLive: Sendable {
         case "Stop":
             settle(&session)
             session.working = false
+            session.turnStarted = nil
         default:
             return false
         }
         if let index = sessions.firstIndex(where: { $0.id == id }) { sessions[index] = session } else { sessions.append(session) }
         return true
+    }
+
+    /// The Now card's clock: "5:34", "1:02:03".
+    public static func clock(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds)), hours = total / 3600
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, total % 3600 / 60, total % 60) : String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// The Now card's bottom line for a running task: its model, the tokens it wrote and their
+    /// cost, from Claude Code's usage since the task began in that project.
+    public static func turn(_ records: [AgentUsageRecord], project: String, since: Date, prices: AgentPrices) -> (model: String?, written: Int, cost: Double) {
+        let mine = records.filter { $0.tool == .claude && $0.project == project && $0.date >= since }
+        return (mine.max { $0.date < $1.date }.map { AgentPrices.displayName($0.model) },
+                mine.reduce(0) { $0 + $1.output }, mine.reduce(0) { $0 + prices.cost($1) })
     }
 
     private func settle(_ session: inout Session) {

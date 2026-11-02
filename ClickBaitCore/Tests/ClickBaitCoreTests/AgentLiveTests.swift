@@ -30,4 +30,16 @@ struct AgentLiveTests {
         let taken = live.see(#"{"tool":"codex","event":{}}"#)
         #expect(!taken && live.sessions.isEmpty)
     }
+
+    @Test func clockAndTurn() {
+        #expect(AgentLive.clock(334) == "5:34" && AgentLive.clock(3723) == "1:02:03")
+        let start = Date(timeIntervalSince1970: 1000)
+        let records = [
+            AgentUsageRecord(tool: .claude, model: "claude-opus-4-1", project: "ClickBait", date: start - 10, input: 0, output: 900, cacheRead: 0, cacheWrite: 0),
+            AgentUsageRecord(tool: .claude, model: "claude-opus-4-1", project: "ClickBait", date: start + 5, input: 10, output: 1200, cacheRead: 0, cacheWrite: 0),
+            AgentUsageRecord(tool: .claude, model: "claude-opus-4-1", project: "Other", date: start + 6, input: 0, output: 5000, cacheRead: 0, cacheWrite: 0),
+        ]
+        let turn = AgentLive.turn(records, project: "ClickBait", since: start, prices: AgentPrices(json: Data()))
+        #expect(turn.written == 1200 && turn.model != nil)  // before the task and another project left out
+    }
 }
