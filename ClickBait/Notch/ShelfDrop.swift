@@ -17,6 +17,8 @@ enum ShelfDrop {
     static var say: ((String, CompanionTone) -> Void)?
     /// An archive just landed on the shelf: the app offers "peek at it?".
     static var offerPeek: ((URL) -> Void)?
+    /// A hover pill's action on one shelf file (peek, extract, shrink, convert, zip).
+    static var runAction: ((ActionRequest, URL) -> Void)?
     /// Set by the notch: whether Internet Mode is on.
     static var internetOn: () -> Bool = { false }
 

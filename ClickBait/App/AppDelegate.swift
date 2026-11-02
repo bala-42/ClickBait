@@ -354,6 +354,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         ShelfDrop.offerPeek = { [weak self] archive in self?.offerPeek(archive) }
         coordinator.onOfferResult = { [weak self] request, files, outcome in self?.showOfferResult(request, files: files, outcome: outcome) }
+        // A shelf hover pill: straight away on that file (the click was the asking); a peek shows
+        // its contents card, the rest go to the dock and come back onto the shelf.
+        ShelfDrop.runAction = { [weak self] request, file in
+            guard let self else { return }
+            Task { @MainActor in
+                let peeking = request.name == "peek"
+                let outcome = await self.coordinator.perform(request, speak: false, files: [file], quiet: peeking)
+                if peeking { self.showOfferResult(request, files: [file], outcome: outcome) }
+            }
+        }
         coordinator.overlayQuietDone = { [weak self] in self?.overlay.dismissAnswer() }
         TakeMeThere.say = { [weak self] text in self?.overlay.showHoverHint(text) }
         StudioModel.brain = { [weak self] in self?.settings.ollamaModel ?? "" }

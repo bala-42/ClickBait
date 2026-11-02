@@ -1257,6 +1257,9 @@ private struct ShelfView: View {
     /// The file being renamed from its tile (user's ask, 2026-11-01), and the name being typed.
     @State private var renaming: URL?
     @State private var newName = ""
+    /// The file under the pointer: the header shows its actions until another file is hovered
+    /// or the pointer leaves the files card, so the pointer can travel up to them.
+    @State private var hoveredFile: URL?
     @FocusState private var renameFocused: Bool
     @State private var cleared: String?
 
@@ -1272,73 +1275,86 @@ private struct ShelfView: View {
     /// Files: a count, select all and drag-the-selection, and the drop area.
     private var files: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("Files").font(.system(size: 12, weight: .semibold))
-                Text("\(shelf.files.count)/12").font(.system(size: 10).monospacedDigit()).foregroundStyle(NotchPalette.tertiary)
-                Spacer(minLength: 4)
-                Button("Paste") { ShelfDrop.paste(into: shelf) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(NotchPalette.highlight)
-                    .help("Paste what you copied onto the shelf (⌘V)")
-                if shelf.files.count > 1 {
-                    Button(shelf.selectedFiles.count == shelf.files.count ? "Clear" : "Select all") {
-                        if shelf.selectedFiles.count == shelf.files.count { shelf.clearSelection() } else { shelf.selectAll() }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(NotchPalette.highlight)
-                }
-                if !shelf.selectedFiles.isEmpty {
-                    ZStack {
-                        Capsule().fill(NotchPalette.highlight.opacity(0.16))
-                        MultiFileDragHandle(urls: shelf.files.filter { shelf.selectedFiles.contains($0) })
-                        Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(NotchPalette.highlight)
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .allowsHitTesting(false)
-                    }
-                    .fixedSize()
-                    .accessibilityElement()
-                    .accessibilityLabel("Drag \(shelf.selectedFiles.count) selected files together")
-                    .accessibilityHint("Drag this control to share the selected files together")
-                }
+            if let hovered = hoveredFile, shelf.files.contains(hovered), renaming == nil {
+                ShelfActionPills(file: hovered).frame(height: 16)
+            } else {
+                filesHeader.frame(height: 16)
             }
-            ZStack {
-                RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous)
-                    .strokeBorder(targeted ? NotchPalette.highlight : Color.white.opacity(0.12),
-                                  style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [4, 4] : []))
-                if shelf.files.isEmpty {
-                    VStack(spacing: 4) {
-                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchPalette.highlight)
-                        Text(targeted ? "Release to add" : "Drop or paste files here")
-                            .font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
-                    }
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) { ForEach(shelf.files, id: \.self) { file($0) } }
-                            .padding(.horizontal, 5)
-                    }
-                }
-            }
-            .frame(maxHeight: .infinity)
-            .onDrop(of: ShelfDrop.types, isTargeted: $targeted) { ShelfDrop.take($0, into: shelf) }
-            // A click here makes the notch key, so ⌘V pastes onto the shelf; right-click ▸ Paste too.
-            .simultaneousGesture(TapGesture().onEnded { ShelfDrop.focusNotch() })
-            .contextMenu {
-                Button("Paste") { ShelfDrop.paste(into: shelf) }.disabled(!ShelfDrop.canPaste)
-            }
-            .onAppear {
-                ShelfDrop.shelfShown = true
-                ShelfDrop.listenForPaste(shelf: shelf)
-            }
-            .onDisappear { ShelfDrop.shelfShown = false }
-            .accessibilityLabel(shelf.files.isEmpty ? "Shelf, empty. Drop files here." : "Shelf, \(shelf.files.count) files")
+            filesArea
         }
         .padding(10)
         .frame(width: 250)
         .notchCard(wash: targeted ? NotchPalette.highlight.opacity(0.35) : nil)
+        .onHover { inside in if !inside { hoveredFile = nil } }
+    }
+
+    private var filesHeader: some View {
+        HStack(spacing: 6) {
+            Text("Files").font(.system(size: 12, weight: .semibold))
+            Text("\(shelf.files.count)/12").font(.system(size: 10).monospacedDigit()).foregroundStyle(NotchPalette.tertiary)
+            Spacer(minLength: 4)
+            Button("Paste") { ShelfDrop.paste(into: shelf) }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(NotchPalette.highlight)
+                .help("Paste what you copied onto the shelf (⌘V)")
+            if shelf.files.count > 1 {
+                Button(shelf.selectedFiles.count == shelf.files.count ? "Clear" : "Select all") {
+                    if shelf.selectedFiles.count == shelf.files.count { shelf.clearSelection() } else { shelf.selectAll() }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(NotchPalette.highlight)
+            }
+            if !shelf.selectedFiles.isEmpty {
+                ZStack {
+                    Capsule().fill(NotchPalette.highlight.opacity(0.16))
+                    MultiFileDragHandle(urls: shelf.files.filter { shelf.selectedFiles.contains($0) })
+                    Label("Drag \(shelf.selectedFiles.count)", systemImage: "hand.draw")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(NotchPalette.highlight)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .allowsHitTesting(false)
+                }
+                .fixedSize()
+                .accessibilityElement()
+                .accessibilityLabel("Drag \(shelf.selectedFiles.count) selected files together")
+                .accessibilityHint("Drag this control to share the selected files together")
+            }
+        }
+    }
+
+    private var filesArea: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous)
+                .strokeBorder(targeted ? NotchPalette.highlight : Color.white.opacity(0.12),
+                              style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: shelf.files.isEmpty ? [4, 4] : []))
+            if shelf.files.isEmpty {
+                VStack(spacing: 4) {
+                    Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 15)).foregroundStyle(NotchPalette.highlight)
+                    Text(targeted ? "Release to add" : "Drop or paste files here")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(NotchPalette.secondary)
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) { ForEach(shelf.files, id: \.self) { file($0) } }
+                        .padding(.horizontal, 5)
+                }
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .onDrop(of: ShelfDrop.types, isTargeted: $targeted) { ShelfDrop.take($0, into: shelf) }
+        // A click here makes the notch key, so ⌘V pastes onto the shelf; right-click ▸ Paste too.
+        .simultaneousGesture(TapGesture().onEnded { ShelfDrop.focusNotch() })
+        .contextMenu {
+            Button("Paste") { ShelfDrop.paste(into: shelf) }.disabled(!ShelfDrop.canPaste)
+        }
+        .onAppear {
+            ShelfDrop.shelfShown = true
+            ShelfDrop.listenForPaste(shelf: shelf)
+        }
+        .onDisappear { ShelfDrop.shelfShown = false }
+        .accessibilityLabel(shelf.files.isEmpty ? "Shelf, empty. Drop files here." : "Shelf, \(shelf.files.count) files")
     }
 
     private var noteCard: some View {
@@ -1472,6 +1488,7 @@ private struct ShelfView: View {
             }
         }
         .frame(width: 58, height: 62)
+        .onHover { if $0 { hoveredFile = url } }
         .background(selected ? NotchPalette.highlight.opacity(0.16) : Color.white.opacity(0.045),
                     in: RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Look.Corner.tile, style: .continuous)
@@ -1613,5 +1630,62 @@ struct FileThumbnail: View {
                 Self.cache.setObject(made.nsImage, forKey: url as NSURL)
                 image = made.nsImage
             }
+    }
+}
+
+/// A shelf file's actions, in the files card's header while it's hovered (user's ask,
+/// 2026-11-02): by kind — an archive peek · extract, a video shrink · MP4 · GIF, a picture
+/// shrink · JPEG · copy, anything else zip. Small letters, file actions in Shamrock; a click
+/// runs it at once (the click is the asking) on this file, its result back on the shelf.
+struct ShelfActionPills: View {
+    let file: URL
+
+    private var actions: [(label: String, request: ActionRequest?)] {
+        let ext = file.pathExtension.lowercased()
+        if FileActions.isArchive(file) { return [("peek", ActionRequest(name: "peek")), ("extract", ActionRequest(name: "extract"))] }
+        switch SmartSearch.Kind.of(file.path) {
+        case .video:
+            return [("shrink", ActionRequest(name: "shrink")),
+                    ext == "mp4" ? ("MOV", ActionRequest(name: "convert", argument: "mov")) : ("MP4", ActionRequest(name: "convert", argument: "mp4")),
+                    ("GIF", ActionRequest(name: "convert", argument: "gif"))]
+        case .image:
+            return [("shrink", ActionRequest(name: "shrink")),
+                    ["jpg", "jpeg"].contains(ext) ? ("PNG", ActionRequest(name: "convert", argument: "png")) : ("JPEG", ActionRequest(name: "convert", argument: "jpeg")),
+                    ("copy", nil)]
+        default:
+            return [("zip", ActionRequest(name: "compress"))]
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(file.deletingPathExtension().lastPathComponent)
+                .font(.system(size: 10, weight: .medium)).foregroundStyle(NotchPalette.tertiary)
+                .lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 4)
+            ForEach(actions, id: \.label) { action in
+                Button {
+                    if let request = action.request { ShelfDrop.runAction?(request, file) } else { copy() }
+                } label: {
+                    Text(PillCase.lowered(action.label))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CompanionTone.action.color)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(CompanionTone.action.color.opacity(0.18), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(action.label) \(file.lastPathComponent)")
+            }
+        }
+    }
+
+    /// A picture onto the clipboard (as the picture and as the file), with a word by the companion.
+    private func copy() {
+        let board = NSPasteboard.general
+        board.clearContents()
+        var objects: [NSPasteboardWriting] = [file as NSURL]
+        if let image = NSImage(contentsOf: file) { objects.insert(image, at: 0) }
+        board.writeObjects(objects)
+        ShelfDrop.say?("copied \(file.lastPathComponent) ✓", .action)
     }
 }
