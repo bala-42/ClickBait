@@ -69,7 +69,7 @@ final class NotchController {
         var pageSize: (width: Double, height: Double)? {
             if tab == .volume { return (640, 260) }
             guard tab == .gallery else { return nil }
-            return galleryPage?.size ?? (640, 220)
+            return galleryPage?.size ?? (640, 260)
         }
         /// Opens a gallery page, or its tiles (set by the controller: it re-fits the window).
         var openGallery: @MainActor (GalleryPage?) -> Void = { _ in }

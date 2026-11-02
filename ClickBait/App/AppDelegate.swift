@@ -356,6 +356,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         ShelfDrop.offerPeek = { [weak self] archive in self?.offerPeek(archive) }
         agents.onNotice = { [weak self] notice in self?.showAgentNotice(notice) }
+        wireGallery()
+        ClipboardHistory.shared.start()
         // The timer bubble's countdown or Pomodoro phase ended: a pill by the cursor.
         NotchTimerClock.shared.onFinish = { [weak self] text in
             guard let self else { return }
@@ -949,6 +951,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 try? await Task.sleep(for: .milliseconds(500))
             }
+        }
+    }
+
+    /// The gallery's pages reach the dock, screenshots and Lookup through these.
+    private func wireGallery() {
+        GalleryHooks.jobs = { [weak self] in
+            (self?.backgroundJobs.entries ?? []).map { entry in
+                let status = switch entry.job.status {
+                case .working: "working"
+                case .done: entry.seen ? "done" : "done · new"
+                case .failed: "failed"
+                case .stopped: "stopped"
+                }
+                return GalleryHooks.Job(id: entry.id, title: entry.job.question, status: status, tone: entry.job.kind.tone)
+            }
+        }
+        GalleryHooks.openJob = { [weak self] id in
+            self?.capsules.summon()
+            self?.capsules.expand(id)
+        }
+        GalleryHooks.snip = { [weak self] in self?.overlay.showJobResult("hold ⌥⌘ and circle what you mean", tone: .capture, force: true) }
+        GalleryHooks.screenshot = { [weak self] kind in
+            guard let self else { return }
+            notch.makeRoom()  // folded, so it isn't in the picture
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))  // the notch out of the picture
+                _ = await coordinator.perform(ActionRequest(name: "screenshot", argument: kind.rawValue), speak: false)
+            }
+        }
+        GalleryHooks.lookup = { [weak self] words in
+            guard let self else { return }
+            notch.model.tab = .ask
+            notch.model.chatting = true
+            notchChat.model.draft = words
+            notchChat.model.focusRequest += 1
         }
     }
 

@@ -7,19 +7,31 @@ import SwiftUI
 /// bean buttons don't already open (Lookup, Shelf, Studio, the player) and not the timer (its
 /// own bubble). Pages join as they're built.
 enum GalleryPage: String, CaseIterable, Identifiable {
-    case controls, agents
+    case controls, agents, jobs, notes, reminders, snips, tools, clipboard
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .controls: "Controls"
         case .agents: "AI Agents"
+        case .jobs: "Jobs"
+        case .notes: "Notes"
+        case .reminders: "Reminders"
+        case .snips: "Recent snips"
+        case .tools: "Tools"
+        case .clipboard: "Clipboard"
         }
     }
     var symbol: String {
         switch self {
         case .controls: "slider.horizontal.3"
         case .agents: "sparkles"
+        case .jobs: "tray.full"
+        case .notes: "note.text"
+        case .reminders: "checklist"
+        case .snips: "camera.viewfinder"
+        case .tools: "wrench.and.screwdriver"
+        case .clipboard: "doc.on.clipboard"
         }
     }
     /// The notch's size on this page.
@@ -27,6 +39,10 @@ enum GalleryPage: String, CaseIterable, Identifiable {
         switch self {
         case .controls: (640, 200)
         case .agents: (640, 440)
+        case .jobs, .reminders: (640, 280)
+        case .notes: (640, 300)
+        case .clipboard: (640, 260)
+        case .snips, .tools: (640, 180)
         }
     }
 }
@@ -51,6 +67,12 @@ struct GalleryView: View {
                 switch page {
                 case .controls: ControlsPage(settings: settings)
                 case .agents: NotchAgentsPage()
+                case .jobs: JobsPage()
+                case .notes: NotesPage()
+                case .reminders: RemindersPage()
+                case .snips: SnipsPage()
+                case .tools: ToolsPage()
+                case .clipboard: ClipboardPage()
                 }
             }
             .padding(.horizontal, 6)

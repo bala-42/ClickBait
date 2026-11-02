@@ -74,4 +74,18 @@ struct ShelfPillsRenderTests {
         let data = try #require(NSBitmapImageRep(data: image.tiffRepresentation!)?.representation(using: .png, properties: [:]))
         try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "volume.png"))
     }
+
+    @Test func renderGallery() throws {
+        let model = NotchController.Model(note: NotchController.Note(text: "", save: { _ in }))
+        let view = VStack(spacing: 14) {
+            GalleryView(model: model, settings: AppSettings())
+            ToolsPage()
+        }
+        .frame(width: 608).padding(12).background(Color.black)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        let image = try #require(renderer.nsImage)
+        let data = try #require(NSBitmapImageRep(data: image.tiffRepresentation!)?.representation(using: .png, properties: [:]))
+        try data.write(to: URL(fileURLWithPath: ProcessInfo.processInfo.environment["CLICKBAIT_RENDER_DIR"]!).appending(path: "gallery.png"))
+    }
 }
