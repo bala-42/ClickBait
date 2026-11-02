@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The notch's own Ask conversation, separate from the overlay chat.
     private let notchChat = NotchChat()
     private let agents = AgentWatcher()
+    private let health = HealthWatcher()
     /// Shelf archives already offered a peek: never asked twice.
     private var offeredPeeks: Set<URL> = []
     private let confirm = ConfirmController()
@@ -421,6 +422,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
+            }
+        }
+        // One health reading, logged: live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.health"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Log.app.notice("Health now: \(self.health.describeNow(), privacy: .public)")
             }
         }
         // Presses a Quick panel tile that acts ("keepAwake", "colour", "copyText"): live tests.
@@ -1019,6 +1027,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NearbyMacs.shared.start()
         AppVolumeMixer.shared.startHeadphoneGuard()
+        health.enabled = { [weak self] in self?.settings.healthAlerts ?? false }
+        health.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
+        health.start()
         GalleryHooks.watch = { [weak self] rule in
             guard let self else { return }
             notch.makeRoom()

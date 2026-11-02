@@ -153,6 +153,9 @@ struct SettingsView: View {
                 Divider().overlay(SettingsLook.hairline)
                 ToggleRow("Claude Code and Codex notices", "A pill by the cursor when Claude Code needs you or finishes, and when Codex finishes, unless you're already looking at it. Adds two small hooks to Claude Code's settings while on; nothing is sent anywhere.",
                           isOn: $settings.agentNotices)
+                Divider().overlay(SettingsLook.hairline)
+                ToggleRow("Mac health alerts", "A pill by the cursor when your Mac works hard for two minutes, runs hot, or is low on disk space or battery. Once each, then quiet for an hour.",
+                          isOn: $settings.healthAlerts)
             }
             SettingsGroup("Vision Memory") {
                 VisionMemorySection(settings: settings)

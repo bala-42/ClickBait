@@ -14,6 +14,7 @@ final class AppSettings {
         static let soundCues = "settings.soundCues"
         static let agentNotices = "settings.agentNotices"
         static let agentNoticesAsked = "settings.agentNoticesAsked"
+        static let healthAlerts = "settings.healthAlerts"
         static let greetings = "settings.greetings"
         static let morningCards = "settings.morningCards"
         static let searchPhotos = "settings.searchPhotos"
@@ -129,6 +130,11 @@ final class AppSettings {
     /// in Claude Code's settings are added while this is on and taken out when it's off.
     var agentNotices: Bool {
         didSet { defaults.set(agentNotices, forKey: Key.agentNotices) }
+    }
+    /// Mac health by the cursor (`HealthWatcher`): working hard, hot, low disk, low battery. On
+    /// unless turned off.
+    var healthAlerts: Bool {
+        didSet { defaults.set(healthAlerts, forKey: Key.healthAlerts) }
     }
     /// Asked once whether to add the hooks (yes or no, never again).
     var agentNoticesAsked: Bool {
@@ -246,6 +252,7 @@ final class AppSettings {
         soundCues = defaults.object(forKey: Key.soundCues) as? Bool ?? true
         agentNotices = defaults.bool(forKey: Key.agentNotices)
         agentNoticesAsked = defaults.bool(forKey: Key.agentNoticesAsked)
+        healthAlerts = defaults.object(forKey: Key.healthAlerts) as? Bool ?? true
         greetings = defaults.object(forKey: Key.greetings) as? Bool ?? true
         microphoneUID = defaults.string(forKey: Microphones.defaultsKey)
         morningCards = defaults.bool(forKey: Key.morningCards)
