@@ -355,6 +355,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShelfDrop.say = { [weak self] text, tone in self?.overlay.showJobResult(text, tone: tone, force: true) }
         ShelfDrop.offerPeek = { [weak self] archive in self?.offerPeek(archive) }
         agents.onNotice = { [weak self] notice in self?.showAgentNotice(notice) }
+        // The timer bubble's countdown or Pomodoro phase ended: a pill by the cursor.
+        NotchTimerClock.shared.onFinish = { [weak self] text in
+            guard let self else { return }
+            SoundCues.play(.done, enabled: settings.soundCues)
+            overlay.showJobResult(text, tone: .idle, force: true)
+        }
         startAgentNotices()
         coordinator.onOfferResult = { [weak self] request, files, outcome in self?.showOfferResult(request, files: files, outcome: outcome) }
         // A shelf hover pill: straight away on that file (the click was the asking); a peek shows

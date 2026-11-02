@@ -124,7 +124,7 @@ struct NotchView: View {
         switch tab {
         case .shelf: "Back to Shelf"
         case .ask: "Back to Lookup"
-        case .home, .settings, .mirror, .music: "Back to Home"
+        case .home, .settings, .mirror, .music, .gallery, .timer: "Back to Home"
         }
     }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -138,7 +138,7 @@ struct NotchView: View {
 
     var body: some View {
         let open = state == .expanded
-        let prompter = isHere ? NotchController.prompter : nil
+        let prompter = (isHere ? NotchController.prompter : nil) ?? model.pageSize
         let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil,
                                     shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
                                     chat: model.showsChat, prompter: prompter)
@@ -428,6 +428,8 @@ private struct OpenNotch: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .shelf: ShelfView(shelf: shelf, note: model.note, onEditing: { model.editing = $0 }).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .music: MusicPanel(music: music, onOpen: { music.openPlayer(); onCollapse() }).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .gallery: GalleryView(model: model, settings: settings).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                case .timer: NotchTimerView().transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .settings, .mirror: EmptyView()
                 }
             }
@@ -488,10 +490,6 @@ private struct OpenNotch: View {
                 InternetSwitch(internet: settings.internet)
                 NotchHeaderIcon(symbol: model.showsKeys ? "info.circle.fill" : "info.circle", label: "Shortcuts", on: model.showsKeys) {
                     model.showsKeys.toggle()
-                }
-                NotchHeaderIcon(symbol: model.tab == .settings ? "gearshape.fill" : "gearshape", label: "ClickBait settings") {
-                    model.settingsPage = .general
-                    onTabChange(.settings)
                 }
                 // In a tab (Ask, Shelf, Music, a chat): back to the main panel; at Home: fold.
                 NotchHeaderIcon(symbol: "xmark", label: model.tab == .home ? "Close" : "Back to Home") {
@@ -906,7 +904,7 @@ struct IslandPills: View {
         case .shelf: Pill(name: "Shelf", mood: .happy, eyes: .both(.chevron), tint: NotchPalette.windowsGreen, tab: .shelf)
         case .mirror: Pill(name: "Studio", mood: .idle, eyes: .both(.dot), holo: true, tint: NotchPalette.windowsBlue, tab: .mirror)
         case .music: Pill(name: music?.sourceName ?? "Music", mood: .idle, eyes: .both(.pill(tilt: 8)), tint: NotchPalette.windowsYellow, tab: .music)
-        case .home, .settings: nil
+        case .home, .settings, .gallery, .timer: nil
         }
     }
 

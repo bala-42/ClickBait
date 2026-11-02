@@ -62,7 +62,16 @@ final class NotchController {
         var hud: (level: Double, muted: Bool, sky: Bool)?
         var tab: Tab = .home
         var settingsReturnTab: Tab = .home
-        enum Tab { case home, ask, shelf, settings, mirror, music }
+        enum Tab { case home, ask, shelf, settings, mirror, music, gallery, timer }
+        /// The gallery's open page (nil: its tiles).
+        var galleryPage: GalleryPage?
+        /// A size of its own for this tab and page (the gallery's pages), else nil.
+        var pageSize: (width: Double, height: Double)? {
+            guard tab == .gallery else { return nil }
+            return galleryPage?.size ?? (640, 220)
+        }
+        /// Opens a gallery page, or its tiles (set by the controller: it re-fits the window).
+        var openGallery: @MainActor (GalleryPage?) -> Void = { _ in }
         /// The bean's mood, read from the companion (set by the app delegate).
         var mood: @MainActor () -> Bean.Mood = { .idle }
         /// The launch hello: the open island shows only the bean, big, among sparkles.
@@ -128,6 +137,8 @@ final class NotchController {
     private let music = MusicBridge()
     private let shelf = ShelfStore()
     private var panels: [UInt32: Panel] = [:]
+    /// The four round buttons beside the open notch (gallery, timer, settings, sounds).
+    private let bubbles = NotchBubbles()
     private var pointerInside = false
     private var holdTask: Task<Void, Never>?
     private var pointerMonitors: [Any] = []
@@ -154,6 +165,11 @@ final class NotchController {
         model = Model(note: Note(text: settings.notchNote, save: { [weak settings] in settings?.notchNote = $0 }))
         StudioModel.shared.foldNotch = { [weak self] in self?.apply(.escape) }
         StudioModel.shared.notchChanged = { [weak self] in self?.prompterChanged() }
+        model.openGallery = { [weak self] page in
+            guard let self else { return }
+            model.galleryPage = page
+            place()
+        }
         // File actions can work on the shelf's selected files, and put what they make on it.
         FileActions.shelfSelection = { [weak self] in
             guard let self else { return [] }
@@ -406,18 +422,50 @@ final class NotchController {
                   let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                notch: notch, activity: model.activity, hud: hud,
                                                shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                               mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) else {
+                                               mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter ?? model.pageSize) else {
                 // Displays without a physical notch still receive the same centered panel.
                 guard let displayID = Self.displayID(screen),
                       let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                    notch: nil, activity: model.activity, hud: hud,
                                                    shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                                   mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) else { continue }
+                                                   mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter ?? model.pageSize) else { continue }
                 positionPanel(frame, notch: nil, displayID: displayID)
                 continue
             }
             positionPanel(frame, notch: notch, displayID: displayID)
         }
+        placeBubbles()
+    }
+
+    /// Shown with the open notch on Home and on the pages they open; tucked otherwise.
+    private func placeBubbles() {
+        let tabs: Set<Model.Tab> = [.home, .gallery, .timer]
+        let active = model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)
+        let frame = active.flatMap { targets[$0] }
+        let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && frame != nil
+        let go: (Model.Tab) -> Void = { [weak self] tab in
+            guard let self else { return }
+            if tab == .settings { model.settingsReturnTab = model.tab; model.settingsPage = .general }
+            if tab != .gallery { model.galleryPage = nil }
+            model.tab = tab
+            place()
+        }
+        bubbles.update(visible: visible, beside: frame ?? .zero, left: [
+            .init(id: "gallery", symbol: model.tab == .gallery ? "arrow.uturn.backward" : "square.grid.2x2",
+                  label: model.tab == .gallery ? "Back to Home" : "Gallery", on: model.tab == .gallery) { [weak self] in
+                go(self?.model.tab == .gallery ? .home : .gallery)
+            },
+            .init(id: "timer", symbol: "timer", label: "Timer", on: model.tab == .timer || NotchTimerClock.shared.running) { [weak self] in
+                go(self?.model.tab == .timer ? .home : .timer)
+            },
+        ], right: [
+            .init(id: "settings", symbol: "gearshape", label: "ClickBait settings") { go(.settings) },
+            .init(id: "sounds", symbol: settings.soundCues ? "speaker.wave.2" : "speaker.slash", label: settings.soundCues ? "Sound cues on" : "Sound cues off",
+                  on: settings.soundCues) { [weak self] in
+                self?.settings.soundCues.toggle()
+                self?.placeBubbles()
+            },
+        ])
     }
 
     /// Folded, with the pointer coming near: the clear window grows to the open size now, so a
@@ -433,7 +481,7 @@ final class NotchController {
             if near, let open = NotchPanel.frame(.expanded, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
                                                  notch: Self.notch(on: screen), activity: model.activity, hud: false,
                                                  shelf: model.tab == .shelf, settings: model.tab == .settings,
-                                                 mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter) {
+                                                 mirror: model.tab == .mirror, chat: model.showsChat, prompter: Self.prompter ?? model.pageSize) {
                 let width = max(open.width, target.width) * 1.12, height = max(open.height, target.height) * 1.12
                 room = CGRect(x: target.midX - width / 2, y: target.maxY - height, width: width, height: height)
             }
@@ -614,7 +662,7 @@ final class NotchController {
         let inside = panels.contains { displayID, panel in
             (active == nil || displayID == active) && panel.isVisible
                 && NotchPanel.pointerOn(point, frame: Self.rect(targets[displayID] ?? panel.frame), wasOn: pointerInside)
-        }
+        } || bubbles.frames.contains { $0.insetBy(dx: -8, dy: -8).contains(mouse) }  // on a bubble is on the notch
         // Near the notch (80 pt around it, at the top): the folded handle shows; otherwise it
         // stays out of sight (user's ask, 2026-10-24).
         let near = panels.contains { displayID, panel in
