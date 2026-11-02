@@ -86,7 +86,7 @@ public struct AskRequest: Sendable {
     /// A finished background answer's card (`Prompt.nextSystem`, text only): up to two short
     /// follow-up questions to offer under "suggested next:". Holds the answer.
     public var suggestNextAfter: String?
-    /// Morning cards (`Prompt.morningSystem`, text only): up to three things to ask today.
+    /// The morning greeting (`Prompt.morningSystem`, text only), shown in the notch.
     /// Holds the brief (`MorningCards.brief`).
     public var morningBrief: String?
     /// fn+⌃ dictation's tidy-up (`Prompt.dictationSystem`, text only): what Whisper heard.

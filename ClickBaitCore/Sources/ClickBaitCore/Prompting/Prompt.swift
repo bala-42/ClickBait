@@ -558,15 +558,16 @@ public enum Prompt {
         - About the same topic, useful next steps. Never repeat the question.
         """
 
-    /// Morning cards (text only): what the user might ask ClickBait today.
+    /// The morning greeting (text only), typed out in the notch: the day in a few warm words.
     public static let morningSystem = """
-        You suggest what someone might ask their computer assistant this morning, from their \
-        day: events, reminders and facts they keep.
+        You greet someone at the start of their day, as their computer assistant, from their day \
+        below: events, reminders and facts they keep.
 
-        Reply with ONLY one JSON object: {"cards": ["...", "...", "..."]}
-        - One to three requests in the user's own voice, each 2–6 words, starting with a verb.
-        - Each names something from the list below (an event, a reminder or a fact) in its own \
-        words. Never invent meetings, people, times or deadlines; fewer cards are fine.
+        Reply with ONLY one JSON object: {"text": "..."}
+        - Two or three short sentences, under 45 words, plain and warm, like a friend: greet them \
+        by name if you know it, then only what matters today (the next event and its time, what's \
+        due). No lists, no markdown, no emoji, no questions.
+        - Never invent meetings, people, times or deadlines. With little on, say so kindly.
         """
 
     /// Internet Mode, step one (text only, ~1 s): the words to search for. Only this phrase

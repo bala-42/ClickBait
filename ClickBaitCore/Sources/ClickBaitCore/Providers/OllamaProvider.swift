@@ -207,7 +207,7 @@ public struct OllamaProvider: LLMProvider {
         if ask.listParts { options["num_predict"] = partsReplyTokens }
         if ask.lookupQuery { options["num_predict"] = 60 }
         if ask.suggestNextAfter != nil { options["num_predict"] = 60 }
-        if ask.morningBrief != nil { options["num_predict"] = 90 }
+        if ask.morningBrief != nil { options["num_predict"] = 120; options["temperature"] = 0.4 }
         if ask.routeIntent { options["num_predict"] = 40 }
         if let heard = ask.dictation { options["num_predict"] = 40 + heard.count / 2 }
         if ask.writeInstruction != nil { options["num_predict"] = 700; options["temperature"] = 0.4 }
@@ -231,11 +231,7 @@ public struct OllamaProvider: LLMProvider {
             return ["type": "object", "properties": ["text": ["type": "string"]], "required": ["text"]]
         }
         if ask.lookupQuery { return ["type": "object", "properties": ["query": ["type": "string"]], "required": ["query"]] }
-        if ask.morningBrief != nil {
-            return ["type": "object",
-                    "properties": ["cards": ["type": "array", "maxItems": MorningCards.maxCount, "items": ["type": "string"]]],
-                    "required": ["cards"]]
-        }
+        if ask.morningBrief != nil { return ["type": "object", "properties": ["text": ["type": "string"]], "required": ["text"]] }
         if ask.suggestNextAfter != nil {
             return ["type": "object",
                     "properties": ["next": ["type": "array", "maxItems": NextSuggestions.maxCount, "items": ["type": "string"]]],

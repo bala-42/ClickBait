@@ -32,11 +32,16 @@ struct MorningCardsTests {
         #expect(brief.contains("- My team is Atlas"))
     }
 
-    @Test func repliesAreTrimmedCappedAndDeduped() {
-        let reply = #"{"cards": ["draft the Atlas agenda", "Draft the Atlas agenda!", "", "Pay rent", "Plan the day", "A request that is far too long to fit a card pill"]}"#
-        // The repeat (only "!" differs) and the empty and too-long ones go; at most three stay.
-        #expect(MorningCards.parse(reply) == ["Draft the Atlas agenda", "Pay rent", "Plan the day"])
-        #expect(MorningCards.parse("no json") == nil)
+    @Test func greetingRepliesAndThePlainOne() {
+        #expect(MorningCards.greeting(from: #"{"text": "  Good morning, Balaji. Atlas standup is at 09:30.  "}"#) == "Good morning, Balaji. Atlas standup is at 09:30.")
+        #expect(MorningCards.greeting(from: #"{"text": ""}"#) == nil)
+        #expect(MorningCards.greeting(from: "no json") == nil)
+        let long = #"{"text": "One sentence here. "# + String(repeating: "word ", count: 80) + #""}"#
+        #expect(MorningCards.greeting(from: long) == "One sentence here.")  // cut at a sentence
+        let plain = MorningCards.plainGreeting(name: "Balaji", reminders: [.init(title: "Pay rent", time: nil)],
+                                               events: [.init(title: "Atlas standup", time: date(21, 9, 30))], now: date(21, 8), calendar: calendar)
+        #expect(plain == "Good morning, Balaji. You have Atlas standup at 09:30. Pay rent is due today.")
+        #expect(MorningCards.plainGreeting(name: nil, reminders: [], events: [], now: date(21, 8), calendar: calendar) == "Good morning. Nothing on your calendar today.")
     }
 
     @Test func requestUsesTheMorningPromptTextOnly() {

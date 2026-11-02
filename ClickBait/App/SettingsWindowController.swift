@@ -143,7 +143,7 @@ struct SettingsView: View {
             SettingsGroup("Behavior") {
                 ToggleRow("Carry out spoken commands", "Say “open Safari”, “volume 30” or “dark mode” while holding ⌃⌥.", isOn: $settings.commandsEnabled)
                 Divider().overlay(SettingsLook.hairline)
-                ToggleRow("Morning suggestions", "Up to three things to ask each morning, from today's reminders and events.",
+                ToggleRow("Morning greeting", "The notch says good morning with what matters today, from your reminders and events.",
                           isOn: $settings.morningCards)
                     .onChange(of: settings.morningCards) { _, on in if on { MorningBrief.requestAccess() } }
                 Divider().overlay(SettingsLook.hairline)

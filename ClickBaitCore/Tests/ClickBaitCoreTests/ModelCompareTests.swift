@@ -114,14 +114,14 @@ struct ModelCompareTests {
         }
     }
 
-    /// Every card must share a word with the brief: no invented meetings or people.
+    /// The greeting must share words with the brief: no invented meetings or people.
     static func morning(_ brief: String) -> Case {
         var request = ask("Good morning")
         request.morningBrief = brief
         let briefWords = Memory.contentWords(brief)
         return Case(task: "morning", note: String(brief.prefix(60)), request: request) { reply in
-            guard let cards = MorningCards.parse(reply), !cards.isEmpty else { return "no cards" }
-            if let made = cards.first(where: { Memory.contentWords($0).isDisjoint(with: briefWords) }) { return "unrelated: \(made)" }
+            guard let text = MorningCards.greeting(from: reply) else { return "no greeting" }
+            if Memory.contentWords(text).isDisjoint(with: briefWords) { return "unrelated: \(text)" }
             return nil
         }
     }

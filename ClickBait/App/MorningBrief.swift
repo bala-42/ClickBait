@@ -2,16 +2,17 @@ import AppKit
 import ClickBaitCore
 import EventKit
 
-/// Morning cards (`MorningCards` in Core holds the rules): with Settings → General → Morning
-/// suggestions on, once a day on the first launch or wake after 5 am, reads today's reminders
-/// and events (only if allowed) and the remembered facts, asks the local model for up to three
-/// things to ask, and hands them to `present`, which shows them as a done card in the dock.
-/// Nothing runs until a card is tapped. Text only, local only. Idea from Sentient OS.
+/// The morning greeting (`MorningCards` in Core holds the rules): with Settings → General →
+/// Morning suggestions on, once a day on the first launch or wake after 5 am, reads today's
+/// reminders and events (only if allowed) and the remembered facts, has the local model write
+/// two or three warm sentences — by name, only what matters — and hands them to `present`, which
+/// types them out in the notch (user's ask, 2026-11-02; it was cards in the dock). Without the
+/// model, a plain greeting from the same facts. Text only, local only.
 @MainActor
 final class MorningBrief {
     private let settings: AppSettings
-    /// (the day's summary, the cards): false if the dock had no room.
-    var present: (String, [String]) -> Bool = { _, _ in false }
+    /// Shows the greeting (the notch); false when it couldn't now (try on the next wake).
+    var present: (String) -> Bool = { _ in false }
     private var observer: NSObjectProtocol?
     private var running = false
 
@@ -36,29 +37,26 @@ final class MorningBrief {
         }
     }
 
-    private func check() async {
-        guard settings.morningCards, !running,
-              MorningCards.isDue(now: Date(), lastShown: settings.morningCardsShown) else { return }
+    /// `force`: now, whatever the day (a live test).
+    func check(force: Bool = false) async {
+        guard force || settings.morningCards, !running,
+              force || MorningCards.isDue(now: Date(), lastShown: settings.morningCardsShown) else { return }
         running = true
         defer { running = false }
+        let name = NSFullUserName().split(separator: " ").first.map(String.init)
         let facts = MemoryStore.shared.memory.notes.suffix(10).reversed().map(\.text)
         let (reminders, events) = await Self.todayItems()
-        guard let brief = MorningCards.brief(reminders: reminders, events: events, facts: facts, now: Date()) else {
-            Log.app.notice("Morning cards: nothing to go on today")
-            settings.morningCardsShown = Date()
-            return
+        var text = MorningCards.plainGreeting(name: name, reminders: reminders, events: events, now: Date())
+        if let brief = MorningCards.brief(reminders: reminders, events: events, facts: facts, now: Date(), name: name) {
+            var ask = AskRequest(question: "Good morning", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
+                                 context: ScreenContext(appName: nil), selectedText: nil)
+            ask.morningBrief = brief
+            // Ollama may be loading the model after a wake: allow it a while, then the plain one.
+            let reply = await AskCoordinator.reply(from: settings.makeProvider(), to: ask, within: .seconds(30))
+            if let written = reply.flatMap(MorningCards.greeting) { text = written }
         }
-        var ask = AskRequest(question: "Good morning", screenshotJPEG: Data(), screenshotWidth: 0, screenshotHeight: 0,
-                             context: ScreenContext(appName: nil), selectedText: nil)
-        ask.morningBrief = brief
-        // Ollama may be loading the model after a wake: allow it a while.
-        let reply = await AskCoordinator.reply(from: settings.makeProvider(), to: ask, within: .seconds(60))
-        guard let cards = reply.flatMap(MorningCards.parse), !cards.isEmpty else {
-            Log.app.notice("Morning cards: no usable reply; trying again on the next wake")
-            return
-        }
-        if present(brief, cards) { settings.morningCardsShown = Date() }
-        Log.app.notice("Morning cards: \(cards.count, privacy: .public)")
+        if present(text) { settings.morningCardsShown = Date() }
+        Log.app.notice("Morning greeting: \(text.count, privacy: .public) characters")
     }
 
     /// Asked when the setting is turned on. Either may be refused; the cards then use what's left.

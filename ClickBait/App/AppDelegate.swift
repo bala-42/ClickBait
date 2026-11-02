@@ -205,16 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.start()
         greeter.start(helloAtLaunch: true)  // by the cursor too, not only the notch's (user's ask, 2026-10-23)
         // Morning cards: a done "Good morning" card in the dock, its cards as the suggestions.
-        morning.present = { [weak self] summary, cards in
-            guard let self, backgroundJobs.hasRoom else { return false }
-            var conversation = Conversation()
-            conversation.append(user: "Good morning", assistantSpeech: summary)
-            let job = BackgroundJob(question: "Good morning", kind: .answer, homeBundleID: nil, homePID: nil, conversation: conversation)
-            guard backgroundJobs.add(job, task: nil) else { return false }
-            backgroundJobs.complete(job.id, answer: summary, conversation: conversation)
-            backgroundJobs.setSuggestions(cards, for: job.id)
-            return true
-        }
+        morning.present = { [weak self] text in self?.notch.showMorning(text) ?? false }
         morning.start()
         startSearchIndex()
         #if DEBUG
@@ -429,6 +420,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notch.debugOpen(tab: parts[0], page: parts.count > 1 ? parts[1] : nil)
+            }
+        }
+        // The morning greeting now, whatever the day: live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.morning"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.morning.check(force: true) }
             }
         }
         // The timer's end without waiting: the ruby notch and a sound ("timer", "pleasant", "striking").

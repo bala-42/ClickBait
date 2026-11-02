@@ -30,7 +30,7 @@ public enum MorningCards {
     }
 
     /// What the model reads, or nil with nothing to go on (then no cards).
-    public static func brief(reminders: [Item], events: [Item], facts: [String], now: Date,
+    public static func brief(reminders: [Item], events: [Item], facts: [String], now: Date, name: String? = nil,
                              calendar: Calendar = .current) -> String? {
         guard !(reminders.isEmpty && events.isEmpty && facts.isEmpty) else { return nil }
         let time = DateFormatter()
@@ -42,28 +42,50 @@ public enum MorningCards {
         day.timeZone = calendar.timeZone
         day.dateFormat = "EEEE d MMMM"
         func line(_ item: Item) -> String { "- " + item.title + (item.time.map { " (\(time.string(from: $0)))" } ?? "") }
-        var parts = ["Today is \(day.string(from: now))."]
+        var parts = ["Today is \(day.string(from: now))." + (name.map { " Their name is \($0)." } ?? "")]
         if !events.isEmpty { parts.append("Today's events:\n" + events.prefix(10).map(line).joined(separator: "\n")) }
         if !reminders.isEmpty { parts.append("Reminders due today or overdue:\n" + reminders.prefix(10).map(line).joined(separator: "\n")) }
         if !facts.isEmpty { parts.append("What they asked ClickBait to remember:\n" + facts.prefix(10).map { "- " + $0 }.joined(separator: "\n")) }
         return parts.joined(separator: "\n\n")
     }
 
-    /// The cards in a `{"cards": [...]}` reply: trimmed, at most `maxCount`, none empty, too
-    /// long or repeated. Nil for a reply that isn't one.
-    public static func parse(_ reply: String) -> [String]? {
+    /// The greeting in a `{"text": "..."}` reply (user's ask, 2026-11-02: the morning brief
+    /// in the notch, "greeting me … only relevant information in natural language"): trimmed,
+    /// at most `greetingLength` characters (cut at a sentence when longer). Nil when there isn't one.
+    public static func greeting(from reply: String) -> String? {
         guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"), start < end,
               let object = try? JSONSerialization.jsonObject(with: Data(reply[start...end].utf8)) as? [String: Any],
-              let cards = object["cards"] as? [Any] else { return nil }
-        var seen: Set<String> = []
-        var kept: [String] = []
-        for case let item as String in cards {
-            let text = item.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"“”")))
-            let key = NextSuggestions.normalized(text)
-            guard !text.isEmpty, text.count <= maxLength, seen.insert(key).inserted else { continue }
-            kept.append(text.prefix(1).uppercased() + text.dropFirst())
-            if kept.count == maxCount { break }
+              let raw = object["text"] as? String else { return nil }
+        var text = raw.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if text.count > greetingLength {
+            let cut = String(text.prefix(greetingLength))
+            text = cut.range(of: ".", options: .backwards).map { String(cut[...$0.lowerBound]) } ?? cut + "…"
         }
-        return kept
+        return text
+    }
+
+    public static let greetingLength = 260
+
+    /// When the model can't: a plain greeting from the same facts. "Good morning, Balaji. You
+    /// have Atlas standup at 09:30, and Pay rent is due today."
+    public static func plainGreeting(name: String?, reminders: [Item], events: [Item], now: Date,
+                                     calendar: Calendar = .current) -> String {
+        let time = DateFormatter()
+        time.calendar = calendar
+        time.timeZone = calendar.timeZone
+        time.dateFormat = "HH:mm"
+        let hour = calendar.component(.hour, from: now)
+        let hello = (hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening") + (name.map { ", \($0)" } ?? "") + "."
+        var parts: [String] = []
+        if let first = events.first {
+            let more = events.count > 1 ? " and \(events.count - 1) more after" : ""
+            parts.append("You have \(first.title)\(first.time.map { " at \(time.string(from: $0))" } ?? " today")\(more).")
+        }
+        if let first = reminders.first {
+            parts.append(reminders.count == 1 ? "\(first.title) is due today." : "\(first.title) and \(reminders.count - 1) other reminders are due.")
+        }
+        if parts.isEmpty { parts.append("Nothing on your calendar today.") }
+        return ([hello] + parts).joined(separator: " ")
     }
 }

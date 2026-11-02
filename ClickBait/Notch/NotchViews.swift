@@ -143,7 +143,7 @@ struct NotchView: View {
                                         chat: model.showsChat, prompter: prompter)
         let openFrame = CGSize(width: CGFloat(openLook.width), height: CGFloat(openLook.height))
         let place = BeanPlace(state: state, tab: model.tab, mirror: model.tab == .mirror || model.showsChat, hud: hud != nil,
-                              greeting: model.greeting, cover: music.hasTrack && music.artwork != nil, space: FocusCard.showsSpace(music),
+                              greeting: model.greeting, morning: model.morning != nil, cover: music.hasTrack && music.artwork != nil, space: FocusCard.showsSpace(music),
                               width: CGFloat(look.width), height: CGFloat(look.height))
         // Folded with nothing to show: no black block, only a small see-through handle, as
         // HeyClicky's (user's choice, 2026-10-23). The black grows in from it as it opens.
@@ -287,13 +287,15 @@ private struct BeanPlace {
     /// Drifting in the space card.
     var floats = false
 
-    init(state: NotchPanel.State, tab: NotchController.Model.Tab, mirror: Bool, hud: Bool, greeting: Bool,
+    init(state: NotchPanel.State, tab: NotchController.Model.Tab, mirror: Bool, hud: Bool, greeting: Bool, morning: Bool = false,
          cover: Bool, space: Bool, width: CGFloat, height: CGFloat) {
         // The cards start under the 8 pt top and the 34 pt header and are 98 pt tall: their
         // middle is 91 pt down (it was 99, so the bean sat 8 pt low, user's catch 2026-10-24).
         let cardCentre: CGFloat = 8 + 34 + 98 / 2
         switch state {
         case .expanded where greeting: (x, y, size, visible) = (width / 2, 93, 78, true)
+        // The morning greeting: the bean up in the header's corner, the words beside it.
+        case .expanded where morning: (x, y, size, visible) = (16 + 9, 8 + 18, 18, true)
         // The tabs show their square's bean in the header instead (user's idea, 2026-10-24).
         case .expanded where tab == .mirror: (x, y, size, visible) = (25, 21, 18, false)
         // Nothing playing: big, in the middle of the space card (before the cover's corner,
@@ -420,6 +422,7 @@ private struct OpenNotch: View {
             header.frame(height: 36)
             Group {
                 switch model.tab {
+                case .home where model.morning != nil: MorningCard(text: model.morning ?? "").fitsNotch(model).transition(.opacity)
                 case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
                 case .ask where model.chatting:
@@ -469,7 +472,7 @@ private struct OpenNotch: View {
                     .padding(.leading, 16)
                     .padding(.trailing, -8)
                     .accessibilityHidden(true)
-            } else if [.gallery, .timer, .volume].contains(model.tab) {
+            } else if [.gallery, .timer, .volume].contains(model.tab) || model.morning != nil {
                 // Where the pearl bean lands (`BeanPlace`).
                 Color.clear.frame(width: 18, height: 18).padding(.leading, 16).padding(.trailing, -8)
             }
@@ -1789,6 +1792,33 @@ private extension View {
             .onPreferenceChange(PageHeightKey.self) { height in
                 guard height > 0 else { return }
                 MainActor.assumeIsolated { model.fitPage(key, Double(height)) }
+            }
+    }
+}
+
+/// The morning greeting, typed out a letter at a time; the notch grows a line at a time as it
+/// wraps (`fitsNotch`). Reduce Motion: all at once.
+struct MorningCard: View {
+    let text: String
+    static let perCharacter = 0.03
+    @State private var shown = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Text(String(text.prefix(shown)))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(NotchPalette.text)
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8).padding(.bottom, 4)
+            .accessibilityLabel(text)
+            .task(id: text) {
+                if reduceMotion { shown = text.count; return }
+                shown = 0
+                while shown < text.count, !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(Self.perCharacter))
+                    shown += 1
+                }
             }
     }
 }

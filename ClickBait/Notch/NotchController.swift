@@ -76,6 +76,7 @@ final class NotchController {
         var pageSize: (width: Double, height: Double)? {
             let most: (width: Double, height: Double)
             switch tab {
+            case .home where morning != nil: most = (420, 220)
             case .volume: most = (640, 260)
             case .timer: most = (NotchPanel.expandedSize.width, NotchPanel.expandedSize.height)
             case .gallery: most = galleryPage?.size ?? GalleryPage.gridSize
@@ -88,7 +89,7 @@ final class NotchController {
         static let chrome = 8.0 + 36 + 12
         /// Each page's measured content height (by `pageKey`), kept so it opens at it next time.
         var fitted: [String: Double] = [:]
-        var pageKey: String { "\(tab)-\(galleryPage.map { "\($0)" } ?? "tiles")" }
+        var pageKey: String { tab == .home && morning != nil ? "morning" : "\(tab)-\(galleryPage.map { "\($0)" } ?? "tiles")" }
         /// A page's content measured, by its key (set by the controller: it re-fits the window).
         var fitPage: @MainActor (String, Double) -> Void = { _, _ in }
         /// Opens a gallery page, or its tiles (set by the controller: it re-fits the window).
@@ -97,6 +98,8 @@ final class NotchController {
         var mood: @MainActor () -> Bean.Mood = { .idle }
         /// The launch hello: the open island shows only the bean, big, among sparkles.
         var greeting = false
+        /// The morning greeting, typed out in a narrow open notch (user's ask, 2026-11-02).
+        var morning: String?
         /// A question typed in the ask tab: goes to ClickBait's chat (set by the app delegate).
         var ask: @MainActor (String) -> Void = { _ in }
         /// The Ask card's voice button, through the dock's recorder (set by the app delegate):
@@ -269,6 +272,27 @@ final class NotchController {
 
     static let greetTime = 2.6
 
+    /// The morning greeting: the notch opens narrow on Home and types it out, then folds once
+    /// it's been read (unless the pointer is on it). The notch in use: it waits until it folds.
+    func showMorning(_ text: String) -> Bool {
+        guard model.state == .collapsed || model.state == .peek else {
+            pendingMorning = text
+            return true
+        }
+        Log.app.notice("Morning greeting shown")
+        model.tab = .home
+        model.morning = text
+        apply(.clicked)
+        place()
+        let reading = Double(text.count) * MorningCard.perCharacter + 9
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(reading))
+            guard let self, model.morning == text else { return }
+            if model.state == .expanded, !pointerInside { apply(.escape) }
+        }
+        return true
+    }
+
     /// Folds right down while the companion points, so the panel never hides what it points at
     /// in the menu bar or the top of a window.
     func makeRoom() {
@@ -323,7 +347,14 @@ final class NotchController {
         model.state = after
         if after == .peek || after == .expanded { NotificationCenter.default.post(name: .clickBaitNotchShown, object: nil) }  // setup's notch step
         if after != .expanded, [.settings, .mirror, .music].contains(model.tab) { model.tab = .home }  // the camera stops
-        if after != .expanded { model.greeting = false; model.editing = false; model.showsKeys = false }
+        if after != .expanded { model.greeting = false; model.morning = nil; model.editing = false; model.showsKeys = false }
+        if after == .collapsed, let text = pendingMorning {
+            pendingMorning = nil
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                _ = self?.showMorning(text)
+            }
+        }
         Log.app.debug("Notch: \(String(describing: before), privacy: .public) → \(String(describing: after), privacy: .public)")
         model.settled = false
         settleTask?.cancel()
@@ -414,6 +445,8 @@ final class NotchController {
     /// Music is playing; the wings show it unless an app's window is in their place.
     private var wantsActivity = false
     private var alarmTask: Task<Void, Never>?
+    /// The morning greeting, waiting for the notch to be free.
+    private var pendingMorning: String?
     /// An app's window is in the strip beside the notch (`appOwnsTop`).
     private var topTaken = false
 
@@ -520,7 +553,7 @@ final class NotchController {
         let tabs: Set<Model.Tab> = [.home, .gallery, .timer, .volume, .settings]
         let active = model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)
         let frame = active.flatMap { targets[$0] }
-        let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && frame != nil
+        let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && model.morning == nil && frame != nil
         let go: (Model.Tab) -> Void = { [weak self] tab in
             guard let self else { return }
             if tab == .settings { model.settingsPage = .general }
@@ -768,7 +801,7 @@ final class NotchController {
             }
             return
         }
-        guard model.state == .expanded || model.state == .peek, !model.holdsOpen, !model.greeting else { return }
+        guard model.state == .expanded || model.state == .peek, !model.holdsOpen, !model.greeting, model.morning == nil else { return }
         holdTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(NotchPanel.leaveHold))
             guard !Task.isCancelled else { return }
