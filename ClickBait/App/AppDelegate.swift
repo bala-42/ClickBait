@@ -363,9 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             // Alarms the user set ring whatever the sound-cues switch says.
             switch alarm {
-            case .timer:
-                TimerSounds.ring(.timer)
-                notch.ringAlarm()
+            case .timer: notch.ringAlarm()
             case .pleasant: TimerSounds.ring(.pleasant)
             case .striking: TimerSounds.ring(.striking)
             }

@@ -121,19 +121,35 @@ final class NotchTimerClock {
 
 /// The timer's sounds, macOS's own: a pleasant chime when a work session ends ("Glass", twice,
 /// softly apart), a striking alarm when a break ends ("Sosumi", three times close together), and
-/// the countdown's end ("Hero", twice).
+/// the countdown's end: "Hero" over and over, like a phone's alarm, until stopped.
 @MainActor
 enum TimerSounds {
     static func ring(_ alarm: NotchTimerClock.Alarm) {
         let (name, times, gap): (String, Int, Double) = switch alarm {
         case .pleasant: ("Glass", 2, 0.9)
         case .striking: ("Sosumi", 3, 0.45)
-        case .timer: ("Hero", 2, 0.7)
+        case .timer: ("Hero", 1, 0)
         }
         for index in 0..<times {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * gap) {
                 NSSound(named: NSSound.Name(name))?.play()
             }
         }
+    }
+
+    private static var alarm: Timer?
+
+    /// Rings every 1.2 s until `stopAlarm()`.
+    static func startAlarm() {
+        stopAlarm()
+        ring(.timer)
+        alarm = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { _ in
+            MainActor.assumeIsolated { ring(.timer) }
+        }
+    }
+
+    static func stopAlarm() {
+        alarm?.invalidate()
+        alarm = nil
     }
 }

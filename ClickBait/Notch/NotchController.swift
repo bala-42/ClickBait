@@ -339,13 +339,15 @@ final class NotchController {
         }
     }
 
-    /// Lights the notch ruby: the timer is done. Off when the notch opens, or after 30 s.
+    /// The timer is done: the notch lights ruby and the alarm rings on, like a phone's, until
+    /// the notch is opened (hovered or clicked) or 2 minutes pass (user's ask, 2026-11-02).
     func ringAlarm() {
         model.alarm = true
         place()
+        TimerSounds.startAlarm()
         alarmTask?.cancel()
         alarmTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(30))
+            try? await Task.sleep(for: .seconds(120))
             guard !Task.isCancelled else { return }
             self?.stopAlarm()
         }
@@ -354,6 +356,7 @@ final class NotchController {
     func stopAlarm() {
         guard model.alarm else { return }
         alarmTask?.cancel()
+        TimerSounds.stopAlarm()
         model.alarm = false
         place()
     }
@@ -432,8 +435,7 @@ final class NotchController {
         // The window list only matters for the music wings (off since 2026-10-25); read on
         // every placement, on the main thread, it froze it up to 249 ms (stall trap).
         topTaken = wantsActivity && Self.appOwnsTop(of: primary)
-        // The ruby alarm shows in the activity wings' shape: room for its glow beside the camera.
-        let activity = (wantsActivity && !topTaken) || model.alarm
+        let activity = wantsActivity && !topTaken
         if model.activity != activity { model.activity = activity }
         let connectedIDs = Set(screens.compactMap(Self.displayID))
         for displayID in panels.keys.filter({ !connectedIDs.contains($0) }) {
@@ -445,7 +447,9 @@ final class NotchController {
             // Only the active display opens (or shows a HUD); the others stay folded.
             let here = Self.displayID(screen).map(isActive) ?? true
             let state = here ? model.state : .collapsed
-            let hud = here && model.hud != nil
+            // The ruby alarm takes the HUD's shape: a band under the camera too, so the notch
+            // itself lights, not only its wings (user's ask, 2026-11-02).
+            let hud = here && (model.hud != nil || model.alarm)
             guard let displayID = Self.displayID(screen),
                   let notch = Self.notch(on: screen),
                   let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),

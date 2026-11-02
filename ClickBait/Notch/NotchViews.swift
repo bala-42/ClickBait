@@ -131,7 +131,7 @@ struct NotchView: View {
     var body: some View {
         let open = state == .expanded
         let prompter = (isHere ? NotchController.prompter : nil) ?? model.pageSize
-        let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil,
+        let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil || (isHere && model.alarm),
                                     shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
                                     chat: model.showsChat, prompter: prompter)
         let ear = CGFloat(NotchPanel.ear)
@@ -1680,8 +1680,8 @@ struct ShelfActionPills: View {
     }
 }
 
-/// The timer's end: a ruby backlight pulsing along the folded notch's edges and up from its
-/// bottom (user's ask, 2026-11-02). Reduce Motion: steady.
+/// The timer's end: the whole folded notch lit ruby — the wings and the band under the camera —
+/// pulsing like a phone's alarm, edges brightest (user's ask, 2026-11-02). Reduce Motion: steady.
 private struct RubyGlow: View {
     let shape: NotchShape
     static let ruby = Color(hex: 0xE0115F)
@@ -1690,7 +1690,7 @@ private struct RubyGlow: View {
 
     var body: some View {
         ZStack {
-            shape.fill(LinearGradient(colors: [.clear, Self.ruby.opacity(bright ? 0.55 : 0.3)], startPoint: .top, endPoint: .bottom))
+            shape.fill(Self.ruby.opacity(bright ? 0.85 : 0.45))
             shape.stroke(Self.ruby.opacity(bright ? 1 : 0.6), lineWidth: 2)
                 .blur(radius: 1.5)
         }
