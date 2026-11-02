@@ -82,7 +82,6 @@ struct ShelfPillsRenderTests {
             GalleryView(model: model, settings: AppSettings())
                 .frame(width: GalleryPage.gridSize.width - 24, height: GalleryPage.gridSize.height - 8 - 36 - 12, alignment: .top)
                 .border(Color.red.opacity(0.5))
-            ToolsPage().frame(width: 608)
         }
         .padding(12).background(Color.black)
         let renderer = ImageRenderer(content: view)

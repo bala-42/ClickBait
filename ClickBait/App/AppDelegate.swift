@@ -999,32 +999,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The gallery's pages reach the dock, screenshots and Lookup through these.
+    /// The gallery's Watch page, and the nearby Macs and cards wired up beside it.
     private func wireGallery() {
-        GalleryHooks.jobs = { [weak self] in
-            (self?.backgroundJobs.entries ?? []).map { entry in
-                let status = switch entry.job.status {
-                case .working: "working"
-                case .done: entry.seen ? "done" : "done · new"
-                case .failed: "failed"
-                case .stopped: "stopped"
-                }
-                return GalleryHooks.Job(id: entry.id, title: entry.job.question, status: status, tone: entry.job.kind.tone)
-            }
-        }
-        GalleryHooks.openJob = { [weak self] id in
-            self?.capsules.summon()
-            self?.capsules.expand(id)
-        }
-        GalleryHooks.snip = { [weak self] in self?.overlay.showJobResult("hold ⌥⌘ and circle what you mean", tone: .capture, force: true) }
-        GalleryHooks.screenshot = { [weak self] kind in
-            guard let self else { return }
-            notch.makeRoom()  // folded, so it isn't in the picture
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))  // the notch out of the picture
-                _ = await coordinator.perform(ActionRequest(name: "screenshot", argument: kind.rawValue), speak: false)
-            }
-        }
         ConfirmController.notchFrames = { [weak self] in self?.notch.visibleFrames ?? [] }
         NearbyMacs.shared.ask = { [weak self] question, answer in
             guard let self else { return answer(false) }
@@ -1051,13 +1027,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             SoundCues.play(.done, enabled: settings.soundCues)
             overlay.showJobResult(text, tone: .idle, force: true)
-        }
-        GalleryHooks.lookup = { [weak self] words in
-            guard let self else { return }
-            notch.model.tab = .ask
-            notch.model.chatting = true
-            notchChat.model.draft = words
-            notchChat.model.focusRequest += 1
         }
     }
 
