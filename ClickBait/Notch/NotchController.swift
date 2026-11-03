@@ -316,11 +316,10 @@ final class NotchController {
         return (Double(studio.size.width), Double(studio.size.height + PrompterController.below(studio)))
     }
 
-    /// Studio started or stopped prompting, or resized it: the notch springs to the new shape;
-    /// while prompting it's hidden from screen sharing, like the floating prompter.
+    /// Studio started or stopped prompting, or resized it: the notch springs to the new shape
+    /// (always hidden from screen sharing, as the floating prompter; `makePanel`).
     private func prompterChanged() {
         let inNotch = StudioModel.shared.inNotch
-        for panel in panels.values { panel.sharingType = inNotch ? .none : .readOnly }
         if inNotch, model.state != .expanded {
             model.tab = .mirror
             apply(.clicked)
@@ -744,6 +743,9 @@ final class NotchController {
         panel.collectionBehavior = Self.collectionBehavior
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        // Never in screenshots, screen recordings or screen sharing (user's report, 2026-11-04:
+        // "the notch is visible in a screenshot"); its bubbles and glow too.
+        panel.sharingType = .none
         let host = PullHostingView(rootView: NotchView(
             model: model, displayID: displayID, notch: notch, music: music, shelf: shelf,
             settings: settings, speech: speech, speaker: speaker, searxng: searxng,

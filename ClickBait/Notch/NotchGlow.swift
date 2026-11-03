@@ -61,6 +61,7 @@ final class NotchGlow {
         panel.level = WindowLayers.notch
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
+        panel.sharingType = .none  // never in screenshots, as the notch
         return panel
     }
 }

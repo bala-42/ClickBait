@@ -113,6 +113,7 @@ final class NotchBubbles {
         panel.level = WindowLayers.dock
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
+        panel.sharingType = .none  // never in screenshots, as the notch
         panel.isReleasedWhenClosed = false
         return panel
     }
