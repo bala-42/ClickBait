@@ -551,12 +551,18 @@ final class NotchController {
     }
 
     /// Shown with the open notch on Home and on the pages they open; tucked otherwise.
+    private var bubblesShown = false
+
     private func placeBubbles() {
         // Settings is a bubble's page too: the bubbles stay beside it until it's left.
         let tabs: Set<Model.Tab> = [.home, .gallery, .timer, .volume, .settings]
         let active = model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)
         let frame = active.flatMap { targets[$0] }
         let visible = model.state == .expanded && tabs.contains(model.tab) && !model.greeting && model.morning == nil && frame != nil
+        if visible != bubblesShown {
+            bubblesShown = visible
+            Log.app.notice("Bubbles \(visible ? "shown" : "hidden", privacy: .public): active \(active.map(String.init) ?? "none", privacy: .public), beside \(frame.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? "nothing", privacy: .public)")
+        }
         let go: (Model.Tab) -> Void = { [weak self] tab in
             guard let self else { return }
             if tab == .settings { model.settingsPage = .general }

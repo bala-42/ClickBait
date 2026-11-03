@@ -161,3 +161,5 @@ Switching (same day, user's report: "doesn't take me anywhere"): since macOS 14 
 **Volume mixer spacing (same day, user's reference):** the main slider fixed on the left (64 pt), the apps in even 96 pt columns that scroll sideways past it, taller sliders (148 pt).
 
 **⌥⇥ shows the Desktop (same day, user's ask):** the last card, its wallpaper as the picture; choosing it is Mission Control's own show desktop.
+
+**Bubbles visible on dark apps (2026-11-03, user's report: "not visible when I open the notch in Chrome").** They were there — beside the open notch, above Chrome — but black on Chrome's black toolbar, with a rim of 10% white. The rim is now 30% (60% when on), and reads on any app; checked with a capture of the screen's top over Chrome (`org.clickbait.debug.snapshot <path>`, ClickBait's own windows included). The bubbles log when they show or hide, and where.

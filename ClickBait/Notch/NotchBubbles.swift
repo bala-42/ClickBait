@@ -109,7 +109,9 @@ private struct BubbleColumn: View {
                         .foregroundStyle(NotchPalette.text)
                         .frame(width: NotchBubbles.diameter, height: NotchBubbles.diameter)
                         .background(Circle().fill(Color.black))
-                        .overlay(Circle().strokeBorder(Color.white.opacity(bubble.on ? 0.55 : 0.1), lineWidth: 1))
+                        // A rim clear enough to find on dark apps (Chrome's toolbar is as black as the
+                        // bubble: they vanished there; user's report, 2026-11-03).
+                        .overlay(Circle().strokeBorder(Color.white.opacity(bubble.on ? 0.6 : 0.3), lineWidth: 1))
                         .contentShape(Circle())
                 }
                 .buttonStyle(PlayerPressStyle())

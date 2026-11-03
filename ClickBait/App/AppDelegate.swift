@@ -452,6 +452,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // The top of the screen under the pointer, ClickBait's own windows in, saved as a PNG
+        // (the path given): live checks of what the notch and bubbles look like.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.snapshot"), object: nil, queue: .main) { [weak self] note in
+            guard let path = note.object as? String else { return }
+            Task { @MainActor in
+                guard let self, let capture = try? await ScreenCapturer().captureDisplayUnderCursor(excluding: self.settings.blocklist, ignoreClickBait: false) else { return }
+                let height = Int(260 * capture.backingScale)
+                guard let top = capture.image.cropping(to: CGRect(x: 0, y: 0, width: capture.image.width, height: min(height, capture.image.height))),
+                      let png = NSBitmapImageRep(cgImage: top).representation(using: .png, properties: [:]) else { return }
+                try? png.write(to: URL(fileURLWithPath: path))
+            }
+        }
         // Next Up's view of the calendar, logged: live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.nextup"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
