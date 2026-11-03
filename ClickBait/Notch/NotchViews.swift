@@ -131,7 +131,7 @@ struct NotchView: View {
     var body: some View {
         let open = state == .expanded
         let prompter = (isHere ? NotchController.prompter : nil) ?? model.pageSize
-        let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil || (isHere && model.alarm),
+        let look = NotchPanel.shape(state, notch: notch, activity: model.activity, hud: hud != nil,
                                     shelf: model.tab == .shelf, settings: model.tab == .settings, mirror: model.tab == .mirror,
                                     chat: model.showsChat, prompter: prompter)
         let ear = CGFloat(NotchPanel.ear)
@@ -153,9 +153,6 @@ struct NotchView: View {
             // on the same spring (half-see-through for the first frames).
             shape.fill(Color.black.opacity(resting ? 0 : 1))
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: resting)
-            if model.alarm {
-                RubyGlow(shape: shape, open: state == .expanded)
-            }
             if resting {
                 // Only when the pointer comes near: faded out quickly otherwise (user's ask).
                 Capsule()
@@ -1734,29 +1731,6 @@ struct ShelfActionPills: View {
     }
 }
 
-/// The timer's end: the whole folded notch lit ruby — the wings and the band under the camera —
-/// pulsing like a phone's alarm, edges brightest; open, a backlight behind its page, softer so
-/// the page reads (user's asks, 2026-11-02). Reduce Motion: steady.
-private struct RubyGlow: View {
-    let shape: NotchShape
-    var open = false
-    static let ruby = Color(hex: 0xE0115F)
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var bright = false
-
-    var body: some View {
-        ZStack {
-            shape.fill(Self.ruby.opacity(open ? (bright ? 0.32 : 0.16) : (bright ? 0.85 : 0.45)))
-            shape.stroke(Self.ruby.opacity(bright ? 1 : 0.6), lineWidth: open ? 4 : 2)
-                .blur(radius: open ? 4 : 1.5)
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            guard !reduceMotion else { bright = true; return }
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { bright = true }
-        }
-    }
-}
 
 /// One nearby Mac in the pad: click to send the shelf's selection (all of it when nothing is
 /// selected), or drop files on it.

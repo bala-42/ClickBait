@@ -359,8 +359,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Alarms the user set ring whatever the sound-cues switch says.
             switch alarm {
             case .timer: notch.ringAlarm()
-            case .pleasant: TimerSounds.ring(.pleasant)
-            case .striking: TimerSounds.ring(.striking)
+            case .pleasant:
+                TimerSounds.ring(.pleasant)
+                notch.glowCalmly()
+            case .striking:
+                TimerSounds.ring(.striking)
+                notch.glowCalmly()
             }
             overlay.showJobResult(text, tone: .idle, force: true)
         }
@@ -507,6 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.alarm"), object: nil, queue: .main) { note in
             let kind = note.object as? String ?? "timer"
             MainActor.assumeIsolated {
+                if kind == "stop" { NotchTimerClock.shared.onStopAlarm?(); return }
                 let alarm: NotchTimerClock.Alarm = kind == "pleasant" ? .pleasant : kind == "striking" ? .striking : .timer
                 NotchTimerClock.shared.onFinish?("debug: \(kind)", alarm)
             }

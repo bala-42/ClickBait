@@ -413,6 +413,7 @@ final class NotchController {
         NotchTimerClock.shared.ringing = true
         NotchTimerClock.shared.onStopAlarm = { [weak self] in self?.stopAlarm() }
         place()
+        if let panel = activePanel { glow.light(NotchGlow.ruby, behind: panel) }
         TimerSounds.startAlarm()
         alarmTask?.cancel()
         alarmTask = Task { @MainActor [weak self] in
@@ -437,6 +438,7 @@ final class NotchController {
         alarmTask?.cancel()
         TimerSounds.stopAlarm()
         NotchTimerClock.shared.ringing = false
+        glow.dim()
         model.alarm = false
         place()
     }
@@ -531,7 +533,7 @@ final class NotchController {
             let state = here ? model.state : .collapsed
             // The ruby alarm takes the HUD's shape: a band under the camera too, so the notch
             // itself lights, not only its wings (user's ask, 2026-11-02).
-            let hud = here && (model.hud != nil || model.alarm)
+            let hud = here && model.hud != nil
             guard let displayID = Self.displayID(screen),
                   let notch = Self.notch(on: screen),
                   let frame = NotchPanel.frame(state, screen: Self.rect(screen.frame), visible: Self.rect(screen.visibleFrame),
@@ -550,6 +552,19 @@ final class NotchController {
             positionPanel(frame, notch: notch, displayID: displayID)
         }
         placeBubbles()
+        if glow.lit, let panel = activePanel { glow.follow(panel) }
+    }
+
+    /// The light from behind the notch: the timer's alarm, a Pomodoro phase's end.
+    private let glow = NotchGlow()
+    private var activePanel: Panel? {
+        (model.activeDisplay ?? NSScreen.main.flatMap(Self.displayID)).flatMap { panels[$0] } ?? primaryPanel
+    }
+
+    /// Pomodoro's calm light behind the notch for a moment, as its chime plays (user's ask, 2026-11-04).
+    func glowCalmly() {
+        guard !model.alarm, let panel = activePanel else { return }
+        glow.light(NotchGlow.calm, behind: panel, for: 12)
     }
 
     /// Shown with the open notch on Home and on the pages they open; tucked otherwise.
