@@ -143,8 +143,10 @@ struct ClipboardPage: View {
     @Bindable var history = ClipboardHistory.shared
     @State private var copied: UUID?
 
+    /// All of it, pinned first, in a list that scrolls (user's report, 2026-11-04: only six showed,
+    /// and Clear fell off the bottom).
     private var shown: [ClipboardHistory.Entry] {
-        Array((history.entries.filter(\.pinned) + history.entries.filter { !$0.pinned }).prefix(6))
+        history.entries.filter(\.pinned) + history.entries.filter { !$0.pinned }
     }
 
     var body: some View {
@@ -152,13 +154,19 @@ struct ClipboardPage: View {
             if history.entries.isEmpty {
                 EmptyPage(symbol: "doc.on.clipboard", text: "What you copy shows up here, kept on this Mac. Links lose their tracking.")
             } else {
-                VStack(alignment: .trailing, spacing: 4) {
-                    ForEach(shown) { entry in row(entry) }
+                VStack(alignment: .leading, spacing: 8) {
+                    // At the top, so it's always there however long the list.
                     HStack(spacing: 12) {
-                        Text("click to copy as plain text").foregroundStyle(NotchPalette.tertiary)
+                        Text("\(history.entries.count) copied · click one to copy it as plain text").foregroundStyle(NotchPalette.tertiary)
+                        Spacer()
                         Button("Clear") { history.clear() }.buttonStyle(.plain).foregroundStyle(NotchPalette.secondary)
+                            .help("Everything but the pinned ones")
                     }
                     .font(.system(size: 11))
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 4) { ForEach(shown) { entry in row(entry) } }
+                    }
+                    .frame(maxHeight: 220)
                 }
             }
         }

@@ -42,7 +42,7 @@ enum GalleryPage: String, CaseIterable, Identifiable {
     var size: (width: Double, height: Double) {
         switch self {
         case .agents: (640, 440)
-        case .clipboard: (640, 260)
+        case .clipboard: (640, 360)
         case .tools: (640, 240)
         case .health: (640, 420)
         case .capture: (640, 200)
