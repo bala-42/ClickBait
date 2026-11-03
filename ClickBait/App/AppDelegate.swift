@@ -446,19 +446,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 _ = WindowSwitcher.shared.handle(.tab(backwards: false))
                 Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(2.5))
+                    try? await Task.sleep(for: .seconds(go ? 2.5 : 4))
                     WindowSwitcher.shared.logState()
                     _ = WindowSwitcher.shared.handle(go ? .released : .escape)
+                    guard go else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    // The front titled window now (helpers have no title), to check the switch.
+                    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+                    let top = list.first { ($0[kCGWindowLayer as String] as? Int) == 0 && !(($0[kCGWindowName as String] as? String) ?? "").isEmpty
+                        && ($0[kCGWindowOwnerName as String] as? String) != "ClickBait" }
+                    Log.app.notice("Switcher front now: window \(top?[kCGWindowNumber as String] as? Int ?? -1, privacy: .public) of \(top?[kCGWindowOwnerName as String] as? String ?? "?", privacy: .public)")
                 }
             }
         }
         // The top of the screen under the pointer, ClickBait's own windows in, saved as a PNG
         // (the path given): live checks of what the notch and bubbles look like.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.snapshot"), object: nil, queue: .main) { [weak self] note in
-            guard let path = note.object as? String else { return }
+            guard let object = note.object as? String else { return }
+            let full = object.hasSuffix("|full"), path = full ? String(object.dropLast(5)) : object
             Task { @MainActor in
                 guard let self, let capture = try? await ScreenCapturer().captureDisplayUnderCursor(excluding: self.settings.blocklist, ignoreClickBait: false) else { return }
-                let height = Int(260 * capture.backingScale)
+                let height = full ? capture.image.height : Int(260 * capture.backingScale)
                 guard let top = capture.image.cropping(to: CGRect(x: 0, y: 0, width: capture.image.width, height: min(height, capture.image.height))),
                       let png = NSBitmapImageRep(cgImage: top).representation(using: .png, properties: [:]) else { return }
                 try? png.write(to: URL(fileURLWithPath: path))

@@ -45,7 +45,9 @@ final class WindowSwitcher {
         opening = true
         pendingChoose = false
         Task { @MainActor in
+            let began = ContinuousClock.now
             await model.load(on: screen, backwards: backwards)
+            Log.app.notice("Switcher listed \(self.model.windows.count, privacy: .public) windows in \(String(describing: ContinuousClock.now - began), privacy: .public)")
             opening = false
             guard !model.windows.isEmpty else { return }
             present(on: screen)
@@ -74,6 +76,7 @@ final class WindowSwitcher {
 
     #if DEBUG
     func logState() {
+        Log.app.notice("Switcher order: \(self.model.windows.prefix(4).map { "\($0.id) \($0.appName)" }.joined(separator: ", "), privacy: .public); selected \(self.model.selected, privacy: .public)")
         Log.app.notice("Switcher up: \(self.model.windows.count, privacy: .public) windows from \(Set(self.model.windows.map(\.appName)).sorted().joined(separator: ", "), privacy: .public); \(self.model.windows.filter { $0.thumbnail != nil }.count, privacy: .public) pictured")
     }
     #endif
@@ -87,7 +90,7 @@ final class WindowSwitcher {
         let window = model.windows.indices.contains(model.selected) ? model.windows[model.selected] : nil
         close()
         guard let window else { return }
-        Log.app.notice("Switcher: \(self.model.windows.count, privacy: .public) windows, \(self.model.windows.filter { $0.thumbnail != nil }.count, privacy: .public) pictured; to \(window.appName, privacy: .public)")
+        Log.app.notice("Switcher: \(self.model.windows.count, privacy: .public) windows, \(self.model.windows.filter { $0.thumbnail != nil }.count, privacy: .public) pictured; to \(window.appName, privacy: .public) window \(window.id, privacy: .public)")
         Self.bringForward(window)
     }
 
@@ -96,6 +99,7 @@ final class WindowSwitcher {
     /// "frontmost" was quietly refused: "doesn't take me anywhere", user's report, 2026-11-02),
     /// then the window itself raised as main, unminimised.
     static func bringForward(_ window: SwitcherModel.Item) {
+        WindowRecency.shared.used(window.id)
         if window.id == 0 {
             // The desktop: Mission Control's own show desktop.
             let process = Process()
@@ -106,7 +110,14 @@ final class WindowSwitcher {
         }
         guard let app = NSRunningApplication(processIdentifier: window.pid) else { return }
         if app.isHidden { app.unhide() }
-        raise(window)  // first, so the app comes forward on this window's Space
+        // First, so the app comes forward on this window's Space. A window on another Space:
+        // raising it there doesn't switch Space (Chrome came forward with its window here,
+        // user's report, 2026-11-03), so a browser is asked for it by title — the app then comes
+        // forward with it, and macOS goes to its Space.
+        // A browser decides itself which of its windows comes forward with it (Chrome put its
+        // last one back on top of the one raised): it's asked, by title, every time.
+        raise(window)
+        if let bundleID = app.bundleIdentifier, scriptable[bundleID] != nil { raiseInBrowser(window, bundleID: bundleID) }
         if let url = app.bundleURL {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
@@ -121,12 +132,31 @@ final class WindowSwitcher {
         }
     }
 
-    /// The window, matched by title and position through Accessibility: unminimised, main, raised.
-    private static func raise(_ window: SwitcherModel.Item) {
+    /// Accessibility's window → its window number (`_AXUIElementGetWindow`, private, what AltTab
+    /// uses; looked up at run time like the brightness calls): an exact match, not by title.
+    private typealias WindowNumber = @convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError
+    nonisolated(unsafe) private static let windowNumber: WindowNumber? = {
+        guard let handle = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY),
+              let symbol = dlsym(handle, "_AXUIElementGetWindow") else { return nil }
+        return unsafeBitCast(symbol, to: WindowNumber.self)
+    }()
+
+    /// Browsers that say which window to bring forward when asked by title (their own scripting):
+    /// for a window Accessibility can't see — on another Space ("doesn't recognise the different
+    /// Chrome windows", user's report, 2026-11-03). The window's title property, by browser.
+    private static let scriptable: [String: String] = [
+        "com.google.Chrome": "title", "com.brave.Browser": "title", "com.microsoft.edgemac": "title",
+        "com.vivaldi.Vivaldi": "title", "company.thebrowser.Browser": "title", "com.apple.Safari": "name",
+    ]
+
+    /// The window, matched by its number (else title and position) through Accessibility:
+    /// unminimised, main, raised. True when found.
+    @discardableResult
+    private static func raise(_ window: SwitcherModel.Item) -> Bool {
         let element = AXUIElementCreateApplication(window.pid)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return }
+              let windows = value as? [AXUIElement] else { return false }
         func title(_ ax: AXUIElement) -> String {
             var title: CFTypeRef?
             AXUIElementCopyAttributeValue(ax, kAXTitleAttribute as CFString, &title)
@@ -139,12 +169,27 @@ final class WindowSwitcher {
             AXValueGetValue(position as! AXValue, .cgPoint, &point)  // an AXValue of cgPoint, as asked
             return point
         }
-        // A window on another Space may not be in the app's list: coming forward goes there anyway.
-        guard let match = windows.first(where: { title($0) == window.title && origin($0).map { abs($0.x - window.frame.minX) < 2 && abs($0.y - window.frame.minY) < 2 } ?? false })
-            ?? windows.first(where: { title($0) == window.title }) else { return }
+        func number(_ ax: AXUIElement) -> CGWindowID? {
+            var id: CGWindowID = 0
+            return windowNumber.flatMap { $0(ax, &id) == .success ? id : nil }
+        }
+        guard let match = windows.first(where: { number($0) == window.id })
+            ?? windows.first(where: { title($0) == window.title && origin($0).map { abs($0.x - window.frame.minX) < 2 && abs($0.y - window.frame.minY) < 2 } ?? false }) else { return false }
         AXUIElementSetAttributeValue(match, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         AXUIElementSetAttributeValue(match, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementPerformAction(match, kAXRaiseAction as CFString)
+        return true
+    }
+
+    /// A browser's window by title, through its own scripting (one Automation prompt per browser).
+    private static func raiseInBrowser(_ window: SwitcherModel.Item, bundleID: String) {
+        guard let property = scriptable[bundleID] else { return }
+        let title = window.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "tell application id \"\(bundleID)\" to set index of (first window whose \(property) is \"\(title)\") to 1"
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error { Log.app.error("Switcher: browser didn't bring the window forward: \(error, privacy: .public)") }
+        else { Log.app.notice("Switcher: asked the browser for its window") }
     }
 }
 
@@ -164,50 +209,68 @@ final class SwitcherModel {
     private(set) var windows: [Item] = []
     var selected = 0
 
-    /// Every app's windows on `screen`, any Space, minimised too (ScreenCaptureKit lists them all;
-    /// the titled ones are real windows, the untitled ones helpers), in macOS's front-to-back order.
+    /// Every app's windows on `screen`, any Space, minimised too, in macOS's front-to-back order —
+    /// from Core Graphics' own list, a few milliseconds (ScreenCaptureKit's took ~150 ms before the
+    /// switcher could show: "it takes a while", user's report, 2026-11-03). Titled windows are real
+    /// ones; untitled ones are apps' helpers.
     func load(on screen: NSScreen, backwards: Bool) async {
-        let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
-        content.map { self.content = $0 }
-        let order = (CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
-            .compactMap { $0[kCGWindowNumber as String] as? UInt32 }
-        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        // The screen in Core Graphics' top-left coordinates, as window frames come.
+        let list = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let primary = NSScreen.screens.first?.frame.height ?? screen.frame.height
         let area = CGRect(x: screen.frame.minX, y: primary - screen.frame.maxY, width: screen.frame.width, height: screen.frame.height)
         let own = ProcessInfo.processInfo.processIdentifier
-        let candidates = (content?.windows ?? []).compactMap { window -> (WindowSwitch.Window, SCWindow)? in
-            guard let app = window.owningApplication, let title = window.title, !title.isEmpty,
-                  area.contains(CGPoint(x: window.frame.midX, y: window.frame.midY)) else { return nil }
-            return (WindowSwitch.Window(id: window.windowID, pid: app.processID, layer: window.windowLayer,
-                                        width: window.frame.width, height: window.frame.height, title: title), window)
+        let candidates = list.compactMap { info -> (WindowSwitch.Window, CGRect)? in
+            guard let id = info[kCGWindowNumber as String] as? UInt32, let pid = info[kCGWindowOwnerPID as String] as? Int32,
+                  let title = info[kCGWindowName as String] as? String, !title.isEmpty,
+                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Double] else { return nil }
+            let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            guard area.contains(CGPoint(x: frame.midX, y: frame.midY)) else { return nil }
+            return (WindowSwitch.Window(id: id, pid: pid, layer: info[kCGWindowLayer as String] as? Int ?? 0,
+                                        width: frame.width, height: frame.height, title: title), frame)
         }
         let kept = Set(WindowSwitch.eligible(candidates.map(\.0), own: own).map(\.id))
-        windows = candidates.filter { kept.contains($0.0.id) }
-            .sorted { (rank[$0.0.id] ?? .max) < (rank[$1.0.id] ?? .max) }
-            .compactMap { window, scWindow in
-                guard let app = NSRunningApplication(processIdentifier: window.pid), app.activationPolicy == .regular else { return nil }
-                return Item(id: window.id, pid: window.pid, title: window.title, appName: app.localizedName ?? "", icon: app.icon, frame: scWindow.frame)
-            }
+        // Most recently used first (`WindowRecency`); windows not used since launch after, in
+        // macOS's order — which mixes Spaces' stacking orders ("a Chrome window ahead of the
+        // one just used", 2026-11-03).
+        WindowRecency.shared.noteFront()
+        let rank = WindowRecency.shared.rank
+        let ordered = candidates.filter { kept.contains($0.0.id) }.enumerated()
+            .sorted { (rank[$0.element.0.id] ?? Int.max, $0.offset) < (rank[$1.element.0.id] ?? Int.max, $1.offset) }.map(\.element)
+        windows = ordered.compactMap { window, frame in
+            guard let app = NSRunningApplication(processIdentifier: window.pid), app.activationPolicy == .regular else { return nil }
+            return Item(id: window.id, pid: window.pid, title: window.title, appName: app.localizedName ?? "", icon: app.icon, frame: frame)
+        }
         // The desktop, last (user's ask, 2026-11-02: "why is desktop not shown"): its wallpaper as
         // its picture; choosing it clears the windows away, as Mission Control's show desktop does.
-        let wallpaper = NSWorkspace.shared.desktopImageURL(for: screen).flatMap { NSImage(contentsOf: $0) }
         windows.append(Item(id: 0, pid: 0, title: "Desktop", appName: "Desktop",
-                            icon: NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app"), frame: screen.frame, thumbnail: wallpaper))
+                            icon: NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app"), frame: screen.frame))
+        wallpaper = NSWorkspace.shared.desktopImageURL(for: screen)
         selected = WindowSwitch.first(count: windows.count, backwards: backwards)
     }
 
-    @ObservationIgnored private var content: SCShareableContent?
 
     func move(backwards: Bool) { selected = WindowSwitch.step(selected, count: windows.count, backwards: backwards) }
 
     /// Each window's picture, small, as they come.
-    /// Each window's picture: the last one taken (`WindowPictures`) at once, then a fresh one
-    /// wherever macOS allows it (ScreenCaptureKit's on-screen flag isn't reliable, so each is tried).
+    @ObservationIgnored private var wallpaper: URL?
+
+    /// Each window's picture, what it shows now, on any Space (the window server's own capture,
+    /// `WindowPictures.capture(id:)`: "the user needs to see what each window is displaying",
+    /// 2026-11-03); the last one kept, then ScreenCaptureKit, where that fails. The desktop's
+    /// wallpaper, small, after the switcher is up (a full-size one held it back).
     func loadThumbnails() async {
-        for index in windows.indices where windows[index].id != 0 { windows[index].thumbnail = WindowPictures.shared.picture(of: windows[index].id) }
-        guard let content else { return }
-        for index in windows.indices {
+        for index in windows.indices where windows[index].id != 0 {
+            let id = windows[index].id
+            let picture = await Task.detached(priority: .userInitiated) { WindowPictures.capture(id: id) }.value
+            if let picture { WindowPictures.shared.keep(picture, for: id) }
+            if windows.indices.contains(index), windows[index].id == id { windows[index].thumbnail = picture ?? WindowPictures.shared.picture(of: id) }
+        }
+        if let wallpaper, let index = windows.firstIndex(where: { $0.id == 0 }) {
+            windows[index].thumbnail = await Task.detached(priority: .utility) { WindowPictures.small(wallpaper) }.value
+        }
+        guard windows.contains(where: { $0.thumbnail == nil && $0.id != 0 }),
+              let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false) else { return }
+        for index in windows.indices where windows[index].thumbnail == nil {
             guard let window = content.windows.first(where: { $0.windowID == windows[index].id }),
                   let picture = await WindowPictures.capture(window) else { continue }
             WindowPictures.shared.keep(picture, for: window.windowID)
@@ -242,7 +305,10 @@ final class WindowPictures {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.soon() }
+                MainActor.assumeIsolated {
+                    self?.soon()
+                    WindowRecency.shared.noteFront()
+                }
             }
         }
         soon()
@@ -265,6 +331,43 @@ final class WindowPictures {
             guard let app = window.owningApplication, app.processID != own, !blocked(app.bundleIdentifier) else { continue }
             if let picture = await Self.capture(window) { keep(picture, for: window.windowID) }
         }
+    }
+
+    /// A window's picture as it is now, on any Space or minimised, through the window server's
+    /// own capture (SkyLight's `CGSHWCaptureWindowList`, private — what AltTab uses; looked up at
+    /// run time like the brightness calls, so a macOS without it falls back to ScreenCaptureKit).
+    private typealias Connection = @convention(c) () -> Int32
+    private typealias CaptureList = @convention(c) (Int32, UnsafeMutablePointer<UInt32>, Int32, UInt32) -> Unmanaged<CFArray>?
+    nonisolated(unsafe) private static let windowServer: (connection: Connection, capture: CaptureList)? = {
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY),
+              let connection = dlsym(handle, "CGSMainConnectionID"), let capture = dlsym(handle, "CGSHWCaptureWindowList") else { return nil }
+        return (unsafeBitCast(connection, to: Connection.self), unsafeBitCast(capture, to: CaptureList.self))
+    }()
+
+    nonisolated static func capture(id: UInt32) -> NSImage? {
+        guard let windowServer else { return nil }
+        var window = id
+        // Ignore the global clip shape (1 << 11), at the window's nominal resolution (1 << 9).
+        guard let list = windowServer.capture(windowServer.connection(), &window, 1, (1 << 11) | (1 << 9))?.takeRetainedValue() as? [CGImage],
+              let image = list.first, image.width > 1, image.height > 1 else { return nil }
+        return small(image)
+    }
+
+    /// 360 pt wide (at 2×), so a switcher full of them stays light.
+    nonisolated static func small(_ image: CGImage) -> NSImage? {
+        let width = 720, height = max(1, Int(Double(image.height) * 720 / Double(image.width)))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage().map { NSImage(cgImage: $0, size: NSSize(width: width / 2, height: height / 2)) }
+    }
+
+    nonisolated static func small(_ url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                                          kCGImageSourceThumbnailMaxPixelSize: 720] as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width / 2, height: image.height / 2))
     }
 
     /// A window's picture, 360 pt wide (at 2×).
@@ -326,5 +429,35 @@ struct SwitcherView: View {
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.black.opacity(0.82)))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color.white.opacity(0.1)))
         .fixedSize()
+    }
+}
+
+/// Windows by how recently they were used (user's report, 2026-11-03): the front window noted on
+/// every app or Space switch and as the switcher opens, and each one the switcher brings forward.
+/// Memory only, the latest 200.
+@MainActor
+final class WindowRecency {
+    static let shared = WindowRecency()
+    private var order: [UInt32] = []
+
+    /// Window number → place, 0 the latest.
+    var rank: [UInt32: Int] { Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first }) }
+
+    func used(_ window: UInt32) {
+        guard window != 0 else { return }
+        order.removeAll { $0 == window }
+        order.insert(window, at: 0)
+        if order.count > 200 { order.removeLast(order.count - 200) }
+    }
+
+    /// The front app's top titled window, on screen now.
+    func noteFront() {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              pid != ProcessInfo.processInfo.processIdentifier else { return }
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        if let top = list.first(where: { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
+            && !(($0[kCGWindowName as String] as? String) ?? "").isEmpty }), let id = top[kCGWindowNumber as String] as? UInt32 {
+            used(id)
+        }
     }
 }
