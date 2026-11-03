@@ -9,7 +9,8 @@ enum WindowLayers {
     static let guidance = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
     /// Just above the menu bar, where the notch is.
     static let notch = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
-    /// Above the notch panel, so an open notch never covers a tile or its card.
+    /// Above the notch panel, so an open notch never covers a tile or its card; the notch's
+    /// bubbles too, so a full-screen app's sliding toolbar never covers them.
     static let dock = NSWindow.Level(rawValue: notch.rawValue + 1)
 
     static func check() {

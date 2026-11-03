@@ -43,6 +43,27 @@ final class NotchBubbles {
             hide(right, toward: notch.maxX - 8 - Self.diameter)
         }
         shown = visible
+        if visible { report() }
+    }
+
+    /// Half a second after showing: whether macOS really shows them, on this Space, over which app.
+    private func report() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, shown, let left else { return }
+            let app = NSWorkspace.shared.frontmostApplication
+            var fullScreen = "?"
+            if let pid = app?.processIdentifier {
+                let element = AXUIElementCreateApplication(pid)
+                var window: CFTypeRef?
+                if AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success, let window {
+                    var value: CFTypeRef?
+                    AXUIElementCopyAttributeValue(window as! AXUIElement, "AXFullScreen" as CFString, &value)  // an AXUIElement, as asked
+                    fullScreen = (value as? Bool).map { $0 ? "yes" : "no" } ?? "?"
+                }
+            }
+            Log.app.notice("Bubbles check: visible \(left.occlusionState.contains(.visible), privacy: .public), on this Space \(left.isOnActiveSpace, privacy: .public), alpha \(left.alphaValue, privacy: .public), level \(left.level.rawValue, privacy: .public), over \(app?.localizedName ?? "?", privacy: .public) full screen \(fullScreen, privacy: .public)")
+        }
     }
 
     private func show(_ existing: NSPanel?, at frame: CGRect, from tuckedX: CGFloat, bubbles: [Bubble]) -> NSPanel {
@@ -50,6 +71,9 @@ final class NotchBubbles {
         panel.contentView = NSHostingView(rootView: BubbleColumn(bubbles: bubbles))
         guard !(shown && panel.isVisible) else {
             if panel.frame != frame { panel.setFrame(frame, display: true) }
+            // Kept in front: a full-screen app's toolbar, sliding down as the pointer reaches the
+            // top to open the notch, came over them (user's reports, 2026-11-03).
+            panel.orderFrontRegardless()
             return panel
         }
         // Out of the notch: from tucked behind its side to beside it.
@@ -84,7 +108,9 @@ final class NotchBubbles {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = WindowLayers.notch
+        // Above the notch's own layer, as the dock's tiles: nothing that comes over the menu bar's
+        // strip (a full-screen app's sliding toolbar) covers them.
+        panel.level = WindowLayers.dock
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
