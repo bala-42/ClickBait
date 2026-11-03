@@ -6,8 +6,8 @@ import SwiftUI
 
 /// Screen recording, from the Quick panel's Capture (user's ask, 2026-11-02, after Vorssaint's):
 /// the screen the pointer is on, with the sound the Mac plays (not the microphone), ClickBait's
-/// own windows and blocked apps left out — ScreenCaptureKit writing straight to a movie in
-/// Movies. A red "● 0:12 · stop" pill at the bottom of that screen (not in the recording) stops it.
+/// own windows and blocked apps left out — ScreenCaptureKit writing straight to a movie on the
+/// Desktop. A red "● 0:12 · stop" pill at the bottom of that screen (not in the recording) stops it.
 @MainActor @Observable
 final class ScreenRecorder: NSObject, SCRecordingOutputDelegate {
     static let shared = ScreenRecorder()
@@ -40,7 +40,8 @@ final class ScreenRecorder: NSObject, SCRecordingOutputDelegate {
             configuration.capturesAudio = true
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-            let folder = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
+            // On the Desktop, as macOS's own recordings (user's ask, 2026-11-03).
+            let folder = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
             let file = folder.appending(path: "ClickBait Recording \(formatter.string(from: Date())).mov")
             let settings = SCRecordingOutputConfiguration()
             settings.outputURL = file

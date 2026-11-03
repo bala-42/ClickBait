@@ -1076,7 +1076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nextUp.start()
         GalleryHooks.say = { [weak self] text in self?.overlay.showJobResult(text, tone: .idle, force: true) }
         ScreenRecorder.shared.onSaved = { [weak self] file in
-            self?.overlay.showJobResult("saved the recording ✓ in Movies", tone: .action, force: true)
+            self?.overlay.showJobResult("saved the recording ✓ on the Desktop", tone: .action, force: true)
             NSWorkspace.shared.activateFileViewerSelecting([file])
         }
         ScreenRecorder.shared.onProblem = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
