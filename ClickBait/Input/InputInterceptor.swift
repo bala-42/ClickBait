@@ -30,8 +30,10 @@ final class InputInterceptor {
     var onSwitcher: (_ key: SwitcherKey) -> Bool = { _ in false }
     enum SwitcherKey { case tab(backwards: Bool), left, right, escape, choose, released }
     fileprivate var swallowSwitcherUp: Int64?
-    /// Cleaning mode: every key, modifier and media key taken while it's on.
+    /// Cleaning mode: every key, modifier and media key taken while it's on, and every click,
+    /// drag and scroll but where `clickAllowed` says (the notch, with its Done).
     var lockKeys = false
+    var clickAllowed: (CGPoint) -> Bool = { _ in false }
     /// ⌃⌘ + P, arrows while Studio's prompter is up (true: taken, the app in front never sees it).
     var onPrompterKey: (_ keyCode: Int64) -> Bool = { _ in false }
     fileprivate var swallowPrompterUp: Int64?
@@ -57,6 +59,11 @@ final class InputInterceptor {
             | CGEventMask(1 << CGEventType.rightMouseUp.rawValue)
             | CGEventMask(1 << 14)  // NX_SYSDEFINED: the volume keys
             | CGEventMask(1 << CGEventType.flagsChanged.rawValue)  // ⌥ let go: the switcher chooses
+            // Cleaning mode's lock (only then taken; otherwise passed straight on).
+            | CGEventMask(1 << CGEventType.leftMouseDown.rawValue) | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
+            | CGEventMask(1 << CGEventType.leftMouseDragged.rawValue) | CGEventMask(1 << CGEventType.rightMouseDragged.rawValue)
+            | CGEventMask(1 << CGEventType.otherMouseDown.rawValue) | CGEventMask(1 << CGEventType.otherMouseUp.rawValue)
+            | CGEventMask(1 << CGEventType.scrollWheel.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: mask, callback: escapeTapCallback,
@@ -111,9 +118,15 @@ private func escapeTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
         MainActor.assumeIsolated { interceptor.reenable() }
         return Unmanaged.passUnretained(event)
     }
-    if MainActor.assumeIsolated({ interceptor.lockKeys }),
-       [.keyDown, .keyUp, .flagsChanged].contains(type) || type.rawValue == 14 {
-        return nil
+    if MainActor.assumeIsolated({ interceptor.lockKeys }) {
+        if [.keyDown, .keyUp, .flagsChanged].contains(type) || type.rawValue == 14 { return nil }
+        let pointer: Set<CGEventType> = [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp,
+                                         .rightMouseDragged, .otherMouseDown, .otherMouseUp, .scrollWheel]
+        let location = event.location
+        if pointer.contains(type), !MainActor.assumeIsolated({ interceptor.clickAllowed(location) }) { return nil }
+    }
+    if [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDragged, .otherMouseDown, .otherMouseUp, .scrollWheel].contains(type) {
+        return Unmanaged.passUnretained(event)  // only watched for cleaning mode
     }
     if type.rawValue == 14 {
         // Media keys: subtype 8; key code in data1's top 16 bits, state 0xA down / 0xB up.

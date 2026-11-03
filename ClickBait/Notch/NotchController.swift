@@ -154,7 +154,7 @@ final class NotchController {
         /// The bubbles' pages (gallery, timer, volume) stay open with their bubbles until left
         /// (user's ask, 2026-11-02), like Settings and the shelf.
         var holdsOpen: Bool {
-            editing || [.settings, .mirror, .shelf, .gallery, .timer, .volume].contains(tab) || showsChat
+            editing || [.settings, .mirror, .shelf, .gallery, .timer, .volume].contains(tab) || showsChat || CleaningMode.shared.on
         }
         let note: Note
         init(note: Note) { self.note = note }
@@ -336,6 +336,8 @@ final class NotchController {
     private func apply(_ event: NotchPanel.Event) {
         let before = model.state
         var event = event
+        // Cleaning: the notch stays open on its card until Done (its ✕ and Esc don't fold it).
+        if CleaningMode.shared.on, before == .expanded, case .escape = event { return }
         if case .enabled(true) = event, NSScreen.screens.isEmpty { event = .displayAvailable(false) }
         let after = NotchPanel.next(before, on: event)
         guard after != before else { return }

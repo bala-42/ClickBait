@@ -12,8 +12,10 @@ struct ToolsPage: View {
     @State private var screen = SystemBrightness.read()
     @State private var keyboard = KeyboardBrightness.read()
 
+    var cleaning = CleaningMode.shared
+
     var body: some View {
-        if showsBrightness { brightness } else { tiles }
+        if cleaning.on { CleaningCard(cleaning: cleaning) } else if showsBrightness { brightness } else { tiles }
     }
 
     private var tiles: some View {
@@ -79,26 +81,21 @@ struct ToolsPage: View {
 
 enum ToolAction { case cleaning, uninstall }
 
-/// Cleaning mode (Tools): every screen black, the keyboard locked (`InputInterceptor.lockKeys`),
-/// a Done button to click when finished; it ends itself after five minutes, in case.
-@MainActor
+/// Cleaning mode (Tools), in the notch (user's choice, 2026-11-03: not the whole screen): the
+/// keyboard locked, and clicks and scrolling anywhere but the notch (`InputInterceptor.lockKeys`),
+/// the screen left as it is; the notch stays open on a card with a clock and Done. It ends itself
+/// after five minutes, in case.
+@MainActor @Observable
 final class CleaningMode {
     static let shared = CleaningMode()
-    var lock: (Bool) -> Void = { _ in }
-    private var panels: [NSPanel] = []
-    private var timeout: Task<Void, Never>?
+    @ObservationIgnored var lock: (Bool) -> Void = { _ in }
+    private(set) var startedAt: Date?
+    var on: Bool { startedAt != nil }
+    @ObservationIgnored private var timeout: Task<Void, Never>?
 
     func start() {
-        guard panels.isEmpty else { return }
-        panels = NSScreen.screens.map { screen in
-            let panel = NSPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            panel.backgroundColor = .black
-            panel.level = .screenSaver
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.contentView = NSHostingView(rootView: CleaningView { [weak self] in self?.stop() })
-            panel.orderFrontRegardless()
-            return panel
-        }
+        guard !on else { return }
+        startedAt = Date()
         lock(true)
         Log.app.notice("Cleaning mode on")
         timeout = Task { @MainActor [weak self] in
@@ -109,30 +106,40 @@ final class CleaningMode {
     }
 
     func stop() {
+        guard on else { return }
         timeout?.cancel()
         lock(false)
-        panels.forEach { $0.orderOut(nil) }
-        panels = []
+        startedAt = nil
         Log.app.notice("Cleaning mode off")
     }
 }
 
-private struct CleaningView: View {
-    let done: () -> Void
+/// The notch's card while cleaning: what's locked, how long, and Done.
+struct CleaningCard: View {
+    let cleaning: CleaningMode
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "sparkles").font(.system(size: 40)).foregroundStyle(.white.opacity(0.6))
-            Text("Cleaning mode").font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
-            Text("The keyboard is locked, so wipe away. Click Done when you've finished.").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
-            Button(action: done) {
-                Text("Done").font(.system(size: 14, weight: .semibold)).foregroundStyle(.black)
-                    .padding(.horizontal, 24).frame(height: 32).background(Capsule().fill(.white))
+        HStack(spacing: 16) {
+            Image(systemName: "sparkles").font(.system(size: 24)).foregroundStyle(MoodyLook.cream)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cleaning mode").font(.system(size: 13, weight: .semibold))
+                Text("Keyboard and clicks locked — wipe away.").font(.system(size: 11)).foregroundStyle(NotchPalette.secondary)
+            }
+            Spacer()
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(AgentLive.clock(context.date.timeIntervalSince(cleaning.startedAt ?? context.date)))
+                    .font(.system(size: 13, weight: .medium).monospacedDigit()).foregroundStyle(NotchPalette.secondary)
+            }
+            Button { cleaning.stop() } label: {
+                Text("Done").font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
+                    .padding(.horizontal, 20).frame(height: 30).background(Capsule().fill(NotchPalette.text))
             }
             .buttonStyle(.plain)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 104)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+        .foregroundStyle(NotchPalette.text)
     }
 }
 

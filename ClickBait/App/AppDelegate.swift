@@ -472,6 +472,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? png.write(to: URL(fileURLWithPath: path))
             }
         }
+        // Cleaning mode on ("start") or off ("stop"): live tests.
+        DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.cleaning"), object: nil, queue: .main) { note in
+            let start = (note.object as? String) == "start"
+            MainActor.assumeIsolated { if start { GalleryHooks.tool(.cleaning) } else { CleaningMode.shared.stop() } }
+        }
         // Next Up's view of the calendar, logged: live tests.
         DistributedNotificationCenter.default().addObserver(forName: .init("org.clickbait.debug.nextup"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -1081,13 +1086,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ScreenRecorder.shared.onProblem = { [weak self] text in self?.overlay.showJobResult(text, tone: .error, force: true) }
         CleaningMode.shared.lock = { [weak self] on in self?.escape.lockKeys = on }
+        // While cleaning, clicks only on the notch (its Done); Core Graphics' points are top-left.
+        escape.clickAllowed = { [weak self] point in
+            guard let self else { return true }
+            let primary = NSScreen.screens.first?.frame.height ?? 0
+            let flipped = CGPoint(x: point.x, y: primary - point.y)
+            return notch.visibleFrames.contains { $0.contains(flipped) }
+        }
         GalleryHooks.tool = { [weak self] action in
             guard let self else { return }
-            notch.makeRoom()
             switch action {
             case .cleaning:
-                CleaningMode.shared.start()
+                CleaningMode.shared.start()  // in the notch, which stays open on its card
             case .uninstall:
+                notch.makeRoom()
                 guard let app = AppRemover.choose() else { return }
                 switch AppRemover.plan(for: app) {
                 case .refused(let why):

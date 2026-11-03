@@ -422,6 +422,8 @@ private struct OpenNotch: View {
             header.frame(height: 36)
             Group {
                 switch model.tab {
+                // Cleaning: its card, whatever page this was, so Done is always there.
+                case _ where CleaningMode.shared.on: CleaningCard(cleaning: .shared).transition(.opacity)
                 case .home where model.morning != nil: MorningCard(text: model.morning ?? "").fitsNotch(model).transition(.opacity)
                 case .home where model.greeting: GreetingCard().frame(height: 98).transition(.opacity)
                 case .home: home.transition(.opacity.combined(with: .scale(scale: 0.97)))
