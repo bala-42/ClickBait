@@ -74,6 +74,13 @@ final class ClipboardHistory {
         save()
     }
 
+    /// One entry gone, its picture too (user's ask, 2026-11-04: not only all at once).
+    func remove(_ entry: Entry) {
+        remove(picture: entry)
+        entries.removeAll { $0.id == entry.id }
+        save()
+    }
+
     /// Everything but the pinned ones, pictures and all.
     func clear() {
         for entry in entries where !entry.pinned { remove(picture: entry) }
@@ -181,7 +188,10 @@ struct ClipboardPage: View {
             } label: {
                 HStack(spacing: 8) {
                     if let image = history.image(of: entry) {
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 22)
+                        // Big enough to tell which picture it is (user's ask, 2026-11-04).
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: 120, maxHeight: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         Text("picture").foregroundStyle(NotchPalette.secondary)
                     } else {
                         if !entry.files.isEmpty { Image(systemName: "doc").foregroundStyle(NotchPalette.secondary) }
@@ -199,6 +209,12 @@ struct ClipboardPage: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(entry.pinned ? "Unpin" : "Pin")
+            Button { withAnimation { history.remove(entry) } } label: {
+                Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(NotchPalette.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove this one")
+            .accessibilityLabel("Remove from the clipboard history")
         }
         .font(.system(size: 12))
         .padding(.horizontal, 12).padding(.vertical, 4)

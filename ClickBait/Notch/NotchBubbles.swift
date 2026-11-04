@@ -69,7 +69,8 @@ final class NotchBubbles {
     private func show(_ existing: NSPanel?, at frame: CGRect, from tuckedX: CGFloat, bubbles: [Bubble]) -> NSPanel {
         let panel = existing ?? Self.makePanel()
         panel.contentView = NSHostingView(rootView: BubbleColumn(bubbles: bubbles))
-        guard !(shown && panel.isVisible) else {
+        panel.ignoresMouseEvents = false
+        guard !(shown && panel.isVisible && panel.alphaValue > 0) else {
             if panel.frame != frame { panel.setFrame(frame, display: true) }
             // Kept in front: a full-screen app's toolbar, sliding down as the pointer reaches the
             // top to open the notch, came over them (user's reports, 2026-11-03).
@@ -89,8 +90,12 @@ final class NotchBubbles {
         return panel
     }
 
+    /// Faded out and click-through, but left on screen, as the notch's own window is: one taken
+    /// off screen and brought back while a full-screen app is in front stayed hidden there
+    /// ("Bubbles check: visible false … full screen yes", user's Mac, 2026-11-04).
     private func hide(_ panel: NSPanel?, toward tuckedX: CGFloat) {
         guard let panel, panel.isVisible, shown else { return }
+        panel.ignoresMouseEvents = true
         var tucked = panel.frame
         tucked.origin.x = tuckedX
         NSAnimationContext.runAnimationGroup { context in
@@ -98,8 +103,6 @@ final class NotchBubbles {
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrame(tucked, display: true)
             panel.animator().alphaValue = 0
-        } completionHandler: {
-            MainActor.assumeIsolated { if panel.alphaValue == 0 { panel.orderOut(nil) } }
         }
     }
 

@@ -230,7 +230,7 @@ final class NotchController {
         music.onChange = { [weak self] in self?.musicChanged() }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                  object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.place() }
+            MainActor.assumeIsolated { self?.screensChanged() }
         })
         // Another app in front may reach up beside the notch (`appOwnsTop`).
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
@@ -507,6 +507,23 @@ final class NotchController {
 
     /// The window for where things are now. Growing: at once, then the shape springs out inside
     /// it. Shrinking: the shape springs in first; the window follows once it has settled.
+    /// A display plugged in or out (user's report, 2026-11-04: the notch out of place after
+    /// unplugging a monitor): a display that's gone stops being the active one, and the notch is
+    /// placed again now and twice more as macOS settles the screens' new frames (the laptop's
+    /// origin moves when the monitor that was the main one goes).
+    private func screensChanged() {
+        let present = Set(NSScreen.screens.compactMap(Self.displayID))
+        if let active = model.activeDisplay, !present.contains(active) { model.activeDisplay = nil }
+        Log.app.notice("Screens changed: \(present.count, privacy: .public) display(s)")
+        place()
+        Task { @MainActor [weak self] in
+            for delay in [0.5, 1.5] {
+                try? await Task.sleep(for: .seconds(delay))
+                self?.place()
+            }
+        }
+    }
+
     private func place() {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {

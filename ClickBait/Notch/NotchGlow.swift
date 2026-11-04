@@ -33,10 +33,12 @@ final class NotchGlow {
         }
     }
 
+    /// Faded out, left on screen (as the notch's bubbles: one brought back over a full-screen
+    /// app stayed hidden there).
     func dim() {
         fade?.cancel()
         color = nil
-        panel?.orderOut(nil)
+        panel?.alphaValue = 0
     }
 
     /// Keeps behind the notch as it grows, shrinks or moves.
@@ -49,6 +51,8 @@ final class NotchGlow {
         self.panel = panel
         panel.contentView = NSHostingView(rootView: GlowView(color: color, notch: notch.frame.size, reach: reach))
         panel.setFrame(frame, display: true)
+        panel.alphaValue = 1
+        if !panel.isVisible { panel.orderFrontRegardless() }
         panel.order(.below, relativeTo: notch.windowNumber)
     }
 
