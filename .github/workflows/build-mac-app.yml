@@ -40,7 +40,10 @@ jobs:
             -derivedDataPath build \
             -skipPackagePluginValidation \
             -skipMacroValidation \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             build
+        # ARCHS on the command line reaches the Swift packages too; without it a Release
+        # build also compiles them for Intel, where Float16 (VisionMemory.swift) doesn't exist.
 
       - name: Package as a DMG
         run: |
