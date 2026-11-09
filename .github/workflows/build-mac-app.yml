@@ -1,0 +1,52 @@
+# Builds ClickBait.app on GitHub's Mac machines (which have Xcode) and
+# offers it as a download. Save as .github/workflows/build-mac-app.yml
+name: Build Mac app
+
+on:
+  workflow_dispatch:        # "Run workflow" button on the Actions tab
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15       # Apple Silicon runner; the app is arm64-only
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Xcode 16.4
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build (Release, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project ClickBait.xcodeproj \
+            -scheme ClickBait \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            build
+
+      - name: Package as a DMG
+        run: |
+          APP=build/Build/Products/Release/ClickBait.app
+          VERSION=$(defaults read "$PWD/$APP/Contents/Info" CFBundleShortVersionString)
+          mkdir dmg && cp -R "$APP" dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname ClickBait -srcfolder dmg -ov -format UDZO \
+            "ClickBait-$VERSION-${GITHUB_SHA::7}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClickBait-${{ github.sha }}
+          path: ClickBait-*.dmg
+          retention-days: 30
